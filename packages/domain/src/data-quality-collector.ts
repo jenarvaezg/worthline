@@ -19,6 +19,7 @@ export type DataQualityCategory =
   | "missing_configuration"
   | "savings_coherence"
   | "portfolio_reconciliation"
+  | "transfer_integrity"
   | "history_coverage"
   | "projection_gap";
 
@@ -105,6 +106,7 @@ export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "missing_configuration",
   "savings_coherence",
   "portfolio_reconciliation",
+  "transfer_integrity",
   "history_coverage",
   "projection_gap",
 ];

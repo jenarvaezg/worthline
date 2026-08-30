@@ -333,3 +333,32 @@ decision 3 read as it did); it records CONFIRMATIONS.
 What did NOT change: the door, the pair, the shared `transfer_id`, the single date, the
 inherited cost as a proportion of the origin's basis, the refusal of units over the
 position, and «todo» as its own intent.
+
+## Amendment (#1519, 30-ago-2026) — the door only looks forward, so something has to look back
+
+The atomic gate above guarantees that a NEW traspaso is written whole or not at all. It
+says nothing about what is ALREADY written, and two paths bypass it: the one-shots of
+`.local/scripts`, and the retroactive re-typing of #1485, which puts a `transfer_id` on
+rows that did not carry one. A `transfer_id` with no other half is indistinguishable
+from a cost leak in the engine, which is what made the reconciliation of 21-08-2026
+spend a whole audit of Jorge's ledger ruling exactly that out.
+
+The audit is a data-health signal (#654), `transfer_integrity`, not a warning on the
+ficha: it is not a figure the user typed wrong, it is the book contradicting itself, and
+the consumer is whoever maintains the data. Three things it decides:
+
+- **The cost that LEFT is re-derived, never read.** `transfer_cost_minor` does not exist
+  on the outgoing leg — deliberately, so the position fold never crosses over to another
+  asset's ledger — so the careo folds the origin's own ledger up to the operation before
+  the traspaso and takes the same `proportionMinor` slice `planTransfer` took when it
+  wrote the pair. Same engine on both sides, so tolerance is **zero** (#1422): a cent is
+  corrupt data, not a rounding.
+- **Decision 7's reading is binding on the detector too.** A lone `transfer_in`, WITH its
+  own `transfer_id`, is the external entry and is never reported. The ficha already names
+  that row «desde otra entidad» from the same evidence; a health panel calling it broken
+  would make the two screens disagree about one row. A lone `transfer_out` has no such
+  reading and IS reported.
+- **The units are clamped as the fold clamps them.** The comparison asks what the fold
+  removes, so an over-transfer the gate would have refused is careado against the cost
+  that is actually there — which is what makes a row carrying the un-clamped proportion
+  show up instead of agreeing with a figure the book never held.

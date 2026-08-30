@@ -964,6 +964,7 @@ describe("main financial context data-quality summary (#341)", () => {
         "projection_gap",
         "savings_coherence",
         "source_freshness",
+        "transfer_integrity",
         "trashed_balance",
         "warning",
       ].sort(),

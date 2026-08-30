@@ -227,6 +227,7 @@ const DATA_QUALITY_CATEGORIES: readonly AgentViewDataQualityCategory[] = [
   "missing_configuration",
   "savings_coherence",
   "portfolio_reconciliation",
+  "transfer_integrity",
   "history_coverage",
   "projection_gap",
 ];
