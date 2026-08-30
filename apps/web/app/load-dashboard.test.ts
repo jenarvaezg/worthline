@@ -17,6 +17,7 @@ import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testi
 import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test, vi } from "vitest";
 
+import { returnsTooltipLines } from "./_components/returns-format";
 import { loadDashboard } from "./load-dashboard";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,17 @@ async function makeAsset(store: WorthlineStore): Promise<void> {
     type: "cash",
   });
 }
+
+/**
+ * The hero's monthly-close read (#1640): the whole book, gross, full history,
+ * parent rows only. Issued only when some holding carries a ledger to measure,
+ * so the reads-spy assertions name it once instead of spelling it out.
+ */
+const HOUSEHOLD_CLOSES_READ = {
+  includePositions: false,
+  kind: "asset",
+  scopeId: "household",
+} as const;
 
 function makePersistence() {
   return {
@@ -251,8 +263,10 @@ describe("loadDashboard — snapshot holding rows", () => {
     });
 
     // buildTodaySnapshotForScope does NOT read snapshot holdings, so the single
-    // #571 read still fires exactly once. `snapshotHoldingRows` is persisted-rows
-    // ∪ today's synthesized rows — for a cold store that is just the one live row.
+    // #571 read still fires exactly once. The hero's whole-book closes (#1640)
+    // add none here: this book holds no ledger to measure, so that read is not
+    // even issued. `snapshotHoldingRows` is persisted-rows ∪ today's synthesized
+    // rows — for a cold store that is just the one live row.
     expect(reads).toEqual([{ scopeId: result.selectedScope!.id }]);
     expect(result.snapshotHoldingRows).toHaveLength(1);
     expect(result.snapshotHoldingRows[0]).toMatchObject({
@@ -1584,6 +1598,143 @@ describe("loadDashboard — a declared net rent is the rate the home projects wi
     expect(result.fireResult!.rentReturns.notices.map((row) => row.reason)).toEqual([
       "missing_expenses",
     ]);
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The hero's TWR over the whole book's closes (#1640)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — the hero's TWR rides the whole book's closes (#1640)", () => {
+  /** An investment bought once, then revalued month after month from 2025-01. */
+  async function seedFund(store: WorthlineStore, months: number): Promise<void> {
+    await makeWorkspace(store);
+    await makeAsset(store);
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fondo",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fondo",
+      currency: "EUR",
+      executedAt: "2025-01-05",
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "100",
+    });
+
+    for (let index = 0; index < months; index += 1) {
+      const total = 2025 * 12 + index;
+      const year = Math.floor(total / 12);
+      const month = (total % 12) + 1;
+      const dateKey = `${year}-${String(month).padStart(2, "0")}-28`;
+      await store.operations.upsertPrice({
+        assetId: "asset_fondo",
+        currency: "EUR",
+        fetchedAt: `${dateKey}T09:00:00.000Z`,
+        freshnessState: "fresh",
+        price: String(100 + index),
+        source: "stooq",
+      });
+      await captureDailySnapshotForWorkspace(store, `${dateKey}T10:00:00.000Z`);
+    }
+  }
+
+  test("measures over the full household history, not the rows the range offers", async () => {
+    const store = await createInMemoryStore();
+    // 18 monthly closes (2025-01 … 2026-06): the span unlocks 1A, so the rows
+    // this page reads for its chart start at 2025-07 — a TWR built on THOSE
+    // would silently begin six months late, on a scoped basis its flows are not on.
+    await seedFund(store, 18);
+
+    const originalRead = store.snapshots.readSnapshotHoldings.bind(store.snapshots);
+    const reads: Parameters<typeof store.snapshots.readSnapshotHoldings>[0][] = [];
+    store.snapshots.readSnapshotHoldings = (async (input) => {
+      reads.push(input);
+      return originalRead(input);
+    }) as typeof store.snapshots.readSnapshotHoldings;
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-30",
+      now: "2026-06-30T10:00:00.000Z",
+    });
+
+    // Gross, whole book, full history, parent rows only — the basis the hero's
+    // flows are already on (ADR 0040).
+    expect(reads).toContainEqual(HOUSEHOLD_CLOSES_READ);
+    // The chart's own read stays windowed: the two are NOT the same rows.
+    expect(reads).toContainEqual({
+      from: "2025-07-01",
+      scopeId: result.selectedScope!.id,
+    });
+
+    const twr = result.portfolioReturns!.twr!;
+    expect(twr.reason).toBeNull();
+    // Measured from the FIRST close of the book, 100 → 117 over the seeded span.
+    expect(twr.startDate).toBe("2025-01-28");
+    expect(twr.rate).toBeCloseTo(0.17, 2);
+
+    store.close();
+  });
+
+  test("a book with no ledger to measure never pays for the read", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    // Cash only: no operations, so there is no return to measure and no series
+    // to read one over. The GET must not spend the query anyway.
+    await makeAsset(store);
+
+    const originalRead = store.snapshots.readSnapshotHoldings.bind(store.snapshots);
+    const reads: Parameters<typeof store.snapshots.readSnapshotHoldings>[0][] = [];
+    store.snapshots.readSnapshotHoldings = (async (input) => {
+      reads.push(input);
+      return originalRead(input);
+    }) as typeof store.snapshots.readSnapshotHoldings;
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-30",
+      now: "2026-06-30T10:00:00.000Z",
+    });
+
+    expect(reads).not.toContainEqual(HOUSEHOLD_CLOSES_READ);
+    expect(result.portfolioReturns).toBeNull();
+
+    store.close();
+  });
+
+  test("when it cannot be measured the hover says why, never a bare em dash", async () => {
+    const store = await createInMemoryStore();
+    // A single close: there is no span to measure a time-weighted return over.
+    await seedFund(store, 1);
+
+    const result = await loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2025-01-31",
+      now: "2025-01-31T10:00:00.000Z",
+    });
+
+    const twr = result.portfolioReturns!.twr!;
+    expect(twr.rate).toBeNull();
+    expect(twr.reason).toBe("insufficient_monthly_closes");
+    expect(returnsTooltipLines(result.portfolioReturns!)).toContainEqual(
+      expect.stringContaining("hacen falta al menos dos cierres mensuales"),
+    );
+
     store.close();
   });
 });

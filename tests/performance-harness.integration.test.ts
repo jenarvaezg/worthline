@@ -34,7 +34,11 @@
  * to silence a regression without understanding why it slowed down.
  */
 
-import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
+import {
+  captureSnapshotForScope,
+  listScopeOptions,
+  monthlyCloseValuesByHolding,
+} from "@worthline/domain";
 
 import Database from "libsql";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -109,10 +113,11 @@ async function measure(
  * The cache-only dashboard GET path, mirrored from apps/web/app/load-dashboard.ts
  * after #895: reads only — NO snapshot writes and NO price-refresh/source-sync
  * network (both moved to the twice-daily cron). It reads the price cache, the
- * curve-valued holdings, the shared projection, the scope's snapshots and its
- * frozen holding rows, and synthesizes today's chart point IN MEMORY without
- * saving it (histórico = persisted snapshots ∪ today's live point). Returns the
- * scope count so the touched-count assertion stays anchored to the seed scale.
+ * curve-valued holdings, the shared projection, the scope's snapshots, its
+ * frozen holding rows and the whole book's frozen closes for the hero's TWR
+ * (#1640), and synthesizes today's chart point IN MEMORY without saving it
+ * (histórico = persisted snapshots ∪ today's live point). Returns the scope
+ * count so the touched-count assertion stays anchored to the seed scale.
  */
 async function runCacheOnlyLoad(
   store: Awaited<ReturnType<typeof createFileBackedStore>>,
@@ -141,6 +146,21 @@ async function runCacheOnlyLoad(
     workspace,
   });
 
+  // The hero's whole-book monthly closes (#1640): household, gross, full
+  // history, parent rows only, then folded into one series per holding.
+  // Production rides an existing parallel wave, so the GET pays the READ only
+  // when it is the wave's slowest — here it is awaited SERIALLY on purpose, so
+  // the budget sees the full cost rather than whatever the wave hides. The fold
+  // is measured too, and over EVERY holding as production does: the engine picks
+  // the series it needs, so narrowing the map would only mean re-spelling its
+  // selection rule out here.
+  monthlyCloseValuesByHolding(
+    await store.snapshots.readSnapshotHoldings({
+      includePositions: false,
+      kind: "asset",
+      scopeId: "household",
+    }),
+  );
   await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id });
   return scopes.length;
 }
