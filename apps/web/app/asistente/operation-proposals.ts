@@ -449,11 +449,20 @@ async function resolveOperationFact(
 }
 
 /**
- * The currency the message did not mark, when the holding has one. Only read for a
- * dictated operation, so the document lane costs exactly what it did before.
+ * The currency used when the message marked none AND the holding has none to lend —
+ * which happens only when the id names nothing, because every investment holding is
+ * created with one. It is deliberately NOT «assume EUR» (#1401's sin): the placeholder
+ * exists so the call reaches {@link projectOperationWrite}, which answers with the route
+ * for an id that names no investment. A currency this value ever reached the ledger with
+ * would first have to pass that projection's own currency check against the holding.
  */
 const FALLBACK_CURRENCY = "EUR";
 
+/**
+ * The currency of the holding the operation points at, or null when no investment has
+ * that id. Read only for a dictated operation, so the document lane costs exactly what
+ * it did before.
+ */
 async function holdingCurrency(
   store: OperationProjectionStore,
   assetId: string,

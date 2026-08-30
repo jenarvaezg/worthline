@@ -13,7 +13,7 @@ import {
   buildOperationProposal,
   type OperationFactSource,
 } from "@web/asistente/operation-proposals";
-import { resolveTypedOperationEvent } from "@web/asistente/typed-holding-event";
+import { resolveTypedOperationEvent } from "@web/asistente/typed-operation-frontier";
 import {
   PAYWALL_OPERATION_MESSAGE,
   premiumRequired,
@@ -27,29 +27,6 @@ import { type ToolSet, tool } from "ai";
  * source's, not the model's. The direction is the one judgement neither can make — the
  * message can only veto it.
  */
-
-/**
- * Which fact this call may build from. The document wins whenever there is one, so
- * #1374's behaviour is untouched; the typed door opens only when there is none, and it
- * refuses with the gap it fell into rather than with «súbeme el justificante» for a
- * message that already said everything.
- */
-function operationSource(
-  claim: OperationFactClaim,
-  input: ChatToolsInput,
-):
-  | { ok: true; source: OperationFactSource }
-  | { ok: false; error: OperationFrontierError } {
-  const validated = holdingEventInContext(input.validatedDocuments ?? []);
-  if (validated !== null) {
-    const resolved = resolveOperationEvent(claim, validated);
-    return resolved.ok
-      ? { ok: true, source: { event: resolved.event, from: "document" } }
-      : resolved;
-  }
-  const typed = resolveTypedOperationEvent(claim, input.typedHoldingEvent);
-  return typed.ok ? { ok: true, source: { from: "message", typed: typed.event } } : typed;
-}
 export function operationProposalTools(turn: ChatToolTurn): ToolSet {
   const { ingestionGated, input } = turn;
 
@@ -141,8 +118,8 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
             {
               assetId,
               kind,
-              source: resolved.source,
               publicHoldingId,
+              source: resolved.source,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },
             input.asOf,
@@ -152,4 +129,27 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
       },
     }),
   };
+}
+
+/**
+ * Which fact this call may build from. The document wins whenever there is one, so
+ * #1374's behaviour is untouched; the typed door opens only when there is none, and it
+ * refuses with the gap it fell into rather than with «súbeme el justificante» for a
+ * message that already said everything.
+ */
+function operationSource(
+  claim: OperationFactClaim,
+  input: ChatToolsInput,
+):
+  | { ok: true; source: OperationFactSource }
+  | { ok: false; error: OperationFrontierError } {
+  const validated = holdingEventInContext(input.validatedDocuments ?? []);
+  if (validated !== null) {
+    const resolved = resolveOperationEvent(claim, validated);
+    return resolved.ok
+      ? { ok: true, source: { event: resolved.event, from: "document" } }
+      : resolved;
+  }
+  const typed = resolveTypedOperationEvent(claim, input.typedHoldingEvent);
+  return typed.ok ? { ok: true, source: { from: "message", typed: typed.event } } : typed;
 }

@@ -299,6 +299,17 @@ What the amendment fixes in code:
 - **The card says which door the fact came through.** `caption` is a field, not a
   constant: what worthline read is printed verbatim on its own line, before anything
   derived, so a parser that read 312,55 € where the person wrote 312,05 € is caught there.
+  A card emitted before this change carries no caption and is read as the document's,
+  which is what it was — the only door there was.
+
+Two costs worth naming, because neither is invisible. The refusals shared by both doors
+lose the word «justificante» («La operación está en USD y «X» se lleva en EUR»): one
+family of sentences now serves two sources, and a sentence that names a document the user
+never uploaded is worse than a neutral one. And the turn floor grows by 520 characters —
+360 in the tool's description, 160 in the prompt, where the #1418 exception named a closed
+list of one thing and would have become an instruction to refuse a dictated compra. The
+schema does not move at all: there is no new field for a model to fill, which is the same
+shape `propose_transfer` has.
 
 The asymmetry this leaves — and it is deliberate — is that the model's own prose is still
 not a source. A figure it relays is checked against the reading and the call is refused

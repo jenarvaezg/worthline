@@ -7,6 +7,7 @@
 import type { OperationKindClaim } from "@web/asistente/operation-document-frontier";
 import type { OperationProposal } from "@web/asistente/operation-proposal-contract";
 import { parseOperationProposalDraft } from "@web/asistente/operation-proposal-contract";
+import { OPERATION_DOCUMENT_CAPTION } from "@web/asistente/operation-proposal-copy";
 import {
   isOneOf,
   isRecord,
@@ -23,16 +24,23 @@ const KINDS = vocabulary<OperationKindClaim>({
 
 /**
  * The source of the fact — the document's own words, or what worthline read in the
- * user's message (#1466) — printed apart from the destination. The caption travels with
- * it and is required: a card that fell back to «En el documento» for a dictated
- * operation would misstate its provenance.
+ * user's message (#1466) — printed apart from the destination.
+ *
+ * A payload with no `caption` is not refused, and the default is not a shrug: this
+ * parser re-reads tool output that may have been emitted BEFORE #1466, in a conversation
+ * still open on someone's screen, and back then the lane had exactly one door. So the
+ * absent caption is not «we do not know where this came from», it is «this came from a
+ * document» — and refusing it instead would blank a card that renders correctly.
  */
 function parseDocument(raw: unknown): OperationProposal["document"] | null {
   if (!isRecord(raw)) return null;
   const { caption, fact, line } = raw;
   if (typeof line !== "string" || typeof fact !== "string") return null;
-  if (typeof caption !== "string") return null;
-  return { caption, fact, line };
+  return {
+    caption: typeof caption === "string" ? caption : OPERATION_DOCUMENT_CAPTION,
+    fact,
+    line,
+  };
 }
 
 /** Where the operation lands, by NAME (an id is machinery, #1263). */

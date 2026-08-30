@@ -414,3 +414,21 @@ describe("parseMixedDocumentProposal (ADR 0059)", () => {
     expect(parseMixedDocumentProposal(mixedDocumentOutput({ sections }))).toBeNull();
   });
 });
+
+/**
+ * The operation card outlived a change of contract (#1466): `caption` arrived with the
+ * second door, and a conversation open on someone's screen still holds cards emitted
+ * before it. Those came through the only door there was.
+ */
+describe("operation · a card emitted before the second door existed", () => {
+  it("keeps rendering, and says it came from the document", () => {
+    const legacy = operationOutput();
+    delete (legacy.document as Record<string, unknown>).caption;
+
+    expect(parseOperationProposal(legacy)?.document).toEqual({
+      caption: "En el documento",
+      fact: "Compra de 3,2 participaciones",
+      line: "14/08/2026 · COMPRA",
+    });
+  });
+});

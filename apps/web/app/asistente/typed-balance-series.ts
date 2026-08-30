@@ -33,9 +33,9 @@ import type { UIMessage } from "ai";
 
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
-  isIsoDay,
   normalizeExtractedNumber,
 } from "./attachment-extraction-contract";
+import { dateTokenIn } from "./typed-message-reading";
 
 /** ONE observed balance, in the shape the debt-series lanes already take. */
 export interface TypedBalanceRow {
@@ -67,31 +67,6 @@ export const TYPED_BALANCE_SERIES_DOCUMENT_NAME = "serie-escrita-en-el-chat";
  */
 const MAX_SCANNED_LINES = 4000;
 
-/**
- * `YYYY-MM-DD`. Tried first: it can never be read as the local shape below.
- *
- * Both patterns are fenced by digit lookarounds, and that is not decoration. Without
- * them `600.12.3456` — a phone number in the prose around a paste — matches the local
- * shape starting at its second digit, yields no real day, and takes the ENTIRE series
- * down with it. The fence costs nothing and removes a whole family of that.
- */
-const ISO_DATE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/u;
-
-/**
- * `D/M/YYYY`, `D-M-YYYY`, `D.M.YYYY` — how a Spanish sheet prints a date.
- *
- * DAY FIRST, always, with no attempt to detect the American order. That is a decision
- * and not an oversight: worthline is es-ES throughout, and its number reader already
- * settles the same class of ambiguity the same way («Spanish grouping wins for
- * ambiguous string values», {@link normalizeExtractedNumber}). The alternative —
- * requiring one row to prove the order with a day above twelve — would refuse the most
- * ordinary series there is, a mortgage paid on the 1st of every month. A month-first
- * paste whose day exceeds twelve yields no real day and is reported as `unreadable`,
- * which is the honest outcome: the person is told, rather than silently getting
- * March read as the 3rd.
- */
-const LOCAL_DATE = /(?<!\d)(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?!\d)/u;
-
 /** Currency marks that ride along with a figure and are not part of it. */
 const CURRENCY_MARKS = /[€$£]|\bEUR\b|\bUSD\b/giu;
 
@@ -109,19 +84,9 @@ interface DatedLine {
  * silently dropping one point of somebody's mortgage.
  */
 function dateInLine(line: string): DatedLine | null | "invalid" {
-  const iso = ISO_DATE.exec(line);
-  if (iso) {
-    return isIsoDay(iso[0]) ? { date: iso[0], rest: cut(line, iso) } : "invalid";
-  }
-  const local = LOCAL_DATE.exec(line);
-  if (!local) return null;
-  const [, day, month, year] = local as unknown as [string, string, string, string];
-  const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  return isIsoDay(date) ? { date, rest: cut(line, local) } : "invalid";
-}
-
-function cut(line: string, match: RegExpExecArray): string {
-  return line.slice(0, match.index) + line.slice(match.index + match[0].length);
+  const token = dateTokenIn(line);
+  if (token === null) return null;
+  return token.day === null ? "invalid" : { date: token.day, rest: token.rest };
 }
 
 /**

@@ -41,18 +41,15 @@ import type { UIMessage } from "ai";
 
 import {
   type ExtractedHoldingEvent,
-  isIsoDay,
   isValidIsin,
   normalizeExtractedNumber,
 } from "./attachment-extraction-contract";
+import type { OperationKindClaim } from "./operation-document-frontier";
 import {
-  OPERATION_DOCUMENT_REQUIRED_MESSAGE,
-  type OperationFactClaim,
-  type OperationFactVoice,
-  type OperationFrontierError,
-  type OperationKindClaim,
-  operationClaimMismatches,
-} from "./operation-document-frontier";
+  dateInMessage,
+  joinRefusalGaps,
+  MAX_SCANNED_CHARS,
+} from "./typed-message-reading";
 
 /** One dated operation, as much of it as a message can state. */
 export interface TypedHoldingEvent {
@@ -112,7 +109,7 @@ const GAP_MESSAGES: Record<TypedHoldingEventGap, string> = {
   ambiguous_units:
     "en tu mensaje hay más de una cifra de participaciones y no sé cuál es la de esta " +
     "operación. Dime sólo las que has comprado o vendido; el total que te queda, si " +
-    "quieres, dímelo aparte («y ahora tengo 21»)",
+    "quieres, dímelo aparte y con su palabra («y ahora tengo 21 participaciones»)",
   date: "no he visto la fecha. Dime el día («hoy», «ayer» o 12/08/2026): no fecho yo una operación que no me has fechado",
   money:
     "no he visto el dinero. Dime el importe total («por 312,55 €») o el precio por " +
@@ -130,29 +127,15 @@ const GAP_MESSAGES: Record<TypedHoldingEventGap, string> = {
 export function typedHoldingEventGapMessage(
   missing: readonly TypedHoldingEventGap[],
 ): string {
-  const gaps = missing.map((gap) => GAP_MESSAGES[gap]);
-  const listed =
-    gaps.length <= 1
-      ? (gaps[0] ?? GAP_MESSAGES.units)
-      : `${gaps.slice(0, -1).join("; ")}; y ${gaps[gaps.length - 1]}`;
+  const listed = joinRefusalGaps(
+    missing.map((gap) => GAP_MESSAGES[gap]),
+    GAP_MESSAGES.units,
+  );
   return (
     `Te anoto la operación sin justificante, pero ${listed}. Lo leo de tu mensaje tal cual ` +
     "lo escribas: instrumento, participaciones, importe y fecha."
   );
 }
-
-/** How far into one message the parser looks, so a pasted book is bounded work. */
-const MAX_SCANNED_CHARS = 20_000;
-
-/** `YYYY-MM-DD`, fenced by digit lookarounds exactly as the sibling parsers are. */
-const ISO_DATE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/u;
-
-/** `D/M/YYYY`, `D-M-YYYY`, `D.M.YYYY`. DAY FIRST, es-ES throughout. */
-const LOCAL_DATE = /(?<!\d)(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?!\d)/u;
-
-/** Today, and the day before it — the only two relative days a message may name. */
-const TODAY_WORDS = /\b(hoy|ahora|ahora mismo|esta mañana|esta tarde)\b/iu;
-const YESTERDAY_WORDS = /\bayer\b/iu;
 
 /**
  * An ISIN-SHAPED token. Cut out of the text before any figure is counted, and that is
@@ -172,6 +155,13 @@ const MARKED_UNITS =
  * What turns a quantity into the WITNESS instead of the operation's own: a verb of
  * having, in the words people use. «Sumando esas 6, tengo 21» states one operation and
  * one resulting total, and reading the second as the first would double the write.
+ *
+ * The witness is still only read off a figure wearing the participaciones word, and a
+ * bare «y ahora tengo 21» is therefore dropped rather than guessed. That is the safe
+ * side of the trade: a number after a verb of having is «tengo 312,55 € en la cuenta»
+ * as often as it is a quantity, and reading it as one would eat the importe. The witness
+ * is optional by design (#1466), so losing it costs a check; misreading it would cost a
+ * write. The gap message asks for the word.
  */
 const HOLDING_VERBS =
   /(?<!\p{L})(?:tengo|tienes|tenemos|tener|quedan|queda|quedo|acumul\p{L}*|son ya|ahora son|pasan a ser|paso a)(?!\p{L})/iu;
@@ -244,7 +234,7 @@ export function parseTypedHoldingEvent(
 ): TypedHoldingEventReading {
   const scanned = text.slice(0, MAX_SCANNED_CHARS);
   const withoutIsin = isinIn(scanned);
-  const dated = dateIn(withoutIsin.rest, today);
+  const dated = dateInMessage(withoutIsin.rest, today);
   const body = dated === null ? withoutIsin.rest : dated.rest;
 
   const fees = feesIn(body);
@@ -275,7 +265,7 @@ export function parseTypedHoldingEvent(
     }
     if (amount === undefined && pricePerUnit === undefined) missing.push("money");
   }
-  const executedAt = dated?.date ?? null;
+  const executedAt = dated?.day ?? null;
   if (executedAt === null) missing.push("date");
 
   if (missing.length > 0 || executedAt === null) {
@@ -382,7 +372,15 @@ export function holdingEventFromTyped(
   };
 }
 
-/** `participaciones × precio + comisión`, through the money seam and back to major units. */
+/**
+ * `participaciones × precio + comisión`, through the money seam and back to major units.
+ *
+ * The round trip out of céntimos is the contract's, not a choice: an
+ * {@link ExtractedHoldingEvent} states its figures in the document's own major units, and
+ * `resolveOperationTerms` takes them straight back down with `multiplyToMinor`. The
+ * arithmetic itself never leaves integer cents, so the only float here is the last
+ * division, which is exact for every amount the ledger can hold.
+ */
 function derivedAmount(units: string, price: number, fees: number | undefined): number {
   const grossMinor = multiplyToMinor(units, String(price));
   const feesMinor = fees === undefined ? 0 : multiplyToMinor(String(fees), "1");
@@ -400,45 +398,6 @@ function isinIn(text: string): { isin?: string; rest: string } {
   return { rest, ...(isin === undefined ? {} : { isin }) };
 }
 
-/** The message's date and the message with that date cut out of it. */
-interface DatedText {
-  /** `null` when a date-SHAPED token turned out not to be a day (#1395). */
-  date: string | null;
-  rest: string;
-}
-
-/**
- * The day this message names, explicit or relative. A date-shaped token that is not a
- * real day (`30/02/2026`) fails closed with the token cut out, so the refusal can name
- * every gap at once instead of one per round trip.
- */
-function dateIn(text: string, today: string): DatedText | null {
-  const iso = ISO_DATE.exec(text);
-  if (iso) return { date: isIsoDay(iso[0]) ? iso[0] : null, rest: cut(text, iso) };
-
-  const local = LOCAL_DATE.exec(text);
-  if (local) {
-    const [, day, month, year] = local as unknown as [string, string, string, string];
-    const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-    return { date: isIsoDay(date) ? date : null, rest: cut(text, local) };
-  }
-
-  if (YESTERDAY_WORDS.test(text)) return { date: dayBefore(today), rest: text };
-  if (TODAY_WORDS.test(text)) return { date: today, rest: text };
-  return null;
-}
-
-function cut(text: string, match: RegExpExecArray): string {
-  return text.slice(0, match.index) + text.slice(match.index + match[0].length);
-}
-
-/** The calendar day before `day`, through UTC so no timezone can shift it. */
-function dayBefore(day: string): string {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - 1);
-  return date.toISOString().slice(0, 10);
-}
-
 /** The commission the message states by its own word, and what is left to read. */
 function feesIn(text: string): { value?: number; rest: string } {
   for (const pattern of [FEES_BEFORE, FEES_AFTER]) {
@@ -453,7 +412,7 @@ function feesIn(text: string): { value?: number; rest: string } {
 interface StatedUnits {
   /** Decimal strings, in printed order. Empty when the message states none. */
   units: string[];
-  /** The witness, when a verb of having marks one («y ahora tengo 21»). */
+  /** The witness, when a verb of having marks one («y ahora tengo 21 participaciones»). */
   declaredTotal?: string;
   rest: string;
 }
@@ -517,6 +476,9 @@ function figuresIn(
   let cursor = 0;
   let match = scanner.exec(text);
   while (match !== null) {
+    // A figure followed by `%` is dropped whatever pattern found it: «una comisión del
+    // 0,25 %» is a rate, not an importe, and reading it as one would net a percentage
+    // off the amount.
     const after = text.slice(match.index + match[0].length).trimStart();
     const value = after.startsWith("%") ? null : normalizeExtractedNumber(pick(match));
     if (value !== null) {
@@ -543,96 +505,4 @@ function directionIn(text: string): "in" | "out" | null {
   const sells = SELL_VERBS.test(text);
   if (buys === sells) return null;
   return buys ? "in" : "out";
-}
-
-/** The two words the mismatch sentences need when the fact came off the message. */
-const MESSAGE_VOICE: OperationFactVoice = {
-  of: "del mensaje",
-  subject: "el mensaje",
-};
-
-/**
- * A figure relayed by the model contradicts what the user typed. Mirrors
- * `operationFactNotInDocumentMessage`, and for the same reason: a refusal that does not
- * name the real value invites the same guess again.
- */
-export function operationFactNotInMessageMessage(mismatches: readonly string[]): string {
-  return (
-    `Esto no es lo que dice el mensaje del usuario: ${mismatches.join("; ")}. ` +
-    "No anoto una operación con cifras que no salgan de él: las leo yo de lo que ha " +
-    "escrito. Pásame los datos tal cual los ha escrito, o pídele el justificante."
-  );
-}
-
-export type TypedOperationResolution =
-  | { ok: true; event: TypedHoldingEvent }
-  | { ok: false; error: OperationFrontierError };
-
-/**
- * Resolve the fact a DICTATED operation will be built from — the typed lane's half of
- * `resolveOperationEvent`, and deliberately shaped like it.
- *
- * The result is always what worthline READ: the claim only says which holding and which
- * direction, and a claim that disagrees fails the whole call. Two refusals are the
- * lane's own — a message that states no operation is routed to both vías, and a
- * half-written one is told which figure is missing — because «no te he entendido» is
- * the answer #1418 is named after.
- */
-export function resolveTypedOperationEvent(
-  claim: OperationFactClaim,
-  reading: TypedHoldingEventReading | undefined,
-): TypedOperationResolution {
-  if (reading === undefined || reading.status === "absent") {
-    return {
-      error: {
-        error: "operation_document_required",
-        message: OPERATION_DOCUMENT_REQUIRED_MESSAGE,
-      },
-      ok: false,
-    };
-  }
-  if (reading.status === "incomplete") {
-    return {
-      error: {
-        error: "operation_fact_incomplete_in_message",
-        message: typedHoldingEventGapMessage(reading.missing),
-      },
-      ok: false,
-    };
-  }
-
-  const { event } = reading;
-  const conflict = typedDirectionConflict(event, claim.kind);
-  if (conflict !== null) {
-    return {
-      error: { error: "operation_kind_contradicts_message", message: conflict },
-      ok: false,
-    };
-  }
-
-  // The comparison runs over the event as it will be COMPOSED, so the model is checked
-  // against the very figures the ledger would receive — including the importe derived
-  // from `participaciones × precio`. The currency is the one place the two lanes differ:
-  // when the user marked none there is nothing to contradict, so the claim's currency is
-  // dropped from the check rather than measured against a placeholder (#1401 is about
-  // never assuming a currency in silence, and inventing one HERE to refuse with would be
-  // the same sin wearing a guard's clothes).
-  const currency = event.currency ?? claim.currency?.trim().toUpperCase() ?? "EUR";
-  const checked: OperationFactClaim =
-    event.currency === null ? { ...claim, currency: undefined } : claim;
-  const mismatches = operationClaimMismatches(
-    checked,
-    holdingEventFromTyped(event, currency),
-    MESSAGE_VOICE,
-  );
-  if (mismatches.length > 0) {
-    return {
-      error: {
-        error: "operation_fact_not_in_message",
-        message: operationFactNotInMessageMessage(mismatches),
-      },
-      ok: false,
-    };
-  }
-  return { event, ok: true };
 }
