@@ -1294,6 +1294,46 @@ describe("parseUpdateInvestmentCommand — the ficha applies the same ISIN rule 
   });
 });
 
+describe("parseUpdateInvestmentCommand — correcting the instrument (#1512)", () => {
+  test("carries a ledger-backed instrument through", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ instrument: "pension_plan", name: "Plan de pensiones" }),
+      "asset_plan",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.instrument).toBe("pension_plan");
+  });
+
+  test("omits the key when the form carries no instrument", () => {
+    const result = parseUpdateInvestmentCommand(form({ name: "ACME" }), "asset_acme");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("instrument" in result.command).toBe(false);
+  });
+
+  test("refuses an instrument that is not valued from a ledger", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ instrument: "property", name: "ACME" }),
+      "asset_acme",
+    );
+
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("se valora de otra forma");
+  });
+
+  test("refuses a value outside the vocabulary instead of indexing the catalog with it", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ instrument: "real_estate", name: "ACME" }),
+      "asset_acme",
+    );
+
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("parseRouteOperationCommand — asset id from route, strict field errors", () => {
   test("returns ok command for valid buy", () => {
     const result = parseRouteOperationCommand(

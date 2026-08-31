@@ -126,6 +126,16 @@ const INSTRUMENT_DEFAULTS: Record<Instrument, InstrumentDefaults> = {
  */
 export const INSTRUMENTS = Object.keys(INSTRUMENT_DEFAULTS) as readonly Instrument[];
 
+/**
+ * Whether an untrusted value is a member of the instrument vocabulary (#1609).
+ * The guard every boundary that reads an instrument off a payload owes itself:
+ * `defaultsFor` indexes the exhaustive map, so a stray string reaches it as
+ * `undefined` and blows up on the first property read.
+ */
+export function isInstrument(value: unknown): value is Instrument {
+  return typeof value === "string" && (INSTRUMENTS as readonly string[]).includes(value);
+}
+
 /** The defaults for an instrument — its rung, valuation method and price provider. */
 export function defaultsFor(instrument: Instrument): InstrumentDefaults {
   return INSTRUMENT_DEFAULTS[instrument];

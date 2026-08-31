@@ -17,6 +17,7 @@ import {
   createManualAsset,
   defaultInstrumentForAssetType,
   defaultInvestmentPriceProvider,
+  defaultsFor,
   validIsinOrNull,
   valueHousingAtDate,
 } from "@worthline/domain";
@@ -92,6 +93,13 @@ export interface InvestmentAssetFull {
 export interface UpdateInvestmentAssetInput {
   id: string;
   name: string;
+  /**
+   * Correct what the investment IS (#1512, ADR 0098) — `fund` → `pension_plan` and
+   * the like. Only the classification column moves: unlike the metadata columns
+   * below, the instrument's default rung and price provider are NOT re-applied, so
+   * a working symbol is never traded for a label fix.
+   */
+  instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
   isin?: string;
@@ -143,6 +151,19 @@ export interface UpdateAssetInput {
   liquidityTier?: LiquidityTier;
   isPrimaryResidence?: boolean;
   ownership?: OwnershipShare[];
+  /**
+   * Correct what the holding IS (#1512, ADR 0098). Authoritative when present:
+   * the legacy `type` is re-derived FROM it (`defaultsFor(...).assetType`) rather
+   * than the other way round, so a `type` passed alongside is overridden instead
+   * of racing it. Nothing else is re-applied — the declared rung, the valuation
+   * and the price configuration the instrument merely *suggested* at the alta all
+   * survive the correction.
+   *
+   * The caller is responsible for offering only a same-shape instrument
+   * (`assignableInstruments`): moving a hand-valued asset onto a `derived`
+   * instrument would promise an operations ledger this store never created.
+   */
+  instrument?: Instrument;
 }
 
 /**
@@ -926,11 +947,33 @@ async function updateAsset(
     fields.isPrimaryResidence = input.isPrimaryResidence ? 1 : 0;
   }
 
+  // #1512: an EXPLICIT instrument is the correction itself, so it wins over the
+  // derivation below and drags the legacy AssetType behind it (ADR 0098). An
+  // investment instrument declares no AssetType — it persists through the
+  // investment path — so `type` is left as it stands for those.
+  //
+  // The primary-residence flag is force-cleared off any non-`property`
+  // instrument: leaving it set would let the very next type edit re-derive
+  // `property` (the rule right below) and silently undo the correction.
+  if (input.instrument !== undefined) {
+    fields.instrument = input.instrument;
+    const assetType = defaultsFor(input.instrument).assetType;
+    if (assetType) {
+      fields.type = assetType;
+    }
+    if (input.instrument !== "property") {
+      fields.isPrimaryResidence = 0;
+    }
+  }
+
   // Housing-ness is sourced from the instrument (#149), and the stored column
   // wins in instrumentOfAsset — so a type / primary-residence edit must re-derive
   // it from the EFFECTIVE values (current row merged with the input). Otherwise
   // the instrument goes stale and isHousingAsset silently diverges from the edit.
-  if (input.type !== undefined || input.isPrimaryResidence !== undefined) {
+  if (
+    input.instrument === undefined &&
+    (input.type !== undefined || input.isPrimaryResidence !== undefined)
+  ) {
     const current = await db
       .select({ type: assets.type, isPrimaryResidence: assets.isPrimaryResidence })
       .from(assets)
@@ -1033,6 +1076,13 @@ async function updateInvestmentAsset(
 
   if (input.liquidityTier) {
     assetFields.liquidityTier = input.liquidityTier;
+  }
+
+  // #1512: the classification, and nothing that hangs off it. An investment
+  // instrument declares no legacy AssetType (it persists through the investment
+  // path), so `assets.type` stays as it is.
+  if (input.instrument) {
+    assetFields.instrument = input.instrument;
   }
 
   await ctx.transaction(async () => {

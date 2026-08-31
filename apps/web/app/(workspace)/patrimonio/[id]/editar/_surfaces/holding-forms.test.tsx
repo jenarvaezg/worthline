@@ -48,8 +48,8 @@ describe("AssetEditForm — investment settings", () => {
   });
 });
 
-describe("AssetEditForm — edit wording", () => {
-  test("does not expose raw asset types in editable copy", () => {
+describe("AssetEditForm — the instrument picker (#1512)", () => {
+  test("offers the hand-valued instruments by name, never the raw AssetType", () => {
     const markup = renderToStaticMarkup(
       <AssetEditForm
         boardHref="/patrimonio#wl_hld_a"
@@ -73,13 +73,87 @@ describe("AssetEditForm — edit wording", () => {
       />,
     );
 
+    // #1512 replaced the legacy three-value «Tipo» select (cash / manual /
+    // real_estate — the pre-ADR-0014 vocabulary) with the instrument the app
+    // actually classifies by. The raw enum values stay out of the copy either way.
     expect(markup).not.toContain(">Cash<");
     expect(markup).not.toContain(">Manual<");
-    expect(markup).not.toContain(">Inmueble<");
-    expect(markup).toContain(">Cuenta o efectivo<");
-    expect(markup).toContain(">Activo general<");
-    expect(markup).toContain(">Vivienda o inmueble<");
+    expect(markup).not.toContain(">real_estate<");
+    expect(markup).toContain('name="instrument"');
+    expect(markup).not.toContain('name="type"');
+    expect(markup).toContain(">Inmueble<");
+    expect(markup).toContain(">Cuenta corriente<");
+    expect(markup).toContain(">Depósito a plazo<");
+    expect(markup).toContain(">Otro<");
+    // A `derived` instrument is NOT on offer: this row has no operations ledger.
+    expect(markup).not.toContain(">Plan de pensiones<");
     expect(markup).toContain("Disponibilidad");
+  });
+
+  test("keeps «Vivienda habitual» only while the holding IS an inmueble", () => {
+    const markup = renderToStaticMarkup(
+      <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar"
+        asset={{
+          currency: "EUR",
+          currentValue: { amountMinor: 45_000_00, currency: "EUR" },
+          id: "asset_pension",
+          instrument: "other",
+          isPrimaryResidence: false,
+          liquidityTier: "term-locked",
+          name: "Pensión Pública",
+          ownership: [{ memberId: "m1", shareBps: 10_000 }],
+          type: "manual",
+        }}
+        members={[{ id: "m1", name: "Jose" }]}
+        method="stored"
+        privacyMode={false}
+        scopeMemberId="m1"
+        values={{}}
+      />,
+    );
+
+    expect(markup).not.toContain("Vivienda habitual");
+    expect(markup).toContain('name="instrument"');
+  });
+
+  test("offers an investment only the instruments valued from a ledger", () => {
+    const markup = renderToStaticMarkup(
+      <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar"
+        asset={{
+          currency: "EUR",
+          currentValue: { amountMinor: 94964, currency: "EUR" },
+          id: "asset_fund",
+          instrument: "fund",
+          isPrimaryResidence: false,
+          liquidityTier: "market",
+          name: "Vanguard Fund",
+          ownership: [{ memberId: "m1", shareBps: 10_000 }],
+          type: "investment",
+        }}
+        investment={{
+          currency: "EUR",
+          id: "asset_fund",
+          liquidityTier: "market",
+          name: "Vanguard Fund",
+          ownership: [{ memberId: "m1", shareBps: 10_000 }],
+          priceProvider: "yahoo",
+        }}
+        members={[{ id: "m1", name: "Jose" }]}
+        method="derived"
+        privacyMode={false}
+        scopeMemberId="m1"
+        updateInvestmentAction={() => undefined}
+        values={{}}
+      />,
+    );
+
+    expect(markup).toContain(">Plan de pensiones<");
+    expect(markup).toContain(">Fondo<");
+    expect(markup).not.toContain(">Inmueble<");
   });
 });
 

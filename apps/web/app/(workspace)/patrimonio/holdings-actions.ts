@@ -16,11 +16,18 @@ import {
   executeUpdateAssetOwnershipSplitCommand,
   executeUpdateLiabilityOwnershipSplitCommand,
 } from "@worthline/db";
-import type { TrashExit } from "@worthline/domain";
+import type { Instrument, ManualAsset, TrashExit } from "@worthline/domain";
 import {
   checkSinglePrimaryResidence,
   createInvestmentOperationSafe,
+  defaultsFor,
+  instrumentLabelEs,
+  instrumentOfAsset,
+  isAssignableInstrument,
+  isInstrument,
+  keepsKnownPartialOwnership,
   netUnitsFromOperations,
+  ownershipShortfallOnCorrection,
   parseTrashExit,
 } from "@worthline/domain";
 import { convertCapturedOperation } from "@worthline/pricing";
@@ -396,19 +403,65 @@ export async function editAssetAction(
         return withBoardAnchor(store, id, mapOwnershipSplitCommandResult(commandResult));
       }
 
-      const type = parseAssetType(formData.get("type"));
-      const liquidityTier = parseLiquidityTier(formData.get("liquidityTier"));
-      const isPrimaryResidence = formData.get("isPrimaryResidence") === "on";
+      const assets = await store.assets.readAssets();
+      const current = assets.find((asset) => asset.id === id) ?? null;
+      if (!current) {
+        return { ok: false, error: "No se encontró el activo." };
+      }
 
-      const ownership = parseOwnership(formData, workspace.members, {
-        completeShortfall: type !== "real_estate",
+      // #1512: «Lo básico» now edits the INSTRUMENT, not the legacy AssetType —
+      // the type is derived from it in the store. A form that posts no instrument
+      // (the connected-source surfaces, which lock the identity) keeps the old
+      // type-first path untouched.
+      const parsedInstrument = parseCorrectedInstrument(formData, current);
+      if (!parsedInstrument.ok) {
+        return { ok: false, error: parsedInstrument.error };
+      }
+      const instrument = parsedInstrument.instrument;
+      const type = instrument
+        ? (defaultsFor(instrument).assetType ?? current.type)
+        : parseAssetType(formData.get("type"));
+      const liquidityTier = parseLiquidityTier(formData.get("liquidityTier"));
+      // The one spelling of the known-partial rule (#171/#241): a holding whose
+      // split may total under 100 % is an inmueble and nothing else. It decides
+      // both whether the save completes the shortfall and whether the command
+      // accepts the result.
+      const keepsPartialOwnership = instrument
+        ? keepsKnownPartialOwnership(instrument)
+        : type === "real_estate";
+      // A non-`property` instrument cannot be anybody's habitual residence, and
+      // leaving the flag set would let the next type edit re-derive `property` and
+      // undo the correction (the store force-clears it for the same reason).
+      const isPrimaryResidence =
+        instrument && instrument !== "property"
+          ? false
+          : formData.get("isPrimaryResidence") === "on";
+
+      // The split AS TYPED — what the guard below has to judge. Reading the stored
+      // ownership instead would both miss a partial arriving in THIS submit and
+      // block the legitimate save that fixes the titularidad and the instrument
+      // together.
+      const enteredOwnership = parseOwnership(formData, workspace.members, {
+        completeShortfall: false,
       });
+      if (instrument) {
+        const shortfallBps = ownershipShortfallOnCorrection({
+          enteredBps: totalShareBps(enteredOwnership),
+          to: instrument,
+        });
+        if (shortfallBps > 0) {
+          return { ok: false, error: partialOwnershipRefusal(instrument, shortfallBps) };
+        }
+      }
+      const ownership = keepsPartialOwnership
+        ? enteredOwnership
+        : parseOwnership(formData, workspace.members, {});
 
       if (isPrimaryResidence) {
-        const primaryViolation = checkSinglePrimaryResidence(
-          await store.assets.readAssets(),
-          { assetId: id, isPrimaryResidence },
-        );
+        const primaryViolation = checkSinglePrimaryResidence(assets, {
+          assetId: id,
+          isPrimaryResidence,
+        });
         if (primaryViolation) {
           return { ok: false, error: mapDomainViolation(primaryViolation) };
         }
@@ -416,8 +469,18 @@ export async function editAssetAction(
 
       const commandResult = await executeUpdateAssetOwnershipSplitCommand(store, {
         assetId: id,
-        allowKnownPartial: type === "real_estate",
-        patch: { name, type, liquidityTier, isPrimaryResidence, ownership },
+        allowKnownPartial: keepsPartialOwnership,
+        patch: {
+          liquidityTier,
+          isPrimaryResidence,
+          name,
+          ownership,
+          // Exactly one of the two axes travels: the instrument when the form
+          // corrected it (the store derives `type` from it), the legacy `type`
+          // otherwise — the path the connected-source surfaces still post on.
+          // `exactOptionalPropertyTypes` forbids passing `undefined` for either.
+          ...(instrument ? { instrument } : { type }),
+        },
         today,
       });
       return withBoardAnchor(store, id, mapOwnershipSplitCommandResult(commandResult));
@@ -425,4 +488,50 @@ export async function editAssetAction(
     onError: ({ formData, error }) => editAssetErrorUrl(formData, error),
     onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
   })(formData, ..._testArgs);
+}
+
+/**
+ * The instrument correction «Lo básico» carries, if any (#1512, ADR 0098).
+ *
+ * An instrument decides how the holding is VALUED, so a correction may only move
+ * it WITHIN its persistence shape (`assignableInstruments`). Handing a hand-valued
+ * row a `derived` instrument would promise an operations ledger that does not
+ * exist, and the ficha would then render an investment surface over nothing.
+ *
+ * `isInstrument` comes first: a stray string must never reach the exhaustive
+ * catalog, and the refusal must not tell the user their value has some other way
+ * of being valued when it has none.
+ */
+function parseCorrectedInstrument(
+  formData: FormData,
+  current: ManualAsset,
+): { ok: true; instrument: Instrument | undefined } | { ok: false; error: string } {
+  const raw = String(formData.get("instrument") ?? "").trim();
+  if (!raw) {
+    return { ok: true, instrument: undefined };
+  }
+  if (!isInstrument(raw) || !isAssignableInstrument(instrumentOfAsset(current), raw)) {
+    return {
+      ok: false,
+      error: `No se puede reclasificar «${current.name}» a ese tipo: se valora de otra forma. Para eso hay que darlo de alta de nuevo.`,
+    };
+  }
+  return { ok: true, instrument: raw };
+}
+
+/** An ownership split's declared total, in basis points. */
+function totalShareBps(ownership: readonly { shareBps: number }[]): number {
+  return ownership.reduce((sum, share) => sum + share.shareBps, 0);
+}
+
+/**
+ * The refusal for a correction that would close an ownership shortfall on the way
+ * out of `property` — the one shape whose split may total under 100 % (#171). Every
+ * other instrument completes the shortfall on save, so letting this through would
+ * hand the user the missing share of the value: a change of net worth dressed as a
+ * change of label.
+ */
+function partialOwnershipRefusal(to: Instrument, shortfallBps: number): string {
+  const declared = ((10_000 - shortfallBps) / 100).toFixed(2).replace(".", ",");
+  return `Has declarado una titularidad parcial (${declared} %), y solo un inmueble la mantiene. En «${instrumentLabelEs(to)}» pasaría a contar al 100 %: ajusta primero la titularidad.`;
 }

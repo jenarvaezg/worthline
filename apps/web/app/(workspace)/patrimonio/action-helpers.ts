@@ -12,6 +12,9 @@ import { type OwnershipSplitCommandResult } from "@worthline/db";
 export const EDIT_ASSET_FIELDS = [
   "name",
   "type",
+  // #1512: a refused correction must round-trip the instrument the user picked,
+  // or the select snaps back to the misclassification they came to fix.
+  "instrument",
   "liquidityTier",
   "isPrimaryResidence",
   "ownershipPreset",

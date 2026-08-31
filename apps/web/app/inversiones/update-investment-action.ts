@@ -30,6 +30,9 @@ import { redirect } from "next/navigation";
 
 const EDIT_INVESTMENT_FIELDS = [
   "name",
+  // #1512: a rejected save must round-trip the instrument the user picked, or the
+  // select silently snaps back to the misclassification they came to fix.
+  "instrument",
   "liquidityTier",
   "unitSymbol",
   "isin",
