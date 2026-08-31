@@ -763,7 +763,20 @@ export {
   defaultInstrumentForLiability,
   defaultsFor,
   INSTRUMENTS,
+  isInstrument,
 } from "./instrument-catalog";
+export type {
+  InstrumentPickerImpact,
+  InstrumentShape,
+} from "./instrument-correction";
+export {
+  assignableInstruments,
+  instrumentPickerImpact,
+  isAssignableInstrument,
+  isAssignableInstrumentForShape,
+  keepsKnownPartialOwnership,
+  ownershipShortfallOnCorrection,
+} from "./instrument-correction";
 export type {
   InstrumentIdentityDeclaration,
   InstrumentIdentityFillResolution,
@@ -771,6 +784,7 @@ export type {
   InstrumentIdentityPatch,
 } from "./instrument-identity-fill";
 export { resolveInstrumentIdentityFill } from "./instrument-identity-fill";
+export { INSTRUMENT_LABELS_ES, instrumentLabelEs } from "./instrument-labels";
 export type {
   CreateInvestmentOperationInput,
   InvestmentOperation,

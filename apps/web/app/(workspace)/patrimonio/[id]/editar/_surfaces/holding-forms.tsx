@@ -23,13 +23,17 @@ import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline
 import {
   formatMoneyInput,
   formatMoneyMinorPrivacy,
+  instrumentOfAsset,
   isRetiredInvestmentPriceProvider,
+  keepsKnownPartialOwnership,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   VALUE_ONLY_ACK_LABEL,
   type ValueOnlyOpening,
   valueOnlySymbolFormNotice,
 } from "@worthline/domain";
 import Link from "next/link";
+
+import { InstrumentPicker } from "./instrument-picker";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -70,6 +74,9 @@ export function AssetEditForm({
   values: Record<string, string>;
 }) {
   const isInvestment = asset.type === "investment";
+  // What the holding IS today — the picker's own value, and the list of
+  // corrections it may offer (#1512).
+  const currentInstrument = instrumentOfAsset(asset);
 
   // A connected-source holding (Numista coins / Binance crypto) is `derived`, like
   // an investment: its name/type/liquidity are fixed by the source and its value
@@ -129,6 +136,14 @@ export function AssetEditForm({
               name="name"
             />
           </label>
+
+          {/* #1512: la misma corrección que en un activo de valor declarado, con
+              la lista de instrumentos que SÍ se valoran con títulos y precio. */}
+          <InstrumentPicker
+            currentInstrument={currentInstrument}
+            liquidityTier={investment.liquidityTier}
+            values={values}
+          />
 
           <label>
             Disponibilidad
@@ -252,14 +267,14 @@ export function AssetEditForm({
           </p>
         ) : (
           <>
-            <label>
-              Tipo
-              <select defaultValue={values["type"] ?? asset.type} name="type">
-                <option value="cash">Cuenta o efectivo</option>
-                <option value="manual">Activo general</option>
-                <option value="real_estate">Vivienda o inmueble</option>
-              </select>
-            </label>
+            {/* #1512: el instrumento se corrige AQUÍ, con la misma lista del alta.
+                El «Tipo» heredado (cash/manual/real_estate) ya no se teclea: se
+                deriva del instrumento en el store (ADR 0098). */}
+            <InstrumentPicker
+              currentInstrument={currentInstrument}
+              liquidityTier={asset.liquidityTier}
+              values={values}
+            />
 
             <label>
               Disponibilidad
@@ -275,21 +290,26 @@ export function AssetEditForm({
               </select>
             </label>
 
-            <label className="checkLine">
-              <input
-                defaultChecked={
-                  values["isPrimaryResidence"]
-                    ? values["isPrimaryResidence"] === "on"
-                    : asset.isPrimaryResidence
-                }
-                name="isPrimaryResidence"
-                type="checkbox"
-              />{" "}
-              Vivienda habitual
-            </label>
+            {/* La casilla existe solo mientras el activo ES un inmueble: en
+                cualquier otro instrumento no hay estado que marcar, y dejarla
+                puesta resucitaría `property` en la siguiente edición (#1512). */}
+            {currentInstrument === "property" ? (
+              <label className="checkLine">
+                <input
+                  defaultChecked={
+                    values["isPrimaryResidence"]
+                      ? values["isPrimaryResidence"] === "on"
+                      : asset.isPrimaryResidence
+                  }
+                  name="isPrimaryResidence"
+                  type="checkbox"
+                />{" "}
+                Vivienda habitual
+              </label>
+            ) : null}
 
             <OwnershipInputs
-              allowPartial={asset.type === "real_estate"}
+              allowPartial={keepsKnownPartialOwnership(currentInstrument)}
               members={members}
               scopeMemberId={scopeMemberId}
               currentOwnership={asset.ownership}

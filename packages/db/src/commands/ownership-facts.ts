@@ -1,5 +1,6 @@
 import type { StoreContext } from "@db/store-context";
-import type { OwnershipShare } from "@worthline/domain";
+import type { Instrument, ManualAsset, OwnershipShare } from "@worthline/domain";
+import { defaultsFor } from "@worthline/domain";
 import type {
   DatedFactCommandImplementations,
   DatedFactStores,
@@ -19,6 +20,21 @@ function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): bo
   if (before.length !== after.length) return true;
   const beforeByMember = new Map(before.map((share) => [share.memberId, share.shareBps]));
   return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
+}
+
+/**
+ * The legacy AssetType a patch leaves behind — the instrument's own AssetType when
+ * the patch corrects the instrument (`updateAsset` derives the column from it,
+ * #1512), the patched type otherwise, and the stored one when neither moves.
+ */
+function effectiveType(
+  patch: { instrument?: Instrument; type?: ManualAsset["type"] },
+  stored: ManualAsset["type"] | undefined,
+): ManualAsset["type"] | undefined {
+  const fromInstrument = patch.instrument
+    ? defaultsFor(patch.instrument).assetType
+    : undefined;
+  return fromInstrument ?? patch.type ?? stored;
 }
 
 /**
@@ -48,7 +64,11 @@ export function createOwnershipCommands(
         // already re-derives every affected snapshot from the asset's new split,
         // so it covers an ownership edit too (and a from-date in the future is
         // guarded inside the helper).
-        const type = patch.type ?? before?.type;
+        // The EFFECTIVE type after the patch, not the one on the row: an
+        // instrument correction (#1512) drags the legacy AssetType behind it and
+        // posts no `type` of its own, so reading the stale column would send a
+        // holding just promoted to `property` down the non-housing branch.
+        const type = effectiveType(patch, before?.type);
         if (type === "real_estate") {
           await rippleHousingAfterEdit(
             ctx,

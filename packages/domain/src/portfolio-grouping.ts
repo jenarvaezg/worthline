@@ -10,6 +10,7 @@
  */
 
 import type { Instrument } from "./instrument-catalog";
+import { instrumentLabelEs } from "./instrument-labels";
 import { LIQUIDITY_LADDER, LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
 import type {
@@ -106,28 +107,6 @@ export interface PortfolioGroup {
    */
   totalMinor: MoneyMinor;
 }
-
-// ── Labels ───────────────────────────────────────────────────────────────────
-
-/** Spanish instrument labels for the instrument grouping headers (#154). */
-const INSTRUMENT_LABELS: Record<Instrument, string> = {
-  current_account: "Cuenta corriente",
-  term_deposit: "Depósito a plazo",
-  fund: "Fondo",
-  etf: "ETF",
-  stock: "Acción",
-  index: "Índice",
-  pension_plan: "Plan de pensiones",
-  crypto: "Cripto",
-  precious_metal: "Metal precioso",
-  vehicle: "Vehículo",
-  property: "Inmueble",
-  mortgage: "Hipoteca",
-  loan: "Préstamo",
-  credit_card: "Tarjeta de crédito",
-  coin_collection: "Colección de monedas",
-  other: "Otro",
-};
 
 // ── Grouping ─────────────────────────────────────────────────────────────────
 
@@ -324,7 +303,7 @@ export function groupPortfolio(
   return order.map((instrument) =>
     makeGroup(
       instrument,
-      INSTRUMENT_LABELS[instrument],
+      instrumentLabelEs(instrument),
       byInstrument.get(instrument)!,
       currency,
     ),

@@ -12,6 +12,8 @@ import {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   defaultsFor,
+  INSTRUMENTS,
+  isInstrument,
 } from "./instrument-catalog";
 
 describe("defaultsFor — instrument defaults (#149)", () => {
@@ -186,5 +188,21 @@ describe("defaultInstrumentForLiability — backfill from type + debt model (#14
     expect(defaultInstrumentForLiability("debt", "amortizable")).toBe("loan");
     expect(defaultInstrumentForLiability("debt", "informal")).toBe("loan");
     expect(defaultInstrumentForLiability("debt", null)).toBe("loan");
+  });
+});
+
+describe("isInstrument (#1609/#1512)", () => {
+  test("accepts every member of the vocabulary", () => {
+    for (const instrument of INSTRUMENTS) {
+      expect(isInstrument(instrument)).toBe(true);
+    }
+  });
+
+  test("rejects anything else, including non-strings", () => {
+    expect(isInstrument("real_estate")).toBe(false);
+    expect(isInstrument("")).toBe(false);
+    expect(isInstrument(undefined)).toBe(false);
+    expect(isInstrument(null)).toBe(false);
+    expect(isInstrument({ instrument: "fund" })).toBe(false);
   });
 });

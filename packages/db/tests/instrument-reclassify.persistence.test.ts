@@ -71,3 +71,150 @@ describe("editing an asset keeps instrument + housing-ness in sync (#149)", () =
     store.close();
   });
 });
+
+/**
+ * #1512: the instrument is no longer a write-once alta choice. A holding filed
+ * under the wrong instrument (a public pension as `property`) can be corrected by
+ * name, and the correction touches the classification and nothing else — not the
+ * declared value, not the price configuration, not the payouts.
+ */
+describe("correcting an asset's instrument by name (#1512)", () => {
+  test("an explicit instrument wins over the type-derived one and re-derives the type", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 4500000,
+      id: "a3",
+      liquidityTier: "illiquid",
+      name: "Pensión Pública Seguridad Social",
+      ownership: own,
+      type: "real_estate",
+    });
+
+    await store.assets.updateAsset("a3", { instrument: "term_deposit" });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a3")!;
+    expect(after.instrument).toBe("term_deposit");
+    // The legacy AssetType follows the instrument, never the other way round.
+    expect(after.type).toBe("manual");
+    expect(isHousingAsset(after)).toBe(false);
+    store.close();
+  });
+
+  test("the declared value survives the correction untouched", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 4500000,
+      id: "a4",
+      liquidityTier: "illiquid",
+      name: "Pensión Pública",
+      ownership: own,
+      type: "real_estate",
+    });
+
+    await store.assets.updateAsset("a4", { instrument: "other" });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a4")!;
+    expect(after.currentValue.amountMinor).toBe(4500000);
+    expect(after.liquidityTier).toBe("illiquid");
+    store.close();
+  });
+
+  test("promoting a plain asset to property puts it back on housing", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30000000,
+      id: "a5",
+      liquidityTier: "illiquid",
+      name: "Piso de Plasencia",
+      ownership: own,
+      type: "manual",
+    });
+
+    await store.assets.updateAsset("a5", { instrument: "property" });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a5")!;
+    expect(after.instrument).toBe("property");
+    expect(after.type).toBe("real_estate");
+    expect(isHousingAsset(after)).toBe(true);
+    store.close();
+  });
+
+  test("correcting away from property clears the primary-residence flag", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 30000000,
+      id: "a6",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Mi casa",
+      ownership: own,
+      type: "real_estate",
+    });
+
+    await store.assets.updateAsset("a6", { instrument: "vehicle" });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "a6")!;
+    // A vehicle cannot be anybody's habitual residence: leaving the flag set
+    // would let the next type edit resurrect `property` and undo the fix.
+    expect(after.isPrimaryResidence).toBe(false);
+    expect(after.instrument).toBe("vehicle");
+    store.close();
+  });
+
+  test("the investment ficha's own save writes the instrument and keeps the symbol", async () => {
+    const store = await freshStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "i2",
+      instrument: "fund",
+      name: "Plan de pensiones de Jorge",
+      ownership: own,
+      priceProvider: "finect",
+      providerSymbol: "N5138",
+    });
+
+    await store.assets.updateInvestmentAsset({
+      id: "i2",
+      instrument: "pension_plan",
+      name: "Plan de pensiones de Jorge",
+      priceProvider: "finect",
+      providerSymbol: "N5138",
+    });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "i2")!;
+    expect(after.instrument).toBe("pension_plan");
+    const investment = await store.assets.readInvestmentAssetById("i2");
+    expect(investment?.priceProvider).toBe("finect");
+    expect(investment?.providerSymbol).toBe("N5138");
+    store.close();
+  });
+
+  test("an investment correction leaves its price configuration alone", async () => {
+    const store = await freshStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "i1",
+      instrument: "fund",
+      name: "Plan de pensiones de Jorge",
+      ownership: own,
+      priceProvider: "yahoo",
+      providerSymbol: "SXR1.DE",
+    });
+
+    await store.assets.updateAsset("i1", { instrument: "pension_plan" });
+
+    const after = (await store.assets.readAssets()).find((a) => a.id === "i1")!;
+    expect(after.instrument).toBe("pension_plan");
+    // No AssetType of its own: it keeps persisting through the investment path.
+    expect(after.type).toBe("investment");
+
+    const investment = await store.assets.readInvestmentAssetById("i1");
+    expect(investment?.priceProvider).toBe("yahoo");
+    expect(investment?.providerSymbol).toBe("SXR1.DE");
+    store.close();
+  });
+});

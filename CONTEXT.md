@@ -90,8 +90,21 @@ is the portfolio. UI label for that list: "Patrimonio".
 What a holding actually is — e.g. a current account, term deposit, listed fund or share,
 crypto, pension plan, precious metal, vehicle, property, mortgage, or loan. A descriptive
 label that drives sensible defaults (its **liquidity tier**, its **valuation method**, a
-**price provider**); it is not the unit, and not a figure the math reads.
+**price provider**); it is not the unit, and not a figure the math reads. It is corrected
+from the **holding**'s ficha, but only within its **persistence shape** — and the
+correction re-applies none of those defaults, so a declared rung, value or price provider
+survives it (ADR 0098).
 _Avoid_: kind, type, asset type (overloaded — see Flagged ambiguities).
+
+**Persistence shape**:
+Which rows an **instrument** implies underneath a **holding**, and therefore the frontier
+an instrument correction may not cross. Four: **manual** (value on the holding's own row,
+hand-set or carried by an **appreciation rate** — cash, deposits, metals, vehicles,
+property), **investment** (**derived** from an **operation** ledger and a unit price),
+**connected** (value mirrored from a **connected source**'s positions, identity not the
+user's to edit), and **debt**. Moving a holding between shapes is a re-**alta**, not an
+edit: the target's **valuation method** would have no inputs (ADR 0098).
+_Avoid_: family (that is the ficha's rendering surface, ADR 0095), kind.
 
 **Valuation method**:
 How a **holding**'s value or balance evolves over time — the second axis after the

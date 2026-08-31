@@ -7,13 +7,16 @@ import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
+  Instrument,
   InvestmentPriceProvider,
   LiquidityTier,
   Member,
   OperationKind,
 } from "@worthline/domain";
 import {
+  isAssignableInstrumentForShape,
   isCaptureCurrency,
+  isInstrument,
   isInvestmentPriceProvider,
   isValidIsin,
 } from "@worthline/domain";
@@ -228,6 +231,7 @@ export function parseUpdateInvestmentCommand(
 ): StrictParseResult<{
   id: string;
   name: string;
+  instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
   isin?: string;
@@ -240,6 +244,24 @@ export function parseUpdateInvestmentCommand(
   if (!name) {
     return { ok: false, error: "El nombre de la inversión es obligatorio." };
   }
+
+  // #1512: the ficha may correct the instrument, but only within the shape it
+  // already has. This route serves the `investment` shape by construction (the
+  // ficha dispatches on the valuation method), so it asks the same domain gate as
+  // the asset action, keyed by that shape instead of by a row it cannot read.
+  const instrumentRaw = String(formData.get("instrument") ?? "").trim();
+  if (
+    instrumentRaw &&
+    (!isInstrument(instrumentRaw) ||
+      !isAssignableInstrumentForShape("investment", instrumentRaw))
+  ) {
+    return {
+      ok: false,
+      error:
+        "No se puede reclasificar a ese tipo: se valora de otra forma. Para eso hay que darlo de alta de nuevo.",
+    };
+  }
+  const instrument = isInstrument(instrumentRaw) ? instrumentRaw : undefined;
 
   const manualPriceRaw = String(formData.get("manualPricePerUnit") ?? "").trim();
   let manualPrice: DecimalString | undefined;
@@ -283,6 +305,7 @@ export function parseUpdateInvestmentCommand(
     command: {
       id: assetId,
       name,
+      ...(instrument ? { instrument } : {}),
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
