@@ -55,7 +55,7 @@ describe("buildHoldingPayouts", () => {
       currency: "EUR",
       todayISO: TODAY,
     });
-    expect(result).toBeNull();
+    expect(result.block).toBeNull();
   });
 
   test("maps recorded one-offs to DTOs with a stable derived public id", async () => {
@@ -69,7 +69,7 @@ describe("buildHoldingPayouts", () => {
       todayISO: TODAY,
     });
 
-    expect(result!.recorded).toEqual([
+    expect(result.block!.recorded).toEqual([
       {
         id: derivePublicId("pay", "p1"),
         object: "payout",
@@ -79,8 +79,8 @@ describe("buildHoldingPayouts", () => {
       },
     ]);
     // opaque, prefixed, leaks no internal id (ADR 0023)
-    expect(result!.recorded[0]?.id).toMatch(/^wl_pay_[0-9a-f]{32}$/);
-    expect(result!.recorded[0]?.id).not.toContain("p1");
+    expect(result.block!.recorded[0]?.id).toMatch(/^wl_pay_[0-9a-f]{32}$/);
+    expect(result.block!.recorded[0]?.id).not.toContain("p1");
   });
 
   test("exposes a schedule's declaration only — never materialized occurrences", async () => {
@@ -105,7 +105,7 @@ describe("buildHoldingPayouts", () => {
       todayISO: TODAY,
     });
 
-    expect(result!.schedules).toEqual([
+    expect(result.block!.schedules).toEqual([
       {
         id: derivePublicId("psc", "s1"),
         object: "payout_schedule",
@@ -120,8 +120,8 @@ describe("buildHoldingPayouts", () => {
       },
     ]);
     // The declaration list carries no derived occurrences (they live in trailing12m).
-    expect(result!.recorded).toEqual([]);
-    expect(result!.schedules[0]?.id).toMatch(/^wl_psc_[0-9a-f]{32}$/);
+    expect(result.block!.recorded).toEqual([]);
+    expect(result.block!.schedules[0]?.id).toMatch(/^wl_psc_[0-9a-f]{32}$/);
   });
 
   test("trailing12m sums one-offs and derived occurrences inside the window", async () => {
@@ -155,13 +155,69 @@ describe("buildHoldingPayouts", () => {
     });
 
     // 12 monthly occurrences (Aug 2025 … Jul 2026) × 90_000 + one 500_000 one-off.
-    expect(result!.trailing12m.count).toBe(13);
-    expect(result!.trailing12m.total).toEqual({
+    expect(result.block!.trailing12m.count).toBe(13);
+    expect(result.block!.trailing12m.total).toEqual({
       amountMinor: 12 * 90_000 + 500_000,
       currency: "EUR",
     });
-    expect(result!.trailing12m.windowEnd).toBe(TODAY);
-    expect(result!.trailing12m.months).toBe(12);
+    expect(result.block!.trailing12m.windowEnd).toBe(TODAY);
+    expect(result.block!.trailing12m.months).toBe(12);
+  });
+
+  /**
+   * #1627: the detail's returns fold the SAME series the block prints — one read,
+   * one collection. The whole life is exposed, not just the trailing window: a
+   * return is measured over the holding's life, so the 2024 one-off the 12m
+   * aggregate leaves out is still money the holding paid its owner.
+   */
+  test("hands out the collected series as the flows the return engine folds", async () => {
+    const result = await buildHoldingPayouts({
+      store: holdingStore(
+        {
+          h1: [
+            payout({
+              id: "p1",
+              holdingId: "h1",
+              dateISO: "2026-03-01",
+              amountMinor: 500_000,
+            }),
+            payout({
+              id: "p0",
+              holdingId: "h1",
+              dateISO: "2024-01-01",
+              amountMinor: 999_999,
+            }),
+            // Dated after today: not received yet, so it is not a flow.
+            payout({
+              id: "p2",
+              holdingId: "h1",
+              dateISO: "2027-01-01",
+              amountMinor: 111_111,
+            }),
+          ],
+        },
+        {},
+      ),
+      assetId: "h1",
+      currency: "EUR",
+      todayISO: TODAY,
+    });
+
+    expect(result.flows).toEqual([
+      { amountMinor: 500_000, date: "2026-03-01" },
+      { amountMinor: 999_999, date: "2024-01-01" },
+    ]);
+  });
+
+  test("a holding with no payouts hands out no flows", async () => {
+    const result = await buildHoldingPayouts({
+      store: holdingStore({}, {}),
+      assetId: "h1",
+      currency: "EUR",
+      todayISO: TODAY,
+    });
+
+    expect(result.flows).toEqual([]);
   });
 });
 
@@ -294,20 +350,20 @@ describe("net passive income (#1463)", () => {
       todayISO: TODAY,
     });
 
-    expect(result!.trailing12m.total).toEqual({
+    expect(result.block!.trailing12m.total).toEqual({
       amountMinor: 12 * 90_000,
       currency: "EUR",
     });
-    expect(result!.trailing12m.expenses).toEqual({
+    expect(result.block!.trailing12m.expenses).toEqual({
       amountMinor: 12 * 20_000,
       currency: "EUR",
     });
-    expect(result!.trailing12m.net).toEqual({
+    expect(result.block!.trailing12m.net).toEqual({
       amountMinor: 12 * 70_000,
       currency: "EUR",
     });
     // Per occurrence, in the schedule's own cadence — not the window's sum (#1524).
-    expect(result!.schedules[0]?.expenses).toEqual({
+    expect(result.block!.schedules[0]?.expenses).toEqual({
       amountMinor: 20_000,
       currency: "EUR",
     });
@@ -335,12 +391,18 @@ describe("net passive income (#1463)", () => {
       todayISO: TODAY,
     });
 
-    expect(result!.schedules).toHaveLength(2);
-    expect(result!.schedules[0]?.expenses).toBeNull();
-    expect(result!.schedules[1]?.expenses).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(result.block!.schedules).toHaveLength(2);
+    expect(result.block!.schedules[0]?.expenses).toBeNull();
+    expect(result.block!.schedules[1]?.expenses).toEqual({
+      amountMinor: 0,
+      currency: "EUR",
+    });
     // And the window still reads the same for both, which is exactly the ambiguity
     // this field exists to break.
-    expect(result!.trailing12m.expenses).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(result.block!.trailing12m.expenses).toEqual({
+      amountMinor: 0,
+      currency: "EUR",
+    });
   });
 
   test("the scope lens weights expenses by ownership and runs coverage on net", async () => {

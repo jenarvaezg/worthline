@@ -2,6 +2,7 @@ import type { AgentViewReadStore } from "@worthline/db";
 import type {
   CurrencyCode,
   DatedAmount,
+  DatedPayout,
   OwnershipShare,
   PassiveIncomeWindow,
   Payout,
@@ -38,40 +39,62 @@ import { moneyOf } from "./money";
 const TRAILING_MONTHS = 12;
 
 /**
+ * What one pass over a holding's payouts yields: the block the detail publishes,
+ * and the very same collected series as the dated flows the return engine folds
+ * (#1627). Both come out of ONE read and ONE collection on purpose — a detail
+ * whose returns re-read the payouts could print a gain that contradicts the
+ * payout list two blocks above it (#1422).
+ */
+export interface HoldingPayoutsRead {
+  /** Null when the holding has neither a payout nor a schedule (#659). */
+  block: AgentViewHoldingPayouts | null;
+  /** The collected series (one-offs + derived occurrences ≤ today) as flows. */
+  flows: readonly DatedPayout[];
+}
+
+/**
  * One holding's payouts: its recorded one-offs, its declared schedules, and a
  * trailing-12-month aggregate. Full (household) amounts — NOT scope-weighted —
- * matching the holding detail's `currentValue`. Null when the holding has neither
- * a payout nor a schedule, so the block honestly signals "no income here".
+ * matching the holding detail's `currentValue`. The block is null when the holding
+ * has neither a payout nor a schedule, so it honestly signals "no income here".
  */
 export async function buildHoldingPayouts(input: {
   store: AgentViewReadStore;
   assetId: string;
   currency: CurrencyCode;
   todayISO: string;
-}): Promise<AgentViewHoldingPayouts | null> {
+}): Promise<HoldingPayoutsRead> {
   const [recorded, schedules] = await Promise.all([
     input.store.readPayoutsForHolding(input.assetId),
     input.store.readPayoutSchedulesForHolding(input.assetId),
   ]);
 
   if (recorded.length === 0 && schedules.length === 0) {
-    return null;
+    return { block: null, flows: [] };
   }
 
   // One-offs (dated ≤ today) + each schedule's derived occurrences, from the single
-  // canonical collector — the trailing window then reads that one dated series.
-  const dated = collectHoldingPayouts(recorded, schedules, input.todayISO).get(
-    input.assetId,
-  );
+  // canonical collector — the trailing window and the returns fold both read that
+  // one dated series.
+  const dated =
+    collectHoldingPayouts(recorded, schedules, input.todayISO).get(input.assetId) ?? [];
 
   return {
-    recorded: recorded.map((payout) => toPayout(payout, input.currency)),
-    schedules: schedules.map((schedule) => toSchedule(schedule, input.currency)),
-    trailing12m: toWindow(
-      passiveIncomeTrailing(dated ?? [], input.todayISO, TRAILING_MONTHS),
-      input.currency,
-    ),
+    block: {
+      recorded: recorded.map((payout) => toPayout(payout, input.currency)),
+      schedules: schedules.map((schedule) => toSchedule(schedule, input.currency)),
+      trailing12m: toWindow(
+        passiveIncomeTrailing(dated, input.todayISO, TRAILING_MONTHS),
+        input.currency,
+      ),
+    },
+    flows: payoutFlows(dated),
   };
+}
+
+/** A collected payout series as the dated FLOWS the return engine folds (#657). */
+export function payoutFlows(rows: readonly DatedAmount[]): readonly DatedPayout[] {
+  return rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO }));
 }
 
 /**

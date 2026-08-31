@@ -486,6 +486,14 @@ export interface AgentViewSimpleReturn {
   cagr: string | null;
   realizedGain?: AgentViewMoney;
   unrealizedGain?: AgentViewMoney;
+  /**
+   * Recorded distributions over the holding's whole life, folded into `totalGain`
+   * (#657, #1627). Present only when the holding received one — the split then
+   * closes: `totalGain = realizedGain + unrealizedGain + payoutIncome`. Without
+   * this the dividend would sit inside the total with no line to name it, and an
+   * assistant asked where the gain comes from would find a hole (#1422).
+   */
+  payoutIncome?: AgentViewMoney;
 }
 
 export interface AgentViewMoneyWeightedReturn {
