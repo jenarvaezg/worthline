@@ -78,10 +78,22 @@ describe("HousingValuationSection — adquisición por su nombre (#1437)", () =>
     const markup = renderFor(null, [acquisitionAnchor]);
     expect(markup).toContain("Editar adquisición");
     expect(markup).toContain("Fecha de adquisición");
-    expect(markup).toContain("Precio de adquisición (EUR)");
+    expect(markup).toContain("Valor en la fecha de compra (EUR)");
+    expect(markup).toContain("Valor en la fecha de compra en EUR");
     expect(markup).toContain('name="anchorId" value="anchor_acquisition"');
     expect(markup).toContain('value="2004-05-19"');
     expect(markup).toContain('value="150253,03"');
+  });
+
+  // #1635: the same figure had two names, and both landed on this page — the
+  // editor said «Precio de adquisición» a few pixels above the «Coste de
+  // adquisición» of #1441. The anchor is the market VALUE that day; the cost is
+  // the other figure, so neither answers to «precio»: the assertion is on the
+  // acquisition wording, not on the whole section, which may legitimately talk
+  // about prices for other reasons.
+  test("the acquisition amount is named by what it is, never «precio» (#1635)", () => {
+    const markup = renderFor(null, [acquisitionAnchor]);
+    expect(markup).not.toMatch(/precio de (adquisición|compra)/i);
   });
 
   test("the acquisition edit asks before it rewrites — no one-click save (#1562)", () => {

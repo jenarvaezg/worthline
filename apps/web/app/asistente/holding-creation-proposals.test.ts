@@ -722,7 +722,7 @@ describe("holding-creation server actions (#1105)", () => {
       name: "Piso sin precio",
     });
     expect(dateOnly.ok).toBe(false);
-    if (!dateOnly.ok) expect(dateOnly.error).toContain("precio de compra");
+    if (!dateOnly.ok) expect(dateOnly.error).toContain("valor en la fecha de compra");
 
     const future = await build(store, {
       acquisitionDate: "2030-01-01",

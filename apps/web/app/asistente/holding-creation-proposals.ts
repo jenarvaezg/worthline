@@ -71,7 +71,7 @@ export interface HoldingCreationArgs {
   isPrimaryResidence?: boolean;
   /** appreciating: when the property was bought (YYYY-MM-DD), when known (#1436). */
   acquisitionDate?: string;
-  /** appreciating: the purchase price in minor units, when known (#1436). */
+  /** appreciating: the market value on the purchase date, in minor units (#1436). */
   acquisitionValueMinor?: number;
   /** debt: the outstanding balance in minor units. */
   balanceMinor?: number;
@@ -155,13 +155,13 @@ function parseAcquisition(
   if (date === "") {
     return {
       ok: false,
-      error: "Falta la fecha de compra del inmueble (tengo el precio pero no el cuándo).",
+      error: "Falta la fecha de compra del inmueble (tengo el valor pero no el cuándo).",
     };
   }
   if (!isPositiveMinor(valueMinor)) {
     return {
       ok: false,
-      error: "Falta el precio de compra (en céntimos) del inmueble.",
+      error: "Falta el valor en la fecha de compra (en céntimos) del inmueble.",
     };
   }
   if (!isRealIsoDay(date)) {

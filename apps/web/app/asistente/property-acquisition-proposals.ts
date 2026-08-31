@@ -49,14 +49,14 @@ type AssetReads = Pick<WorthlineStore, "assets">;
  * something it can neither use nor hand to a person.
  */
 const FICHA_ROUTE =
-  "en /patrimonio, abriendo el inmueble y editando su «Adquisición» (fecha y precio)";
+  "en /patrimonio, abriendo el inmueble y editando su «Adquisición» (fecha y valor)";
 
 /**
  * What the model may pass, and NOTHING else — in particular no `summary`.
  *
  * Every sibling lane lets it write the card's headline; this one does not, because
  * the headline it would replace is already complete and comes from the store: the
- * property's own name, the date and the price. A model-written sentence next to a
+ * property's own name, the date and the value. A model-written sentence next to a
  * Confirmar button is the most valuable string in the product for a prompt
  * injection to own (`proposal-summary.ts` says why), so a lane that does not need
  * one does not offer one.
@@ -121,7 +121,7 @@ export function parsePropertyAcquisitionInput(raw: unknown, today: string) {
     return {
       ok: false as const,
       error:
-        "El precio de adquisición va en CÉNTIMOS enteros y positivos (150.253,03 € son 15025303). No redondeo un importe con decimales: comprueba la cifra.",
+        "El valor en la fecha de compra va en CÉNTIMOS enteros y positivos (150.253,03 € son 15025303). No redondeo un importe con decimales: comprueba la cifra.",
     };
   }
   return {
@@ -322,7 +322,7 @@ export async function buildPropertyAcquisitionProposal(
         {
           after: euros(row.valueMinor),
           before: euros(anchor.valueMinor),
-          label: "Precio de adquisición",
+          label: "Valor en la fecha de compra",
         },
       ],
       summary: `Adquisición de «${property.name}»: ${formatIsoDayEs(row.valuationDate)} · ${euros(row.valueMinor)}`,
