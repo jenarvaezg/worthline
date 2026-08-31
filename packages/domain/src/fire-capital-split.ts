@@ -54,6 +54,14 @@ export interface FireCapitalSide {
   amountMinor: number;
   /** The side's eligible assets before debt and reservation. */
   grossMinor: number;
+  /**
+   * `grossMinor` broken down by the rung it came from — the same rungs `tiers`
+   * names, in ladder order. It exists so a screen can say *how much* of a side is
+   * one particular rung without re-deriving it from the pool (#1523): the sellable
+   * side is allowed to carry term-locked capital, but a reader cannot see how much
+   * of «vendible» is actually locked unless the split says so.
+   */
+  grossByTierMinor: Partial<Record<LiquidityTier, number>>;
   /** Debt attributed to this side's rungs (as declared, even if it exceeds `grossMinor`). */
   debtMinor: number;
   /** Goal reservation taken off this side (sellable first). */
@@ -184,6 +192,32 @@ export function fireDrawsFromTier(
   return countsImmobilized || sideOfTier(tier) === "sellable";
 }
 
+/**
+ * How much of the sellable side is **term-locked** capital — locked until a date or
+ * an age (ADR 0013): the pension plan, the deposit, the savings insurance.
+ *
+ * `term-locked` stays on the sellable side (#1523's verdict), and for a perpetual
+ * SWR that is the right call: a plazo does mature, and a withdrawal rate is a
+ * thirty-to-forty-year rule. What was NOT right was the silence — the «vendible» row
+ * answered "this can be sold in slices" over capital the app itself classifies as
+ * locked. This figure is what makes the nuance sayable, and it lives here rather
+ * than on a screen because it is a cut of the very partition that produced the row,
+ * never a second opinion about it.
+ *
+ * Capped at the side's **net**, which is what the row prints. Debt and the goal
+ * reservation are paid with what can be touched, so an indebted scope can never read
+ * more term-locked capital than its whole sellable side (ADR 0077 — the exact defect
+ * #1528 had to fix by printing two figures of one card off different bases).
+ *
+ * None of this speaks about *when* it unlocks: that is declared per holding and
+ * resolved by `fire-capital-availability` (#1528, ADR 0100). Here there is only "how
+ * much".
+ */
+export function termLockedWithinSellableMinor(split: FireCapitalSplit): number {
+  const gross = split.sellable.grossByTierMinor["term-locked"] ?? 0;
+  return Math.max(0, Math.min(gross, split.sellable.amountMinor));
+}
+
 function collectSide(
   input: SplitFireCapitalInput,
   side: FireCapitalSideKey,
@@ -191,6 +225,7 @@ function collectSide(
   let grossMinor = 0;
   let debtMinor = 0;
   const tiers: LiquidityTier[] = [];
+  const grossByTierMinor: Partial<Record<LiquidityTier, number>> = {};
 
   for (const tier of LIQUIDITY_LADDER) {
     if (sideOfTier(tier) !== side) {
@@ -203,8 +238,9 @@ function collectSide(
     // so leaving it unnamed would print a figure the gloss cannot explain.
     if (tierGross !== 0) {
       tiers.push(tier);
+      grossByTierMinor[tier] = tierGross;
     }
   }
 
-  return { debtMinor, grossMinor, tiers };
+  return { debtMinor, grossByTierMinor, grossMinor, tiers };
 }

@@ -72,3 +72,43 @@ from the book. Two things about it belong here, in the rung's own ADR:
 
 What the date does NOT do is move `term-locked` on the ladder or across the sellable /
 immobilized partition — that is a separate question, and it is #1523's to answer.
+
+
+## Amendment (#1523): `term-locked` stays on the sellable side — and the side says so
+
+The question the amendment above left open: which side of the FIRE capital split (#1447,
+ADR 0078) does a rung «locked until a date or an age» belong to? The row labelled
+*vendible* answers *«this can be sold in slices»*, and it was answering that over capital
+this very ADR classifies as locked.
+
+**Verdict: the rung does not move.** `sideOfTier("term-locked")` stays `sellable`, and no
+figure changes. For a perpetual SWR the classification is defensible — a plan locked until
+65 does unlock, and a withdrawal rate is a thirty-to-forty-year rule, so counting that
+capital is not a fantasy. Moving it to the immobilized side **in isolation** would make the
+figure worse without the user gaining the question that justifies it, and it would drag two
+effects in opposite directions: ADR 0078 runs capital and rate weighting off ONE predicate,
+so dropping `term-locked` from it also lifts `market`'s relative weight and with it the
+expected return. That moves the user's funded percentage without them having declared
+anything.
+
+A **third side** is rejected outright: the two-way partition is what makes #1447's screen
+legible, and a third column would have to split the debt and the goal reservation three
+ways.
+
+What was not defensible was the **silence**. So the split now exposes each side's gross
+broken down by rung (`grossByTierMinor`), and the screen prints, under the breakdown, how
+much of *vendible* is term-locked capital and that it is locked until a date or an age. It
+is a gloss over the same partition, never a second opinion about it, and it is absent when
+no rung carries any — a fixed sentence would stop being read.
+
+Two consequences worth naming:
+
+- **The date question is not this one.** *How much* is locked lives here; *until when* is
+  declared per holding and resolved by ADR 0100. The depletion card is the surface that
+  needs the calendar, and it already has it.
+- **The verdict is reopenable, at one specific moment.** Moving `term-locked` to the
+  immobilized side comes back on the table alongside #1522 (declared future income with a
+  date), which is when the question starts carrying dates and a bridge has to be funded
+  with what can be touched *during* the bridge. Reopening it means measuring first —
+  sellable capital, weighted expected return, sustainable spending and funded percentage,
+  with and without the rung — the way #1447 and #1460 were decided.

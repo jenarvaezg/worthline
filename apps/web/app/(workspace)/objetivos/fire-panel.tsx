@@ -52,6 +52,7 @@ import {
 import {
   fireCapitalSplitRows,
   sellableFundedPercent,
+  sellableTermLockedNote,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
 import {
@@ -200,6 +201,14 @@ export function FirePanel({
   // "% financiado" hides when most of the pool is brick.
   const sellableFunded = fireResult
     ? sellableFundedPercent(fireResult.capitalSplit, fireResult.fireNumber.amountMinor)
+    : null;
+
+  // Lo que el lado vendible lleva dentro y callaba (#1523): capital a plazo, bloqueado
+  // hasta una fecha o una edad. El peldaño se queda en vendible —un plazo vence, y la
+  // tasa de retirada es una regla a décadas— pero la fila deja de responder «se vende a
+  // trozos» sin decir sobre qué. Null cuando no hay nada en el escalón.
+  const termLockedNote = fireResult
+    ? sellableTermLockedNote(fireResult.capitalSplit, fmt)
     : null;
 
   // What the declared rents did to the expected return (#1448): the properties
@@ -537,6 +546,12 @@ export function FirePanel({
                     </li>
                   ))}
                 </ul>
+              ) : null}
+              {/* Fuera del `shouldShowCapitalSplit`: una cartera con plan de pensiones
+                  y sin ladrillo no imprime el desglose, y es exactamente la cartera en
+                  la que «vendible» promete más de lo que puede. */}
+              {termLockedNote !== null ? (
+                <p className="fireCapitalNote">{termLockedNote}</p>
               ) : null}
             </div>
 
