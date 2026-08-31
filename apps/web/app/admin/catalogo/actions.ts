@@ -77,6 +77,13 @@ function readBreakdowns(formData: FormData): GlobalExposureProfileBreakdowns {
   return breakdowns;
 }
 
+/**
+ * The whole editable content of a profile, provenance included (#1508). Read as
+ * a BLOCK on purpose: `update` is a full replace, so a field the form forgets to
+ * submit would silently blank the stored value — the editor ships every one of
+ * these as a named input, and an empty string means «sin declarar», which the
+ * domain normalizes to null.
+ */
 function readContent(formData: FormData) {
   return {
     displayName: String(formData.get("displayName") ?? ""),
@@ -84,6 +91,9 @@ function readContent(formData: FormData) {
     ter: String(formData.get("ter") ?? "") as GlobalExposureProfile["ter"],
     trackedIndex: String(formData.get("trackedIndex") ?? ""),
     hedgedToCurrency: String(formData.get("hedgedToCurrency") ?? ""),
+    confidence: String(formData.get("confidence") ?? ""),
+    asOfDate: String(formData.get("asOfDate") ?? ""),
+    sources: String(formData.get("sources") ?? ""),
   };
 }
 

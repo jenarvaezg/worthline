@@ -13,17 +13,52 @@
  * contract (#940) before anything persists.
  */
 import {
+  formatDateKeyEs,
   type GlobalExposureProfile,
   type GlobalExposureProfileBreakdowns,
+  type GlobalExposureProfileConfidence,
   type GlobalExposureProfileIdentity,
   globalExposureProfileIdentityKey,
   isGeoCurrencyNotApplicableAssetClass,
+  isRealCalendarDay,
 } from "@worthline/domain";
 
 /** Tolerance for "the declared weights don't quite reach 100%". */
 export const COVERAGE_EPSILON = 1e-9;
 
-export type CatalogFilter = "todos" | "por-categorizar";
+export type CatalogFilter =
+  | "todos"
+  | "por-categorizar"
+  | "confianza-baja"
+  | "corte-antiguo";
+
+/** The orders the register can be read in — independent of which rows it shows. */
+export type CatalogSort = "identidad" | "cobertura" | "confianza" | "corte";
+
+/**
+ * A cut-off date older than this is stale enough to re-read the source (#1508).
+ * A year is the cadence at which a fund's own factsheet has moved on: the
+ * MyInvestor plan's only public monthly sheet was two years and four months
+ * old, and nothing on the row said so.
+ */
+export const STALE_AS_OF_MONTHS = 12;
+
+/** Rank of a declared confidence — lower is more urgent to look at. */
+const DECLARED_CONFIDENCE_RANK: Record<GlobalExposureProfileConfidence, number> = {
+  baja: 0,
+  media: 2,
+  alta: 3,
+};
+
+/**
+ * Where an undeclared confidence sits: after `baja` (a known bad reading) and
+ * before `media` — nothing says where the vector came from, and that is what
+ * every pre-#1508 row is.
+ */
+const UNDECLARED_CONFIDENCE_RANK = 1;
+
+/** What the list says about a provenance nobody declared. */
+export const UNDECLARED_TEXT = "sin declarar";
 
 /** The list's three triage dimensions, in display order. */
 export const CATALOG_DIMENSIONS = ["geography", "currency", "assetClass"] as const;
@@ -32,6 +67,8 @@ export type CatalogDimension = (typeof CATALOG_DIMENSIONS)[number];
 export interface CatalogViewState {
   filter: CatalogFilter;
   query: string;
+  /** Explicit order, or `null` to read the active lens's own worst-first order. */
+  sort: CatalogSort | null;
   selectedKey: string | null;
 }
 
@@ -102,12 +139,86 @@ export function profileCoverage(profile: GlobalExposureProfile): number {
   return total / CATALOG_DIMENSIONS.length;
 }
 
-/** Count of profiles needing categorization over the FULL set (the gold badge). */
-export function countNeedsCategorizing(
+/** The word the list shows for a row's confidence — `null` is «sin declarar». */
+export function confidenceText(profile: GlobalExposureProfile): string {
+  return profile.confidence ?? UNDECLARED_TEXT;
+}
+
+/**
+ * A vector worth re-reading on provenance grounds: `baja` (it reads a mandate,
+ * not a portfolio) or undeclared (nothing says where it came from). The two are
+ * one lens because they answer the same operational question — «¿me puedo fiar
+ * de esta cifra?» — but they are never shown as the same state.
+ */
+export function confidenceIsWeak(profile: GlobalExposureProfile): boolean {
+  return profile.confidence === null || profile.confidence === "baja";
+}
+
+/** Rank used to sort least-trustworthy first. */
+export function confidenceRank(profile: GlobalExposureProfile): number {
+  return profile.confidence === null
+    ? UNDECLARED_CONFIDENCE_RANK
+    : DECLARED_CONFIDENCE_RANK[profile.confidence];
+}
+
+/**
+ * Whole months from a cut-off day to `today`, both real `YYYY-MM-DD` days.
+ * Calendar months, not 30-day blocks: a factsheet is dated by month, so «hace 14
+ * meses» is the honest reading of 2025-06-30 seen from 2026-08-31. Negative for
+ * a cut-off in the future. Callers must hand it real days ({@link
+ * isRealCalendarDay}); `asOfIsStale` is the guard that does.
+ */
+export function asOfAgeMonths(asOfDate: string, today: string): number {
+  const [fromYear, fromMonth, fromDay] = asOfDate.split("-").map(Number);
+  const [toYear, toMonth, toDay] = today.split("-").map(Number);
+  const months = (toYear! - fromYear!) * 12 + (toMonth! - fromMonth!);
+  return toDay! < fromDay! ? months - 1 : months;
+}
+
+/**
+ * Whether the cut-off date fails to show the vector is fresh: older than {@link
+ * STALE_AS_OF_MONTHS}, absent, or not a real calendar day. The last two count as
+ * stale on purpose — a vector with no readable date cannot be shown to be fresh,
+ * and «sin declarar» is exactly the state of every row written before this seam.
+ * The column is plain TEXT written by an out-of-repo pass, so garbage has to land
+ * in the lens that asks a human to look, never in the silent "fresh" bucket.
+ */
+export function asOfIsStale(profile: GlobalExposureProfile, today: string): boolean {
+  const asOfDate = asOfSortKey(profile);
+  return asOfDate === null || asOfAgeMonths(asOfDate, today) >= STALE_AS_OF_MONTHS;
+}
+
+/**
+ * The cut-off day to order by, or `null` when there is nothing orderable —
+ * absent, or a value that is not a real calendar day.
+ */
+export function asOfSortKey(profile: GlobalExposureProfile): string | null {
+  return profile.asOfDate !== null && isRealCalendarDay(profile.asOfDate)
+    ? profile.asOfDate
+    : null;
+}
+
+/**
+ * Cut-off day as the app reads it out loud, «sin declarar» when absent, and the
+ * stored text verbatim when it is not a date (never a prettified lie).
+ */
+export function asOfText(profile: GlobalExposureProfile): string {
+  return profile.asOfDate === null ? UNDECLARED_TEXT : formatDateKeyEs(profile.asOfDate);
+}
+
+/**
+ * How many profiles the given lens would show, over the FULL set — the badges
+ * beside the filter. Counted here rather than off `visibleProfiles` so the
+ * search box never changes what the counters say.
+ */
+export function countMatching(
   profiles: readonly GlobalExposureProfile[],
+  filter: CatalogFilter,
+  today: string,
 ): number {
+  const matches = CATALOG_LENSES[filter].matches;
   return profiles.reduce(
-    (count, profile) => count + (profileNeedsCategorizing(profile) ? 1 : 0),
+    (count, profile) => count + (matches(profile, today) ? 1 : 0),
     0,
   );
 }
@@ -133,29 +244,116 @@ function matchesQuery(profile: GlobalExposureProfile, needle: string): boolean {
   return haystack.includes(needle);
 }
 
+/** Ties always break by identity key, so any order is stable across renders. */
+function byKey(a: GlobalExposureProfile, b: GlobalExposureProfile): number {
+  return profileKey(a).localeCompare(profileKey(b));
+}
+
+/** Undeclared/unreadable cut-offs sort ahead of any real day: least evidence first. */
+function byAsOf(a: GlobalExposureProfile, b: GlobalExposureProfile): number {
+  const left = asOfSortKey(a);
+  const right = asOfSortKey(b);
+  if (left === null || right === null) {
+    return left === right ? 0 : left === null ? -1 : 1;
+  }
+  return left.localeCompare(right);
+}
+
 /**
- * The profiles the list renders, filtered by search + triage filter and sorted.
- * In "por-categorizar" only under-declared profiles survive, least-covered
- * first (coverage ascending); ties break by identity for a stable order. In
- * "todos" the whole set is shown, sorted by identity text.
+ * The four orders the register can be read in, each worst-first. They are
+ * independent of the lens: any of them can be applied to «todos», which is what
+ * makes «ver y ordenar por confianza y por antigüedad» possible without dropping
+ * a single row.
+ */
+const CATALOG_COMPARATORS: Record<
+  CatalogSort,
+  (a: GlobalExposureProfile, b: GlobalExposureProfile) => number
+> = {
+  identidad: (a, b) => identityText(a.identity).localeCompare(identityText(b.identity)),
+  cobertura: (a, b) => profileCoverage(a) - profileCoverage(b),
+  confianza: (a, b) => confidenceRank(a) - confidenceRank(b),
+  corte: byAsOf,
+};
+
+/**
+ * The triage lenses: which rows each one keeps, the order it reads in when the
+ * admin has not asked for another, and the word on its filter chip and counter.
+ * One table so the vocabulary is spelled once — the union type, the URL value,
+ * the label and the ordering cannot drift apart.
+ */
+export const CATALOG_LENSES: Record<
+  CatalogFilter,
+  {
+    label: string;
+    /** Counter wording — says «o sin declarar» wherever the lens folds those in. */
+    countLabel: (count: number) => string;
+    matches: (profile: GlobalExposureProfile, today: string) => boolean;
+    defaultSort: CatalogSort;
+  }
+> = {
+  todos: {
+    label: "Todos",
+    countLabel: (count) => `${count} fichas`,
+    matches: () => true,
+    defaultSort: "identidad",
+  },
+  "por-categorizar": {
+    label: "Por categorizar",
+    countLabel: (count) => `${count} por categorizar`,
+    matches: (profile) => profileNeedsCategorizing(profile),
+    defaultSort: "cobertura",
+  },
+  "confianza-baja": {
+    label: "Baja o sin declarar",
+    countLabel: (count) => `${count} de confianza baja o sin declarar`,
+    matches: (profile) => confidenceIsWeak(profile),
+    defaultSort: "confianza",
+  },
+  "corte-antiguo": {
+    label: "Corte antiguo o sin fecha",
+    countLabel: (count) =>
+      `${count} con corte de más de ${STALE_AS_OF_MONTHS} meses o sin fecha`,
+    matches: (profile, today) => asOfIsStale(profile, today),
+    defaultSort: "corte",
+  },
+};
+
+const CATALOG_FILTERS = Object.keys(CATALOG_LENSES) as readonly CatalogFilter[];
+const CATALOG_SORTS = Object.keys(CATALOG_COMPARATORS) as readonly CatalogSort[];
+
+/** The lenses in the order the filter renders them. */
+export const CATALOG_FILTER_OPTIONS: ReadonlyArray<{
+  filter: CatalogFilter;
+  label: string;
+}> = CATALOG_FILTERS.map((filter) => ({
+  filter,
+  label: CATALOG_LENSES[filter].label,
+}));
+
+/**
+ * The profiles the list renders: the search box and the lens decide WHICH rows,
+ * the sort decides in what ORDER. With no explicit sort each lens reads in its
+ * own worst-first order (least covered, least trustworthy, oldest cut-off);
+ * `state.sort` overrides that in any lens, «todos» included.
+ *
+ * `today` is a parameter, never the clock (ADR 0036 §7): the module stays pure
+ * and the page decides what day it is.
  */
 export function visibleProfiles(
   profiles: readonly GlobalExposureProfile[],
-  state: Pick<CatalogViewState, "filter" | "query">,
+  state: Pick<CatalogViewState, "filter" | "query" | "sort">,
+  today: string,
 ): GlobalExposureProfile[] {
   const needle = state.query.trim().toLowerCase();
-  const searched = profiles.filter((profile) => matchesQuery(profile, needle));
+  const lens = CATALOG_LENSES[state.filter];
+  const compare = CATALOG_COMPARATORS[state.sort ?? lens.defaultSort];
 
-  if (state.filter === "por-categorizar") {
-    return searched.filter(profileNeedsCategorizing).sort((a, b) => {
-      const byCoverage = profileCoverage(a) - profileCoverage(b);
-      return byCoverage !== 0 ? byCoverage : profileKey(a).localeCompare(profileKey(b));
+  return profiles
+    .filter((profile) => matchesQuery(profile, needle) && lens.matches(profile, today))
+    .sort((a, b) => {
+      const ordered = compare(a, b);
+      return ordered !== 0 ? ordered : byKey(a, b);
     });
-  }
-
-  return [...searched].sort((a, b) =>
-    identityText(a.identity).localeCompare(identityText(b.identity)),
-  );
 }
 
 /**
@@ -165,8 +363,11 @@ export function visibleProfiles(
  */
 export function catalogSearchString(state: CatalogViewState): string {
   const params = new URLSearchParams();
-  if (state.filter === "por-categorizar") {
-    params.set("filtro", "por-categorizar");
+  if (state.filter !== "todos") {
+    params.set("filtro", state.filter);
+  }
+  if (state.sort !== null) {
+    params.set("orden", state.sort);
   }
   if (state.query.trim()) {
     params.set("q", state.query.trim());
@@ -178,14 +379,26 @@ export function catalogSearchString(state: CatalogViewState): string {
   return query ? `?${query}` : "";
 }
 
+/** An unknown `filtro` falls back to «todos» rather than showing nothing. */
+function parseCatalogFilter(value: string | null | undefined): CatalogFilter {
+  return CATALOG_FILTERS.find((filter) => filter === value) ?? "todos";
+}
+
+/** An unknown `orden` falls back to the lens's own order, not to an error. */
+function parseCatalogSort(value: string | null | undefined): CatalogSort | null {
+  return CATALOG_SORTS.find((sort) => sort === value) ?? null;
+}
+
 /** Parse view state from URL search params (deep-link + reload). */
 export function parseCatalogParams(params: {
   filtro?: string | null;
+  orden?: string | null;
   q?: string | null;
   perfil?: string | null;
 }): CatalogViewState {
   return {
-    filter: params.filtro === "por-categorizar" ? "por-categorizar" : "todos",
+    filter: parseCatalogFilter(params.filtro),
+    sort: parseCatalogSort(params.orden),
     query: typeof params.q === "string" ? params.q : "",
     selectedKey: params.perfil ? params.perfil : null,
   };

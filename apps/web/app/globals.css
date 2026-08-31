@@ -4943,6 +4943,14 @@ code {
   margin-bottom: 12px;
 }
 
+/* The triage counters stack on narrow panes and sit in a row when there is space. */
+.catalogCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
 /* The triage count is an advisory in gold (canon §6: warning, never red). */
 .catalogTriageCount {
   margin: 0;
@@ -4982,6 +4990,29 @@ code {
 
 .catalogTable td {
   padding: 5px 8px;
+}
+
+/* A sortable header is the header itself, not a control bolted beside it: it
+   inherits the column label's type and only gains weight when it is the active
+   order (#1508). */
+.catalogSortButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.catalogSortButton:hover {
+  color: var(--ink);
+}
+
+.catalogSortButton.isActive {
+  color: var(--ink);
+  font-weight: 750;
 }
 
 .catalogTable .catalogNum {
@@ -10528,4 +10559,20 @@ td.rowActions > * {
   .cobrosFormGrid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Una clase que no tiene ni un producto suyo se nombra como lo que es (#1458):
+   un reparto, no una medida. La marca va en palabra —oro, el registro de aviso
+   del canon— y no solo en color, y su frase entera se imprime en el pie, porque
+   un teléfono no tiene hover donde leerla. Misma gramática de aviso que
+   `.catalogAviso` (oro, versalita, 0.7rem/0.04em) y los mismos literales, sin su
+   caja: aquí la marca se repite fila a fila junto a la etiqueta, y un recuadro
+   por fila competiría con la cifra que la fila existe para enseñar. */
+.returnsClassAttributed {
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+  text-transform: uppercase;
 }

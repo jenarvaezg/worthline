@@ -260,9 +260,15 @@ currency the undeclared remainder is **unknown** coverage, never the `other` buc
 `sin_region` / `sin_divisa` weight is the fraction with no country or currency (gold,
 fund cash) and counts as **not applicable**. A breakdown over 100% is rejected. **Cash**
 and **property** carry auto-derived profiles (from their instrument and the base currency);
-coins are excluded (ADR 0017).
+coins are excluded (ADR 0017). Each profile also declares its **provenance** (#1508): its
+**confidence** (`alta` a verifiable factsheet, `media` an issuer breakdown with a translated
+taxonomy, `baja` a reading of the fund's mandate rather than its portfolio), its
+**cut-off date** — the day the DATA is as of, never the day it was written, which is what
+lets a vector age — and its **sources** as short free text. All three may be **sin declarar**
+(null), which is the honest reading of a row nobody has sourced; none is ever guessed.
 _Avoid_: instrument (the coarse kind — an exposure profile says what one specific security
-contains), security master (implementation term).
+contains), security master (implementation term), «fecha de actualización» for the cut-off
+date (they are two different days).
 
 **Look-through**:
 A scope's **Exposure** resolved down through its funds to the underlying geography,
@@ -281,6 +287,23 @@ available it is **excluded from the total and marked partial** — never summed 
 EUR, never a 1:1 guess (#1065). This currency-risk lens is exposure information, distinct
 from that aggregation-time conversion.
 _Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
+
+**Attributed class** (_clase atribuida_):
+An **asset class** that holds value today but not one euro of it in a product wholly of
+that class — every euro is a sleeve inside mixed products. The **look-through** splits a
+mixed product's value by its **exposure profile**, and the per-class return decomposition
+splits its result the same way, so such a class inherits the mixed products' return: the
+cash sleeves of two pension plans read «Efectivo +10,4%» when what rose was the plans'
+equity (#1458). The domain measures how much of a class IS its own (`measuredValue`: the
+value coming from holdings whose breakdown is that class alone) and MARKS the class that
+owns nothing (`attributedOnly`); the display layer then withholds its rates and says why.
+Value and weight stay — splitting today's euros by today's weight is what the attribution
+genuinely knows. Not a data gap to close: there are no per-sleeve return series inside a
+mixed fund, so what is decided here is how an attribution is PRESENTED, not how to measure
+it better.
+_Avoid_: calling it unclassified (that is the **coverage** gap — a holding whose class
+nobody could resolve, which measures its own return whole), or reading the mark as a
+quality score: renta variable can be 94% its own and still measure honestly.
 
 **Operation**:
 A buy, a sell, or one half of a **traspaso** against one **investment**: date, units,

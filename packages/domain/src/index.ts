@@ -330,6 +330,7 @@ export {
   daysBetween,
   formatDateKeyEs,
   isDateKeyShaped,
+  isRealCalendarDay,
   MS_PER_DAY,
 } from "./dates";
 export type { AccruedInterestAtDate } from "./debt-accrual";
@@ -631,13 +632,16 @@ export type {
   GlobalExposureGeographyWeightKey,
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
+  GlobalExposureProfileConfidence,
   GlobalExposureProfileContentInput,
   GlobalExposureSectorBucket,
   UpdateGlobalExposureProfileInput,
+  ValidatedGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 export {
   createValidatedGlobalExposureProfileInput,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
+  GLOBAL_EXPOSURE_PROFILE_CONFIDENCES,
   validateGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 export type { GoalFireDelay, GoalFireDelayInput } from "./goal-fire-delay";
@@ -1041,6 +1045,7 @@ export type {
 } from "./returns-display";
 export {
   APPRECIATING_CAVEAT,
+  ATTRIBUTED_ONLY_NOTICE,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,

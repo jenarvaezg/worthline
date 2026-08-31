@@ -100,6 +100,27 @@ export interface AssetClassReturns {
   key: string;
   /** Present-time market value attributed to the class. */
   value: MoneyMinor;
+  /**
+   * The part of `value` that comes from holdings which are WHOLLY of this class
+   * (#1458) — the part whose return this class actually earned, as opposed to
+   * inherited from a mixed product it is only a sleeve of. Never greater than
+   * `value`; equal to it when every contributing holding is pure.
+   */
+  measuredValue: MoneyMinor;
+  /**
+   * Whether the class holds value today but not one euro of it in a product of
+   * its own: every euro is a fraction of mixed products, so the three measures
+   * below are the mixed products' return, not this class's (#1458).
+   *
+   * A class in this state cannot be measured — there are no per-sleeve return
+   * series inside a mixed fund, and there will not be — so the flag is not a data
+   * gap to close but a permanent property of the attribution. Marked, never
+   * dropped: the domain still emits every measure, and it is the surface that
+   * decides whether a figure it cannot defend is worth printing. `false` for a
+   * class with no value today (`closed`): a purity over zero euros would be an
+   * assertion about money that multiplies nothing.
+   */
+  attributedOnly: boolean;
   simpleGain: SimpleGain;
   irr: IrrResult;
   twr: TwrResult;
@@ -162,6 +183,12 @@ export function returnsByAssetClass(
   // alignment — belongs to `subsetReturns`, which the cartera gestionada rides too
   // (#1552). A class and a cartera are the same question about a different subset.
   const buckets = new Map<string, SubsetReturnsSlice[]>();
+  // What each class owns outright (#1458): the value it takes from holdings that
+  // are ENTIRELY of it. A single destination is exactly that — `breakdownDestinations`
+  // tops any declared remainder up to 1, so one destination always weighs the whole
+  // holding — and an unresolved class sends the whole holding to `unclassified`,
+  // which is a coverage gap, not a borrowed return.
+  const measured = new Map<string, number>();
 
   for (const holding of input.holdings) {
     const destinations = classDestinations(holding.assetClass);
@@ -173,6 +200,11 @@ export function returnsByAssetClass(
     const attributed = new Map(
       splitMinorByWeights(holding.marketValueMinor, destinations),
     );
+
+    if (destinations.length === 1) {
+      const { key } = destinations[0]!;
+      measured.set(key, (measured.get(key) ?? 0) + (attributed.get(key) ?? 0));
+    }
 
     for (const { key, weight } of destinations) {
       const slices = buckets.get(key);
@@ -201,7 +233,9 @@ export function returnsByAssetClass(
         slices,
         valuationDate: input.valuationDate,
       });
+      const measuredMinor = measured.get(key) ?? 0;
       return {
+        attributedOnly: returns.marketValueMinor > 0 && measuredMinor <= 0,
         // Callers feed this engine operation-bearing holdings only, so a zero
         // attributed value means the class was left (sold, transferred away) and
         // not that nothing was ever bought. A market value is never negative — the
@@ -210,6 +244,7 @@ export function returnsByAssetClass(
         closed: returns.marketValueMinor <= 0,
         irr: returns.irr,
         key,
+        measuredValue: money(measuredMinor, input.currency),
         payoutsIncluded: returns.payoutsIncluded,
         simpleGain: returns.simpleGain,
         twr: returns.twr,

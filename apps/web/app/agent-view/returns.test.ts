@@ -182,6 +182,41 @@ describe("buildPortfolioReturns byAssetClass", () => {
     expect(classes.find((c) => c.key === "crypto")?.closed).toBe(true);
     expect(classes.find((c) => c.key === "equity")).not.toHaveProperty("closed");
   });
+
+  test("la clase sin producto suyo llega marcada y sin ninguna tasa (#1458)", async () => {
+    // Un plan mixto 87/13 y un fondo puro: el efectivo del patrimonio existe solo
+    // como manga dentro del plan, así que su rentabilidad es la del plan.
+    const returns = await portfolioReturns({
+      holdings: [
+        {
+          assetClass: { breakdown: { cash: "0.13", equity: "0.87" }, kind: "classified" },
+          currentValueMinor: 40_000,
+          id: "plan",
+        },
+        { assetClass: equityClass, currentValueMinor: 100_000, id: "fondo" },
+      ],
+      operations: {
+        fondo: [buy("fondo", "10", "80", "2023-01-01")],
+        plan: [buy("plan", "10", "30", "2023-01-01")],
+      },
+      valuationDate: "2024-06-01",
+    });
+
+    const classes = returns!.byAssetClass!.classes;
+    const cash = classes.find((c) => c.key === "cash")!;
+    expect(cash.attributedOnly).toBe(true);
+    // La cifra prestada no llega al asistente: no se le pide en prosa que no la
+    // repita, simplemente no la tiene (ADR 0067).
+    expect(cash.moneyWeighted.rate).toBeNull();
+    expect(cash.timeWeighted.rate).toBeNull();
+    expect(cash.simple.totalReturnRatio).toBeNull();
+    expect(cash.simple.cagr).toBeNull();
+    expect(cash.value.amountMinor).toBeGreaterThan(0);
+    // Renta variable presta parte, pero tiene 100.000 € propios que sí midió.
+    const equity = classes.find((c) => c.key === "equity")!;
+    expect(equity).not.toHaveProperty("attributedOnly");
+    expect(equity.simple.totalReturnRatio).not.toBeNull();
+  });
 });
 
 /**

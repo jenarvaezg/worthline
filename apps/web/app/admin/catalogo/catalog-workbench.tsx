@@ -23,21 +23,88 @@ import {
   CatalogSaveForm,
 } from "./catalog-profile-editor";
 import {
+  asOfIsStale,
+  asOfSortKey,
+  asOfText,
+  CATALOG_FILTER_OPTIONS,
+  CATALOG_LENSES,
   type CatalogFilter,
+  type CatalogSort,
   type CatalogViewState,
   catalogSearchString,
-  countNeedsCategorizing,
+  confidenceText,
+  countMatching,
   identityText,
   parseCatalogParams,
   profileCoverage,
   profileKey,
   profileNeedsCategorizing,
+  STALE_AS_OF_MONTHS,
+  UNDECLARED_TEXT,
   visibleProfiles,
 } from "./catalog-triage";
 
 interface CatalogWorkbenchProps {
   initialProfiles: GlobalExposureProfile[];
   initialState: CatalogViewState;
+  /** The day the register is read, from the server (`YYYY-MM-DD`) — never `new Date()` here. */
+  today: string;
+}
+
+/**
+ * What each order is called out loud. Said separately from the column label
+ * because a header word and an ordering are not the same thing: the «Aviso»
+ * column orders by declared coverage.
+ */
+const SORT_TITLES: Record<CatalogSort, string> = {
+  identidad: "identidad",
+  cobertura: "cobertura declarada",
+  confianza: "confianza",
+  corte: "antigüedad del corte",
+};
+
+/** The counters shown beside the filter — the lenses that name a problem. */
+const COUNTED_LENSES: readonly CatalogFilter[] = [
+  "por-categorizar",
+  "confianza-baja",
+  "corte-antiguo",
+];
+
+/**
+ * A column header that also reads the register in its own order. `aria-sort`
+ * carries the state for a screen reader, so the order is not conveyed by the
+ * arrow alone; pressing the active one again releases it back to the lens's
+ * order (§8, #1508).
+ */
+function SortableHeader({
+  activeSort,
+  label,
+  onSort,
+  sort,
+}: {
+  activeSort: CatalogSort;
+  label: string;
+  onSort: (sort: CatalogSort) => void;
+  sort: CatalogSort;
+}) {
+  const isActive = activeSort === sort;
+  return (
+    <th aria-sort={isActive ? "ascending" : "none"}>
+      <button
+        className={isActive ? "catalogSortButton isActive" : "catalogSortButton"}
+        onClick={() => onSort(sort)}
+        title={
+          isActive
+            ? `Ordenado por ${SORT_TITLES[sort]}, lo más urgente primero. Pulsa para volver al orden del filtro.`
+            : `Ordenar por ${SORT_TITLES[sort]}, lo más urgente primero`
+        }
+        type="button"
+      >
+        {label}
+        {isActive ? <span aria-hidden="true"> ↓</span> : null}
+      </button>
+    </th>
+  );
 }
 
 function formatUpdatedAt(iso: string): string {
@@ -54,6 +121,7 @@ function formatUpdatedAt(iso: string): string {
 export default function CatalogWorkbench({
   initialProfiles,
   initialState,
+  today,
 }: CatalogWorkbenchProps) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [view, setView] = useState<CatalogViewState>(initialState);
@@ -78,6 +146,7 @@ export default function CatalogWorkbench({
       const params = new URLSearchParams(window.location.search);
       const next = parseCatalogParams({
         filtro: params.get("filtro"),
+        orden: params.get("orden"),
         q: params.get("q"),
         perfil: params.get("perfil"),
       });
@@ -117,8 +186,8 @@ export default function CatalogWorkbench({
     }
   }, []);
 
-  const rows = visibleProfiles(profiles, view);
-  const triageCount = countNeedsCategorizing(profiles);
+  const rows = visibleProfiles(profiles, view, today);
+  const activeSort = view.sort ?? CATALOG_LENSES[view.filter].defaultSort;
   const selected =
     view.selectedKey === null
       ? null
@@ -126,6 +195,12 @@ export default function CatalogWorkbench({
 
   function setFilter(filter: CatalogFilter) {
     setView((v) => ({ ...v, filter }));
+  }
+
+  // Clicking the same column header again releases the explicit order and hands
+  // the list back to the lens's own worst-first reading.
+  function toggleSort(sort: CatalogSort) {
+    setView((v) => ({ ...v, sort: v.sort === sort ? null : sort }));
   }
 
   function selectProfile(key: string) {
@@ -143,28 +218,28 @@ export default function CatalogWorkbench({
       <section className="catalogListPane section">
         <div className="catalogListHead">
           <div className="segmented catalogFilter" role="group" aria-label="Filtro">
-            <label>
-              <input
-                checked={view.filter === "todos"}
-                name="catalog-filter"
-                onChange={() => setFilter("todos")}
-                type="radio"
-              />
-              Todos
-            </label>
-            <label>
-              <input
-                checked={view.filter === "por-categorizar"}
-                name="catalog-filter"
-                onChange={() => setFilter("por-categorizar")}
-                type="radio"
-              />
-              Por categorizar
-            </label>
+            {CATALOG_FILTER_OPTIONS.map(({ filter, label }) => (
+              <label key={filter}>
+                <input
+                  checked={view.filter === filter}
+                  name="catalog-filter"
+                  onChange={() => setFilter(filter)}
+                  type="radio"
+                />
+                {label}
+              </label>
+            ))}
           </div>
-          {triageCount > 0 ? (
-            <p className="catalogTriageCount">{triageCount} por categorizar</p>
-          ) : null}
+          <div className="catalogCounts">
+            {COUNTED_LENSES.map((filter) => {
+              const count = countMatching(profiles, filter, today);
+              return count > 0 ? (
+                <p className="catalogTriageCount" key={filter}>
+                  {CATALOG_LENSES[filter].countLabel(count)}
+                </p>
+              ) : null;
+            })}
+          </div>
         </div>
 
         <div className="catalogSearchRow">
@@ -187,9 +262,31 @@ export default function CatalogWorkbench({
           <table className="catalogTable">
             <thead>
               <tr>
-                <th>Identidad</th>
+                <SortableHeader
+                  activeSort={activeSort}
+                  label="Identidad"
+                  onSort={toggleSort}
+                  sort="identidad"
+                />
                 <th>Nombre</th>
-                <th>Aviso</th>
+                <SortableHeader
+                  activeSort={activeSort}
+                  label="Aviso"
+                  onSort={toggleSort}
+                  sort="cobertura"
+                />
+                <SortableHeader
+                  activeSort={activeSort}
+                  label="Confianza"
+                  onSort={toggleSort}
+                  sort="confianza"
+                />
+                <SortableHeader
+                  activeSort={activeSort}
+                  label="Corte"
+                  onSort={toggleSort}
+                  sort="corte"
+                />
                 <th className="catalogNum">TER</th>
                 <th>Índice</th>
                 <th>Actualizado</th>
@@ -226,6 +323,39 @@ export default function CatalogWorkbench({
                         </span>
                       ) : (
                         <span className="catalogAvisoNone">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {/* The gold mark exists only where a DECLARED state does:
+                          «baja» is a read the admin made and can act on; «sin
+                          declarar» is an absence, and it reads as muted text so
+                          gold keeps meaning «hay algo declarado que mirar»
+                          (design-system §6). */}
+                      {profile.confidence === "baja" ? (
+                        <span
+                          className="catalogAviso"
+                          title="Confianza baja: el vector lee el mandato del fondo, no su cartera"
+                        >
+                          baja
+                        </span>
+                      ) : profile.confidence === null ? (
+                        <span className="catalogAvisoNone">{UNDECLARED_TEXT}</span>
+                      ) : (
+                        confidenceText(profile)
+                      )}
+                    </td>
+                    <td>
+                      {asOfSortKey(profile) === null ? (
+                        <span className="catalogAvisoNone">{asOfText(profile)}</span>
+                      ) : asOfIsStale(profile, today) ? (
+                        <span
+                          className="catalogAviso"
+                          title={`Fecha de corte de los datos con más de ${STALE_AS_OF_MONTHS} meses: toca releer la fuente`}
+                        >
+                          {asOfText(profile)}
+                        </span>
+                      ) : (
+                        asOfText(profile)
                       )}
                     </td>
                     <td className="catalogNum">{profile.ter ?? "—"}</td>
