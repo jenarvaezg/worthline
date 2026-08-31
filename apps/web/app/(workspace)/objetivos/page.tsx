@@ -42,16 +42,9 @@ import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
 import { FireCockpit } from "./fire-cockpit";
 import { fireConfigFieldValues } from "./fire-config-form-view";
+import { formatDay } from "./format-day";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import ObjetivosSkeleton from "./objetivos-skeleton";
-
-const dayFormatter = new Intl.DateTimeFormat("es-ES", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-});
-const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
 
 /**
  * Passive-income lens (#658): the selected scope's trailing-12m payouts against

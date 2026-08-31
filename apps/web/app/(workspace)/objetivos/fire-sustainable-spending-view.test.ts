@@ -34,7 +34,16 @@ function spending(
 }
 
 function notice(reason: RentReturnNotice["reason"]): RentReturnNotice {
-  return { assetId: "asset_flat", assetName: "Piso", grossRate: null, reason };
+  const common = { assetId: "asset_flat", assetName: "Piso", grossRate: null };
+  // Only `no_live_schedule` carries a window, and this card does not read it: it
+  // aggregates reasons, so any declared window will do.
+  return reason === "no_live_schedule"
+    ? {
+        ...common,
+        reason,
+        scheduleWindow: { endedOnISO: "2026-07-31", startsOnISO: null },
+      }
+    : { ...common, reason };
 }
 
 function profile(overrides: Partial<FireRetirementProfile> = {}): FireRetirementProfile {

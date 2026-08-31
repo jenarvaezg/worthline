@@ -567,6 +567,7 @@ export type {
   RentRealReturns,
   RentReturnNotice,
   RentReturnNoticeReason,
+  RentScheduleWindow,
 } from "./fire-rent-return";
 export {
   annualizedMinor,

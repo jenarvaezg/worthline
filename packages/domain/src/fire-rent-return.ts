@@ -76,9 +76,11 @@ export type RentReturnNoticeReason =
   | "missing_expenses"
   /**
    * No schedule on the asset is in force today — every one of them has ended, or
-   * has not started yet. The two are merged deliberately (the answer is the same:
-   * no income today), so the copy has to speak both: "not in force today", never
-   * "it expired".
+   * has not started yet. The merge is deliberate *for the rate* (the answer is the
+   * same: no income today), and it used to leak into the copy, which could then only
+   * say the intersection of the two cases — "not in force today", which names no date
+   * and no action (#1511). The `scheduleWindow` this reason carries holds the
+   * distinction it drops, so the sentence can say WHICH case it is.
    */
   | "no_live_schedule"
   /** The property is valued in a currency the payout amounts do not declare (#1401). */
@@ -115,11 +117,33 @@ export interface RentDerivedReturn {
   isNetNegative: boolean;
 }
 
-/** A declared rent that stayed out of the rate, with the reason and what was skipped. */
-export interface RentReturnNotice {
+/**
+ * The edges of the declared window behind a `no_live_schedule` notice (#1511) — the
+ * two dates the reason itself cannot carry, because it merges "it ended" with "it has
+ * not started".
+ *
+ * Both sides can be filled at once and that is not a contradiction: one payout ended
+ * in September and another starts in January, so the property has a past rent AND a
+ * future one, and neither is income today. ISO in, ISO out: the sentence is built and
+ * the date is formatted in the view, never here.
+ */
+export interface RentScheduleWindow {
+  /**
+   * The most recent `endISO` that is already in the past — the day the rent stopped
+   * counting. Null when nothing has ended (every declared payout is still to come).
+   */
+  endedOnISO: string | null;
+  /**
+   * The nearest `startISO` still in the future — the day a declared rent starts
+   * counting. Null when nothing is pending (every declared payout has ended).
+   */
+  startsOnISO: string | null;
+}
+
+/** What every notice says, whatever its reason. */
+interface RentReturnNoticeCommon {
   assetId: string;
   assetName: string;
-  reason: RentReturnNoticeReason;
   /**
    * The GROSS rate that was not used (decimal), when there is a live schedule to
    * compute it from — the figure the copy needs to say what is being withheld and
@@ -127,6 +151,24 @@ export interface RentReturnNotice {
    */
   grossRate: number | null;
 }
+
+/**
+ * A declared rent that stayed out of the rate, with the reason and what was skipped.
+ *
+ * A union rather than one flat record because `no_live_schedule` is the only reason
+ * whose sentence is about the calendar, and it MUST carry its window (#1511): an
+ * optional field would let the very notice this issue is about be emitted with no
+ * dates again, and would make every other reason declare a `null` it has no use for.
+ */
+export type RentReturnNotice =
+  | (RentReturnNoticeCommon & {
+      reason: "no_live_schedule";
+      /** The declared window: which side is filled is what picks the sentence. */
+      scheduleWindow: RentScheduleWindow;
+    })
+  | (RentReturnNoticeCommon & {
+      reason: Exclude<RentReturnNoticeReason, "no_live_schedule">;
+    });
 
 /**
  * What the FIRE result reports about rent-derived rates for ONE scope: the rates
@@ -222,6 +264,46 @@ export function scopedNetRentAnnualMinor(
 }
 
 /**
+ * The window edges to report when NOTHING is live today (#1511): the latest ending
+ * already behind us and the nearest start still ahead.
+ *
+ * At least one side comes back filled whenever there is a schedule to read, and that is
+ * not luck: `isScheduleLiveOn` rejects a schedule for exactly two reasons — it starts
+ * after today, or it ended before today — so every schedule this is called with lands
+ * on one of the two sides. The both-null record is representable and never produced.
+ *
+ * A payout whose start is in the future is reported as pending and its own `endISO` is
+ * NOT read: a window that ends before it begins is contradictory data, and calling such
+ * a rent "ended" would be the one statement that is certainly false — it never ran.
+ */
+function scheduleWindowOn(
+  declared: readonly Pick<PayoutSchedule, "startISO" | "endISO">[],
+  todayISO: string,
+): RentScheduleWindow {
+  let endedOnISO: string | null = null;
+  let startsOnISO: string | null = null;
+
+  for (const schedule of declared) {
+    if (schedule.startISO > todayISO) {
+      if (startsOnISO === null || schedule.startISO < startsOnISO) {
+        startsOnISO = schedule.startISO;
+      }
+      continue;
+    }
+    const endISO = schedule.endISO;
+    if (
+      endISO != null &&
+      endISO < todayISO &&
+      (endedOnISO === null || endISO > endedOnISO)
+    ) {
+      endedOnISO = endISO;
+    }
+  }
+
+  return { endedOnISO, startsOnISO };
+}
+
+/**
  * Derive a real return per property from its declared net rent. See the module
  * doc for the two rules; everything not derived comes back as a notice, except
  * the two silent cases documented inline (a non-property asset, and a property
@@ -276,6 +358,7 @@ export function deriveRentRealReturns(
         assetName: asset.name,
         grossRate: null,
         reason: "no_live_schedule",
+        scheduleWindow: scheduleWindowOn(declared, todayISO),
       });
       continue;
     }

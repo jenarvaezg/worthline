@@ -110,6 +110,7 @@ describe("fireRentReturnLines", () => {
             assetName: "Local",
             grossRate: null,
             reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: "2026-07-31", startsOnISO: null },
           },
           {
             assetId: "a2",
@@ -121,10 +122,98 @@ describe("fireRentReturnLines", () => {
       },
     });
 
-    // Neutral on purpose: the same reason covers a rent that has not started yet,
-    // and telling that user his rent "expired" would be a false statement.
-    expect(lines[0]?.gloss).toContain("no está vigente hoy");
+    expect(lines[0]?.gloss).toContain("terminó el 31 jul 2026");
     expect(lines[1]?.gloss).toContain("otra divisa");
+  });
+
+  test("a rent that ended says the date and names the action that revives it", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Yeles",
+            grossRate: null,
+            reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: "2026-09-01", startsOnISO: null },
+          },
+        ],
+      },
+    });
+
+    expect(line?.gloss).toContain("terminó el 1 sept 2026");
+    expect(line?.gloss).toContain("Reactivar");
+    expect(line?.gloss).toContain("retorno por defecto de su tramo");
+  });
+
+  test("a rent that starts later says when, and asks the reader to fix nothing", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Local",
+            grossRate: null,
+            reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: null, startsOnISO: "2027-01-01" },
+          },
+        ],
+      },
+    });
+
+    expect(line?.gloss).toContain("empieza el 1 ene 2027");
+    // The regression this ticket exists for: telling a flat that is let in January
+    // that its rent "is no longer in force" — or that it "ended" — is simply false.
+    expect(line?.gloss).not.toContain("terminó");
+    expect(line?.gloss).not.toContain("no está vigente");
+    expect(line?.gloss).not.toContain("Reactivar");
+  });
+
+  test("one rent ended and another pending says both, without picking a winner", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Local",
+            grossRate: null,
+            reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: "2026-09-01", startsOnISO: "2027-01-01" },
+          },
+        ],
+      },
+    });
+
+    expect(line?.gloss).toContain("terminó el 1 sept 2026");
+    expect(line?.gloss).toContain("empieza el 1 ene 2027");
+  });
+
+  test("a window with neither date is the one case that says only «no vigente»", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Local",
+            grossRate: null,
+            reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: null, startsOnISO: null },
+          },
+        ],
+      },
+    });
+
+    // Not the copy #1511 removed: that one said this WITH the dates sitting in the
+    // data. With no date to give, there is nothing more that is true to say.
+    expect(line?.gloss).toContain("no está vigente hoy");
   });
 
   test("a co-owned flat says the figures are the whole property's, and what it weighs", () => {
@@ -224,6 +313,7 @@ describe("fireRentReturnLines", () => {
             assetName: "Local",
             grossRate: null,
             reason: "no_live_schedule",
+            scheduleWindow: { endedOnISO: "2026-07-31", startsOnISO: null },
           },
           {
             assetId: "a2",

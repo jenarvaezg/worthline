@@ -17,8 +17,13 @@
  */
 
 import { holdingCobrosHref } from "@web/holding-route";
-import type { FireRentReturnReport, RentReturnNotice } from "@worthline/domain";
+import type {
+  FireRentReturnReport,
+  RentReturnNotice,
+  RentScheduleWindow,
+} from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
+import { formatDay } from "./format-day";
 
 /** One printed line of the rent-return disclosure. */
 export interface FireRentReturnLine {
@@ -127,10 +132,7 @@ function noticeGloss(notice: RentReturnNotice): string {
           : `, no con el ${formatRatePercent(notice.grossRate)} que daría el alquiler bruto`
       }.`;
     case "no_live_schedule":
-      // "No está vigente hoy" covers both halves of the reason: un alquiler que
-      // terminó y uno que aún no empieza. Decir «ya no está vigente» a un piso que
-      // se alquila en octubre sería falso.
-      return "Su alquiler declarado no está vigente hoy, así que no alimenta la rentabilidad esperada: cuenta con el retorno por defecto de su tramo.";
+      return noLiveScheduleGloss(notice.scheduleWindow);
     case "foreign_currency":
       return "Está valorado en otra divisa y un cobro no lleva divisa propia, así que su alquiler no se usa para derivar la rentabilidad.";
     case "immobilized_not_counted":
@@ -139,4 +141,45 @@ function noticeGloss(notice: RentReturnNotice): string {
       // cambia de opinión.
       return "Has declarado que tu patrimonio inmovilizado no cuenta como capital FIRE, así que su alquiler tampoco alimenta la rentabilidad esperada. Se cambia en «Tus supuestos».";
   }
+}
+
+const TIER_FALLBACK_CLAUSE = "cuenta con el retorno por defecto de su tramo";
+
+/**
+ * The sentence for `no_live_schedule` (#1511). The reason merges «terminó» with «aún no
+ * empieza» because the rate does not care which it is; the reader does, and the merged
+ * copy could only say the intersection («no está vigente hoy»), which names no date and
+ * no action.
+ *
+ * So each case gets its own sentence, and the difference is not cosmetic:
+ *
+ * - **Ended**: something to do. The date says since when, and the action is named after
+ *   the button that already exists on the schedule's row in the ficha's Cobros section
+ *   (`_surfaces/cobros-section.tsx`). Naming it is not navigation instructions: the
+ *   title of the line is itself the link to Cobros (#1510).
+ * - **Pending**: nothing to do. A flat let in January is not a mistake, so the sentence
+ *   states the date and stops; asking for a fix would be inventing a problem.
+ * - **Both**: one payout ended and another is pending. Both dates are said, in calendar
+ *   order, with no claim about which one is «the» reason.
+ *
+ * The last branch — neither side declared — is unreachable from `deriveRentRealReturns`
+ * (a schedule that is not live is on one side or the other) but the record can express
+ * it, so it is answered rather than thrown on. It is the only case where «no está
+ * vigente hoy» is the honest sentence: with no date to give, saying more would be
+ * inventing it. That is not the copy this issue removed, which said this while the
+ * dates were sitting right there in the data.
+ */
+function noLiveScheduleGloss(scheduleWindow: RentScheduleWindow): string {
+  const { endedOnISO: endedOn, startsOnISO: startsOn } = scheduleWindow;
+
+  if (endedOn !== null && startsOn !== null) {
+    return `Uno de sus alquileres declarados terminó el ${formatDay(endedOn)} y el siguiente empieza el ${formatDay(startsOn)}, así que hoy no alimenta la rentabilidad esperada: ${TIER_FALLBACK_CLAUSE}. Si el que terminó sigue alquilado, «Reactivar» lo vuelve a contar.`;
+  }
+  if (endedOn !== null) {
+    return `Su alquiler declarado terminó el ${formatDay(endedOn)}, así que ya no alimenta la rentabilidad esperada: ${TIER_FALLBACK_CLAUSE}. Si sigue alquilado, «Reactivar» lo vuelve a contar.`;
+  }
+  if (startsOn !== null) {
+    return `Su alquiler declarado empieza el ${formatDay(startsOn)}, así que todavía no alimenta la rentabilidad esperada: hasta entonces ${TIER_FALLBACK_CLAUSE}.`;
+  }
+  return `Su alquiler declarado no está vigente hoy, así que no alimenta la rentabilidad esperada: ${TIER_FALLBACK_CLAUSE}.`;
 }
