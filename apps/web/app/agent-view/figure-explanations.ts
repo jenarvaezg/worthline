@@ -7,6 +7,7 @@ import type {
   LiquidityTierBreakdown,
   ManualAsset,
   NetWorthSnapshot,
+  NetWorthSummary,
   ScopeOption,
   Workspace,
 } from "@worthline/domain";
@@ -135,13 +136,11 @@ export async function buildFigureExplanation(
 
   const facts = await resolveScopeFacts(scoped, options.asOf);
 
+  if (isSimpleAggregate(options.figure)) {
+    return explainSimpleAggregate(store, facts, options.asOf, options.figure);
+  }
+
   switch (options.figure) {
-    case "net_worth":
-      return explainNetWorth(store, facts, options.asOf);
-    case "gross_assets":
-      return explainGrossAssets(store, facts, options.asOf);
-    case "debts":
-      return explainDebts(store, facts, options.asOf);
     case "liquid_net_worth":
       return explainLiquidNetWorth(store, facts, options.asOf);
     case "housing_equity":
@@ -209,13 +208,11 @@ async function buildHistoricalFigureExplanation(
 
   const facts = await resolveHistoricalSnapshotFacts(scoped, date);
 
+  if (isSimpleAggregate(options.figure)) {
+    return historicalSimpleAggregate(facts, options.figure);
+  }
+
   switch (options.figure) {
-    case "net_worth":
-      return historicalNetWorth(facts);
-    case "gross_assets":
-      return historicalGrossAssets(facts);
-    case "debts":
-      return historicalDebts(facts);
     case "liquid_net_worth":
       return historicalLiquidNetWorth(facts);
     case "housing_equity":
@@ -293,85 +290,147 @@ async function resolveHistoricalSnapshotFacts(
   };
 }
 
+// ── Simple aggregates (net_worth / gross_assets / debts) ───────────────────────
+
+/**
+ * What distinguishes ONE simple aggregate from another (#1695): which side of the
+ * portfolio it sums, which stored figure it reports, and how its formula names
+ * that figure. Everything else — the FX-partiality flag, the included/excluded
+ * holdings, the quality notes, the key order of the envelope — is identical for
+ * all three, so it lives once in `explainSimpleAggregate` /
+ * `historicalSimpleAggregate`.
+ *
+ * A figure with its OWN allocation logic stays a dedicated builder:
+ * `liquid_net_worth` and `housing_equity` decide holding by holding which side a
+ * rung or a housing-securing debt lands on, `liquidity_breakdown` folds per-rung
+ * totals, and `holding_value` resolves one holding. Parameterizing that reparto
+ * would hide the reasoning the explanation exists to show.
+ */
+interface SimpleAggregateSpec {
+  /** The `expression` the formula publishes. */
+  expression: string;
+  /** Operand labels, in order; each names a field of {@link SimpleAggregateFigures}. */
+  operands: readonly (keyof SimpleAggregateFigures)[];
+  /** Which portfolio side supplies `includedHoldings`. */
+  sums: PortfolioSide;
+  /** The figure this explanation reports as its `value`. */
+  total: keyof SimpleAggregateFigures;
+  /** The other side, reported as excluded with this reason (net worth nets debts). */
+  nets?: { side: PortfolioSide; reason: string };
+  /**
+   * Scope the FX-partiality report to the side actually summed; omitted (net
+   * worth) reports both. Current mode only — a frozen snapshot has no FX seam.
+   */
+  fxScope?: PortfolioSide;
+  /** Which holdings the data-quality notes are narrowed to. */
+  notesScope: "scope-wide" | "summed-side";
+}
+
+type PortfolioSide = "assets" | "liabilities";
+
+/**
+ * The three figures a simple aggregate reads. A live `NetWorthSummary` and a
+ * frozen `NetWorthSnapshot` name them identically, which is exactly why ONE spec
+ * drives both the current and the historical explanation while each still reads
+ * its OWN calculation — never re-deriving the figure it explains (#1426).
+ */
+type SimpleAggregateFigures = Pick<
+  NetWorthSummary,
+  "grossAssets" | "debts" | "totalNetWorth"
+>;
+
+const SIMPLE_AGGREGATES = {
+  debts: {
+    expression: "sum(liabilityHoldings)",
+    fxScope: "liabilities",
+    notesScope: "summed-side",
+    operands: ["debts"],
+    sums: "liabilities",
+    total: "debts",
+  },
+  gross_assets: {
+    expression: "sum(assetHoldings)",
+    fxScope: "assets",
+    notesScope: "summed-side",
+    operands: ["grossAssets"],
+    sums: "assets",
+    total: "grossAssets",
+  },
+  net_worth: {
+    expression: "grossAssets − debts",
+    nets: { reason: "liability netted against gross assets", side: "liabilities" },
+    notesScope: "scope-wide",
+    operands: ["grossAssets", "debts"],
+    sums: "assets",
+    total: "totalNetWorth",
+  },
+} as const satisfies Record<string, SimpleAggregateSpec>;
+
+/** The figures whose explanation is a plain one-sided sum of the portfolio. */
+type SimpleAggregateFigure = keyof typeof SIMPLE_AGGREGATES;
+
+function isSimpleAggregate(figure: AgentViewFigureName): figure is SimpleAggregateFigure {
+  return figure in SIMPLE_AGGREGATES;
+}
+
+/** The formula, read from whichever set of figures the explanation's mode computed. */
+function simpleAggregateFormula(
+  spec: SimpleAggregateSpec,
+  figures: SimpleAggregateFigures,
+): AgentViewFigureExplanation["formula"] {
+  return {
+    expression: spec.expression,
+    operands: spec.operands.map((label) => ({ label, value: money(figures[label]) })),
+  };
+}
+
 // ── Historical headline figures ─────────────────────────────────────────────────
 
-function historicalNetWorth(facts: HistoricalSnapshotFacts): AgentViewFigureExplanation {
-  const formula = {
-    expression: "grossAssets − debts",
-    operands: [
-      { label: "grossAssets", value: money(facts.snapshot.grossAssets) },
-      { label: "debts", value: money(facts.snapshot.debts) },
-    ],
-  };
-
-  if (facts.rows.length === 0) {
-    return partialHistorical(facts, "net_worth", money(facts.snapshot.totalNetWorth), {
-      formula,
-    });
-  }
-
-  const assetRows = facts.rows.filter((row) => row.kind === "asset");
-  const liabilityRows = facts.rows.filter((row) => row.kind === "liability");
-
-  return historicalBase(facts, {
-    decompositionStatus: "full",
-    excludedHoldings: liabilityRows.map((row) => ({
-      ...frozenHoldingRef(facts, row),
-      reason: "liability netted against gross assets",
-    })),
-    figure: "net_worth",
-    formula,
-    includedHoldings: assetRows.map((row) => frozenIncludedHolding(facts, row)),
-    value: money(facts.snapshot.totalNetWorth),
-  });
-}
-
-function historicalGrossAssets(
+/**
+ * One simple aggregate, decomposed from a snapshot's FROZEN rows (#344). Without
+ * rows the snapshot only knows the headline, so the answer is the honest
+ * `partial` one; with rows the summed side becomes `includedHoldings` and the
+ * netted side `excludedHoldings`.
+ */
+function historicalSimpleAggregate(
   facts: HistoricalSnapshotFacts,
+  figure: SimpleAggregateFigure,
 ): AgentViewFigureExplanation {
-  const formula = {
-    expression: "sum(assetHoldings)",
-    operands: [{ label: "grossAssets", value: money(facts.snapshot.grossAssets) }],
-  };
+  const spec: SimpleAggregateSpec = SIMPLE_AGGREGATES[figure];
+  const formula = simpleAggregateFormula(spec, facts.snapshot);
+  const value = money(facts.snapshot[spec.total]);
 
   if (facts.rows.length === 0) {
-    return partialHistorical(facts, "gross_assets", money(facts.snapshot.grossAssets), {
-      formula,
-    });
+    return partialHistorical(facts, figure, value, { formula });
   }
+
+  const { nets } = spec;
 
   return historicalBase(facts, {
     decompositionStatus: "full",
-    excludedHoldings: [],
-    figure: "gross_assets",
+    excludedHoldings:
+      nets === undefined
+        ? []
+        : frozenRows(facts, nets.side).map((row) => ({
+            ...frozenHoldingRef(facts, row),
+            reason: nets.reason,
+          })),
+    figure,
     formula,
-    includedHoldings: facts.rows
-      .filter((row) => row.kind === "asset")
-      .map((row) => frozenIncludedHolding(facts, row)),
-    value: money(facts.snapshot.grossAssets),
+    includedHoldings: frozenRows(facts, spec.sums).map((row) =>
+      frozenIncludedHolding(facts, row),
+    ),
+    value,
   });
 }
 
-function historicalDebts(facts: HistoricalSnapshotFacts): AgentViewFigureExplanation {
-  const formula = {
-    expression: "sum(liabilityHoldings)",
-    operands: [{ label: "debts", value: money(facts.snapshot.debts) }],
-  };
-
-  if (facts.rows.length === 0) {
-    return partialHistorical(facts, "debts", money(facts.snapshot.debts), { formula });
-  }
-
-  return historicalBase(facts, {
-    decompositionStatus: "full",
-    excludedHoldings: [],
-    figure: "debts",
-    formula,
-    includedHoldings: facts.rows
-      .filter((row) => row.kind === "liability")
-      .map((row) => frozenIncludedHolding(facts, row)),
-    value: money(facts.snapshot.debts),
-  });
+/** The frozen rows on one side of the portfolio, in snapshot order. */
+function frozenRows(
+  facts: HistoricalSnapshotFacts,
+  side: PortfolioSide,
+): SnapshotHoldingRecord[] {
+  const kind = side === "assets" ? "asset" : "liability";
+  return facts.rows.filter((row) => row.kind === kind);
 }
 
 function historicalLiquidNetWorth(
@@ -713,34 +772,39 @@ function frozenHoldingRef(
 
 // ── Headline figures ──────────────────────────────────────────────────────────
 
-async function explainNetWorth(
+/**
+ * One simple aggregate for the CURRENT figures. The value and every operand come
+ * from `calculateNetWorth` — the same engine the dashboard reads — so an
+ * explanation can never disagree with the headline it explains.
+ */
+async function explainSimpleAggregate(
   store: AgentViewReadStore,
   facts: ResolvedScopeFacts,
   asOf: string,
+  figure: SimpleAggregateFigure,
 ): Promise<AgentViewFigureExplanation> {
+  const spec: SimpleAggregateSpec = SIMPLE_AGGREGATES[figure];
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
-  const fxParts = fxExclusionParts(projection, facts);
+  const fxParts = fxExclusionParts(projection, facts, spec.fxScope);
+  const summed = sideRows(projection, spec.sums);
+  const { nets } = spec;
 
   return {
     asOf,
     ...fxParts.flag,
     excludedHoldings: [
-      ...projection.sections[1].rows.map((row) => ({
-        holding: holdingRef(facts.holdingPublicIds, row.id, row.name),
-        reason: "liability netted against gross assets",
-      })),
+      ...(nets === undefined
+        ? []
+        : sideRows(projection, nets.side).map((row) => ({
+            holding: holdingRef(facts.holdingPublicIds, row.id, row.name),
+            reason: nets.reason,
+          }))),
       ...fxParts.excludedHoldings,
     ],
-    figure: "net_worth",
-    formula: {
-      expression: "grossAssets − debts",
-      operands: [
-        { label: "grossAssets", value: money(summary.grossAssets) },
-        { label: "debts", value: money(summary.debts) },
-      ],
-    },
-    includedHoldings: projection.sections[0].rows.map((row) =>
+    figure,
+    formula: simpleAggregateFormula(spec, summary),
+    includedHoldings: summed.map((row) =>
       includedHolding(
         facts.holdingPublicIds,
         row.id,
@@ -750,80 +814,37 @@ async function explainNetWorth(
       ),
     ),
     links: links(facts.scope.id),
-    qualityNotes: await qualityNotesFor(store, facts, scopeWideHoldingIds(projection)),
+    qualityNotes: await qualityNotesFor(
+      store,
+      facts,
+      spec.notesScope === "scope-wide"
+        ? scopeWideHoldingIds(projection)
+        : new Set(summed.map((row) => row.id)),
+    ),
     scope: facts.scope,
-    value: money(summary.totalNetWorth),
+    value: money(summary[spec.total]),
   };
 }
 
-async function explainGrossAssets(
-  store: AgentViewReadStore,
-  facts: ResolvedScopeFacts,
-  asOf: string,
-): Promise<AgentViewFigureExplanation> {
-  const summary = netWorth(facts);
-  const projection = projectPortfolio(portfolioInput(facts));
-  const assetIds = projection.sections[0].rows.map((row) => row.id);
-  const fxParts = fxExclusionParts(projection, facts, "assets");
-
-  return {
-    asOf,
-    ...fxParts.flag,
-    excludedHoldings: fxParts.excludedHoldings,
-    figure: "gross_assets",
-    formula: {
-      expression: "sum(assetHoldings)",
-      operands: [{ label: "grossAssets", value: money(summary.grossAssets) }],
-    },
-    includedHoldings: projection.sections[0].rows.map((row) =>
-      includedHolding(
-        facts.holdingPublicIds,
-        row.id,
-        row.name,
-        row.valueMinor,
-        facts.currency,
-      ),
-    ),
-    links: links(facts.scope.id),
-    qualityNotes: await qualityNotesFor(store, facts, new Set(assetIds)),
-    scope: facts.scope,
-    value: money(summary.grossAssets),
-  };
-}
-
-async function explainDebts(
-  store: AgentViewReadStore,
-  facts: ResolvedScopeFacts,
-  asOf: string,
-): Promise<AgentViewFigureExplanation> {
-  const summary = netWorth(facts);
-  const projection = projectPortfolio(portfolioInput(facts));
-  const liabilityIds = projection.sections[1].rows.map((row) => row.id);
-  const fxParts = fxExclusionParts(projection, facts, "liabilities");
-
-  return {
-    asOf,
-    ...fxParts.flag,
-    excludedHoldings: fxParts.excludedHoldings,
-    figure: "debts",
-    formula: {
-      expression: "sum(liabilityHoldings)",
-      operands: [{ label: "debts", value: money(summary.debts) }],
-    },
-    includedHoldings: projection.sections[1].rows.map((row) =>
-      includedHolding(
-        facts.holdingPublicIds,
-        row.id,
-        row.name,
-        row.balanceMinor,
-        facts.currency,
-      ),
-    ),
-    links: links(facts.scope.id),
-    qualityNotes: await qualityNotesFor(store, facts, new Set(liabilityIds)),
-    scope: facts.scope,
-    value: money(summary.debts),
-  };
+/**
+ * The scope-weighted rows on one side of the portfolio, each with the amount that
+ * side contributes (an asset's value, a liability's balance).
+ */
+function sideRows(
+  projection: ReturnType<typeof projectPortfolio>,
+  side: PortfolioSide,
+): { id: string; name: string; valueMinor: number }[] {
+  return side === "assets"
+    ? projection.sections[0].rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        valueMinor: row.valueMinor,
+      }))
+    : projection.sections[1].rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        valueMinor: row.balanceMinor,
+      }));
 }
 
 async function explainLiquidNetWorth(
