@@ -1,143 +1,28 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage, resolveOkNotice } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
-import { ExternalTransferCapture } from "@web/patrimonio/anadir/external-transfer-capture";
-import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
-import { parseOpeningCostMode } from "@web/patrimonio/anadir/investment-units";
-import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
-  addHoldingFieldValue,
-  buildSymbolSearchCurrentParams,
+  altaRevealCss,
+  DRAWER_EMPTY_PROPS,
+  DRAWER_FIELD,
+  DRAWERS,
+  type DrawerId,
+} from "@web/patrimonio/anadir/_families/alta-drawers";
+import {
+  AltaDrawerPane,
+  type AltaPaneContext,
+} from "@web/patrimonio/anadir/_families/alta-panes";
+import { loadInvestmentLivePrice } from "@web/patrimonio/anadir/_families/investment-pane";
+import { OwnershipInputs } from "@web/patrimonio/anadir/ownership-inputs";
+import {
   firstNonEmptyParam,
   selectedInstrumentFromAddHoldingState,
 } from "@web/patrimonio/anadir/search-state";
 import { AddSuccessPanel } from "@web/patrimonio/anadir/success-panel";
-import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
-import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
-import { PendingSubmit } from "@web/pending-submit";
-import type { Instrument, Member } from "@worthline/domain";
-import {
-  calculateNetWorth,
-  defaultsFor,
-  formatMoneyMinorPrivacy,
-  INVESTMENT_PROFILE_INSTRUMENTS,
-} from "@worthline/domain";
-import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
+import { calculateNetWorth, formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
-import { type CSSProperties, type ReactNode, Suspense } from "react";
-
-type DrawerId = "dinero" | "inversion" | "inmueble" | "bien" | "deuda";
-
-interface Drawer {
-  id: DrawerId;
-  label: string;
-  hint: string;
-  dot: string;
-}
-
-const DRAWERS: Drawer[] = [
-  {
-    id: "dinero",
-    label: "Dinero",
-    hint: "Cuentas, efectivo o un depósito a plazo.",
-    dot: "var(--tier-cash)",
-  },
-  {
-    id: "inversion",
-    label: "Una inversión",
-    hint: "Fondos, acciones, planes o cripto.",
-    dot: "var(--tier-market)",
-  },
-  {
-    id: "inmueble",
-    label: "Un inmueble",
-    hint: "Tu casa, un piso o un local.",
-    dot: "var(--tier-housing)",
-  },
-  {
-    id: "bien",
-    label: "Otro bien",
-    hint: "Coche, oro u otro objeto de valor.",
-    dot: "var(--tier-illiquid)",
-  },
-  {
-    id: "deuda",
-    label: "Una deuda",
-    hint: "Hipoteca, préstamo o tarjeta.",
-    dot: "var(--debit-rule)",
-  },
-];
-
-/**
- * The 3 behavior groups of «Una inversión» (#597): not the 6 fine instrument
- * labels, but the 3 that price differently. Bolsa maps to `fund` by default (the
- * fine ETF/acción/índice label is editable in the ficha — ADR 0014); the search
- * is scoped to each group's provider, which sidesteps cross-provider noise (#304).
- */
-interface InvestmentGroup {
-  instrument: Extract<Instrument, "fund" | "pension_plan" | "crypto">;
-  label: string;
-  hint: string;
-  providerLabel: string;
-  searchPlaceholder: string;
-  symbolLabel: string;
-  symbolHint?: string;
-}
-
-const INVESTMENT_GROUPS: InvestmentGroup[] = [
-  {
-    instrument: "fund",
-    label: "Cotiza en bolsa",
-    hint: "Fondos, ETFs, acciones o índices.",
-    providerLabel: "Yahoo Finance",
-    searchPlaceholder: "MSCI World, IE00BYX5NX33…",
-    symbolLabel: "Símbolo del proveedor",
-  },
-  {
-    instrument: "pension_plan",
-    label: "Plan de pensiones",
-    hint: "Tu plan, por su código de Finect.",
-    providerLabel: "Finect",
-    searchPlaceholder: "N5394-Myinvestor",
-    symbolLabel: "Código Finect",
-  },
-  {
-    instrument: "crypto",
-    label: "Cripto",
-    hint: "Bitcoin, Ethereum y otras monedas.",
-    providerLabel: "CoinGecko",
-    searchPlaceholder: "bitcoin, ethereum…",
-    symbolLabel: "Id de CoinGecko",
-    symbolHint: "p. ej. «bitcoin»",
-  },
-];
-
-/**
- * The picked symbol's live unit price, fetched once when a candidate has been
- * chosen (#597 — «búsqueda devuelve símbolo + precio en vivo»). Returns null when
- * nothing is picked yet or the provider has no quote, so the manual-fallback price
- * field stays empty for the user to fill.
- */
-async function fetchPickedSymbolPrice(
-  instrument: Instrument,
-  pickedSymbol: string | undefined,
-): Promise<string | null> {
-  const provider = defaultsFor(instrument).priceProvider;
-
-  if (!pickedSymbol || !isRegisteredSource(provider)) {
-    return null;
-  }
-
-  const fetched = await fetchPriceNow(provider, {
-    assetId: "alta-preview",
-    currency: "EUR",
-    nowIso: new Date().toISOString(),
-    symbol: pickedSymbol,
-  });
-
-  return fetched?.price ?? null;
-}
+import { type CSSProperties, Suspense } from "react";
 
 export default function AnadirHoldingPage({
   searchParams,
@@ -191,31 +76,12 @@ export async function AnadirHoldingContent({
 
   // The drawer (and the investment group) must survive a search/pick navigation,
   // so resolve them from BOTH the preserved error values AND the URL params (#597).
-  const selectedDrawer = (values["simpleDrawer"] ??
-    firstNonEmptyParam(resolvedParams["simpleDrawer"])) as DrawerId | undefined;
+  const selectedDrawer = (values[DRAWER_FIELD] ??
+    firstNonEmptyParam(resolvedParams[DRAWER_FIELD])) as DrawerId | undefined;
   const selectedInstrument = selectedInstrumentFromAddHoldingState(
     values,
     resolvedParams,
   );
-
-  // A candidate has been picked (or a symbol typed) for the chosen investment
-  // group → fetch its live unit price once, to prefill the price field and the
-  // «≈ participaciones» hint. Only the investment drawer pays this fetch.
-  const pickedSymbol =
-    selectedDrawer === "inversion" && selectedInstrument
-      ? (firstNonEmptyParam(resolvedParams["pfSymbol"]) ??
-        addHoldingFieldValue({
-          field: "symbol",
-          instrument: selectedInstrument,
-          searchParams: resolvedParams,
-          selectedInstrument,
-          values,
-        }))
-      : undefined;
-  const livePrice =
-    selectedDrawer === "inversion" && selectedInstrument
-      ? await fetchPickedSymbolPrice(selectedInstrument, pickedSymbol)
-      : null;
 
   // Success-loop state (#600): a completed add returns to the wizard with `ok`
   // (the message) + `added` (the new holding's id). The success panel replaces
@@ -231,30 +97,29 @@ export async function AnadirHoldingContent({
   // "Hoy" for the debt drawer's «alta por estado actual» baseline (ADR 0056, #677).
   const today = new Date().toISOString().slice(0, 10);
 
-  const revealCss = [
-    `.simpleAdd:has(input[name="simpleDrawer"]:checked) .simpleAddEmpty{display:none}`,
-    ...DRAWERS.map(
-      (drawer) =>
-        `.simpleAdd:has(input[name="simpleDrawer"][value="${drawer.id}"]:checked) .simpleDrawerPane[data-drawer="${drawer.id}"]{display:grid}`,
-    ),
-    `.simpleAdd:has(input[name="instrument"]:checked) .invGroupEmpty{display:none}`,
-    ...INVESTMENT_GROUPS.flatMap((group) => [
-      `.simpleAdd:has(input[name="instrument"][value="${group.instrument}"]:checked) .invGroupPane[data-group="${group.instrument}"]{display:grid}`,
-      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="saldo"]:checked) .invModePane[data-mode="saldo"]{display:grid}`,
-      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="import"]:checked) .invModePane[data-mode="import"]{display:block}`,
-      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="traspaso"]:checked) .invModePane[data-mode="traspaso"]{display:grid}`,
-    ]),
-    // «Alta por estado actual» (ADR 0056, #677): the default path for hipoteca/
-    // préstamo; tarjeta (revolving) never gets a plan, so it keeps the plain
-    // balance field instead.
-    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="mortgage"]:checked) .debtSimpleBalanceField{display:none}`,
-    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="loan"]:checked) .debtSimpleBalanceField{display:none}`,
-    `.simpleDrawerPane[data-drawer="deuda"]:has(input[name="simpleDebtKind"][value="credit_card"]:checked) .debtCurrentStateBlock{display:none}`,
-  ].join("\n");
+  // Everything the five panes read, resolved once (ADR 0095, applied to the alta):
+  // the page assembles the context and places whatever each drawer's family
+  // renders — it never asks which instrument this is.
+  const paneContext: AltaPaneContext = {
+    hasPrimaryResidence,
+    livePrice: await loadInvestmentLivePrice({
+      resolvedParams,
+      selectedDrawer,
+      selectedInstrument,
+      values,
+    }),
+    resolvedParams,
+    selectedInstrument,
+    today,
+    values,
+  };
 
   return (
     <>
-      <style>{revealCss}</style>
+      {/* The disclosure is pure CSS (ADR 0009) and every rule is generated from
+          the same drawer/group table the panes below read (#1700), so a renamed
+          class can no longer break the visibility in silence. */}
+      <style>{altaRevealCss()}</style>
 
       <section className="addHoldingPage" aria-label="Añadir al patrimonio">
         {isSuccess ? (
@@ -304,7 +169,7 @@ export async function AnadirHoldingContent({
                   >
                     <input
                       defaultChecked={selectedDrawer === drawer.id}
-                      name="simpleDrawer"
+                      name={DRAWER_FIELD}
                       type="radio"
                       value={drawer.id}
                     />
@@ -318,21 +183,13 @@ export async function AnadirHoldingContent({
               </div>
 
               <section className="simpleAddPanes" aria-live="polite">
-                <p className="simpleAddEmpty">
+                <p {...DRAWER_EMPTY_PROPS}>
                   Elige arriba qué quieres apuntar y aquí aparecerá lo justo que hay que
                   rellenar.
                 </p>
-                <MoneyPane values={values} />
-                <InvestmentPane
-                  livePrice={livePrice}
-                  resolvedParams={resolvedParams}
-                  selectedInstrument={selectedInstrument}
-                  today={today}
-                  values={values}
-                />
-                <HousingPane hasPrimaryResidence={hasPrimaryResidence} values={values} />
-                <OtherAssetPane values={values} />
-                <DebtPane today={today} values={values} />
+                {DRAWERS.map((drawer) => (
+                  <AltaDrawerPane ctx={paneContext} drawer={drawer} key={drawer.id} />
+                ))}
               </section>
 
               <OwnershipInputs
@@ -346,567 +203,5 @@ export async function AnadirHoldingContent({
         )}
       </section>
     </>
-  );
-}
-
-function v(values: Record<string, string>, key: string): string | undefined {
-  return values[key];
-}
-
-function PaneActions() {
-  return (
-    <div className="formActions simplePaneActions">
-      <PendingSubmit pendingLabel="Añadiendo…">Añadir</PendingSubmit>
-      <Link href="/patrimonio">Cancelar</Link>
-    </div>
-  );
-}
-
-function MoneyPane({ values }: { values: Record<string, string> }) {
-  return (
-    <div className="simpleDrawerPane" data-drawer="dinero">
-      <PaneHeader title="Dinero" text="Cuenta corriente, efectivo o depósito a plazo." />
-      <Field label="Nombre">
-        <input
-          autoComplete="off"
-          defaultValue={v(values, "simpleName_dinero")}
-          name="simpleName_dinero"
-          placeholder="Cuenta del banco"
-        />
-      </Field>
-      <Field label="Importe actual">
-        <input
-          defaultValue={v(values, "simpleValue_dinero")}
-          inputMode="decimal"
-          name="simpleValue_dinero"
-          placeholder="2.500,00"
-        />
-      </Field>
-      <label className="simpleInlineCheck">
-        <input
-          defaultChecked={v(values, "cashTerm_dinero") === "on"}
-          name="cashTerm_dinero"
-          type="checkbox"
-        />
-        <span>A plazo fijo</span>
-      </label>
-      <PaneActions />
-    </div>
-  );
-}
-
-function InvestmentPane({
-  livePrice,
-  resolvedParams,
-  selectedInstrument,
-  today,
-  values,
-}: {
-  livePrice: string | null;
-  resolvedParams: Record<string, string | string[] | undefined>;
-  selectedInstrument: Instrument | undefined;
-  today: string;
-  values: Record<string, string>;
-}) {
-  return (
-    <div className="simpleDrawerPane" data-drawer="inversion">
-      <PaneHeader
-        title="Una inversión"
-        text="Elige dónde está, busca el símbolo y dinos cuánto tienes hoy."
-      />
-      <fieldset className="simpleChoiceGroup invGroupChoice">
-        <legend>¿Dónde está tu inversión?</legend>
-        {INVESTMENT_GROUPS.map((group) => (
-          <label className="ownerPreset simpleChoice" key={group.instrument}>
-            <input
-              defaultChecked={selectedInstrument === group.instrument}
-              name="instrument"
-              type="radio"
-              value={group.instrument}
-            />
-            <span className="invGroupLabel">
-              <strong>{group.label}</strong>
-              <small>{group.hint}</small>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-
-      <p className="invGroupEmpty simpleHint">
-        Elige arriba y aparecerá la búsqueda del proveedor que le corresponde.
-      </p>
-
-      {INVESTMENT_GROUPS.map((group) => (
-        <InvestmentGroupPane
-          group={group}
-          key={group.instrument}
-          livePrice={livePrice}
-          resolvedParams={resolvedParams}
-          selectedInstrument={selectedInstrument}
-          today={today}
-          values={values}
-        />
-      ))}
-    </div>
-  );
-}
-
-function InvestmentGroupPane({
-  group,
-  livePrice,
-  resolvedParams,
-  selectedInstrument,
-  today,
-  values,
-}: {
-  group: InvestmentGroup;
-  livePrice: string | null;
-  resolvedParams: Record<string, string | string[] | undefined>;
-  selectedInstrument: Instrument | undefined;
-  today: string;
-  values: Record<string, string>;
-}) {
-  const id = group.instrument;
-  const isSelected = selectedInstrument === id;
-  const v = (field: string): string | undefined =>
-    addHoldingFieldValue({
-      field,
-      instrument: id,
-      searchParams: resolvedParams,
-      selectedInstrument,
-      values,
-    });
-
-  // Live price only applies to the group actually selected; prefill the price
-  // field with the user's own entry first (error round-trip), else the live quote.
-  const priceValue = v("price") ?? (isSelected && livePrice ? livePrice : "");
-  const captureKey = `${id}:${isSelected ? (livePrice ?? "manual") : ""}:${
-    (isSelected && v("symbol")) || ""
-  }`;
-  const invMode = v("invMode");
-
-  return (
-    <div className="invGroupPane" data-group={id}>
-      <SymbolSearch
-        basePath="/patrimonio/anadir"
-        instrument={id}
-        pickedSymbol={
-          isSelected && typeof resolvedParams["pfSymbol"] === "string"
-            ? resolvedParams["pfSymbol"]
-            : undefined
-        }
-        query={isSelected ? firstNonEmptyParam(resolvedParams["symbolq"]) : undefined}
-        currentParams={buildSymbolSearchCurrentParams(resolvedParams, selectedInstrument)}
-      />
-
-      <Field label="Nombre">
-        <input
-          autoComplete="off"
-          defaultValue={v("name")}
-          name={`name_${id}`}
-          placeholder="Mi inversión"
-        />
-      </Field>
-      <Field label={group.symbolLabel}>
-        <input
-          autoComplete="off"
-          defaultValue={v("symbol")}
-          name={`symbol_${id}`}
-          placeholder={group.searchPlaceholder}
-        />
-      </Field>
-      {/* Crypto has no ISIN to ask for, and the set that decides who HAS an
-          instrument identity is the domain's — the same one the health signal reads,
-          so the question and the warning can never disagree. */}
-      {INVESTMENT_PROFILE_INSTRUMENTS.has(group.instrument) ? (
-        <IsinField className="simpleField" instrument={id} value={v("isin")} />
-      ) : null}
-
-      <fieldset className="simpleChoiceGroup">
-        <legend>¿Cómo lo registramos?</legend>
-        <RadioChoice
-          // Read as a negative list on purpose: anything the round-trip did not
-          // bring back — absent, blank, a value from a future mode — reopens
-          // «saldo», the default. A positive test would leave the group with NO
-          // radio checked, which is a form that submits nothing.
-          checked={invMode !== "import" && invMode !== "traspaso"}
-          label="Sé cuánto tengo hoy"
-          name={`invMode_${id}`}
-          value="saldo"
-        />
-        <RadioChoice
-          checked={invMode === "import"}
-          label="Tengo el extracto del bróker"
-          name={`invMode_${id}`}
-          value="import"
-        />
-        {/* The third way to answer «cuánto tengo» (#1541): the capital was not
-            bought, it arrived — MyInvestor's «Traer plan desde otra entidad». It is
-            an alta and not the «Traspasar» flow of #1480 because there is no origin
-            holding in this book to start from (ADR 0083, decisión 7). */}
-        <RadioChoice
-          checked={invMode === "traspaso"}
-          label="Viene traspasada de otra entidad"
-          name={`invMode_${id}`}
-          value="traspaso"
-        />
-      </fieldset>
-
-      <div className="invModePane" data-mode="saldo">
-        <InvestmentCapture
-          defaultCost={v("cost") ?? ""}
-          defaultCostMode={parseOpeningCostMode(v("costMode") ?? "") ?? undefined}
-          defaultDate={v("saldoDate") ?? ""}
-          defaultPrice={priceValue}
-          defaultSaldo={v("saldo") ?? ""}
-          instrument={id}
-          key={captureKey}
-          priceHint={
-            isSelected && livePrice
-              ? `Precio en vivo de ${group.providerLabel}.`
-              : group.symbolHint
-          }
-          today={today}
-        />
-        <PaneActions />
-      </div>
-
-      <div className="invModePane" data-mode="traspaso">
-        <p className="simpleHint">
-          No es una compra: el capital ya era tuyo y solo ha cambiado de gestora, así que{" "}
-          <strong>no consume cupo de aportación</strong> y no realiza plusvalía. El coste
-          que traían las participaciones viaja con ellas.
-        </p>
-        <ExternalTransferCapture
-          defaultAmount={v("trAmount") ?? ""}
-          defaultCost={v("trCost") ?? ""}
-          defaultDate={v("trDate") ?? ""}
-          // No live-quote prefill here, unlike the saldo pane: the VL this entry
-          // needs is the one of the DAY THE CAPITAL LANDED, and today's quote for a
-          // traspaso recorded weeks later would be a wrong figure presented as a
-          // helpful one — and it is the figure that fixes the participaciones.
-          defaultPrice={v("trPrice") ?? ""}
-          defaultSeniority={v("trSeniority") ?? ""}
-          instrument={id}
-          key={`tr-${captureKey}`}
-          today={today}
-        />
-        <PaneActions />
-      </div>
-
-      <div className="invModePane" data-mode="import">
-        <p className="simpleHint">
-          Crearemos la inversión vacía y te llevamos a <strong>Cargar movimientos</strong>{" "}
-          para subir la plantilla de Worthline. Sus operaciones serán el histórico — sin
-          ninguna apertura inventada de hoy.
-        </p>
-        {group.instrument === "fund" ? (
-          <p className="simpleHint">
-            ¿El extracto de tu bróker trae varios fondos a la vez?{" "}
-            <Link href="/patrimonio/importar-extracto">
-              Importar extracto de toda la cartera
-            </Link>{" "}
-            reparte cada ISIN entre lo que ya tienes y lo que falta por crear.
-          </p>
-        ) : null}
-        <PaneActions />
-      </div>
-    </div>
-  );
-}
-
-function HousingPane({
-  hasPrimaryResidence,
-  values,
-}: {
-  hasPrimaryResidence: boolean;
-  values: Record<string, string>;
-}) {
-  return (
-    <div className="simpleDrawerPane" data-drawer="inmueble">
-      <PaneHeader
-        title="Inmueble"
-        text="Valor actual y si cuenta como vivienda habitual."
-      />
-      <Field label="Nombre">
-        <input
-          autoComplete="off"
-          defaultValue={v(values, "simpleName_inmueble")}
-          name="simpleName_inmueble"
-          placeholder="Mi casa"
-        />
-      </Field>
-      <Field label="Valor actual">
-        <input
-          defaultValue={v(values, "simpleValue_inmueble")}
-          inputMode="decimal"
-          name="simpleValue_inmueble"
-          placeholder="300.000,00"
-        />
-      </Field>
-      <label className="simpleInlineCheck">
-        <input
-          defaultChecked={
-            v(values, "primaryResidence_inmueble") !== undefined
-              ? v(values, "primaryResidence_inmueble") !== "off"
-              : !hasPrimaryResidence
-          }
-          name="primaryResidence_inmueble"
-          type="checkbox"
-        />
-        <input name="primaryResidence_inmueble" type="hidden" value="off" />
-        <span>Vivienda habitual</span>
-      </label>
-      <p className="simpleHint">
-        Compra, tasaciones y ritmo de revalorización van luego en su ficha.
-      </p>
-      <PaneActions />
-    </div>
-  );
-}
-
-function OtherAssetPane({ values }: { values: Record<string, string> }) {
-  const selected = v(values, "simpleAssetKind") ?? "other";
-
-  return (
-    <div className="simpleDrawerPane" data-drawer="bien">
-      <PaneHeader title="Otro bien" text="Coche, oro u otro activo mantenido a mano." />
-      <Field label="Nombre">
-        <input
-          autoComplete="off"
-          defaultValue={v(values, "simpleName_bien")}
-          name="simpleName_bien"
-          placeholder="Renault Clio"
-        />
-      </Field>
-      <Field label="Importe actual">
-        <input
-          defaultValue={v(values, "simpleValue_bien")}
-          inputMode="decimal"
-          name="simpleValue_bien"
-          placeholder="8.500,00"
-        />
-      </Field>
-      <fieldset className="simpleChoiceGroup">
-        <legend>Tipo (opcional)</legend>
-        <RadioChoice
-          checked={selected === "vehicle"}
-          label="Coche"
-          name="simpleAssetKind"
-          value="vehicle"
-        />
-        <RadioChoice
-          checked={selected === "precious_metal"}
-          label="Oro"
-          name="simpleAssetKind"
-          value="precious_metal"
-        />
-        <RadioChoice
-          checked={selected === "other"}
-          label="Otro"
-          name="simpleAssetKind"
-          value="other"
-        />
-      </fieldset>
-      <PaneActions />
-    </div>
-  );
-}
-
-function DebtPane({ today, values }: { today: string; values: Record<string, string> }) {
-  const selected = v(values, "simpleDebtKind") ?? "mortgage";
-
-  return (
-    <div className="simpleDrawerPane" data-drawer="deuda">
-      <PaneHeader title="Deuda" text="Saldo pendiente y tipo de obligación." />
-      <fieldset className="simpleChoiceGroup">
-        <legend>Tipo de deuda</legend>
-        <RadioChoice
-          checked={selected === "mortgage"}
-          label="Hipoteca"
-          name="simpleDebtKind"
-          value="mortgage"
-        />
-        <RadioChoice
-          checked={selected === "loan"}
-          label="Préstamo"
-          name="simpleDebtKind"
-          value="loan"
-        />
-        <RadioChoice
-          checked={selected === "credit_card"}
-          label="Tarjeta"
-          name="simpleDebtKind"
-          value="credit_card"
-        />
-      </fieldset>
-      <Field label="Nombre">
-        <input
-          autoComplete="off"
-          defaultValue={v(values, "simpleName_deuda")}
-          name="simpleName_deuda"
-          placeholder="Hipoteca de casa"
-        />
-      </Field>
-
-      {/* Tarjeta: no admite «alta por estado actual» (revolving, sin plan). */}
-      <div className="debtSimpleBalanceField">
-        <Field label="Saldo pendiente">
-          <input
-            defaultValue={v(values, "simpleValue_deuda")}
-            inputMode="decimal"
-            name="simpleValue_deuda"
-            placeholder="120.000,00"
-          />
-        </Field>
-      </div>
-
-      {/* Hipoteca/préstamo: «alta por estado actual» (ADR 0056, #677) — el
-          camino por defecto para una deuda antigua. Deja «Fecha de fin» en
-          blanco para dar de alta solo el saldo y rellenar el plan más tarde. */}
-      <div className="debtCurrentStateBlock">
-        <p className="simpleHint">
-          Recomendado para una deuda antigua: lo que debes hoy, cuándo termina y tu cuota
-          o tipo actual.
-        </p>
-        <CurrentStateDebtFields
-          baselineDate={today}
-          idPrefix="wizard-deuda"
-          initialValues={values}
-        />
-      </div>
-
-      <p className="simpleHint">
-        Vincularla a un inmueble y el cuadro de pagos se añaden luego en su ficha.
-      </p>
-      <PaneActions />
-    </div>
-  );
-}
-
-function PaneHeader({ text, title }: { text: string; title: string }) {
-  return (
-    <div className="simplePaneIntro">
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </div>
-  );
-}
-
-function Field({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <label className="simpleField">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function RadioChoice({
-  checked,
-  label,
-  name,
-  value,
-}: {
-  checked: boolean;
-  label: string;
-  name: string;
-  value: string;
-}) {
-  return (
-    <label className="ownerPreset simpleChoice">
-      <input defaultChecked={checked} name={name} type="radio" value={value} />
-      {label}
-    </label>
-  );
-}
-
-function OwnershipInputs({
-  members,
-  scopeMemberId,
-  values,
-  allowCustomSplit,
-}: {
-  members: Member[];
-  scopeMemberId: string | undefined;
-  values: Record<string, string>;
-  /** Custom splits below 100% are only honoured for real estate (#737). */
-  allowCustomSplit: boolean;
-}) {
-  const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0];
-
-  if (!scopeMember) {
-    return null;
-  }
-
-  if (members.length <= 1) {
-    return (
-      <>
-        <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
-        <input name="ownershipPreset" type="hidden" value="scope" />
-      </>
-    );
-  }
-
-  const preset = allowCustomSplit
-    ? values["ownershipPreset"]
-    : values["ownershipPreset"] === "custom"
-      ? "even"
-      : values["ownershipPreset"];
-
-  return (
-    <fieldset className="ownershipGrid simpleOwnership">
-      <legend>Reparto</legend>
-      <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
-      <label className="ownerPreset">
-        <input
-          defaultChecked={preset === "scope"}
-          name="ownershipPreset"
-          type="radio"
-          value="scope"
-        />
-        Solo mío
-      </label>
-      <label className="ownerPreset">
-        <input
-          defaultChecked={!preset || preset === "even"}
-          name="ownershipPreset"
-          type="radio"
-          value="even"
-        />
-        De los dos (mitad y mitad)
-      </label>
-      {allowCustomSplit ? (
-        <label className="ownerPreset">
-          <input
-            defaultChecked={preset === "custom"}
-            name="ownershipPreset"
-            type="radio"
-            value="custom"
-          />
-          Otro reparto…
-        </label>
-      ) : null}
-      {allowCustomSplit ? (
-        <div className="ownerCustom">
-          {members.map((member, index) => (
-            <label key={member.id}>
-              {member.name}
-              <input
-                aria-label={`Porcentaje de ${member.name}`}
-                defaultValue={values[`owner_${member.id}`] ?? (index === 0 ? "50" : "50")}
-                inputMode="decimal"
-                name={`owner_${member.id}`}
-              />
-            </label>
-          ))}
-          <p className="simpleHint">
-            ¿Un inmueble a medias con alguien de fuera? Pon solo vuestra parte; el resto
-            se da por suyo. Solo se admite en inmuebles — el dinero y las inversiones
-            suman al 100%.
-          </p>
-        </div>
-      ) : null}
-    </fieldset>
   );
 }
