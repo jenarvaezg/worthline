@@ -28,6 +28,7 @@ import {
   asOfText,
   CATALOG_FILTER_OPTIONS,
   CATALOG_LENSES,
+  type CatalogDimension,
   type CatalogFilter,
   type CatalogSort,
   type CatalogViewState,
@@ -35,10 +36,11 @@ import {
   confidenceText,
   countMatching,
   identityText,
+  MATERIAL_GAP_THRESHOLD,
   parseCatalogParams,
-  profileCoverage,
   profileKey,
   profileNeedsCategorizing,
+  profileWorstGap,
   STALE_AS_OF_MONTHS,
   UNDECLARED_TEXT,
   visibleProfiles,
@@ -62,6 +64,18 @@ const SORT_TITLES: Record<CatalogSort, string> = {
   confianza: "confianza",
   corte: "antigüedad del corte",
 };
+
+/** The dimension said out loud, for the «Aviso» cell's title (#1678). */
+const DIMENSION_NAMES: Record<CatalogDimension, string> = {
+  geography: "geografía",
+  currency: "divisa",
+  assetClass: "clase de activo",
+};
+
+/** A gap as the register prints it: one decimal, so 0,3% never reads as 0%. */
+function formatGap(remainder: number): string {
+  return `${(Math.round(remainder * 1000) / 10).toLocaleString("es-ES")}%`;
+}
 
 /** The counters shown beside the filter — the lenses that name a problem. */
 const COUNTED_LENSES: readonly CatalogFilter[] = [
@@ -296,7 +310,10 @@ export default function CatalogWorkbench({
               {rows.map((profile) => {
                 const key = profileKey(profile);
                 const needs = profileNeedsCategorizing(profile);
-                const avisoLabel = `Aviso: cobertura incompleta (${Math.round(profileCoverage(profile) * 100)}% declarado)`;
+                const gap = profileWorstGap(profile);
+                const avisoLabel = gap
+                  ? `Sin declarar ${formatGap(gap.remainder)} en ${DIMENSION_NAMES[gap.dimension]}${needs ? "" : ` — por debajo del ${formatGap(MATERIAL_GAP_THRESHOLD)} que el registro pide mirar`}`
+                  : "Cobertura completa en las tres dimensiones";
                 const isSelected = key === view.selectedKey;
                 return (
                   <tr
@@ -315,14 +332,21 @@ export default function CatalogWorkbench({
                     </td>
                     <td>{profile.displayName ?? "—"}</td>
                     <td>
-                      {needs ? (
-                        // Not colour-only: the visible word «Aviso» is the label,
-                        // `title` carries the coverage detail (#941).
+                      {/* The SIZE of the gap is on the row, not only in `title`
+                          (#1678): three tenths must not read like thirty points.
+                          Not colour-only — the number is the label. A gap below
+                          the materiality threshold still shows, in muted text:
+                          it is true, it is just not worth chasing. */}
+                      {gap === null ? (
+                        <span className="catalogAvisoNone">—</span>
+                      ) : needs ? (
                         <span className="catalogAviso" title={avisoLabel}>
-                          Aviso
+                          {formatGap(gap.remainder)}
                         </span>
                       ) : (
-                        <span className="catalogAvisoNone">—</span>
+                        <span className="catalogAvisoNone" title={avisoLabel}>
+                          {formatGap(gap.remainder)}
+                        </span>
                       )}
                     </td>
                     <td>

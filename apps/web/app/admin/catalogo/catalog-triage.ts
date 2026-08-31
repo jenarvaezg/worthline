@@ -23,8 +23,26 @@ import {
   isRealCalendarDay,
 } from "@worthline/domain";
 
-/** Tolerance for "the declared weights don't quite reach 100%". */
+/**
+ * FLOAT tolerance, and nothing else: it exists so a vector that adds up to
+ * 0.9999999 through rounding does not read as incomplete. It is NOT a relevance
+ * threshold — see {@link MATERIAL_GAP_THRESHOLD} for that (#1678).
+ */
 export const COVERAGE_EPSILON = 1e-9;
+
+/**
+ * MATERIALITY threshold: below this, an undeclared remainder does not put a
+ * ficha in the work queue (#1678). One percent, because the sub-1% gaps left in
+ * the real catalog are all of the same kind — a fund's cash line whose currency
+ * the audited report does not state, two tankers in flag-of-convenience
+ * envelopes — and no source will ever fill them, so they would sit in the
+ * register for ever beside gaps of thirty points.
+ *
+ * This threshold governs ATTENTION, never the data: the vector still declares
+ * its remainder, the exposure lens still reads it as unknown coverage, and the
+ * domain contract still refuses anything over 100% (ADR 0084, #1499).
+ */
+export const MATERIAL_GAP_THRESHOLD = 0.01;
 
 export type CatalogFilter =
   | "todos"
@@ -103,27 +121,59 @@ export function dimensionRemainder(
 }
 
 /**
- * A dimension "needs categorizing" when its declared weights leave any
- * undeclared remainder — including a dimension that is entirely absent (a
- * profile that has never been classified on that axis is the most in need).
+ * A dimension "needs categorizing" when its undeclared remainder is MATERIAL —
+ * over {@link MATERIAL_GAP_THRESHOLD}, not merely over the float epsilon. A
+ * dimension that is entirely absent is the most in need, so it always qualifies.
+ *
+ * The threshold is what makes the register a work queue: a gap the source will
+ * never fill (a fund's «cash and margin cash» line whose currency the audited
+ * report does not state) must not compete for attention with a thirty-point hole.
  */
 export function dimensionNeedsCategorizing(
   breakdown: Record<string, string> | undefined,
 ): boolean {
-  return dimensionRemainder(breakdown) > COVERAGE_EPSILON;
+  // The two constants collaborate rather than compete: the epsilon absorbs float
+  // noise (1 − 0.99 is 0.010000000000000009, which would otherwise put a gap of
+  // exactly the threshold on the wrong side), the threshold decides materiality.
+  return dimensionRemainder(breakdown) > MATERIAL_GAP_THRESHOLD + COVERAGE_EPSILON;
 }
 
-/** Whether any applicable dimension leaves an undeclared remainder (#941, #1452). */
-export function profileNeedsCategorizing(profile: GlobalExposureProfile): boolean {
+/** The dimensions applicable to a profile — geo/currency drop out for metal and crypto. */
+function applicableDimensions(
+  profile: GlobalExposureProfile,
+): readonly CatalogDimension[] {
   const geoCurrencyExempt = isGeoCurrencyNotApplicableAssetClass(
     profile.breakdowns.assetClass,
   );
-  return CATALOG_DIMENSIONS.some((dimension) => {
-    if (geoCurrencyExempt && (dimension === "geography" || dimension === "currency")) {
-      return false;
+  return geoCurrencyExempt
+    ? CATALOG_DIMENSIONS.filter((dimension) => dimension === "assetClass")
+    : CATALOG_DIMENSIONS;
+}
+
+/** Whether any applicable dimension leaves a MATERIAL remainder (#941, #1452, #1678). */
+export function profileNeedsCategorizing(profile: GlobalExposureProfile): boolean {
+  return applicableDimensions(profile).some((dimension) =>
+    dimensionNeedsCategorizing(dimensionOf(profile.breakdowns, dimension)),
+  );
+}
+
+/**
+ * The largest undeclared remainder across the applicable dimensions, and which
+ * dimension carries it — `null` when every one of them is complete. Reported
+ * whatever its size: the list shows a sub-threshold gap in muted text rather
+ * than hiding it, because the gap is true even when it is not worth chasing.
+ */
+export function profileWorstGap(
+  profile: GlobalExposureProfile,
+): { dimension: CatalogDimension; remainder: number } | null {
+  let worst: { dimension: CatalogDimension; remainder: number } | null = null;
+  for (const dimension of applicableDimensions(profile)) {
+    const remainder = dimensionRemainder(dimensionOf(profile.breakdowns, dimension));
+    if (remainder > COVERAGE_EPSILON && (worst === null || remainder > worst.remainder)) {
+      worst = { dimension, remainder };
     }
-    return dimensionNeedsCategorizing(dimensionOf(profile.breakdowns, dimension));
-  });
+  }
+  return worst;
 }
 
 /**

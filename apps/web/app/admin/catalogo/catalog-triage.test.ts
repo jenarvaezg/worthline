@@ -15,10 +15,12 @@ import {
   dimensionDeclared,
   dimensionRemainder,
   identityText,
+  MATERIAL_GAP_THRESHOLD,
   parseCatalogParams,
   profileCoverage,
   profileKey,
   profileNeedsCategorizing,
+  profileWorstGap,
   STALE_AS_OF_MONTHS,
   visibleProfiles,
 } from "./catalog-triage";
@@ -121,7 +123,12 @@ describe("profileNeedsCategorizing", () => {
       profileNeedsCategorizing(
         profile({
           breakdowns: {
-            geography: { europe_developed: "0.74", sin_region: "0.25" },
+            // El ejemplo era 0,74 + 0,25 = 0,99, un hueco de EXACTAMENTE el 1%,
+            // que desde #1678 queda por debajo del umbral de materialidad. La
+            // intención del test no cambia —si `sin_region` no cierra el hueco,
+            // sigue marcando—, así que el hueco se hace material en vez de
+            // relajar la aserción; la frontera se pincha en su propio bloque.
+            geography: { europe_developed: "0.74", sin_region: "0.2" },
             currency: { EUR: "1" },
             assetClass: { equity: "1" },
           },
@@ -476,5 +483,145 @@ describe("ordering is separable from filtering (#1508)", () => {
     ).toBe("?orden=corte");
     expect(parseCatalogParams({ orden: "confianza" }).sort).toBe("confianza");
     expect(parseCatalogParams({ orden: "por-lo-que-sea" }).sort).toBeNull();
+  });
+});
+
+describe("materiality threshold (#1678)", () => {
+  it("does not flag a gap below the threshold, and does flag one above", () => {
+    const casi = profile({
+      breakdowns: {
+        geography: { us: "1" },
+        currency: { USD: "0.997" },
+        assetClass: { equity: "1" },
+      },
+    });
+    expect(
+      profileNeedsCategorizing(casi),
+      "three tenths of a percent is not a work item",
+    ).toBe(false);
+
+    const material = profile({
+      breakdowns: {
+        geography: { us: "1" },
+        currency: { USD: "0.98" },
+        assetClass: { equity: "1" },
+      },
+    });
+    expect(profileNeedsCategorizing(material)).toBe(true);
+  });
+
+  it("puts the boundary exactly at the threshold: 1% is not material, 1.01% is", () => {
+    const complete = { geography: { us: "1" }, assetClass: { equity: "1" } };
+    expect(
+      profileNeedsCategorizing(
+        profile({ breakdowns: { ...complete, currency: { USD: "0.99" } } }),
+      ),
+      `a gap of exactly ${MATERIAL_GAP_THRESHOLD} is not over the threshold`,
+    ).toBe(false);
+    expect(
+      profileNeedsCategorizing(
+        profile({ breakdowns: { ...complete, currency: { USD: "0.9899" } } }),
+      ),
+    ).toBe(true);
+  });
+
+  it("still flags a dimension that was never declared at all", () => {
+    // An absent axis is 100% missing, so the threshold never rescues it.
+    expect(profileNeedsCategorizing(profile({ breakdowns: {} }))).toBe(true);
+  });
+
+  it("keeps the float epsilon out of it: 0.9999999 was never a gap", () => {
+    expect(
+      profileNeedsCategorizing(
+        profile({
+          breakdowns: {
+            geography: { us: "0.9999999" },
+            currency: { USD: "1" },
+            assetClass: { equity: "1" },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("the «por categorizar» lens honours the threshold", () => {
+    const trivial = profile({
+      identity: { kind: "isin", isin: "IE00B4L5Y983" },
+      displayName: "tres décimas",
+      breakdowns: {
+        geography: { us: "1" },
+        currency: { USD: "0.997" },
+        assetClass: { equity: "1" },
+      },
+    });
+    const grave = profile({
+      identity: { kind: "isin", isin: "US9229087690" },
+      displayName: "treinta puntos",
+      breakdowns: {
+        geography: { us: "0.7" },
+        currency: { USD: "1" },
+        assetClass: { equity: "1" },
+      },
+    });
+    expect(
+      visibleProfiles(
+        [trivial, grave],
+        { filter: "por-categorizar", query: "", sort: null },
+        TODAY,
+      ).map((p) => p.displayName),
+    ).toEqual(["treinta puntos"]);
+    expect(countMatching([trivial, grave], "por-categorizar", TODAY)).toBe(1);
+  });
+});
+
+describe("profileWorstGap (#1678)", () => {
+  it("reports the largest gap and which dimension carries it", () => {
+    expect(
+      profileWorstGap(
+        profile({
+          breakdowns: {
+            geography: { us: "0.9" },
+            currency: { USD: "0.7" },
+            assetClass: { equity: "1" },
+          },
+        }),
+      ),
+    ).toEqual({ dimension: "currency", remainder: expect.closeTo(0.3, 6) });
+  });
+
+  it("reports a SUB-threshold gap too — it is true, just not worth chasing", () => {
+    const gap = profileWorstGap(
+      profile({
+        breakdowns: {
+          geography: { us: "1" },
+          currency: { USD: "0.997" },
+          assetClass: { equity: "1" },
+        },
+      }),
+    );
+    expect(gap?.dimension).toBe("currency");
+    expect(gap?.remainder).toBeCloseTo(0.003, 6);
+  });
+
+  it("is null when the three dimensions are complete", () => {
+    expect(
+      profileWorstGap(
+        profile({
+          breakdowns: {
+            geography: { us: "1" },
+            currency: { USD: "1" },
+            assetClass: { equity: "1" },
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores geography and currency for a commodity vector, like the filter does", () => {
+    // #1452: metal has no country and no underlying currency, so those axes are
+    // not applicable — the gap must not be reported against them.
+    expect(
+      profileWorstGap(profile({ breakdowns: { assetClass: { commodity: "1" } } })),
+    ).toBeNull();
   });
 });
