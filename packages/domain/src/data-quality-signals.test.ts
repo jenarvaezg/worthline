@@ -41,6 +41,7 @@ function baseInput(
     amortizableStartByLiabilityId: new Map(),
     connectedSources: [],
     debtModelByLiabilityId: new Map(),
+    debtServiceByLiabilityId: new Map(),
     fireConfigByScopeId: {},
     holdingValueByHoldingId: new Map(),
     investmentOperationsByAssetId: new Map(),
@@ -1681,5 +1682,81 @@ describe("collectDataQualitySignals — COST_BASIS_VALUE_ONLY (#1505)", () => {
 
   test("el usuario puede marcarlo como intencional: «no lo sé» es una respuesta", () => {
     expect(isOverrideableSignalCode(COST_BASIS_VALUE_ONLY_CODE)).toBe(true);
+  });
+});
+
+describe("collectDataQualitySignals — SPENDING_VS_DEBT_SERVICE (#1520)", () => {
+  const mortgage = (workspace: Workspace) =>
+    createLiability(workspace, {
+      balanceMinor: 180_000_00,
+      currency: "EUR",
+      id: "liab_hipoteca",
+      name: "Hipoteca",
+      ownership: owner(),
+      type: "mortgage",
+    });
+
+  function collect(options: { config?: FireScopeConfig; cuotaMinor?: number }) {
+    const { input, scopeOption, workspace } = fixture();
+    return collectDataQualitySignals(
+      input({
+        debtModelByLiabilityId: new Map([["liab_hipoteca", "amortizable"]]),
+        debtServiceByLiabilityId:
+          options.cuotaMinor === undefined
+            ? new Map()
+            : new Map([["liab_hipoteca", options.cuotaMinor]]),
+        fireConfigByScopeId:
+          options.config === undefined ? {} : { [scopeOption.id]: options.config },
+        liabilities: [mortgage(workspace)],
+        workspace,
+      }),
+    ).filter((signal) => signal.category === "spending_coherence");
+  }
+
+  const spending = (
+    monthlySpendingMinor: number,
+    includesDebtService?: boolean,
+  ): FireScopeConfig => ({
+    monthlySpendingMinor,
+    safeWithdrawalRate: 0.04,
+    ...(includesDebtService === undefined
+      ? {}
+      : { monthlySpendingIncludesDebtService: includesDebtService }),
+  });
+
+  test("pide la declaración cuando la cuota cambia la lectura del gasto", () => {
+    const signals = collect({ config: spending(2_000_00), cuotaMinor: 883_66 });
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      category: "spending_coherence",
+      code: "SPENDING_VS_DEBT_SERVICE",
+      fixable: true,
+      severity: "medium",
+    });
+    expect(signals[0]?.label).toContain("883,66");
+    expect(signals[0]?.affected?.object).toBe("scope");
+  });
+
+  test("un gasto declarado que dice incluir una cuota que no cabe es imposible", () => {
+    const signals = collect({ config: spending(800_00, true), cuotaMinor: 883_66 });
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.severity).toBe("high");
+  });
+
+  test("declarado en cualquiera de los dos sentidos y coherente: silencio", () => {
+    expect(collect({ config: spending(2_000_00, true), cuotaMinor: 883_66 })).toEqual([]);
+    expect(collect({ config: spending(2_000_00, false), cuotaMinor: 883_66 })).toEqual(
+      [],
+    );
+  });
+
+  test("sin cuota vigente no hay nada que cruzar", () => {
+    expect(collect({ config: spending(2_000_00) })).toEqual([]);
+  });
+
+  test("sin config FIRE calla: MISSING_FIRE_CONFIG ya lo cubre", () => {
+    expect(collect({ cuotaMinor: 883_66 })).toEqual([]);
   });
 });

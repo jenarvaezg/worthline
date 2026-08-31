@@ -737,6 +737,7 @@ export type AgentViewDataQualityCategory =
   | "source_freshness"
   | "missing_configuration"
   | "savings_coherence"
+  | "spending_coherence"
   | "portfolio_reconciliation"
   | "transfer_integrity"
   | "history_coverage"

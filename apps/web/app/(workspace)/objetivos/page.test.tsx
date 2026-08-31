@@ -13,6 +13,16 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+/** Lo que la página necesita del plan: la forma del registro, sin el resto del store. */
+type AmortizationPlanRecordish = {
+  id: string;
+  annualInterestRate: string;
+  disbursementDate: string;
+  firstPaymentDate: string;
+  initialCapitalMinor: number;
+  termMonths: number;
+};
+
 const calls = vi.hoisted(() => {
   const projectionContext = {
     cachedPriceByAsset: new Map(),
@@ -57,6 +67,16 @@ const calls = vi.hoisted(() => {
     projectionContext,
     readAssets: vi.fn(async () => assets),
     readPublicIds: vi.fn(async () => []),
+    // Los hechos de la deuda que la página lee para la cuota vigente (#1520). Por
+    // defecto ninguna deuda declara modelo, así que no hay cuota y las dos tarjetas
+    // se pintan como antes de este ticket.
+    readDebtModel: vi.fn(async (): Promise<"amortizable" | null> => null),
+    readAmortizationPlan: vi.fn(
+      async (): Promise<AmortizationPlanRecordish | null> => null,
+    ),
+    readBalanceRebaselines: vi.fn(async () => []),
+    readInterestRateRevisions: vi.fn(async () => []),
+    readEarlyRepayments: vi.fn(async () => []),
     readCurveValuedHoldingsAtDate: vi.fn(
       async (): Promise<{ assets: ManualAsset[]; liabilities: Liability[] }> => ({
         assets,
@@ -121,7 +141,14 @@ const calls = vi.hoisted(() => {
         scopes,
         selectedScope: scopes[0],
         store: {
-          agentView: { readPublicIds: calls.readPublicIds },
+          agentView: {
+            readAmortizationPlan: calls.readAmortizationPlan,
+            readBalanceRebaselines: calls.readBalanceRebaselines,
+            readDebtModel: calls.readDebtModel,
+            readEarlyRepayments: calls.readEarlyRepayments,
+            readInterestRateRevisions: calls.readInterestRateRevisions,
+            readPublicIds: calls.readPublicIds,
+          },
           assets: {
             readAssets: calls.readAssets,
             readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
@@ -1518,5 +1545,154 @@ describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
     expect(card).toContain("hasta los 90 (27 años)");
     // 50.000 € al 3,5 % repartidos en 27 años = 2.892,62 €/año → 241,05 €/mes.
     expect(card).toContain(`${euros(24_105)}/mes`);
+  });
+});
+
+describe("ObjetivosPage el supuesto del servicio de deuda (#1520)", () => {
+  /** 100.000 € al 3 % a 240 meses: cuota 554,60 €, el 27,7 % de los 2.000 € declarados. */
+  function withAmortizableDebt() {
+    calls.readDebtModel.mockResolvedValueOnce("amortizable");
+    calls.readAmortizationPlan.mockResolvedValueOnce({
+      annualInterestRate: "0.03",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
+      id: "plan_1",
+      initialCapitalMinor: 100_000_00,
+      termMonths: 240,
+    });
+  }
+
+  function declaring(includesDebtService?: boolean) {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        expectedRealReturn: 0.05,
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        ...(includesDebtService === undefined
+          ? {}
+          : { monthlySpendingIncludesDebtService: includesDebtService }),
+      },
+    });
+  }
+
+  /** La glosa de la tarjeta de renta pasiva, por su primera frase. */
+  const COVERAGE_NOTE = "La cobertura compara tus cobros con tu gasto declarado";
+
+  test("la cobertura no cambia de valor por nombrar el supuesto", async () => {
+    withAmortizableDebt();
+    declaring();
+
+    const html = await renderedHtml();
+
+    // La misma cobertura que sin deuda ninguna: este ticket nombra y mide, no resta.
+    expect(html).toContain("50,0 %");
+  });
+
+  test("sin declarar, la tarjeta de renta pasiva lo dice y cita la cuota", async () => {
+    withAmortizableDebt();
+    declaring();
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("no has declarado si tu gasto incluye tus cuotas de deuda");
+    expect(html).toContain("554,60");
+  });
+
+  test("declarado que lo incluye, la glosa lo dice sin pedir nada", async () => {
+    withAmortizableDebt();
+    declaring(true);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("tu gasto declarado ya incluye tus cuotas de deuda");
+    expect(html).not.toContain("no has declarado si tu gasto incluye");
+    expect(html).toContain("50,0 %");
+  });
+
+  test("declarado que NO lo incluye, la glosa pide sumarlas antes de leer el %", async () => {
+    withAmortizableDebt();
+    declaring(false);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("NO incluye tus cuotas de deuda");
+    expect(html).toContain("súmalas");
+  });
+
+  test("sin cuota vigente no se nombra ningún supuesto: no hay ninguno", async () => {
+    declaring();
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain(COVERAGE_NOTE);
+    expect(html).toContain("50,0 %");
+  });
+
+  /** La tarjeta del gasto sostenible, cuando la hay. */
+  function sustainableCard(html: string): string {
+    const opened = html.slice(html.indexOf('<section aria-label="Gasto sostenible"'));
+    return opened.slice(0, opened.indexOf("</section>"));
+  }
+
+  /** Jorge declarado como jubilación ordinaria: es cuando la tarjeta se pinta. */
+  function declaringOrdinary(includesDebtService?: boolean) {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        currentAge: 63,
+        expectedRealReturn: 0.035,
+        monthlySavingsCapacityMinor: 0,
+        monthlySpendingMinor: 200_000,
+        retirementPlan: "ordinary",
+        safeWithdrawalRate: 0.035,
+        targetRetirementAge: 67,
+        ...(includesDebtService === undefined
+          ? {}
+          : { monthlySpendingIncludesDebtService: includesDebtService }),
+      },
+    });
+  }
+
+  test("el gasto sostenible sigue diciendo el MISMO €/mes en los tres estados", async () => {
+    // La otra mitad de «ninguna cifra en €/mes cambia de valor por este PR»: se mide
+    // sobre el HTML de la tarjeta, no comparando el motor consigo mismo — la resta de
+    // la opción 3 caería en la vista, y una aserción sobre el motor no la vería.
+    withAmortizableDebt();
+    declaringOrdinary();
+    const undeclared = sustainableCard(await renderedHtml());
+
+    withAmortizableDebt();
+    declaringOrdinary(true);
+    const included = sustainableCard(await renderedHtml());
+
+    withAmortizableDebt();
+    declaringOrdinary(false);
+    const excluded = sustainableCard(await renderedHtml());
+
+    // 50.000 € vendibles × 3,5 % ÷ 12 = 146 €/mes, con cuota y sin ella. Si la resta
+    // de la opción 3 entrara, esta cifra bajaría a 146 − 555 = negativa.
+    // El espacio antes del € es el duro que mete Intl: `\s` lo cubre.
+    expect(undeclared).toMatch(/146\s€\/mes/);
+    expect(undeclared).toMatch(/1750\s€\/año/);
+    for (const card of [included, excluded]) {
+      // La cifra grande y las dos filas son idénticas; solo cambia la glosa.
+      expect(card.replace(/De esta cifra salen[^<]*/g, "")).toBe(
+        undeclared.replace(/De esta cifra salen[^<]*/g, ""),
+      );
+    }
+    // Y la glosa está, en los tres, diciendo que la cuota NO se ha restado.
+    for (const card of [undeclared, included, excluded]) {
+      expect(card).toContain("no se han restado");
+      expect(card).toContain("554,60");
+    }
+  });
+
+  test("el formulario ofrece los tres estados y precarga el guardado", async () => {
+    declaring(true);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain('name="monthlySpendingIncludesDebtService"');
+    expect(html).toContain("Sin declarar");
+    expect(html).toContain('value="yes" selected');
   });
 });

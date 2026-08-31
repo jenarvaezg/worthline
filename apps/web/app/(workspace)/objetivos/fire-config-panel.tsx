@@ -133,6 +133,35 @@ export function FireConfigPanel({
             </small>
           </label>
 
+          {/* Lo que el gasto de arriba SIGNIFICA (#1520, ADR 0099). Va pegado a su
+              campo y no en la letra pequeña, porque el mismo 114,9 % de cobertura
+              quiere decir «ya vives de tus activos» o «te falta un tercio» según esta
+              respuesta.
+
+              Un `select` de tres opciones y no una casilla: «sin declarar» es un
+              estado real, y una casilla lo confundiría con «no incluye» — que es lo que
+              la app venía suponiendo sin decirlo.
+
+              Controlado como los campos de arriba (#1473): no mueve ninguna cifra, pero
+              sí mueve la glosa del gasto sostenible, y un campo en la cara visible que
+              no responde al tocarlo se lee como que la app lo ignora. */}
+          <label>
+            ¿Ese gasto incluye tus cuotas de deuda?
+            <select
+              name="monthlySpendingIncludesDebtService"
+              onChange={editField("spendingIncludesDebtService")}
+              value={draft.spendingIncludesDebtService}
+            >
+              <option value="">Sin declarar</option>
+              <option value="yes">Sí, la hipoteca y los préstamos van dentro</option>
+              <option value="no">No, el gasto va aparte de las cuotas</option>
+            </select>
+            <small className="muted">
+              No cambia ninguna cifra: decide con qué se comparan la cobertura de tu gasto
+              y tu gasto sostenible. Sin declarar, las dos lo dicen en voz alta.
+            </small>
+          </label>
+
           <label>
             Tasa de retirada (%)
             <input

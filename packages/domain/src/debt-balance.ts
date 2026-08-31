@@ -1,6 +1,7 @@
 import Big from "big.js";
 
 import {
+  type AmortizableBalanceAtDateInput,
   type AmortizationPlanInput,
   amortizableBalanceAtDate,
   amortizationPlanFromBalanceRebaseline,
@@ -10,6 +11,7 @@ import {
 } from "./amortization";
 import { daysBetween } from "./dates";
 import { type AccruedInterestAtDate, accruedInterestAtDate } from "./debt-accrual";
+import { type MonthlyDebtService, monthlyDebtServiceAtDate } from "./debt-service";
 import {
   cadenceOrDefault,
   interpolateOrStep,
@@ -271,31 +273,63 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
   }
 
   if (debtModel === "amortizable") {
-    const effective = effectiveAmortizationPlan(input);
-    if (effective === null) {
+    const resolved = resolveAmortizableInput(input);
+    if (resolved.kind === "no_schedule") {
       return currentBalanceMinor;
     }
-    if ("startsAfterTarget" in effective) return 0;
+    if (resolved.kind === "starts_after_target") return 0;
 
-    const revisions =
-      input.revisions !== undefined
-        ? onOrAfter(input.revisions, effective.effectiveFrom)
-        : undefined;
-    const earlyRepayments =
-      input.earlyRepayments !== undefined
-        ? onOrAfter(input.earlyRepayments, effective.effectiveFrom)
-        : undefined;
-
-    return amortizableBalanceAtDate({
-      plan: effective.plan,
-      targetDate,
-      cadence,
-      ...(revisions !== undefined ? { revisions } : {}),
-      ...(earlyRepayments !== undefined ? { earlyRepayments } : {}),
-    });
+    return amortizableBalanceAtDate(resolved.input);
   }
 
   return currentBalanceMinor;
+}
+
+/**
+ * Which amortizable input governs a target date: the effective schedule (the plan, or
+ * the re-baseline active by then — ADR 0056) carrying the dated events that survive
+ * it.
+ *
+ * The ONE place that resolves that precedence, because three readings of the same
+ * curve ask for it — the balance, the accrued interest (#1292) and the monthly
+ * service (#1520) — and a third copy of «which schedule, and which of its events
+ * count» is exactly how two of them end up answering about different loans.
+ */
+type ResolvedAmortizable =
+  /** Neither a plan nor a re-baseline: there is no curve to walk. */
+  | { kind: "no_schedule" }
+  /** The debt's own schedule starts after the target date. */
+  | { kind: "starts_after_target" }
+  | { kind: "input"; input: AmortizableBalanceAtDateInput };
+
+function resolveAmortizableInput(input: DebtBalanceAtDateInput): ResolvedAmortizable {
+  const effective = effectiveAmortizationPlan(input);
+  if (effective === null) {
+    return { kind: "no_schedule" };
+  }
+  if ("startsAfterTarget" in effective) {
+    return { kind: "starts_after_target" };
+  }
+
+  const revisions =
+    input.revisions !== undefined
+      ? onOrAfter(input.revisions, effective.effectiveFrom)
+      : undefined;
+  const earlyRepayments =
+    input.earlyRepayments !== undefined
+      ? onOrAfter(input.earlyRepayments, effective.effectiveFrom)
+      : undefined;
+
+  return {
+    input: {
+      cadence: cadenceOrDefault(input.cadence),
+      plan: effective.plan,
+      targetDate: input.targetDate,
+      ...(revisions !== undefined ? { revisions } : {}),
+      ...(earlyRepayments !== undefined ? { earlyRepayments } : {}),
+    },
+    kind: "input",
+  };
 }
 
 /**
@@ -319,27 +353,34 @@ export function debtAccrualAtDate(
     return null;
   }
 
-  const effective = effectiveAmortizationPlan(input);
-  if (effective === null || "startsAfterTarget" in effective) {
+  const resolved = resolveAmortizableInput(input);
+  if (resolved.kind !== "input") {
     return null;
   }
 
-  const revisions =
-    input.revisions !== undefined
-      ? onOrAfter(input.revisions, effective.effectiveFrom)
-      : undefined;
-  const earlyRepayments =
-    input.earlyRepayments !== undefined
-      ? onOrAfter(input.earlyRepayments, effective.effectiveFrom)
-      : undefined;
+  return accruedInterestAtDate(resolved.input);
+}
 
-  return accruedInterestAtDate({
-    cadence: cadenceOrDefault(input.cadence),
-    plan: effective.plan,
-    targetDate: input.targetDate,
-    ...(revisions !== undefined ? { revisions } : {}),
-    ...(earlyRepayments !== undefined ? { earlyRepayments } : {}),
-  });
+/**
+ * The monthly cuota in effect on `targetDate`, or `null` when the debt has none there
+ * (#1520). Same input and same schedule precedence as the two readings above, so the
+ * figure answering «how much leaves the account for this debt every month» can never
+ * be about a different loan than the balance printed beside it.
+ *
+ * Null for every non-amortizable model, and that is a real gap rather than a zero: a
+ * `revolving` / `informal` debt declares a BALANCE on a date and never a payment
+ * schedule, so worthline does not know what its holder pays each month. Reading the
+ * drop between two anchors as a cuota would invent a habit out of two declarations.
+ */
+export function debtServiceAtDate(
+  input: DebtBalanceAtDateInput,
+): MonthlyDebtService | null {
+  if (input.debtModel !== "amortizable") {
+    return null;
+  }
+
+  const resolved = resolveAmortizableInput(input);
+  return resolved.kind === "input" ? monthlyDebtServiceAtDate(resolved.input) : null;
 }
 
 /**

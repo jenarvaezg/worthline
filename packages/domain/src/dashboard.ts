@@ -46,6 +46,8 @@ import { resolveScopeMemberIds } from "./scope";
 import { scopeOwnedHoldingIds } from "./scope-holdings";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
 import { calculateSnapshotDeltas } from "./snapshot-types";
+import type { SpendingDebtServiceCoherence } from "./spending-debt-service";
+import { scopeSpendingDebtService } from "./spending-debt-service";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 
 export type { LocalPersistenceStatus };
@@ -183,6 +185,12 @@ export interface DashboardState {
    * unconfigured or the caller handed in no ledger to measure.
    */
   savingsCoherence: SavingsCoherence | null;
+  /**
+   * El gasto declarado contra el servicio de deuda vigente (#1520). Null cuando FIRE
+   * está sin configurar o el llamador no pasó las cuotas: sin ellas no hay testigo, y
+   * un cero inventado diría «no tienes deudas» donde lo cierto es «no hemos mirado».
+   */
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
   selectedMemberIds: string[];
   pyramid: LiquidityTierBreakdown[];
   deltas: SnapshotDeltas | undefined;
@@ -231,6 +239,13 @@ export function prepareDashboardState(input: {
    * context), so passing it costs no I/O.
    */
   investmentOperationsByAssetId?: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  /**
+   * La cuota vigente de cada deuda al 100 %, derivada por `debtServiceAtDate` (#1520).
+   * Opcional: solo la pide la pantalla que nombra el supuesto del gasto declarado, y
+   * derivarla exige leer el plan, sus revisiones y sus amortizaciones de cada deuda —
+   * I/O que ninguna otra superficie necesita.
+   */
+  debtServiceByLiabilityId?: ReadonlyMap<string, number>;
   /**
    * Declared payout schedules (#1448) — the evidence behind the rent-derived FIRE
    * rate. Optional: without them the rate is the tier weighting it always was.
@@ -404,6 +419,20 @@ export function prepareDashboardState(input: {
         })
       : null;
 
+  // El gasto declarado contra la cuota que la app ya sabe (#1520): el mismo careo
+  // que emite la señal de salud, sobre las mismas deudas del ámbito — así la glosa de
+  // las tarjetas y el aviso del inventario no pueden citar cuotas distintas.
+  const debtServiceCoherence: SpendingDebtServiceCoherence | null =
+    fireScopeConfig && workspace && selectedScope && input.debtServiceByLiabilityId
+      ? scopeSpendingDebtService({
+          config: fireScopeConfig,
+          currency: workspace.baseCurrency,
+          debtServiceByLiabilityId: input.debtServiceByLiabilityId,
+          liabilities,
+          scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
+        })
+      : null;
+
   const fireGlance: FireGlance | null =
     fireScopeConfig && fireResult
       ? {
@@ -435,6 +464,7 @@ export function prepareDashboardState(input: {
     activeMembers,
     assets,
     dashboard,
+    debtServiceCoherence,
     deltas,
     fireGlance,
     fireProjection,
@@ -515,6 +545,13 @@ export interface ObjetivosState {
    * percentage) live here. Null when FIRE is unconfigured or no ledger was handed in.
    */
   savingsCoherence: SavingsCoherence | null;
+  /**
+   * El gasto declarado contra el servicio de deuda vigente (#1520). Las dos tarjetas
+   * que contestan en €/mes —la cobertura del gasto y el gasto sostenible— nombran con
+   * esto el supuesto bajo el que están hablando, el de «sin declarar» incluido. No
+   * mueve ninguna cifra. Null sin config FIRE o sin cuotas pasadas.
+   */
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
   goals: ObjetivosGoalView[];
   /**
    * Coast · Lean · Regular · Fat milestones (PRD #507 N1, #513).
@@ -651,6 +688,7 @@ export function prepareObjetivosState(
         })
       : null,
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
+    debtServiceCoherence: dash.debtServiceCoherence,
     savingsCoherence: dash.savingsCoherence,
     fireProjection: family?.chart ?? null,
     fireResult: dash.fireResult,

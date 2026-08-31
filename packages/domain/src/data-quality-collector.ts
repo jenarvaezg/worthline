@@ -18,6 +18,7 @@ export type DataQualityCategory =
   | "source_freshness"
   | "missing_configuration"
   | "savings_coherence"
+  | "spending_coherence"
   | "portfolio_reconciliation"
   | "transfer_integrity"
   | "history_coverage"
@@ -105,6 +106,7 @@ export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "source_freshness",
   "missing_configuration",
   "savings_coherence",
+  "spending_coherence",
   "portfolio_reconciliation",
   "transfer_integrity",
   "history_coverage",

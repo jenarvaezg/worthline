@@ -1,10 +1,18 @@
 import { ChipChoice } from "@web/chip-choice";
+import {
+  readDebtModelByLiabilityId,
+  readMonthlyDebtServiceByLiabilityId,
+} from "@web/debt-service-reads";
 import { holdingPublicIdIndex } from "@web/holding-route";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
+import type {
+  HoldingReturnsView,
+  PassiveIncomeLens,
+  SpendingDebtServiceCoherence,
+} from "@worthline/domain";
 import {
   collectHoldingPayouts,
   computeContributionAllowanceUsage,
@@ -18,6 +26,7 @@ import {
   resolveScopeMemberIds,
   scopeAgeSource,
   scopePassiveIncome,
+  spendingDebtServiceCoverageNote,
   suggestMonthlySavingsCapacity,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
@@ -55,14 +64,25 @@ import ObjetivosSkeleton from "./objetivos-skeleton";
 function PassiveIncomePanel({
   lens,
   currency,
+  debtServiceCoherence,
   privacyMode,
 }: {
   lens: PassiveIncomeLens;
   currency: string;
+  /**
+   * El careo del gasto declarado contra las cuotas vigentes (#1520). La cobertura
+   * compara con un gasto cuyo significado depende de si incluye la hipoteca, así que
+   * la tarjeta lo dice — incluido cuando el usuario no lo ha declarado.
+   */
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
   privacyMode: boolean;
 }) {
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
+  const debtServiceNote =
+    debtServiceCoherence === null
+      ? null
+      : spendingDebtServiceCoverageNote(debtServiceCoherence, currency, privacyMode);
   const coveragePct =
     lens.coverageRatio != null
       ? `${(lens.coverageRatio * 100).toFixed(1).replace(".", ",")} %`
@@ -121,6 +141,12 @@ function PassiveIncomePanel({
               : " · añade tu gasto en tus supuestos para ver la cobertura"}
             . Suma cobros reales del periodo, sin anualizar los parciales.
           </p>
+
+          {/* Contra QUÉ gasto se mide esa cobertura (#1520). Solo cuando hay cobertura
+              que glosar: sin gasto declarado no hay porcentaje del que hablar. */}
+          {debtServiceNote && lens.coverageRatio != null ? (
+            <p className="objetivosPasivaNote">{debtServiceNote}</p>
+          ) : null}
         </>
       ) : (
         <p className="objetivosPasivaEmpty">
@@ -201,6 +227,16 @@ export async function ObjetivosContent({
     store.agentView.readPublicIds(),
   ]);
 
+  // La cuota vigente de cada deuda (#1520), para que las dos tarjetas de €/mes digan
+  // bajo qué supuesto hablan. Va después de la tanda de arriba porque necesita las
+  // deudas ya leídas, y solo toca las que declaran modelo amortizable — en una
+  // cartera real, una o dos.
+  const debtServiceByLiabilityId = await readMonthlyDebtServiceByLiabilityId(
+    store.agentView,
+    await readDebtModelByLiabilityId(store.agentView, liabilities),
+    today,
+  );
+
   const publicIdByAssetId = Object.fromEntries(
     holdingPublicIdIndex(publicIdRows).publicByInternal,
   );
@@ -219,6 +255,7 @@ export async function ObjetivosContent({
 
   const {
     achievement,
+    debtServiceCoherence,
     savingsCoherence,
     fireProjection,
     fireResult,
@@ -236,6 +273,9 @@ export async function ObjetivosContent({
     sustainableSpending,
   } = prepareObjetivosState({
     assets,
+    // Las cuotas que el testigo del gasto declarado cruza (#1520) — leídas arriba,
+    // así que la glosa de las tarjetas y el aviso de salud citan la misma cifra.
+    debtServiceByLiabilityId,
     fireConfig,
     goals,
     // The ledger behind the achievement-badge veto (#1449) — already read above.
@@ -281,6 +321,8 @@ export async function ObjetivosContent({
     monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
     monthlySpending: savedFieldValues.monthlySpending ?? "",
     safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
+    // Lo guardado, para que tocar el `select` cuente como cambio sin guardar (#1520).
+    spendingIncludesDebtService: savedFieldValues.spendingIncludesDebtService,
     targetRetirementAge: savedFieldValues.targetRetirementAge ?? "",
   };
 
@@ -485,6 +527,7 @@ export async function ObjetivosContent({
         config={fireScopeConfig}
         currency={currency}
         currentUrl={currentUrl}
+        debtServiceCoherence={debtServiceCoherence}
         errorMessage={formError?.formId === "fire" ? formError.message : null}
         fireLevelRail={fireLevelRail}
         fireProjection={fireProjection}
@@ -558,6 +601,7 @@ export async function ObjetivosContent({
       {passiveIncome ? (
         <PassiveIncomePanel
           currency={currency}
+          debtServiceCoherence={debtServiceCoherence}
           lens={passiveIncome}
           privacyMode={privacyMode}
         />

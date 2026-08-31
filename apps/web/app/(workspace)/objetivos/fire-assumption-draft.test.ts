@@ -2,6 +2,7 @@ import type { Liability, ManualAsset, Workspace } from "@worthline/domain";
 import { calculateFireForScope, previewFireWithAssumptions } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 import {
+  draftSpendingIncludesDebtService,
   type FireAssumptionDraft,
   fireAssumptionOverrides,
   isFireAssumptionDraftDirty,
@@ -9,6 +10,7 @@ import {
 
 const saved: FireAssumptionDraft = {
   countImmobilized: true,
+  spendingIncludesDebtService: "",
   monthlySavingsCapacity: "1000",
   monthlySpending: "2000",
   safeWithdrawalRate: "3.5",
@@ -149,5 +151,41 @@ describe("el cableado del check llega al motor (#1473)", () => {
     expect(preview.context.realReturnUsed).toBeGreaterThan(
       fireFor(true).context.realReturnUsed,
     );
+  });
+});
+
+describe("la declaración del servicio de deuda en el borrador (#1520)", () => {
+  test("se lee en tri-estado, y lo que no reconocemos es «sin declarar»", () => {
+    expect(
+      draftSpendingIncludesDebtService({ ...saved, spendingIncludesDebtService: "yes" }),
+    ).toBe(true);
+    expect(
+      draftSpendingIncludesDebtService({ ...saved, spendingIncludesDebtService: "no" }),
+    ).toBe(false);
+    for (const raw of ["", "on", "true", "SI"]) {
+      expect(
+        draftSpendingIncludesDebtService({
+          ...saved,
+          spendingIncludesDebtService: raw,
+        }),
+      ).toBeUndefined();
+    }
+  });
+
+  test("tocar el select cuenta como cambio sin guardar", () => {
+    // Está en la cara visible del formulario (#1473): si no contara, el aviso de «aún
+    // no se ha guardado» callaría y el usuario se iría creyendo que ya lo declaró.
+    expect(
+      isFireAssumptionDraftDirty({ ...saved, spendingIncludesDebtService: "yes" }, saved),
+    ).toBe(true);
+  });
+
+  test("no es un override del motor: no mueve ninguna cifra", () => {
+    const overrides = fireAssumptionOverrides({
+      ...saved,
+      spendingIncludesDebtService: "no",
+    });
+
+    expect(overrides).toEqual(fireAssumptionOverrides(saved));
   });
 });

@@ -51,6 +51,12 @@ export interface FireConfigFieldValues {
   capitalLastsUntilAge?: string;
   /** Lo declarado sobre el propio plan (#1428). Vacío = sin contestar. */
   retirementPlan: "" | "ordinary" | "early";
+  /**
+   * ¿El gasto mensual declarado incluye el servicio de deuda? (#1520.) Vacío = sin
+   * declarar, que es un estado real y no un hueco por rellenar: mientras esté así, las
+   * dos tarjetas de €/mes dicen que no lo saben en vez de suponerlo.
+   */
+  spendingIncludesDebtService: "" | "yes" | "no";
   expectedRealReturn?: string;
   tierReturns: {
     cash?: string;
@@ -129,6 +135,14 @@ export function fireConfigFieldValues(
       ? {}
       : { capitalLastsUntilAge: config.capitalLastsUntilAge.toString() }),
     retirementPlan: config?.retirementPlan ?? "",
+    // El `select` precarga lo guardado, así que volver a guardar sin tocarlo conserva
+    // la declaración; sin este prellenado el formulario la borraría en cada paso.
+    spendingIncludesDebtService:
+      config?.monthlySpendingIncludesDebtService === undefined
+        ? ""
+        : config.monthlySpendingIncludesDebtService
+          ? "yes"
+          : "no",
     ...(config?.expectedRealReturn === undefined
       ? {}
       : { expectedRealReturn: formatDecimalAsPercentField(config.expectedRealReturn) }),

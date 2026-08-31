@@ -1,4 +1,8 @@
 import { readAmortizableStartByLiabilityId } from "@web/data-quality-amortizable-start";
+import {
+  readDebtModelByLiabilityId,
+  readMonthlyDebtServiceByLiabilityId,
+} from "@web/debt-service-reads";
 import type { AgentViewReadStore } from "@worthline/db";
 import type { InvestmentOperation } from "@worthline/domain";
 import {
@@ -221,20 +225,30 @@ async function collectScopeSignals(
     ),
   );
 
-  const mortgageIds = liabilities
-    .filter((liability) => liability.type === "mortgage")
-    .map((liability) => liability.id);
-  const debtModelByLiabilityId = new Map(
-    await Promise.all(
-      mortgageIds.map(
-        async (liabilityId) =>
-          [liabilityId, await store.readDebtModel(liabilityId)] as const,
-      ),
-    ),
+  // Un modelo por deuda, leído UNA vez y repartido en dos lecturas (#1520): la señal
+  // de histórico mira solo las hipotecas, que es su regla, y el testigo del gasto mira
+  // todas — el modelo se declara por deuda y no por tipo.
+  const mortgageIds = new Set(
+    liabilities
+      .filter((liability) => liability.type === "mortgage")
+      .map((liability) => liability.id),
+  );
+  const debtModelByLiability = await readDebtModelByLiabilityId(store, liabilities);
+  const debtModelByMortgageId = new Map(
+    [...debtModelByLiability].filter(([id]) => mortgageIds.has(id)),
   );
   const amortizableStartByLiabilityId = await readAmortizableStartByLiabilityId(
     store,
-    debtModelByLiabilityId,
+    debtModelByMortgageId,
+  );
+  // La cuota vigente de cada deuda con cuadro (#1520), para cruzarla contra el gasto
+  // declarado. El modelo se declara por deuda y no por tipo, así que el testigo mira
+  // TODAS las deudas: un préstamo al consumo amortizable paga cuota igual que una
+  // hipoteca, y las señales que sí son de hipoteca siguen con su propia lista.
+  const debtServiceByLiabilityId = await readMonthlyDebtServiceByLiabilityId(
+    store,
+    debtModelByLiability,
+    asOfDateKey,
   );
 
   const positionsBySourceId = new Map(
@@ -301,7 +315,8 @@ async function collectScopeSignals(
     assets,
     amortizableStartByLiabilityId,
     connectedSources,
-    debtModelByLiabilityId,
+    debtModelByLiabilityId: debtModelByMortgageId,
+    debtServiceByLiabilityId,
     fireConfigByScopeId,
     holdingValueByHoldingId,
     investmentOperationsByAssetId: operationsByAssetId,
