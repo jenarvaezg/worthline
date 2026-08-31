@@ -5,10 +5,10 @@ import type {
   InvestmentOperation,
   MonthlyCloseValue,
 } from "@worthline/domain";
-import { subsetReturns } from "@worthline/domain";
+import { investmentReturnsById, subsetReturns } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { buildPortfolioReturns } from "./returns";
+import { buildHoldingReturns, buildPortfolioReturns } from "./returns";
 
 /**
  * Regression test for the per-asset-class block on the agent-view path (#552):
@@ -421,5 +421,177 @@ describe("buildPortfolioReturns mide con subsetReturns (#1593)", () => {
     });
 
     expect(returns).toBeNull();
+  });
+});
+
+/**
+ * La ficha de UN holding pliega sus cobros registrados (#1627). Hasta aquí
+ * `buildHoldingReturns` no los recibía nunca, así que emitía siempre
+ * `DISTRIBUTIONS_NOT_CAPTURED` — y el mismo agent-view decía en su bloque de
+ * cartera que los cobros SÍ entran (#1593) mientras la ficha del mismo holding
+ * decía que no están modelados. Es #1422 a nivel de holding.
+ */
+describe("buildHoldingReturns pliega los cobros del holding (#1627)", () => {
+  const holdingReturns = (input: {
+    operations: InvestmentOperation[];
+    payouts?: DatedPayout[];
+    currentValueMinor?: number;
+    snapshotRows?: Parameters<typeof fakeStore>[0];
+    valuationDate?: string;
+  }) =>
+    buildHoldingReturns({
+      assetId: "h1",
+      currency: "EUR",
+      currentValueMinor: input.currentValueMinor ?? 100_000,
+      instrument: "fund",
+      operations: input.operations,
+      snapshotScopeId: "household",
+      store: fakeStore(input.snapshotRows),
+      payouts: input.payouts ?? [],
+      valuationDate: input.valuationDate ?? "2024-06-01",
+    });
+
+  test("el cobro entra en la ganancia simple y en el IRR", async () => {
+    const operations = [buy("h1", "10", "100", "2023-01-01")];
+    const without = await holdingReturns({ operations });
+    const withPayout = await holdingReturns({
+      operations,
+      payouts: [{ amountMinor: 3_000, date: "2023-07-01" }],
+    });
+
+    expect(without!.simple.totalGain.amountMinor).toBe(0);
+    expect(withPayout!.simple.totalGain.amountMinor).toBe(3_000);
+    // El invertido NO se mueve: un cobro es dinero que entra, no capital aportado.
+    expect(withPayout!.simple.totalInvested.amountMinor).toBe(100_000);
+    expect(Number(without!.moneyWeighted.rate)).toBeCloseTo(0, 10);
+    expect(Number(withPayout!.moneyWeighted.rate)).toBeGreaterThan(0);
+  });
+
+  test("la TWR sigue midiendo solo precio, y la señal lo declara", async () => {
+    const operations = [buy("h1", "10", "100", "2023-12-01")];
+    const snapshotRows = [
+      closeRow("h1", "snap_a", "2024-01-31", 100_000),
+      closeRow("h1", "snap_b", "2024-02-29", 110_000),
+    ];
+    const without = await holdingReturns({ operations, snapshotRows });
+    const withPayout = await holdingReturns({
+      operations,
+      payouts: [{ amountMinor: 3_000, date: "2024-02-15" }],
+      snapshotRows,
+    });
+
+    // Mismo TWR con y sin cobro: el dividendo no toca el precio (ADR 0040).
+    expect(withPayout!.timeWeighted).toEqual(without!.timeWeighted);
+
+    const codes = (returns: NonNullable<Awaited<ReturnType<typeof holdingReturns>>>) =>
+      returns.qualitySignals.map((signal) => signal.code);
+    expect(codes(without!)).toContain("DISTRIBUTIONS_NOT_CAPTURED");
+    expect(codes(withPayout!)).toContain("DISTRIBUTIONS_NOT_IN_TWR");
+    expect(codes(withPayout!)).not.toContain("DISTRIBUTIONS_NOT_CAPTURED");
+  });
+
+  test("un holding sin cobros no mueve ninguna cifra", async () => {
+    const operations = [
+      buy("h1", "10", "100", "2023-01-01"),
+      op("h1", "sell", "4", "130", "2024-02-01"),
+    ];
+    const snapshotRows = [
+      closeRow("h1", "snap_a", "2024-01-31", 130_000),
+      closeRow("h1", "snap_b", "2024-02-29", 80_000),
+    ];
+    const returns = await holdingReturns({
+      currentValueMinor: 78_000,
+      operations,
+      snapshotRows,
+    });
+
+    // 100.000 € invertidos; 52.000 € cobrados al vender 4 + 78.000 € vivos.
+    expect(returns!.simple.totalInvested.amountMinor).toBe(100_000);
+    expect(returns!.simple.totalGain.amountMinor).toBe(30_000);
+    // Sin cobro no hay línea de cobro: el desglose cuadra sin ella.
+    expect(returns!.simple).not.toHaveProperty("payoutIncome");
+    expect(
+      returns!.simple.realizedGain!.amountMinor +
+        returns!.simple.unrealizedGain!.amountMinor,
+    ).toBe(returns!.simple.totalGain.amountMinor);
+  });
+
+  test("el cobro tiene su propia línea, para que el desglose cuadre", async () => {
+    const returns = await holdingReturns({
+      operations: [buy("h1", "10", "100", "2023-01-01")],
+      payouts: [
+        { amountMinor: 1_200, date: "2023-07-01" },
+        { amountMinor: 1_800, date: "2024-01-15" },
+      ],
+    });
+
+    expect(returns!.simple.payoutIncome).toEqual({
+      amountMinor: 3_000,
+      currency: "EUR",
+    });
+    // Sin la línea del cobro, el desglose dejaría un hueco de su importe (#1422).
+    expect(
+      returns!.simple.realizedGain!.amountMinor +
+        returns!.simple.unrealizedGain!.amountMinor +
+        returns!.simple.payoutIncome!.amountMinor,
+    ).toBe(returns!.simple.totalGain.amountMinor);
+  });
+
+  test("la ficha mide lo MISMO que la fila del tablero sobre el mismo holding", async () => {
+    const operations = [
+      buy("h1", "10", "100", "2023-01-01"),
+      op("h1", "sell", "4", "130", "2024-02-01"),
+    ];
+    const payouts: DatedPayout[] = [
+      { amountMinor: 1_200, date: "2023-07-01" },
+      { amountMinor: 1_400, date: "2024-01-15" },
+    ];
+    const snapshotRows = [
+      closeRow("h1", "snap_a", "2023-12-31", 120_000),
+      closeRow("h1", "snap_b", "2024-01-31", 130_000),
+      closeRow("h1", "snap_c", "2024-02-29", 80_000),
+    ];
+    const monthlyCloses: MonthlyCloseValue[] = snapshotRows.map((row) => ({
+      date: row.dateKey,
+      valueMinor: row.valueMinor,
+    }));
+    // 6 unidades vivas a 130 → 78.000, la misma valoración que la ficha recibe.
+    const currentValueMinor = 78_000;
+
+    const ficha = await holdingReturns({
+      currentValueMinor,
+      operations,
+      payouts,
+      snapshotRows,
+    });
+    const [fila] = [
+      ...investmentReturnsById({
+        cachedPriceByAsset: new Map(),
+        currency: "EUR",
+        instrumentByAsset: new Map([["h1", "fund" as const]]),
+        manualPriceByAsset: new Map([["h1", "130"]]),
+        monthlyClosesByAsset: new Map([["h1", monthlyCloses]]),
+        operationsByAsset: new Map([["h1", operations]]),
+        payoutsByAsset: new Map([["h1", payouts]]),
+        valuationDate: "2024-06-01",
+      }).values(),
+    ];
+
+    // Guardrail: un careo entre dos nulos pasaría sin medir nada.
+    expect(fila?.irr?.rate).not.toBeNull();
+    expect(fila?.twr?.rate).not.toBeNull();
+    expect(fila!.totalGain.amountMinor).toBe(
+      currentValueMinor + 52_000 + 2_600 - 100_000,
+    );
+
+    expect(ficha!.simple.totalGain.amountMinor).toBe(fila!.totalGain.amountMinor);
+    expect(ficha!.simple.totalReturnRatio).toBe(
+      fila!.totalReturnRatio?.toString() ?? null,
+    );
+    expect(ficha!.simple.annualized).toBe(fila!.annualized);
+    expect(ficha!.simple.cagr).toBe(fila!.cagr?.toString() ?? null);
+    expect(ficha!.moneyWeighted.rate).toBe(fila!.irr?.rate?.toString() ?? null);
+    expect(ficha!.timeWeighted.rate).toBe(fila!.twr?.rate?.toString() ?? null);
+    expect(ficha!.timeWeighted.startDate).toBe(fila!.twr?.startDate ?? null);
   });
 });

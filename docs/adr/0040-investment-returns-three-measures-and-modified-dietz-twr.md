@@ -89,8 +89,15 @@ Migrated in #1593 (the agent view) and #1592 (the /patrimonio hero); the old pub
 folds (`portfolioSimpleGain`, `portfolioIrr`, `portfolioTwr`) came out in #1594 —
 barrel included — so no caller can re-attach to the merge. The per-holding measures are unchanged: one
 holding is a subset of one slice, so the pairing rule has nothing to pair and the
-existing fold stays honest — but the agent view's per-holding block still does not
-fold payouts, which is a gap of that surface and not of this decision.
+existing fold stays honest.
+
+Closed in #1627: the agent view's per-holding block folds payouts too, and rides
+the very same per-holding engines the board's row does (`simpleGain`, `holdingIrr`,
+`timeWeightedReturn`) rather than a private copy of them. One holding is one
+question, so the ficha the assistant reads and the fila the owner reads must come
+out of one fold — the gap that let a ficha say «no están modelados» about the
+dividend printed two blocks above it. The measures the caller hands the fold
+(a ledger, a value, a payout series) stay the caller's to resolve.
 
 ## Amendment (#1458): a class with no product of its own presents no return
 

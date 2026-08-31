@@ -129,6 +129,13 @@ export async function buildHoldingDetail(
       await store.readManagedPortfolios(),
       publicIdMap(await store.readPublicIds(), "managed_portfolio"),
     ).get(internalHoldingId);
+    // One pass for both the payouts block and the returns fold below (#1627).
+    const payouts = await buildHoldingPayouts({
+      assetId: internalHoldingId,
+      currency,
+      store,
+      todayISO: valuationDate,
+    });
 
     return {
       // Same identity the compact context row and a `find_holdings` match carry
@@ -153,18 +160,16 @@ export async function buildHoldingDetail(
         holdingHasWarnings(assets, internalHoldingId, operations),
         facts,
       ),
-      payouts: await buildHoldingPayouts({
-        assetId: internalHoldingId,
-        currency,
-        store,
-        todayISO: valuationDate,
-      }),
+      payouts: payouts.block,
       returns: await buildHoldingReturns({
         assetId: internalHoldingId,
         currency,
         currentValueMinor: assetRow.valueMinor,
         instrument: assetRow.instrument,
         operations,
+        // The very series the payouts block above prints (#1627): one read, one
+        // collection, so the ficha's gain can never contradict its own payout list.
+        payouts: payouts.flows,
         snapshotScopeId: "household",
         store,
         valuationDate,

@@ -72,7 +72,7 @@ import { buildFireSummary } from "./fire-context";
 import { resolveHoldingIdentity } from "./holding-identity";
 import { money, moneyOf } from "./money";
 import { summarizeOperations } from "./operation-summary";
-import { buildScopePassiveIncome } from "./payouts";
+import { buildScopePassiveIncome, payoutFlows } from "./payouts";
 import { buildPortfolioReturns } from "./returns";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
@@ -189,10 +189,7 @@ export async function buildFinancialContext(
   // The same payouts as dated FLOWS — the shape the return engine folds. Converted
   // once here rather than in each consumer, so the lens and the returns agree.
   const payoutFlowsByHolding = new Map<string, readonly DatedPayout[]>(
-    [...payoutsByHolding].map(([holdingId, rows]) => [
-      holdingId,
-      rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
-    ]),
+    [...payoutsByHolding].map(([holdingId, rows]) => [holdingId, payoutFlows(rows)]),
   );
 
   const holdingSummaries = await buildHoldingSummaries(

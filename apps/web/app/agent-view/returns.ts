@@ -5,25 +5,24 @@ import type {
   CurrencyCode,
   DatedPayout,
   ExposureCoverage,
+  HoldingReturnsInput,
   Instrument,
   InvestmentOperation,
   MonthlyCloseValue,
   ReferenceDataUnavailableReason,
   SimpleGain,
   SubsetReturnsSlice,
-  TwrCashflow,
 } from "@worthline/domain";
 import {
-  daysBetween,
   derivePosition,
+  holdingIrr,
   monthlyCloseValuesByHolding,
-  operationCashflows,
   operationTwrCashflows,
   returnsByAssetClass,
   returnsKindForInstrument,
+  simpleGain,
   subsetReturns,
   timeWeightedReturn,
-  xirr,
 } from "@worthline/domain";
 
 import type {
@@ -39,8 +38,19 @@ import type {
 } from "./contract";
 import { moneyOf } from "./money";
 
-const YEAR_DAYS = 365;
-
+/**
+ * ONE holding's returns for the agent view (#550), measured by the SAME engines
+ * the board's row folds (`simpleGain` / `holdingIrr` / `timeWeightedReturn`, ADR
+ * 0040) — the ficha the assistant reads and the fila the owner reads answer one
+ * question about one holding, and two folds for one question is exactly how two
+ * surfaces end up disagreeing about the same money (#1422).
+ *
+ * The recorded payouts arrive from the caller (#1627): the detail already
+ * collected them for its own payouts block in the same pass, so no read is added
+ * and the block and the measures can never quote a different series. Folded, they
+ * enter the simple gain and the IRR (#657); the TWR keeps tracking price alone and
+ * the quality signal switches to say so.
+ */
 export async function buildHoldingReturns(input: {
   store: AgentViewReadStore;
   assetId: string;
@@ -48,6 +58,14 @@ export async function buildHoldingReturns(input: {
   currentValueMinor: number;
   instrument: Instrument;
   operations: readonly InvestmentOperation[];
+  /**
+   * The holding's collected payout series as dated flows: one-offs plus derived
+   * schedule occurrences up to the valuation date (#657, #1627). Required rather
+   * than optional on purpose — a caller that forgets it silently republishes the
+   * `DISTRIBUTIONS_NOT_CAPTURED` lie this issue closed; an empty array is how a
+   * caller says "this holding received nothing".
+   */
+  payouts: readonly DatedPayout[];
   snapshotScopeId: string;
   valuationDate: string;
 }): Promise<AgentViewReturns | null> {
@@ -72,17 +90,48 @@ export async function buildHoldingReturns(input: {
       }),
     ).get(input.assetId) ?? [];
 
-  return buildReturnsFromCashflows({
-    cashflows: operationCashflows(input.operations),
+  // One input for both money measures, so the gain and the IRR can never be about
+  // a different ledger, value, or payout series than one another.
+  const returnsInput: HoldingReturnsInput = {
     currency: input.currency,
-    firstOperationDate: firstOperationDate(input.operations),
     marketValueMinor: input.currentValueMinor,
-    monthlyCloses,
-    realizedGainMinor: position.realizedPnl.amountMinor,
-    twrCashflows: operationTwrCashflows(input.operations),
-    unrealizedGainMinor: input.currentValueMinor - position.costBasis.amountMinor,
+    operations: input.operations,
+    payouts: input.payouts,
     valuationDate: input.valuationDate,
+  };
+  const twr = timeWeightedReturn({
+    cashflows: operationTwrCashflows(input.operations),
+    monthlyCloses,
   });
+  const payoutIncomeMinor = input.payouts.reduce(
+    (sum, payout) => sum + payout.amountMinor,
+    0,
+  );
+
+  return {
+    moneyWeighted: toMoneyWeighted(holdingIrr(returnsInput)),
+    qualitySignals: qualitySignals({
+      firstOperationDate: firstOperationDate(input.operations),
+      payoutsIncluded: input.payouts.length > 0,
+      twrStartDate: twr.startDate,
+    }),
+    simple: {
+      ...simpleGainToReturn(simpleGain(returnsInput), input.currency),
+      // The realized/unrealized split is the POSITION's, not the cashflows' — a
+      // payout is money received, never a sale, so it moves neither half. What it
+      // does move is the total, so it gets its own line rather than a hole
+      // (`payoutIncome`, #1627).
+      realizedGain: moneyOf(position.realizedPnl.amountMinor, input.currency),
+      unrealizedGain: moneyOf(
+        input.currentValueMinor - position.costBasis.amountMinor,
+        input.currency,
+      ),
+      ...(payoutIncomeMinor === 0
+        ? {}
+        : { payoutIncome: moneyOf(payoutIncomeMinor, input.currency) }),
+    },
+    timeWeighted: toTimeWeighted(twr),
+  };
 }
 
 /**
@@ -333,85 +382,6 @@ function toExposureCoverage(
     ),
     unknown: moneyOf(coverage.unknown.amountMinor, coverage.unknown.currency),
     ...(catalogUnavailable === undefined ? {} : { catalogUnavailable }),
-  };
-}
-
-function buildReturnsFromCashflows(input: {
-  cashflows: { date: string; amountMinor: number }[];
-  currency: CurrencyCode;
-  firstOperationDate: string | null;
-  marketValueMinor: number;
-  monthlyCloses: MonthlyCloseValue[];
-  realizedGainMinor?: number;
-  twrCashflows: TwrCashflow[];
-  unrealizedGainMinor?: number;
-  valuationDate: string;
-}): AgentViewReturns {
-  const twr = timeWeightedReturn({
-    cashflows: input.twrCashflows,
-    monthlyCloses: input.monthlyCloses,
-  });
-
-  return {
-    moneyWeighted: toMoneyWeighted(
-      xirr([
-        ...input.cashflows,
-        ...(input.marketValueMinor > 0
-          ? [{ amountMinor: input.marketValueMinor, date: input.valuationDate }]
-          : []),
-      ]),
-    ),
-    qualitySignals: qualitySignals({
-      firstOperationDate: input.firstOperationDate,
-      payoutsIncluded: false,
-      twrStartDate: twr.startDate,
-    }),
-    simple: simpleReturn(input),
-    timeWeighted: toTimeWeighted(twr),
-  };
-}
-
-function simpleReturn(input: {
-  cashflows: { date: string; amountMinor: number }[];
-  currency: CurrencyCode;
-  firstOperationDate: string | null;
-  marketValueMinor: number;
-  realizedGainMinor?: number;
-  unrealizedGainMinor?: number;
-  valuationDate: string;
-}): AgentViewSimpleReturn {
-  const totalInvestedMinor = input.cashflows.reduce(
-    (sum, flow) => (flow.amountMinor < 0 ? sum - flow.amountMinor : sum),
-    0,
-  );
-  const proceedsMinor = input.cashflows.reduce(
-    (sum, flow) => (flow.amountMinor > 0 ? sum + flow.amountMinor : sum),
-    0,
-  );
-  const totalGainMinor = proceedsMinor + input.marketValueMinor - totalInvestedMinor;
-  const ratio =
-    totalInvestedMinor > 0 ? (totalGainMinor / totalInvestedMinor).toString() : null;
-  const spanDays = input.firstOperationDate
-    ? daysBetween(input.firstOperationDate, input.valuationDate)
-    : 0;
-  const annualized = spanDays >= YEAR_DAYS;
-  const cagr =
-    annualized && ratio !== null
-      ? ((1 + Number(ratio)) ** (YEAR_DAYS / spanDays) - 1).toString()
-      : null;
-
-  return {
-    annualized,
-    cagr,
-    totalGain: moneyOf(totalGainMinor, input.currency),
-    totalInvested: moneyOf(totalInvestedMinor, input.currency),
-    totalReturnRatio: ratio,
-    ...(input.realizedGainMinor === undefined
-      ? {}
-      : { realizedGain: moneyOf(input.realizedGainMinor, input.currency) }),
-    ...(input.unrealizedGainMinor === undefined
-      ? {}
-      : { unrealizedGain: moneyOf(input.unrealizedGainMinor, input.currency) }),
   };
 }
 

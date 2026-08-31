@@ -2,6 +2,7 @@ import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog"
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
   ContributionPlan,
+  DatedPayout,
   ExposureAllocationSlice,
   ExposureDimensionResult,
   FireContext,
@@ -15,6 +16,7 @@ import type {
 } from "@worthline/domain";
 import {
   assembleExposureDriftHoldings,
+  collectHoldingPayouts,
   computeMonthlyContributionAllocation,
   contributionOccurrenceMoneyMinor,
   instrumentOfAsset,
@@ -54,6 +56,7 @@ import { ratioStringFromBps } from "./financial-context";
 import { resolveFire } from "./fire-context";
 import { deriveOperationPublicId } from "./holding-operations";
 import { moneyOf } from "./money";
+import { payoutFlows } from "./payouts";
 import { buildHoldingReturns } from "./returns";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
@@ -103,12 +106,25 @@ export async function buildContributionPlanContext(
   const workspace = await store.readWorkspace();
   const currency = workspace?.baseCurrency ?? "EUR";
 
-  const [plan, reconciliations, priceCache, assets] = await Promise.all([
-    store.readContributionPlan(internalScopeId),
-    store.readContributionReconciliations(internalScopeId),
-    store.readAllPriceCacheEntries(),
-    store.readAssets(),
-  ]);
+  const [plan, reconciliations, priceCache, assets, payouts, payoutSchedules] =
+    await Promise.all([
+      store.readContributionPlan(internalScopeId),
+      store.readContributionReconciliations(internalScopeId),
+      store.readAllPriceCacheEntries(),
+      store.readAssets(),
+      store.readPayouts(),
+      store.readPayoutSchedules(),
+    ]);
+  // Recorded payouts through the single canonical collector, capped at the
+  // context's own `today` — read ONCE for the whole surface, so the what-if and
+  // the drift measure a destination holding on the very series its ficha folds
+  // (#1627). Without them a distributing destination projected on a rate it never
+  // earned, and the plan contradicted the ficha of the same holding (#1422).
+  const payoutFlowsByHolding = new Map<string, readonly DatedPayout[]>(
+    [...collectHoldingPayouts(payouts, payoutSchedules, today)].map(
+      ([holdingId, rows]) => [holdingId, payoutFlows(rows)],
+    ),
+  );
 
   const unitPrices = unitPriceMajorByHoldingId(priceCache);
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
@@ -136,6 +152,7 @@ export async function buildContributionPlanContext(
     ...(fire.result === undefined ? {} : { context: fire.result.context }),
     assetById,
     internalScopeId,
+    payoutFlowsByHolding,
     today,
     currency,
     unitPrices,
@@ -155,6 +172,7 @@ export async function buildContributionPlanContext(
     internalScopeId,
     assets,
     assetById,
+    payoutFlowsByHolding,
     today,
     currency,
     unitPrices,
@@ -384,6 +402,8 @@ async function buildWhatIf(input: {
   context?: FireContext;
   assetById: Map<string, ManualAsset>;
   internalScopeId: string;
+  /** Recorded payouts as dated flows, keyed by holding — collected once (#1627). */
+  payoutFlowsByHolding: ReadonlyMap<string, readonly DatedPayout[]>;
   today: string;
   currency: string;
   unitPrices: Record<string, string>;
@@ -406,6 +426,7 @@ async function buildWhatIf(input: {
     plan: input.plan,
     assetById: input.assetById,
     internalScopeId: input.internalScopeId,
+    payoutFlowsByHolding: input.payoutFlowsByHolding,
     today: input.today,
     currency: input.currency,
     assumedAnnualReturn,
@@ -441,6 +462,8 @@ async function resolveHoldingAnnualReturns(input: {
   plan?: ContributionPlan;
   assetById: Map<string, ManualAsset>;
   internalScopeId: string;
+  /** Recorded payouts as dated flows, keyed by holding — collected once (#1627). */
+  payoutFlowsByHolding: ReadonlyMap<string, readonly DatedPayout[]>;
   today: string;
   currency: string;
   assumedAnnualReturn: number;
@@ -466,6 +489,7 @@ async function resolveHoldingAnnualReturns(input: {
       currentValueMinor: asset.currentValue.amountMinor,
       instrument: instrumentOfAsset(asset),
       operations,
+      payouts: input.payoutFlowsByHolding.get(holdingId) ?? [],
       snapshotScopeId: input.internalScopeId,
       valuationDate: input.today,
     });
@@ -583,6 +607,8 @@ async function buildExposureDrift(input: {
   internalScopeId: string;
   assets: ManualAsset[];
   assetById: Map<string, ManualAsset>;
+  /** Recorded payouts as dated flows, keyed by holding — collected once (#1627). */
+  payoutFlowsByHolding: ReadonlyMap<string, readonly DatedPayout[]>;
   today: string;
   currency: string;
   unitPrices: Record<string, string>;
@@ -639,6 +665,7 @@ async function buildExposureDrift(input: {
     assetById: input.assetById,
     holdingIds: holdings.map((holding) => holding.id),
     internalScopeId: input.internalScopeId,
+    payoutFlowsByHolding: input.payoutFlowsByHolding,
     today: input.today,
     currency: input.currency,
     assumedAnnualReturn: input.assumedAnnualReturn,

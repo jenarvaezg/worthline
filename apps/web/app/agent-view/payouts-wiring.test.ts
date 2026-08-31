@@ -61,4 +61,62 @@ describe("agent-view payouts wiring", () => {
     expect(context.passiveIncome.months).toBe(12);
     expect(context.passiveIncome.windowEnd).toBe(AS_OF);
   }, 15_000);
+
+  /**
+   * #1627: the SAME pass that builds the detail's payouts block feeds its returns
+   * fold. Before this, `buildHoldingReturns` never saw a payout, so the ficha said
+   * «no están modelados» about the very dividend printed two blocks above it —
+   * and contradicted both the board's row and the context's own cartera block.
+   */
+  it("folds the same recorded payouts into the holding's returns", async () => {
+    const store = await createInMemoryStore();
+    await seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+    const assets = await store.agentView.readAssets();
+    const invested = (
+      await Promise.all(
+        assets
+          .filter((asset) => asset.type === "investment")
+          .map(async (asset) => ({
+            asset,
+            operations: await store.agentView.readOperations(asset.id),
+          })),
+      )
+    ).find((entry) => entry.operations.length > 0);
+    if (!invested) throw new Error("seed has no investment holding with operations");
+
+    const holdingPublicId = publicIdMap(
+      await store.agentView.readPublicIds(),
+      "holding",
+    ).get(invested.asset.id);
+    if (!holdingPublicId) throw new Error("seeded asset has no public id");
+
+    const before = await buildHoldingDetail(store.agentView, holdingPublicId);
+    expect(before.returns).not.toBeNull();
+    expect(before.returns?.qualitySignals.map((signal) => signal.code)).toContain(
+      "DISTRIBUTIONS_NOT_CAPTURED",
+    );
+
+    await store.payouts.createPayout({
+      holdingId: invested.asset.id,
+      dateISO: "2026-03-01",
+      amountMinor: 250_000,
+      note: "Dividendo",
+    });
+
+    const after = await buildHoldingDetail(store.agentView, holdingPublicId);
+    const codes = after.returns?.qualitySignals.map((signal) => signal.code) ?? [];
+    expect(codes).toContain("DISTRIBUTIONS_NOT_IN_TWR");
+    expect(codes).not.toContain("DISTRIBUTIONS_NOT_CAPTURED");
+    // The dividend lands in the simple gain, cent for cent...
+    expect(after.returns!.simple.totalGain.amountMinor).toBe(
+      before.returns!.simple.totalGain.amountMinor + 250_000,
+    );
+    // ...without pretending more capital went in, and without touching the TWR,
+    // which keeps measuring price alone (ADR 0040).
+    expect(after.returns!.simple.totalInvested).toEqual(
+      before.returns!.simple.totalInvested,
+    );
+    expect(after.returns!.timeWeighted).toEqual(before.returns!.timeWeighted);
+  }, 15_000);
 });
