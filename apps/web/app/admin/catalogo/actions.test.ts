@@ -78,6 +78,9 @@ function sampleProfile(): GlobalExposureProfile {
     ter: "0.002",
     trackedIndex: "MSCI World",
     hedgedToCurrency: null,
+    confidence: "alta",
+    asOfDate: "2026-07-31",
+    sources: "factsheet MSCI 31/07/2026",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
   };
@@ -183,6 +186,42 @@ describe("saveCatalogProfileAction", () => {
 
     expect(storeSpies.create).toHaveBeenCalledWith(
       expect.objectContaining({ breakdowns: { geography: { us: "0.6" } } }),
+    );
+  });
+
+  it("carries the declared provenance through to the store (#1508)", async () => {
+    asAdmin();
+    storeSpies.create.mockResolvedValueOnce(sampleProfile());
+    const fd = createForm();
+    fd.set("confidence", "baja");
+    fd.set("asOfDate", "2024-04-30");
+    fd.set("sources", "ficha mensual de la gestora");
+
+    await saveCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(storeSpies.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confidence: "baja",
+        asOfDate: "2024-04-30",
+        sources: "ficha mensual de la gestora",
+      }),
+    );
+  });
+
+  it("an undeclared provenance reaches the store as empty, never omitted (#1508)", async () => {
+    asAdmin();
+    storeSpies.update.mockResolvedValueOnce(sampleProfile());
+    const fd = createForm();
+    fd.set("mode", "update");
+
+    await saveCatalogProfileAction({ status: "idle" }, fd);
+
+    // `update` is a full replace: the three fields have to travel on every
+    // submit, or a save from a form that forgot them would blank the stored
+    // provenance without saying so.
+    expect(storeSpies.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ confidence: "", asOfDate: "", sources: "" }),
     );
   });
 

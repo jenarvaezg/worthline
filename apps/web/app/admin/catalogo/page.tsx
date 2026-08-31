@@ -1,5 +1,6 @@
 import { guardAdmin } from "@web/admin/guard-admin";
 import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
+import { systemClock } from "@worthline/domain";
 import { parseCatalogParams } from "./catalog-triage";
 import CatalogWorkbench from "./catalog-workbench";
 
@@ -51,8 +52,8 @@ export default async function AdminCatalogPage({
         <h1>Catálogo de exposición</h1>
         <p className="demoLede">
           Perfiles canónicos de identidad (geografía, divisa, clase de activo, TER e
-          índice), compartidos por todos los workspaces y curados aquí a mano.{" "}
-          <a href="/admin">← Usuarios</a>
+          índice) con su procedencia —confianza, fecha de corte y fuentes—, compartidos
+          por todos los workspaces y curados aquí a mano. <a href="/admin">← Usuarios</a>
         </p>
       </header>
 
@@ -77,6 +78,7 @@ export default async function AdminCatalogPage({
         <CatalogWorkbench
           initialProfiles={[...availability.profiles]}
           initialState={initialState}
+          today={systemClock().today()}
         />
       )}
     </main>

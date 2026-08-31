@@ -23,22 +23,43 @@ import {
   CatalogSaveForm,
 } from "./catalog-profile-editor";
 import {
+  asOfIsStale,
+  asOfText,
   type CatalogFilter,
   type CatalogViewState,
   catalogSearchString,
+  confidenceIsWeak,
+  confidenceLabel,
   countNeedsCategorizing,
+  countStaleAsOf,
+  countWeakConfidence,
   identityText,
   parseCatalogParams,
   profileCoverage,
   profileKey,
   profileNeedsCategorizing,
+  STALE_AS_OF_MONTHS,
   visibleProfiles,
 } from "./catalog-triage";
 
 interface CatalogWorkbenchProps {
   initialProfiles: GlobalExposureProfile[];
   initialState: CatalogViewState;
+  /** The day the register is read, from the server (`YYYY-MM-DD`) — never `new Date()` here. */
+  today: string;
 }
+
+/**
+ * The four triage lenses, in the order an admin walks them: everything, then
+ * what is uncategorized, then what is not worth believing, then what has aged
+ * (#941, provenance #1508).
+ */
+const FILTERS: ReadonlyArray<{ filter: CatalogFilter; label: string }> = [
+  { filter: "todos", label: "Todos" },
+  { filter: "por-categorizar", label: "Por categorizar" },
+  { filter: "confianza-baja", label: "Confianza baja" },
+  { filter: "corte-antiguo", label: "Corte antiguo" },
+];
 
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
@@ -54,6 +75,7 @@ function formatUpdatedAt(iso: string): string {
 export default function CatalogWorkbench({
   initialProfiles,
   initialState,
+  today,
 }: CatalogWorkbenchProps) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [view, setView] = useState<CatalogViewState>(initialState);
@@ -117,8 +139,10 @@ export default function CatalogWorkbench({
     }
   }, []);
 
-  const rows = visibleProfiles(profiles, view);
+  const rows = visibleProfiles(profiles, view, today);
   const triageCount = countNeedsCategorizing(profiles);
+  const weakCount = countWeakConfidence(profiles);
+  const staleCount = countStaleAsOf(profiles, today);
   const selected =
     view.selectedKey === null
       ? null
@@ -143,28 +167,29 @@ export default function CatalogWorkbench({
       <section className="catalogListPane section">
         <div className="catalogListHead">
           <div className="segmented catalogFilter" role="group" aria-label="Filtro">
-            <label>
-              <input
-                checked={view.filter === "todos"}
-                name="catalog-filter"
-                onChange={() => setFilter("todos")}
-                type="radio"
-              />
-              Todos
-            </label>
-            <label>
-              <input
-                checked={view.filter === "por-categorizar"}
-                name="catalog-filter"
-                onChange={() => setFilter("por-categorizar")}
-                type="radio"
-              />
-              Por categorizar
-            </label>
+            {FILTERS.map(({ filter, label }) => (
+              <label key={filter}>
+                <input
+                  checked={view.filter === filter}
+                  name="catalog-filter"
+                  onChange={() => setFilter(filter)}
+                  type="radio"
+                />
+                {label}
+              </label>
+            ))}
           </div>
-          {triageCount > 0 ? (
-            <p className="catalogTriageCount">{triageCount} por categorizar</p>
-          ) : null}
+          <div className="catalogCounts">
+            {triageCount > 0 ? (
+              <p className="catalogTriageCount">{triageCount} por categorizar</p>
+            ) : null}
+            {weakCount > 0 ? (
+              <p className="catalogTriageCount">{weakCount} de confianza baja</p>
+            ) : null}
+            {staleCount > 0 ? (
+              <p className="catalogTriageCount">{staleCount} con corte antiguo</p>
+            ) : null}
+          </div>
         </div>
 
         <div className="catalogSearchRow">
@@ -190,6 +215,8 @@ export default function CatalogWorkbench({
                 <th>Identidad</th>
                 <th>Nombre</th>
                 <th>Aviso</th>
+                <th>Confianza</th>
+                <th>Corte</th>
                 <th className="catalogNum">TER</th>
                 <th>Índice</th>
                 <th>Actualizado</th>
@@ -226,6 +253,32 @@ export default function CatalogWorkbench({
                         </span>
                       ) : (
                         <span className="catalogAvisoNone">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {/* The mark exists only where the state does: a weak
+                          confidence is marked, a solid one is plain text. */}
+                      {confidenceIsWeak(profile) ? (
+                        <span
+                          className="catalogAviso"
+                          title={`Confianza ${confidenceLabel(profile.confidence)}: el vector no está verificado contra un factsheet`}
+                        >
+                          {confidenceLabel(profile.confidence)}
+                        </span>
+                      ) : (
+                        confidenceLabel(profile.confidence)
+                      )}
+                    </td>
+                    <td>
+                      {asOfIsStale(profile, today) ? (
+                        <span
+                          className="catalogAviso"
+                          title={`Fecha de corte de los datos con más de ${STALE_AS_OF_MONTHS} meses (o sin declarar): toca releer la fuente`}
+                        >
+                          {asOfText(profile)}
+                        </span>
+                      ) : (
+                        asOfText(profile)
                       )}
                     </td>
                     <td className="catalogNum">{profile.ter ?? "—"}</td>

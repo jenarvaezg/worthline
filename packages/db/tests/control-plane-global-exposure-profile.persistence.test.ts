@@ -56,6 +56,90 @@ async function seedPreCatalogControlPlane(): Promise<string> {
   return url;
 }
 
+/** A control plane stopped at v7: the catalog table in its pre-#1508 shape, with a row. */
+async function seedPreProvenanceControlPlane(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "worthline-cp-pre-provenance-"));
+  tempDirs.push(dir);
+  const url = `file:${join(dir, "control-plane.sqlite")}`;
+  const raw = openLibsqlClient({ url });
+  await raw.executeMultiple(`
+    CREATE TABLE global_exposure_profiles (
+      identity_key TEXT PRIMARY KEY NOT NULL,
+      identity_kind TEXT NOT NULL,
+      isin TEXT,
+      price_provider TEXT,
+      provider_symbol TEXT,
+      display_name TEXT,
+      breakdowns_json TEXT NOT NULL DEFAULT '{}',
+      ter TEXT,
+      tracked_index TEXT,
+      hedged_to_currency TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO global_exposure_profiles
+      (identity_key, identity_kind, isin, display_name, breakdowns_json, ter)
+      VALUES ('${VWRL_ISIN}', 'isin', '${VWRL_ISIN}', 'VWRL',
+              '{"assetClass":{"equity":"1"}}', '0.0022');
+    CREATE TABLE cp_schema_meta (version INTEGER NOT NULL);
+    INSERT INTO cp_schema_meta (version) VALUES (7);
+  `);
+  raw.close();
+  return url;
+}
+
+describe("control-plane exposure catalog provenance migration (#1508)", () => {
+  test("adds the three columns and reads a pre-#1508 row as «sin declarar»", async () => {
+    const url = await seedPreProvenanceControlPlane();
+    const cp = await createControlPlaneStore({ url });
+    try {
+      const client = openLibsqlClient({ url });
+      const columns = (
+        await client.execute("PRAGMA table_info(global_exposure_profiles)")
+      ).rows as unknown as Array<{ name: string }>;
+      expect(columns.map((column) => column.name)).toEqual([
+        "identity_key",
+        "identity_kind",
+        "isin",
+        "price_provider",
+        "provider_symbol",
+        "display_name",
+        "breakdowns_json",
+        "ter",
+        "tracked_index",
+        "hedged_to_currency",
+        "created_at",
+        "updated_at",
+        "confidence",
+        "as_of_date",
+        "sources",
+      ]);
+      expect(await readControlPlaneSchemaVersion(client)).toBe(CP_SCHEMA_VERSION);
+      client.close();
+
+      // The existing row is untouched — no backfill invents a confidence.
+      expect(await cp.readGlobalExposureProfile({ isin: VWRL_ISIN })).toMatchObject({
+        displayName: "VWRL",
+        ter: "0.0022",
+        confidence: null,
+        asOfDate: null,
+        sources: null,
+      });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("re-running the ladder over an already-provenanced catalog is a no-op", async () => {
+    const url = await seedPreProvenanceControlPlane();
+    const client = openLibsqlClient({ url });
+    await migrateControlPlane(client);
+    await migrateControlPlane(client);
+    expect(await readControlPlaneSchemaVersion(client)).toBe(CP_SCHEMA_VERSION);
+    client.close();
+  });
+});
+
 describe("control-plane global exposure profile migration (#1010)", () => {
   test("forward-only migration creates the catalog table on an existing control plane", async () => {
     const url = await seedPreCatalogControlPlane();
@@ -79,6 +163,11 @@ describe("control-plane global exposure profile migration (#1010)", () => {
         "hedged_to_currency",
         "created_at",
         "updated_at",
+        // Provenance (#1508) — appended, so a fresh install and a control plane
+        // migrated through the ladder end up with the same column layout.
+        "confidence",
+        "as_of_date",
+        "sources",
       ]);
       expect(await readControlPlaneSchemaVersion(openLibsqlClient({ url }))).toBe(
         CP_SCHEMA_VERSION,
@@ -180,6 +269,84 @@ describe("control-plane global exposure profile store (#1010)", () => {
         geography: { us: "0.55" },
         assetClass: { equity: "0.9", bond: "0.1" },
       });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("provenance survives the round trip and an update replaces it (#1508)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const created = await cp.createGlobalExposureProfile({
+        identity: { isin: VWRL_ISIN },
+        displayName: "VWRL",
+        breakdowns: { assetClass: { equity: "1" } },
+        confidence: "alta",
+        asOfDate: "2026-07-31",
+        sources: "factsheet MSCI 31/07/2026",
+      });
+      expect(created).toMatchObject({
+        confidence: "alta",
+        asOfDate: "2026-07-31",
+        sources: "factsheet MSCI 31/07/2026",
+      });
+      expect(await cp.readGlobalExposureProfile({ isin: VWRL_ISIN })).toEqual(created);
+
+      // A pass that re-writes the same content re-writes the same cut-off date:
+      // `as_of_date` is declared data, never the clock, so it does not drift.
+      const rewritten = await cp.updateGlobalExposureProfile(
+        { isin: VWRL_ISIN },
+        {
+          displayName: "VWRL (nombre nuevo)",
+          breakdowns: { assetClass: { equity: "1" } },
+          confidence: "alta",
+          asOfDate: "2026-07-31",
+          sources: "factsheet MSCI 31/07/2026",
+        },
+      );
+      expect(rewritten.asOfDate).toBe("2026-07-31");
+
+      const downgraded = await cp.updateGlobalExposureProfile(
+        { isin: VWRL_ISIN },
+        {
+          displayName: "VWRL",
+          breakdowns: { assetClass: { equity: "1" } },
+          confidence: "baja",
+          asOfDate: "2024-04-30",
+          sources: "ficha mensual de la gestora",
+        },
+      );
+      expect(downgraded).toMatchObject({
+        confidence: "baja",
+        asOfDate: "2024-04-30",
+        sources: "ficha mensual de la gestora",
+      });
+
+      const cleared = await cp.updateGlobalExposureProfile(
+        { isin: VWRL_ISIN },
+        { displayName: "VWRL", breakdowns: { assetClass: { equity: "1" } } },
+      );
+      expect(cleared).toMatchObject({
+        confidence: null,
+        asOfDate: null,
+        sources: null,
+      });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("rejects a confidence outside the three levels (#1508)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      await expect(
+        cp.createGlobalExposureProfile({
+          identity: { isin: VWRL_ISIN },
+          breakdowns: { assetClass: { equity: "1" } },
+          confidence: "verificado",
+        }),
+      ).rejects.toThrow(/confidence must be alta, media or baja/);
+      expect(await cp.readGlobalExposureProfile({ isin: VWRL_ISIN })).toBeNull();
     } finally {
       cp.close();
     }

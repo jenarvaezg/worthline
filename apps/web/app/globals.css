@@ -4943,6 +4943,14 @@ code {
   margin-bottom: 12px;
 }
 
+/* The triage counters stack on narrow panes and sit in a row when there is space. */
+.catalogCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
 /* The triage count is an advisory in gold (canon §6: warning, never red). */
 .catalogTriageCount {
   margin: 0;

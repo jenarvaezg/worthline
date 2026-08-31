@@ -631,13 +631,16 @@ export type {
   GlobalExposureGeographyWeightKey,
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
+  GlobalExposureProfileConfidence,
   GlobalExposureProfileContentInput,
   GlobalExposureSectorBucket,
   UpdateGlobalExposureProfileInput,
+  ValidatedGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 export {
   createValidatedGlobalExposureProfileInput,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
+  GLOBAL_EXPOSURE_PROFILE_CONFIDENCES,
   validateGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 export type { GoalFireDelay, GoalFireDelayInput } from "./goal-fire-delay";

@@ -13,8 +13,10 @@
  * contract (#940) before anything persists.
  */
 import {
+  formatDateKeyEs,
   type GlobalExposureProfile,
   type GlobalExposureProfileBreakdowns,
+  type GlobalExposureProfileConfidence,
   type GlobalExposureProfileIdentity,
   globalExposureProfileIdentityKey,
   isGeoCurrencyNotApplicableAssetClass,
@@ -23,7 +25,39 @@ import {
 /** Tolerance for "the declared weights don't quite reach 100%". */
 export const COVERAGE_EPSILON = 1e-9;
 
-export type CatalogFilter = "todos" | "por-categorizar";
+export type CatalogFilter =
+  | "todos"
+  | "por-categorizar"
+  | "confianza-baja"
+  | "corte-antiguo";
+
+const CATALOG_FILTERS = [
+  "todos",
+  "por-categorizar",
+  "confianza-baja",
+  "corte-antiguo",
+] as const satisfies readonly CatalogFilter[];
+
+/**
+ * A cut-off date older than this is stale enough to re-read the source (#1508).
+ * A year is the cadence at which a fund's own factsheet has moved on: the
+ * MyInvestor plan's only public monthly sheet was two years and four months
+ * old, and nothing on the row said so.
+ */
+export const STALE_AS_OF_MONTHS = 12;
+
+/**
+ * Triage order for confidence: what to look at first. `baja` leads (a vector
+ * that reads a mandate instead of a portfolio), then «sin declarar» — unknown
+ * provenance, which is what every pre-#1508 row is — then `media`, then `alta`.
+ */
+const CONFIDENCE_RANK: Record<GlobalExposureProfileConfidence | "sin-declarar", number> =
+  {
+    baja: 0,
+    "sin-declarar": 1,
+    media: 2,
+    alta: 3,
+  };
 
 /** The list's three triage dimensions, in display order. */
 export const CATALOG_DIMENSIONS = ["geography", "currency", "assetClass"] as const;
@@ -102,6 +136,83 @@ export function profileCoverage(profile: GlobalExposureProfile): number {
   return total / CATALOG_DIMENSIONS.length;
 }
 
+/** The word the list shows for a confidence level — `null` is «sin declarar». */
+export function confidenceLabel(
+  confidence: GlobalExposureProfileConfidence | null,
+): string {
+  return confidence ?? "sin declarar";
+}
+
+/**
+ * A vector worth re-reading on provenance grounds: `baja` (it reads a mandate,
+ * not a portfolio) or undeclared (nothing says where it came from).
+ */
+export function confidenceIsWeak(profile: GlobalExposureProfile): boolean {
+  return profile.confidence === null || profile.confidence === "baja";
+}
+
+/** Rank used to sort least-trustworthy first. */
+export function confidenceRank(profile: GlobalExposureProfile): number {
+  return CONFIDENCE_RANK[profile.confidence ?? "sin-declarar"];
+}
+
+/**
+ * Whole months from a cut-off day to `today`, both `YYYY-MM-DD`. Calendar
+ * months, not 30-day blocks: a factsheet is dated by month, so «hace 14 meses»
+ * is the honest reading of 2025-06-30 seen from 2026-08-31. Negative for a
+ * cut-off in the future.
+ */
+export function asOfAgeMonths(asOfDate: string, today: string): number {
+  const [fromYear, fromMonth, fromDay] = asOfDate.split("-").map(Number);
+  const [toYear, toMonth, toDay] = today.split("-").map(Number);
+  if (
+    [fromYear, fromMonth, fromDay, toYear, toMonth, toDay].some(
+      (part) => !Number.isFinite(part),
+    )
+  ) {
+    return 0;
+  }
+  const months = (toYear! - fromYear!) * 12 + (toMonth! - fromMonth!);
+  return toDay! < fromDay! ? months - 1 : months;
+}
+
+/**
+ * Whether the cut-off date is stale — older than {@link STALE_AS_OF_MONTHS}, or
+ * absent. An undeclared cut-off counts as stale on purpose: a vector with no
+ * date cannot be shown to be fresh, and «sin declarar» is exactly the state of
+ * every row written before this seam.
+ */
+export function asOfIsStale(profile: GlobalExposureProfile, today: string): boolean {
+  return (
+    profile.asOfDate === null ||
+    asOfAgeMonths(profile.asOfDate, today) >= STALE_AS_OF_MONTHS
+  );
+}
+
+/** Cut-off day as the app reads it out loud, or «sin declarar» when absent. */
+export function asOfText(profile: GlobalExposureProfile): string {
+  return profile.asOfDate === null ? "sin declarar" : formatDateKeyEs(profile.asOfDate);
+}
+
+/** Count of weak-provenance profiles over the FULL set (#1508). */
+export function countWeakConfidence(profiles: readonly GlobalExposureProfile[]): number {
+  return profiles.reduce(
+    (count, profile) => count + (confidenceIsWeak(profile) ? 1 : 0),
+    0,
+  );
+}
+
+/** Count of stale-cut-off profiles over the FULL set (#1508). */
+export function countStaleAsOf(
+  profiles: readonly GlobalExposureProfile[],
+  today: string,
+): number {
+  return profiles.reduce(
+    (count, profile) => count + (asOfIsStale(profile, today) ? 1 : 0),
+    0,
+  );
+}
+
 /** Count of profiles needing categorization over the FULL set (the gold badge). */
 export function countNeedsCategorizing(
   profiles: readonly GlobalExposureProfile[],
@@ -134,23 +245,57 @@ function matchesQuery(profile: GlobalExposureProfile, needle: string): boolean {
 }
 
 /**
- * The profiles the list renders, filtered by search + triage filter and sorted.
- * In "por-categorizar" only under-declared profiles survive, least-covered
- * first (coverage ascending); ties break by identity for a stable order. In
- * "todos" the whole set is shown, sorted by identity text.
+ * The profiles the list renders, filtered by search + triage filter and sorted
+ * worst-first within each triage lens:
+ *
+ * - `por-categorizar` — only under-declared profiles, least-covered first.
+ * - `confianza-baja` — only weak provenance (`baja` or undeclared), `baja` first.
+ * - `corte-antiguo` — only stale cut-offs (older than {@link
+ *   STALE_AS_OF_MONTHS}, or undeclared), oldest first with the undeclared ones
+ *   ahead of them: no date at all is the least evidence of freshness there is.
+ * - `todos` — the whole set, sorted by identity text.
+ *
+ * Ties always break by identity key, so the order is stable across renders.
+ * `today` is a parameter, never the clock (ADR 0036 §7): the module stays pure
+ * and the page decides what day it is.
  */
 export function visibleProfiles(
   profiles: readonly GlobalExposureProfile[],
   state: Pick<CatalogViewState, "filter" | "query">,
+  today: string,
 ): GlobalExposureProfile[] {
   const needle = state.query.trim().toLowerCase();
   const searched = profiles.filter((profile) => matchesQuery(profile, needle));
+  const byKey = (a: GlobalExposureProfile, b: GlobalExposureProfile) =>
+    profileKey(a).localeCompare(profileKey(b));
 
   if (state.filter === "por-categorizar") {
     return searched.filter(profileNeedsCategorizing).sort((a, b) => {
       const byCoverage = profileCoverage(a) - profileCoverage(b);
-      return byCoverage !== 0 ? byCoverage : profileKey(a).localeCompare(profileKey(b));
+      return byCoverage !== 0 ? byCoverage : byKey(a, b);
     });
+  }
+
+  if (state.filter === "confianza-baja") {
+    return searched.filter(confidenceIsWeak).sort((a, b) => {
+      const byConfidence = confidenceRank(a) - confidenceRank(b);
+      return byConfidence !== 0 ? byConfidence : byKey(a, b);
+    });
+  }
+
+  if (state.filter === "corte-antiguo") {
+    return searched
+      .filter((profile) => asOfIsStale(profile, today))
+      .sort((a, b) => {
+        if (a.asOfDate === null || b.asOfDate === null) {
+          if (a.asOfDate === b.asOfDate) {
+            return byKey(a, b);
+          }
+          return a.asOfDate === null ? -1 : 1;
+        }
+        const byDate = a.asOfDate.localeCompare(b.asOfDate);
+        return byDate !== 0 ? byDate : byKey(a, b);
+      });
   }
 
   return [...searched].sort((a, b) =>
@@ -165,8 +310,8 @@ export function visibleProfiles(
  */
 export function catalogSearchString(state: CatalogViewState): string {
   const params = new URLSearchParams();
-  if (state.filter === "por-categorizar") {
-    params.set("filtro", "por-categorizar");
+  if (state.filter !== "todos") {
+    params.set("filtro", state.filter);
   }
   if (state.query.trim()) {
     params.set("q", state.query.trim());
@@ -178,6 +323,11 @@ export function catalogSearchString(state: CatalogViewState): string {
   return query ? `?${query}` : "";
 }
 
+/** An unknown `filtro` falls back to «todos» rather than showing nothing. */
+function parseCatalogFilter(value: string | null | undefined): CatalogFilter {
+  return CATALOG_FILTERS.find((filter) => filter === value) ?? "todos";
+}
+
 /** Parse view state from URL search params (deep-link + reload). */
 export function parseCatalogParams(params: {
   filtro?: string | null;
@@ -185,7 +335,7 @@ export function parseCatalogParams(params: {
   perfil?: string | null;
 }): CatalogViewState {
   return {
-    filter: params.filtro === "por-categorizar" ? "por-categorizar" : "todos",
+    filter: parseCatalogFilter(params.filtro),
     query: typeof params.q === "string" ? params.q : "",
     selectedKey: params.perfil ? params.perfil : null,
   };

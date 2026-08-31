@@ -260,9 +260,15 @@ currency the undeclared remainder is **unknown** coverage, never the `other` buc
 `sin_region` / `sin_divisa` weight is the fraction with no country or currency (gold,
 fund cash) and counts as **not applicable**. A breakdown over 100% is rejected. **Cash**
 and **property** carry auto-derived profiles (from their instrument and the base currency);
-coins are excluded (ADR 0017).
+coins are excluded (ADR 0017). Each profile also declares its **provenance** (#1508): its
+**confidence** (`alta` a verifiable factsheet, `media` an issuer breakdown with a translated
+taxonomy, `baja` a reading of the fund's mandate rather than its portfolio), its
+**cut-off date** — the day the DATA is as of, never the day it was written, which is what
+lets a vector age — and its **sources** as short free text. All three may be **sin declarar**
+(null), which is the honest reading of a row nobody has sourced; none is ever guessed.
 _Avoid_: instrument (the coarse kind — an exposure profile says what one specific security
-contains), security master (implementation term).
+contains), security master (implementation term), «fecha de actualización» for the cut-off
+date (they are two different days).
 
 **Look-through**:
 A scope's **Exposure** resolved down through its funds to the underlying geography,

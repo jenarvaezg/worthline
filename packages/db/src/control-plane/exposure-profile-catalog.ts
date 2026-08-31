@@ -3,6 +3,7 @@ import type {
   CreateGlobalExposureProfileInput,
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
+  GlobalExposureProfileConfidence,
   GlobalExposureProfileIdentity,
   InvestmentPriceProvider,
   RawGlobalExposureProfileIdentityInput,
@@ -29,7 +30,14 @@ CREATE TABLE IF NOT EXISTS global_exposure_profiles (
   tracked_index TEXT,
   hedged_to_currency TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- Provenance (#1508). Appended, in the same order the migration ladder's
+  -- ALTERs append them, so a fresh install and a migrated control plane end up
+  -- with the same column layout. Nullable: «sin declarar» is the truth about
+  -- every row written before this seam.
+  confidence TEXT,
+  as_of_date TEXT,
+  sources TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_isin
   ON global_exposure_profiles(isin) WHERE isin IS NOT NULL;
@@ -118,6 +126,12 @@ function toGlobalExposureProfile(row: Record<string, unknown>): GlobalExposurePr
     trackedIndex: row["tracked_index"] == null ? null : String(row["tracked_index"]),
     hedgedToCurrency:
       row["hedged_to_currency"] == null ? null : String(row["hedged_to_currency"]),
+    confidence:
+      row["confidence"] == null
+        ? null
+        : (String(row["confidence"]) as GlobalExposureProfileConfidence),
+    asOfDate: row["as_of_date"] == null ? null : String(row["as_of_date"]),
+    sources: row["sources"] == null ? null : String(row["sources"]),
     createdAt: String(row["created_at"]),
     updatedAt: String(row["updated_at"]),
   };
@@ -166,8 +180,9 @@ export function createExposureProfileCatalog(
       await client.execute({
         sql: `INSERT INTO global_exposure_profiles (
                 identity_key, identity_kind, isin, price_provider, provider_symbol,
-                display_name, breakdowns_json, ter, tracked_index, hedged_to_currency
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                display_name, breakdowns_json, ter, tracked_index, hedged_to_currency,
+                confidence, as_of_date, sources
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           columns.identityKey,
           columns.identityKind,
@@ -179,6 +194,9 @@ export function createExposureProfileCatalog(
           validated.ter,
           validated.trackedIndex,
           validated.hedgedToCurrency,
+          validated.confidence,
+          validated.asOfDate,
+          validated.sources,
         ],
       });
 
@@ -228,6 +246,9 @@ export function createExposureProfileCatalog(
                 ter = ?,
                 tracked_index = ?,
                 hedged_to_currency = ?,
+                confidence = ?,
+                as_of_date = ?,
+                sources = ?,
                 updated_at = CURRENT_TIMESTAMP
               WHERE identity_key = ?`,
         args: [
@@ -236,6 +257,9 @@ export function createExposureProfileCatalog(
           validated.ter,
           validated.trackedIndex,
           validated.hedgedToCurrency,
+          validated.confidence,
+          validated.asOfDate,
+          validated.sources,
           identityKey,
         ],
       });

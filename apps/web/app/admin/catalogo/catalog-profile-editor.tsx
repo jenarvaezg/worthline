@@ -23,7 +23,9 @@ import {
   GEOGRAPHY_NOT_APPLICABLE_KEY,
   GEOGRAPHY_NOT_APPLICABLE_LABEL,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
+  GLOBAL_EXPOSURE_PROFILE_CONFIDENCES,
   type GlobalExposureProfile,
+  type GlobalExposureProfileConfidence,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   sectorStyleSplit,
 } from "@worthline/domain";
@@ -70,6 +72,18 @@ const ASSET_CLASS_LABELS = EXPOSURE_ASSET_CLASS_LABELS.filter((entry) =>
   (GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS as readonly string[]).includes(entry.bucket),
 );
 
+/** The three confidence levels, each said out loud so the choice is not a code (#1508). */
+const CONFIDENCE_LEVEL_MEANING: Record<GlobalExposureProfileConfidence, string> = {
+  alta: "alta · factsheet verificable",
+  media: "media · desglose del emisor, taxonomía traducida",
+  baja: "baja · lectura del mandato, no de la cartera",
+};
+
+const CONFIDENCE_OPTIONS = GLOBAL_EXPOSURE_PROFILE_CONFIDENCES.map((value) => ({
+  value,
+  label: CONFIDENCE_LEVEL_MEANING[value],
+}));
+
 interface CurrencyRow {
   /** Stable React key while editing — currency codes may be blank or duplicated. */
   id: number;
@@ -82,6 +96,9 @@ interface EditorDraft {
   ter: string;
   trackedIndex: string;
   hedgedToCurrency: string;
+  confidence: string;
+  asOfDate: string;
+  sources: string;
   geography: Record<string, string>;
   assetClass: Record<string, string>;
   sector: Record<string, string>;
@@ -99,6 +116,9 @@ function draftFromProfile(profile: GlobalExposureProfile | null): EditorDraft {
     ter: profile?.ter ?? "",
     trackedIndex: profile?.trackedIndex ?? "",
     hedgedToCurrency: profile?.hedgedToCurrency ?? "",
+    confidence: profile?.confidence ?? "",
+    asOfDate: profile?.asOfDate ?? "",
+    sources: profile?.sources ?? "",
     geography: { ...(profile?.breakdowns.geography ?? {}) },
     assetClass: { ...(profile?.breakdowns.assetClass ?? {}) },
     sector: { ...(profile?.breakdowns.sector ?? {}) },
@@ -359,6 +379,54 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
             value={draft.trackedIndex}
           />
         </label>
+      </fieldset>
+
+      {/* Procedencia (#1508): cuánto vale lo que dice el vector, a qué fecha y
+          de dónde sale. Sin esto, un factsheet verificable al decimal y la
+          lectura del mandato de un fondo activo tienen la misma pinta. */}
+      <fieldset className="catalogFieldset">
+        <legend>Procedencia</legend>
+        <div className="catalogTwoCol">
+          <label>
+            Confianza
+            <select
+              name="confidence"
+              onChange={(e) => setDraft({ ...draft, confidence: e.target.value })}
+              value={draft.confidence}
+            >
+              <option value="">— sin declarar</option>
+              {CONFIDENCE_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Fecha de corte de los datos
+            <input
+              name="asOfDate"
+              onChange={(e) => setDraft({ ...draft, asOfDate: e.target.value })}
+              type="date"
+              value={draft.asOfDate}
+            />
+          </label>
+        </div>
+        <label>
+          Fuentes
+          <input
+            maxLength={300}
+            name="sources"
+            onChange={(e) => setDraft({ ...draft, sources: e.target.value })}
+            placeholder="factsheet MSCI 31/07/2026"
+            value={draft.sources}
+          />
+        </label>
+        <p className="catalogHint">
+          La fecha de corte es la de <strong>los datos</strong>, no la de hoy: es lo que
+          permite envejecer un vector y ordenar la próxima revisión. Sin declarar es una
+          respuesta honesta; una fecha inventada, no.
+        </p>
       </fieldset>
 
       <fieldset className="catalogFieldset">
