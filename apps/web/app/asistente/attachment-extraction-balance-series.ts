@@ -19,7 +19,7 @@ import {
  * stamps it from the turn's own date (`markProjectedBalances`), which is the one fact
  * the document cannot carry.
  *
- * Optional and stamped only when true, for the reason {@link UNRECOGNIZED_REASONS} is
+ * Optional and stamped only when true, for the reason `UNRECOGNIZED_REASONS` is
  * optional: previews already sitting in a client history predate it and must keep
  * revalidating. An absent mark therefore means «not known to be a forecast», which is
  * exactly what a card written before #1424 could honestly claim.
