@@ -426,13 +426,13 @@ export interface AssetClassReturnsView {
   view: HoldingReturnsView;
   /** No value attributed today: the class is history, not present weight (#1456). */
   closed: boolean;
-  /** The part of `value` held in products wholly of this class (#1458). */
-  measuredValue: MoneyMinor;
   /**
    * Every euro of this class is a sleeve of a mixed product (#1458), so `view`
    * carries no rate: the ratio, CAGR, IRR and TWR are null and
-   * {@link ATTRIBUTED_ONLY_NOTICE} says why. Value and weight survive — those are
-   * a split of money, which the attribution genuinely knows.
+   * {@link ATTRIBUTED_ONLY_NOTICE} says why. The attributed `value` survives —
+   * splitting today's euros by today's weight is what the attribution genuinely
+   * knows. How much of the class IS its own is on the engine's `measuredValue`;
+   * no surface prints it, so it is not repeated here.
    */
   attributedOnly: boolean;
 }
@@ -447,9 +447,15 @@ export interface AssetClassReturnsViewResult {
  * The rates a class with nothing of its own does not get to print (#1458). This
  * is a SELECTION, the job of this layer — the engine still emits every measure,
  * so a caller that wants the mixed products' blended figure can still read it
- * off `returnsByAssetClass`. What dies here is the surface's ability to print
- * it under the class's name. The money — `totalGain`, the attributed `value` —
- * stays: splitting euros by weight is what the attribution actually knows.
+ * off `returnsByAssetClass`. What dies here is the surface's ability to print a
+ * rate under the class's name.
+ *
+ * `totalGain` survives only because its type is not nullable, NOT because it is
+ * any more defensible: a gain in euros is value minus a cost that is the mixed
+ * product's own history scaled by today's weight, so it is borrowed exactly like
+ * the percentage. No surface may print it for an `attributedOnly` class —
+ * /patrimonio prints only percentages here — and the flag, not this constant, is
+ * what a new surface has to read before quoting anything but `value`.
  */
 const withheldMeasures = {
   cagr: null,
@@ -511,7 +517,6 @@ export function returnsByAssetClassView(
         attributedOnly: entry.attributedOnly,
         closed: entry.closed,
         key: entry.key,
-        measuredValue: entry.measuredValue,
         value: entry.value,
         view: {
           ...view,

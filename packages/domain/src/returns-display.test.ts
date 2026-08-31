@@ -735,7 +735,6 @@ describe("una clase sin producto propio no presenta su rentabilidad (#1458)", ()
     const cash = mixedBook().classes.find((entry) => entry.key === "cash")!;
 
     expect(cash.attributedOnly).toBe(true);
-    expect(cash.measuredValue.amountMinor).toBe(0);
     // Sigue teniendo valor y peso: lo que no tiene es una rentabilidad que
     // defender. El +30% del plan no se reimprime como si fuese del efectivo.
     expect(cash.value.amountMinor).toBeGreaterThan(0);
@@ -750,7 +749,6 @@ describe("una clase sin producto propio no presenta su rentabilidad (#1458)", ()
     const equity = mixedBook().classes.find((entry) => entry.key === "equity")!;
 
     expect(equity.attributedOnly).toBe(false);
-    expect(equity.measuredValue.amountMinor).toBe(150_000);
     expect(equity.view.totalReturnRatio).not.toBeNull();
     expect(equity.view.irr).not.toBeNull();
     expect(equity.view.caveats).not.toContain(ATTRIBUTED_ONLY_NOTICE);
@@ -762,7 +760,9 @@ describe("una clase sin producto propio no presenta su rentabilidad (#1458)", ()
     // resultado, pero tiene euros propios con los que responder.
     const equity = mixedBook().classes.find((entry) => entry.key === "equity")!;
 
-    expect(equity.value.amountMinor).toBeGreaterThan(equity.measuredValue.amountMinor);
+    // 150.000 € del fondo puro y 113.100 € prestados del plan: presta y mide.
+    expect(equity.value.amountMinor).toBe(263_100);
+    expect(equity.attributedOnly).toBe(false);
     expect(equity.view.totalReturnRatio).not.toBeNull();
   });
 });

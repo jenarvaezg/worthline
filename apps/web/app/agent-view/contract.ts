@@ -514,19 +514,14 @@ export interface AgentViewAssetClassReturns {
   key: string;
   value: AgentViewMoney;
   /**
-   * The part of `value` held in products that are WHOLLY of this class (#1458) —
-   * the part whose return the class actually earned. The rest is a sleeve inside
-   * mixed products, and inherits their result.
-   */
-  measuredValue: AgentViewMoney;
-  /**
-   * Present (and always `true`) when `measuredValue` is zero on a class that
-   * still holds value (#1458): every euro of it is a sleeve of a mixed product,
-   * so the three measures below are THOSE PRODUCTS' return under this class's
-   * name — «el efectivo rindió un 10,4%» was the pension plans' equity sleeve
-   * talking. Quote the value and the weight, never the rates: there are no
-   * per-sleeve return series inside a mixed fund, so nothing here measures this
-   * class. /patrimonio prints em dashes for exactly this reason.
+   * Present (and always `true`) when the class still holds value but not one euro
+   * of it in a product of its own (#1458): every euro is a sleeve of a mixed
+   * product — «el efectivo rindió un 10,4%» was the pension plans' equity sleeve
+   * talking. There are no per-sleeve return series inside a mixed fund, so
+   * nothing here can measure this class: the three measures below come back
+   * EMPTY (rates null), the way /patrimonio prints em dashes. The blank is
+   * enforced where the block is built, not asked of the reader (ADR 0067):
+   * `value` and the weight are all there is to quote.
    */
   attributedOnly?: true;
   simple: AgentViewSimpleReturn;

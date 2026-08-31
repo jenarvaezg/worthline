@@ -91,3 +91,42 @@ barrel included — so no caller can re-attach to the merge. The per-holding mea
 holding is a subset of one slice, so the pairing rule has nothing to pair and the
 existing fold stays honest — but the agent view's per-holding block still does not
 fold payouts, which is a gap of that surface and not of this decision.
+
+## Amendment (#1458): a class with no product of its own presents no return
+
+The per-class decomposition (#552) splits each product's result across its classes with
+the exposure profile's **present-time** weights. That is declared, and it is fine while a
+class has products of its own. It stops being fine when a class exists ONLY as a sleeve:
+in a real workspace, «Efectivo: 1.312 €, ganancia +10,4%, IRR +20,1%» was not a current
+account earning 10% — it was the cash sleeves of two mixed pension plans, inheriting the
+plans' equity result under the cash's name. Measuring how much of each class's value comes
+from holdings that are wholly of it: renta variable 94%, materias primas 99%, **efectivo
+0%, renta fija 0%**. The first two can defend their figure; the last two never could, and
+all four were presented identically under a subtitle that promised measurement («Cómo rinde
+cada clase de activo»).
+
+Two rules follow:
+
+- **The engine measures and marks; it never omits.** `returnsByAssetClass` emits
+  `measuredValue` (the value a class takes from holdings whose breakdown is that class
+  alone — one destination, since `breakdownDestinations` tops any declared remainder up to
+  1) and `attributedOnly` (value today, zero of it its own). `unclassified` counts as
+  measured: a holding nobody could classify contributes its return whole, which is a
+  coverage gap and not a borrowed figure. The `other` remainder of a mixed breakdown does
+  not. A class with no value today (`closed`, #1456) is never marked: a purity over zero
+  euros asserts something about money that multiplies nothing. The cut is literal — a fund
+  declaring a 2% cash cushion is not pure — which is deliberate and pinned by test, not an
+  accident of rounding.
+- **The presentation layer withholds the rates, and every surface does it in code.** The
+  display model (`returnsByAssetClassView`) nulls ratio, CAGR, IRR and TWR for a marked
+  class and carries `ATTRIBUTED_ONLY_NOTICE`; /patrimonio prints three em dashes that say
+  why and re-titles the section as a split rather than a performance; the agent view sends
+  the block with its rates empty rather than asking the model in prose not to quote them
+  (ADR 0067 — guarded by code, not by model choice). `totalGain` in euros survives only
+  because its type is not nullable: it is value minus a cost that is the mixed product's
+  own history scaled by today's weight, so it is borrowed exactly like the percentage, and
+  no surface may print it for a marked class.
+
+What this amendment does NOT do is measure better. There are no per-sleeve return series
+inside a mixed fund and there will not be; the limitation is structural. What changes is
+that an attribution stops being presented as a measurement.

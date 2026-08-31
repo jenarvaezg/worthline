@@ -867,6 +867,61 @@ describe("lo medido y lo prestado se distinguen (#1458)", () => {
     expect(other.attributedOnly).toBe(true);
   });
 
+  test("el corte es literal: un colchón de tesorería del 2% ya deja de ser puro", () => {
+    // Consecuencia deliberada de la definición del ticket («holdings que son 100%
+    // de esa clase»): un fondo 98/2 no mide para renta variable. Aquí queda
+    // pinzada, no escondida — el día que un catálogo escriba colchones en todas
+    // sus fichas, una clase entera perdería sus tasas, y esa conversación
+    // empieza en este test y no en la pantalla de alguien.
+    const almostPure = classOf(
+      [{ ...pureEquityFund, assetClass: classified({ cash: "0.02", equity: "0.98" }) }],
+      "equity",
+    );
+
+    expect(almostPure.measuredValue.amountMinor).toBe(0);
+    expect(almostPure.attributedOnly).toBe(true);
+  });
+
+  test("el caso real del ticket: el efectivo de dos planes mixtos no afirma su +10,4%", () => {
+    // 1.312 € de «efectivo» que son la manga del 13% de un plan y la del 25% de
+    // otro. Ningún producto de efectivo: la cifra que salía era la de la bolsa.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ cash: "0.13", equity: "0.87" }),
+          marketValueMinor: 400_000,
+          monthlyCloses: [],
+          operations: [buy("10", "300", "2023-01-01")],
+        },
+        {
+          assetClass: classified({ cash: "0.25", commodity: "0.3", equity: "0.45" }),
+          marketValueMinor: 316_800,
+          monthlyCloses: [],
+          operations: [buy("10", "250", "2023-01-01")],
+        },
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 12_446_600,
+          monthlyCloses: [],
+          operations: [buy("1000", "1000", "2023-01-01")],
+        },
+      ],
+      valuationDate: "2024-01-01",
+    });
+
+    const cash = result.classes.find((entry) => entry.key === "cash")!;
+    expect(cash.value.amountMinor).toBe(131_200);
+    expect(cash.attributedOnly).toBe(true);
+    // La ganancia sigue calculada — el motor marca, nunca omite — y es
+    // exactamente la de los planes: por eso ninguna superficie la imprime.
+    expect(cash.simpleGain.totalReturnRatio).not.toBeNull();
+    // Renta variable, en cambio, tiene sus 124.466 € propios.
+    const equity = result.classes.find((entry) => entry.key === "equity")!;
+    expect(equity.measuredValue.amountMinor).toBe(12_446_600);
+    expect(equity.attributedOnly).toBe(false);
+  });
+
   test("una clase sin valor hoy no se marca como prestada: no afirma nada de hoy", () => {
     // Vendida entera: `closed` ya la repliega, y una pureza sobre cero valor
     // sería una afirmación sobre un valor que no multiplica nada.

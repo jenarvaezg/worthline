@@ -183,7 +183,7 @@ describe("buildPortfolioReturns byAssetClass", () => {
     expect(classes.find((c) => c.key === "equity")).not.toHaveProperty("closed");
   });
 
-  test("marca la clase que no tiene producto suyo, y dice cuánto de ella es propio (#1458)", async () => {
+  test("la clase sin producto suyo llega marcada y sin ninguna tasa (#1458)", async () => {
     // Un plan mixto 87/13 y un fondo puro: el efectivo del patrimonio existe solo
     // como manga dentro del plan, así que su rentabilidad es la del plan.
     const returns = await portfolioReturns({
@@ -205,11 +205,17 @@ describe("buildPortfolioReturns byAssetClass", () => {
     const classes = returns!.byAssetClass!.classes;
     const cash = classes.find((c) => c.key === "cash")!;
     expect(cash.attributedOnly).toBe(true);
-    expect(cash.measuredValue.amountMinor).toBe(0);
+    // La cifra prestada no llega al asistente: no se le pide en prosa que no la
+    // repita, simplemente no la tiene (ADR 0067).
+    expect(cash.moneyWeighted.rate).toBeNull();
+    expect(cash.timeWeighted.rate).toBeNull();
+    expect(cash.simple.totalReturnRatio).toBeNull();
+    expect(cash.simple.cagr).toBeNull();
+    expect(cash.value.amountMinor).toBeGreaterThan(0);
     // Renta variable presta parte, pero tiene 100.000 € propios que sí midió.
     const equity = classes.find((c) => c.key === "equity")!;
     expect(equity).not.toHaveProperty("attributedOnly");
-    expect(equity.measuredValue.amountMinor).toBe(100_000);
+    expect(equity.simple.totalReturnRatio).not.toBeNull();
   });
 });
 

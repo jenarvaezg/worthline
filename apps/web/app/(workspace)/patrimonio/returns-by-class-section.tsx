@@ -53,14 +53,15 @@ function ClassRow({
   // A borrowed class's em dashes all say the SAME thing, and it is not the TWR
   // reason: «no hay TWR» would describe a measurement that failed, when what
   // happened is that there was never a figure of this class's to measure.
-  const borrowed = entry.attributedOnly ? { title: ATTRIBUTED_ONLY_NOTICE } : null;
+  const borrowedWhy = entry.attributedOnly ? ATTRIBUTED_ONLY_NOTICE : null;
+  const borrowedTitle = borrowedWhy === null ? {} : { title: borrowedWhy };
   return (
     <li className="returnsClassRow">
       <div className="returnsClassHead">
         <span className="returnsClassLabel">
           {assetClassLabel(entry.key)}
-          {borrowed === null ? null : (
-            <span className="returnsClassAttributed" {...borrowed}>
+          {borrowedWhy === null ? null : (
+            <span className="returnsClassAttributed" title={borrowedWhy}>
               atribuida
             </span>
           )}
@@ -71,21 +72,22 @@ function ClassRow({
       <dl className="returnsClassMeasures">
         <div>
           <dt>Ganancia</dt>
-          <dd className={signClass(entry.view.totalReturnRatio)} {...borrowed}>
+          <dd className={signClass(entry.view.totalReturnRatio)} {...borrowedTitle}>
             {formatMeasurePct(entry.view.totalReturnRatio)}
           </dd>
         </div>
         <div>
           <dt>IRR</dt>
-          <dd {...borrowed}>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
+          <dd {...borrowedTitle}>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
         </div>
         <div>
           <dt>TWR</dt>
           <dd
-            {...(borrowed ??
-              (entry.view.twr?.rate == null
+            {...(borrowedWhy !== null
+              ? borrowedTitle
+              : entry.view.twr?.rate == null
                 ? { title: twrWhy(entry.view.twr?.reason ?? null) }
-                : {}))}
+                : {})}
           >
             {formatMeasurePct(entry.view.twr?.rate ?? null)}
           </dd>
