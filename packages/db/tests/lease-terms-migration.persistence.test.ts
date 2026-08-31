@@ -5,10 +5,10 @@ import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
 /**
- * v66 (#1521): the lease terms on `payout_schedules` — `lease_regime`,
+ * v68 (#1521): the lease terms on `payout_schedules` — `lease_regime`,
  * `rent_revision`, `rent_revision_reference` and `post_mandatory_term_policy`.
  *
- * Until v66 an `end_date` in the past was the whole answer: past it the flat went
+ * Until v68 an `end_date` in the past was the whole answer: past it the flat went
  * back to the housing rung's guessed 3 % for ever, i.e. `stop` assumed in silence.
  * That assumption is not neutral — a long-term residential lease continues past its
  * signed date by law — so the four columns let the owner say what the date means and
@@ -20,13 +20,13 @@ import { describe, expect, test } from "vitest";
  * would seal the invention this migration exists to remove, and it would move a FIRE
  * date while doing it.
  *
- * Seeded at v65 with a rent already in the table, so the test travels the real legacy
+ * Seeded at v67 with a rent already in the table, so the test travels the real legacy
  * path (an additive ALTER over populated rows), not a fresh create.
  */
-async function seedV65(): Promise<Client> {
+async function seedV67(): Promise<Client> {
   const client = openLibsqlClient(":memory:");
   await client.execute("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
-  await client.execute("INSERT INTO schema_meta (version) VALUES (65)");
+  await client.execute("INSERT INTO schema_meta (version) VALUES (67)");
   await client.executeMultiple(`
     CREATE TABLE payout_schedules (
       id TEXT PRIMARY KEY NOT NULL,
@@ -48,9 +48,9 @@ async function seedV65(): Promise<Client> {
   return client;
 }
 
-describe("schema migration v66 (lease terms)", () => {
+describe("schema migration v68 (lease terms)", () => {
   test("adds the four columns unset, leaving the declared rent and its window intact", async () => {
-    const client = await seedV65();
+    const client = await seedV67();
 
     await migrate(client);
 
@@ -79,11 +79,11 @@ describe("schema migration v66 (lease terms)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(66);
+    expect(SCHEMA_VERSION).toBe(68);
   });
 
   test("is idempotent over a DB that already carries the columns", async () => {
-    const client = await seedV65();
+    const client = await seedV67();
     await migrate(client);
 
     await migrate(client);

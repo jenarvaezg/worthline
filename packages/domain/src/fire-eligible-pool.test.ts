@@ -21,7 +21,10 @@ function makeAsset(
   id: string,
   amountMinor: number,
   overrides: Partial<
-    Pick<ManualAsset, "isPrimaryResidence" | "liquidityTier" | "ownership">
+    Pick<
+      ManualAsset,
+      "availableFrom" | "isPrimaryResidence" | "liquidityTier" | "ownership"
+    >
   > = {},
 ): ManualAsset {
   return {
@@ -36,6 +39,7 @@ function makeAsset(
       { memberId: "bob", shareBps: 5000 },
     ],
     isPrimaryResidence: overrides.isPrimaryResidence ?? false,
+    ...(overrides.availableFrom ? { availableFrom: overrides.availableFrom } : {}),
   };
 }
 
@@ -419,5 +423,62 @@ describe("assembleFireEligiblePool + rent-derived rates", () => {
 
     expect(pool.assetRateOverrides).toEqual([]);
     expect(pool.rentReturnNotices).toEqual([]);
+  });
+});
+
+describe("assembleFireEligiblePool \u2014 la disponibilidad declarada (#1528)", () => {
+  it("recoge la fecha del escal\u00f3n a plazo, escalada a lo que el \u00e1mbito posee", () => {
+    const pool = assemble([
+      makeAsset("pp", 1_000_000, {
+        availableFrom: "2035-06-01",
+        liquidityTier: "term-locked",
+        ownership: [{ memberId: "alice", shareBps: 5000 }],
+      }),
+    ]);
+
+    // El hogar posee la mitad del plan: la declaraci\u00f3n vale por esa mitad, igual que
+    // el capital que la lleva detr\u00e1s.
+    expect(pool.declaredAvailability).toEqual([
+      { amountMinor: 500_000, availableFrom: "2035-06-01" },
+    ]);
+    expect(pool.undeclaredTermLockedMinor).toBe(0);
+  });
+
+  it("un holding a plazo SIN fecha es un hueco con nombre, no un cero", () => {
+    const pool = assemble([
+      makeAsset("pp", 1_000_000, { liquidityTier: "term-locked" }),
+      makeAsset("etf", 400_000, { liquidityTier: "market" }),
+    ]);
+
+    expect(pool.declaredAvailability).toEqual([]);
+    expect(pool.undeclaredTermLockedMinor).toBe(1_000_000);
+  });
+
+  it("una fecha en un escal\u00f3n que no la reclama queda inerte", () => {
+    const pool = assemble([
+      makeAsset("cuenta", 400_000, {
+        availableFrom: "2035-06-01",
+        liquidityTier: "cash",
+      }),
+    ]);
+
+    expect(pool.declaredAvailability).toEqual([]);
+    expect(pool.undeclaredTermLockedMinor).toBe(0);
+  });
+
+  it("un holding excluido de FIRE no aporta declaraci\u00f3n ni hueco", () => {
+    const pool = assemble(
+      [
+        makeAsset("pp", 1_000_000, {
+          availableFrom: "2035-06-01",
+          liquidityTier: "term-locked",
+        }),
+      ],
+      [],
+      ["pp"],
+    );
+
+    expect(pool.declaredAvailability).toEqual([]);
+    expect(pool.undeclaredTermLockedMinor).toBe(0);
   });
 });

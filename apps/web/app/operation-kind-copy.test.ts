@@ -116,3 +116,62 @@ describe("transferRowNote (#1481)", () => {
     }
   });
 });
+
+describe("transferRowNote — la antigüedad heredada se puede LEER (#1518)", () => {
+  test("una entrada externa con antigüedad la dice, junto a su coste heredado", () => {
+    expect(
+      transferRowNote({
+        counterpart: { kind: "external" },
+        kind: "transfer_in",
+        privacyMode: false,
+        transferCostMinor: 497_955,
+        transferSeniorityAt: "2014-03-01",
+      }),
+    ).toBe(
+      `desde otra entidad · coste heredado ${formatMoneyMinorExact({ amountMinor: 497_955, currency: "EUR" })} · antigüedad desde 01/03/2014`,
+    );
+  });
+
+  test("sin antigüedad declarada la nota no la menciona", () => {
+    // «Nadie lo ha dicho» es el estado de casi toda fila del libro: la nota no puede
+    // insinuar una antigüedad que nadie declaró.
+    expect(
+      transferRowNote({
+        counterpart: { kind: "external" },
+        kind: "transfer_in",
+        privacyMode: false,
+        transferCostMinor: 497_955,
+      }),
+    ).toBe(
+      `desde otra entidad · coste heredado ${formatMoneyMinorExact({ amountMinor: 497_955, currency: "EUR" })}`,
+    );
+  });
+
+  test("el modo privado enmascara el coste pero NO la fecha", () => {
+    // La antigüedad es una fecha, no dinero: enmascararla escondería el único dato
+    // que hay que poder revisar, sin proteger ninguna cifra.
+    const note = transferRowNote({
+      counterpart: { kind: "external" },
+      kind: "transfer_in",
+      privacyMode: true,
+      transferCostMinor: 497_955,
+      transferSeniorityAt: "2014-03-01",
+    });
+
+    expect(note).toContain("antigüedad desde 01/03/2014");
+    expect(note).not.toContain("4979");
+  });
+
+  test("la salida de un par nunca habla de antigüedad", () => {
+    // La columna vive en la mitad que RECIBE. Una salida que la imprimiese estaría
+    // leyendo un dato que su fila no puede tener.
+    expect(
+      transferRowNote({
+        counterpart: { kind: "holding", name: "Fondo Azul" },
+        kind: "transfer_out",
+        privacyMode: false,
+        transferSeniorityAt: "2014-03-01",
+      }),
+    ).toBe("a Fondo Azul");
+  });
+});

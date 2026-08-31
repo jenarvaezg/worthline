@@ -1,3 +1,4 @@
+import { isRealCalendarDay } from "./dates";
 import {
   compareUnits,
   type DecimalString,
@@ -534,6 +535,14 @@ export interface ExternalTransferInIntent {
    * provider's paperwork. Defaults to {@link ExternalTransferInIntent.amountMinor}.
    */
   inheritedCostMinor?: number;
+  /**
+   * The day the capital started counting its age at the OLD provider, `YYYY-MM-DD`
+   * (#1518). Declared, never derived: the aportaciones that funded the movilización
+   * are in another institution's ledger, so `executedAt` is the only date this book
+   * would otherwise have — and it is the day the money landed, not the day it was
+   * earned. Absent means «nadie lo ha dicho», which is what every row says today.
+   */
+  seniorityAt?: string;
   /** A commission the entry was charged; capitalized, exactly as on a buy. */
   feesMinor?: number;
   source?: OperationSource;
@@ -572,6 +581,35 @@ export function planExternalTransferIn(
     return { ok: false, violations: [{ code: "transfer_inherited_cost_negative" }] };
   }
 
+  // The seniority is judged HERE and not at the form, because the chat writes below
+  // the web's guards (ADR 0088): a date the pane would have refused must be refused
+  // wherever the intent is built. Two refusals, not one — «no es un día» and «es
+  // posterior a la entrada» send the user to different corrections.
+  const { seniorityAt } = intent;
+  if (seniorityAt !== undefined) {
+    if (!isRealCalendarDay(seniorityAt)) {
+      return {
+        ok: false,
+        violations: [{ code: "transfer_seniority_not_a_day", seniorityAt }],
+      };
+    }
+    // The landing day itself is legal: capital movilizado the same month it was
+    // aportado is ordinary. What is refused is a date AFTER it, which no reading of
+    // "inherited antiquity" supports.
+    if (seniorityAt > intent.executedAt) {
+      return {
+        ok: false,
+        violations: [
+          {
+            code: "transfer_seniority_after_execution",
+            executedAt: intent.executedAt,
+            seniorityAt,
+          },
+        ],
+      };
+    }
+  }
+
   return {
     ok: true,
     value: {
@@ -586,6 +624,7 @@ export function planExternalTransferIn(
       ...(intent.source === undefined ? {} : { source: intent.source }),
       transferCostMinor: inheritedCostMinor,
       transferId: intent.transferId,
+      ...(seniorityAt === undefined ? {} : { transferSeniorityAt: seniorityAt }),
       units: divideUnits(
         minorToDecimal(intent.amountMinor),
         intent.destinationPricePerUnit,

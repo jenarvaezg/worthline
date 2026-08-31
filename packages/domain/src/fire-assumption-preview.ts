@@ -138,6 +138,10 @@ export function previewFireWithAssumptions(
   // Coast son opcionales, así que un baseline CON Coast y un recálculo SIN él (al
   // borrar la edad objetivo) dejarían el Coast viejo en pie bajo un número nuevo.
   return {
+    // Del MISMO lado del que salen el split y la tasa (#1473): la disponibilidad se
+    // resolvió contra el vendible de ese lado, así que traerla del otro imprimiría un
+    // bloqueo topado a un capital que la tarjeta no está enseñando.
+    availability: side.availability,
     capitalSplit: side.capitalSplit,
     context,
     eligibleAssets: recomputed.eligibleAssets,

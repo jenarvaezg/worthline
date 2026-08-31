@@ -122,7 +122,12 @@ export async function resolveFire(
       workspace,
       internalScopeId,
       reservedForGoalsMinor,
-      { rents: { schedules: payoutSchedules, todayISO: today } },
+      {
+        rents: { schedules: payoutSchedules, todayISO: today },
+        // El mismo día que las rentas: la disponibilidad declarada no puede
+        // resolverse contra un segundo reloj (#1528, ADR 0024).
+        todayISO: today,
+      },
     );
   }
 

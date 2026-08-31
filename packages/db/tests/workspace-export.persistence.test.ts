@@ -1097,3 +1097,50 @@ describe("el contrato no puede quedarse atrás del dominio (#1602)", () => {
     restored.close();
   });
 });
+
+describe("la fecha de disponibilidad declarada sobrevive el export/import (#1528)", () => {
+  test("viaja verbatim por la puerta real; sin declarar, se omite y vuelve nula", async () => {
+    const source = await createInMemoryStore();
+    await source.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Jorge" }],
+      mode: "individual",
+    });
+    for (const id of ["pp_declarado", "pp_sin_declarar"]) {
+      await source.assets.createManualAsset({
+        currency: "EUR",
+        currentValueMinor: 497_955,
+        id,
+        liquidityTier: "term-locked",
+        name: id,
+        ownership: [{ memberId: "m1", shareBps: 10_000 }],
+        type: "manual",
+      });
+    }
+    await source.assets.setAvailableFrom("pp_declarado", "2035-06-01");
+
+    const doc = await source.workspace.exportWorkspace();
+    expect(doc.assets.find((a) => a.id === "pp_declarado")?.availableFrom).toBe(
+      "2035-06-01",
+    );
+    // Sin declarar no se serializa un campo: la ausencia ES el estado.
+    expect(doc.assets.find((a) => a.id === "pp_sin_declarar")?.availableFrom).toBe(
+      undefined,
+    );
+
+    // Por la puerta de verdad: un campo que el contrato no conozca tumbaría el
+    // documento entero, y con \u00e9l todas las copias de seguridad (#1602).
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(parsed.value);
+
+    // Una declaraci\u00f3n perdida en un restore no vuelve: nada la puede re-derivar,
+    // y el reparto pasar\u00eda a contar ese dinero disponible desde el primer a\u00f1o.
+    expect(await restored.assets.readAvailableFrom("pp_declarado")).toBe("2035-06-01");
+    expect(await restored.assets.readAvailableFrom("pp_sin_declarar")).toBeNull();
+
+    source.close();
+    restored.close();
+  });
+});

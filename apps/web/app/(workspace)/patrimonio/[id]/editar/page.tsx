@@ -27,6 +27,7 @@ import { updateInvestmentAction } from "@web/inversiones/update-investment-actio
 import { resolvePageShell } from "@web/page-shell";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { loadAvailabilityPanel } from "./_chrome/availability-panel";
 import { loadDangerPanel } from "./_chrome/danger-panel";
 import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
@@ -137,6 +138,11 @@ export default async function EditarPage({
     await updateInvestmentAction(id, formData);
   }
 
+  // La disponibilidad va con el ESCALÓN, no con la familia (#1528): el panel decide
+  // solo, y devuelve null para cualquier holding que no esté a plazo. La página no
+  // pregunta por el peldaño — un booleano más aquí es lo que #1607 vino a quitar.
+  const availabilityPanel = await loadAvailabilityPanel(ficha, asset);
+
   const dangerPanel = await loadDangerPanel(ficha, {
     asset,
     manualLedger: surface.manualLedger,
@@ -205,6 +211,11 @@ export default async function EditarPage({
             />
           ) : null}
         </section>
+
+        {/* Fuera del plegable a propósito: cuando la fecha NO está declarada, esta
+            superficie es lo único que lo dice, y un aviso escondido tras un
+            «Configuración avanzada» no avisa de nada. */}
+        {availabilityPanel}
 
         <details suppressHydrationWarning className="editAdvanced" open={advancedOpen}>
           <summary>Configuración avanzada</summary>

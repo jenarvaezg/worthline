@@ -3,6 +3,7 @@ import type { Client, InStatement, Transaction } from "@libsql/client";
 import type {
   AssetProjectionContext,
   CostBasisGrade,
+  DateKey,
   DecimalString,
   InvestmentOperation,
   Liability,
@@ -12,7 +13,12 @@ import type {
   RawAssetRow,
   Workspace,
 } from "@worthline/domain";
-import { createLiability, projectAssets, usableCachedPrice } from "@worthline/domain";
+import {
+  asDateKey,
+  createLiability,
+  projectAssets,
+  usableCachedPrice,
+} from "@worthline/domain";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 import { chunk } from "./chunk";
@@ -402,18 +408,30 @@ export function operationCaptureColumns(capture: OperationCapture | undefined): 
 }
 
 /**
- * The two traspaso columns for a write (#1393), or two NULLs. Independent of each
- * other, unlike the capture set: `transfer_id` rides both halves of the pair and
- * `transfer_cost_minor` only the incoming one, so "id without cost" is the normal
- * shape of a `transfer_out` rather than a half-written record.
+ * The three traspaso columns for a write (#1393, #1518), or three NULLs. All
+ * independent of each other, unlike the capture set: `transfer_id` rides both
+ * halves of the pair, `transfer_cost_minor` only the incoming one, and
+ * `transfer_seniority_at` only an EXTERNAL incoming one whose owner declared it. So
+ * "id without cost" is the normal shape of a `transfer_out`, and "cost without
+ * seniority" the normal shape of every traspaso written before #1518 — neither is a
+ * half-written record.
  */
 export function operationTransferColumns(operation: {
   transferId?: string;
   transferCostMinor?: number;
-}): { transferId: string | null; transferCostMinor: number | null } {
+  transferSeniorityAt?: string;
+}): {
+  transferId: string | null;
+  transferCostMinor: number | null;
+  transferSeniorityAt: DateKey | null;
+} {
   return {
     transferCostMinor: operation.transferCostMinor ?? null,
     transferId: operation.transferId ?? null,
+    transferSeniorityAt:
+      operation.transferSeniorityAt === undefined
+        ? null
+        : asDateKey(operation.transferSeniorityAt),
   };
 }
 
@@ -450,6 +468,9 @@ export function toOperation(
       ? {}
       : { transferCostMinor: row.transferCostMinor }),
     ...(row.transferId === null ? {} : { transferId: row.transferId }),
+    ...(row.transferSeniorityAt === null
+      ? {}
+      : { transferSeniorityAt: row.transferSeniorityAt }),
     units: row.units,
   };
 }
@@ -647,6 +668,7 @@ export async function readAssets(
 
   const rows = await db
     .select({
+      availableFrom: assets.availableFrom,
       connectedSourceId: assets.connectedSourceId,
       currency: assets.currency,
       currentValueMinor: assets.currentValueMinor,
@@ -663,6 +685,7 @@ export async function readAssets(
     .all();
 
   const rawRows: RawAssetRow[] = rows.map((row) => ({
+    availableFrom: row.availableFrom,
     connectedSourceId: row.connectedSourceId,
     currency: row.currency,
     currentValueMinor: row.currentValueMinor,

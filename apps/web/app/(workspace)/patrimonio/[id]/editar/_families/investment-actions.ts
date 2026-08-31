@@ -12,6 +12,7 @@
  * it once and hands each section the action it posts to.
  */
 
+import { recordExternalEntryAction } from "@web/inversiones/external-entry-action";
 import {
   deleteOperationAction,
   recordOperationAction,
@@ -51,6 +52,11 @@ export function bindInvestmentActions(assetId: string) {
   async function recordTransfer(formData: FormData) {
     "use server";
     await recordTransferAction(assetId, formData);
+  }
+
+  async function recordExternalEntry(formData: FormData) {
+    "use server";
+    await recordExternalEntryAction(assetId, formData);
   }
 
   async function previewStatement(prev: StatementPreviewState, formData: FormData) {
@@ -97,6 +103,7 @@ export function bindInvestmentActions(assetId: string) {
     previewPriceBackfill,
     previewSnapshotPriceCorrection,
     previewStatement,
+    recordExternalEntry,
     recordOperation,
     recordTransfer,
   };

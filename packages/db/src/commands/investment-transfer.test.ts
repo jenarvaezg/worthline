@@ -490,6 +490,48 @@ describe("recordExternalTransferIn — the half that has no pair", () => {
     ).toBe(true);
   });
 
+  test("a declared seniority survives the write, and nothing derives one", async () => {
+    const store = await seed();
+
+    await store.command.recordExternalTransferIn({
+      amountMinor: 9_546,
+      destinationAssetId: "destino",
+      destinationPricePerUnit: "12.5",
+      executedAt: "2026-01-23",
+      inOperationId: "op_ext",
+      seniorityAt: "2014-03-01",
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+
+    const [incoming] = await store.operations.readOperations("destino");
+    // The capital LANDED in 2026 and started counting its age in 2014. Both dates
+    // are on the row, and neither is derived from the other (#1518, #1528).
+    expect(incoming).toMatchObject({
+      executedAt: "2026-01-23",
+      transferSeniorityAt: "2014-03-01",
+    });
+  });
+
+  test("no seniority declared leaves the column absent, never `executedAt`", async () => {
+    const store = await seed();
+
+    await store.command.recordExternalTransferIn({
+      amountMinor: 9_546,
+      destinationAssetId: "destino",
+      destinationPricePerUnit: "12.5",
+      executedAt: "2026-01-23",
+      inOperationId: "op_ext",
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+
+    const [incoming] = await store.operations.readOperations("destino");
+    // «Nadie lo ha dicho» is a state of its own. Defaulting to the landing day would
+    // make every pre-#1518 movilización claim it was born the day it arrived.
+    expect(incoming?.transferSeniorityAt).toBeUndefined();
+  });
+
   test("the declared inherited cost is what the position folds, not the amount", async () => {
     const store = await seed();
     await store.command.recordExternalTransferIn({

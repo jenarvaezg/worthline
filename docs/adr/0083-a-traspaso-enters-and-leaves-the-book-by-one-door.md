@@ -362,3 +362,76 @@ the consumer is whoever maintains the data. Three things it decides:
   removes, so an over-transfer the gate would have refused is careado against the cost
   that is actually there — which is what makes a row carrying the un-clamped proportion
   show up instead of agreeing with a figure the book never held.
+
+## Amendment (#1518, 31-ago-2026) — the external entry keeps its id, and gains a date nobody reads yet
+
+#1518 arrived proposing that an external entry be a `transfer_in` **with no
+`transfer_id` at all**, on the reading that an id is a promise of atomicity — «hay dos
+filas y su coste se conserva» — that a lone row cannot keep. That reading is
+**rejected**, and decision 7 stands unchanged. Three things it did not account for:
+
+- **A `transfer_in` with no id is unwritable-off.** Decision 10 makes `deleteOperation`
+  REFUSE half a traspaso outright, and the ficha's row-level delete translates the
+  click by asking `readTransferIdOf` first. With no id that lookup returns null, the
+  call falls through to the row-at-a-time delete, and the store throws. The row would
+  enter the book and never leave it — a worse promise than the one the id makes.
+- **Nothing reads the id as a broken pair any more.** `auditTransferPairs` (#1519)
+  exempts a lone `transfer_in` explicitly, and `transferCounterpartByOperationId`
+  (#1481) resolves an id with no counterpart to `external` — which is precisely how
+  the ficha comes to print «desde otra entidad». The id is not a promise the row
+  cannot keep; it is the EVIDENCE both readers use to name what the row is.
+- **The two shapes are already indistinguishable to every fold.** `derivePosition`
+  reads `transferCostMinor ?? 0`, the savings fold zeroes both traspaso kinds, and the
+  cupo counts buys only. Dropping the id would change nothing a figure depends on and
+  break the two things above.
+
+What #1518 DOES add is the fourth point of its own cure, which had no
+implementation anywhere:
+
+- **A declared inherited SENIORITY, `transfer_seniority_at` (v66).** A movilización
+  carries the age of the aportaciones that funded it, and those sit in another
+  institution's ledger. `executed_at` is the day the capital LANDED: Jorge's two
+  entries are dated dic-2025 and ene-2026 for capital aportado years before, so
+  reading age off the row says «bloqueado hasta 2035» about money that may be
+  rescatable today. The column is DECLARED, never derived, nullable, and backfilled
+  with nothing — NULL is «nadie lo ha dicho», which is true of every row written
+  before this door. **Nothing reads it yet**; #1528 builds partial pension liquidity
+  on top, and it is stored now because the door is the only moment the user has the
+  old provider's paperwork in front of them.
+- **The seniority is judged in the DOMAIN, not at the form.** `planExternalTransferIn`
+  refuses a date that is not a calendar day, and one LATER than `executedAt` — the
+  landing day itself is legal, since capital movilizado the same month it was aportado
+  is ordinary. The chat writes below the web's guards, so a date the pane would have
+  refused has to be refused wherever the intent is built.
+- **The inherited cost stays OPTIONAL.** #1518 asked for it to be mandatory. Refused:
+  empty already MEANS the importe that arrived, which books no latent gain rather than
+  inventing one, and the pane names that figure rather than leaving the default
+  invisible. Requiring it would block the alta of anyone without the old provider's
+  paperwork — a refusal to record a fact, in exchange for nothing the ledger gains.
+- **A second door, on the ficha.** The alta's pane (#1541) records the FIRST
+  movilización, as part of creating the holding. The second one — consolidating
+  another plan into a PP already on the book — had no path at all: the ficha offered a
+  `buy`, which eats a year of cupo (ADR 0080), and «Traspasar», which demands an origin
+  that by definition is not here. `recordExternalTransferIn` has accepted a
+  `destinationAssetId` since #1479; `ExternalEntrySection` is the missing product path
+  onto it, previewing with the same `externalTransferCaptureCopy` the pane runs, so the
+  two doors cannot disagree about a figure or word a refusal differently.
+- **«External only» is a fact about the writers, not an invariant of the column.** A
+  `transfer_in` carries its own `transfer_id` whether or not a counterpart exists — the
+  whole point of decision 7 — so the row cannot say which kind it is and nothing could
+  enforce the restriction. What is true, and pinned by a test, is that `planTransfer`
+  never sets it: an internal pair's origin already has its dates in this book, so only
+  the two external doors ask.
+- **A declared seniority is VISIBLE.** `transferRowNote` prints «antigüedad desde …»
+  beside the inherited cost. No figure reads the date yet, which is precisely why it
+  has to be readable: a declared date nobody can see is one nobody can correct, and a
+  year typed wrong would sit in the ledger until #1528 quietly built on it — the
+  failure mode of #1415, and what ADR 0074 forbids. It is never masked by privacy
+  mode: it is a date, not money.
+- **The chat still does not learn it.** Out to its own ticket, as #1541 left it.
+
+The data: Jorge's `op_n5459` was already a correct external entry after the #1485
+re-typing pass. `op_n5396` (4.979,55 €, 05-12-2025) was still a `buy` and is re-typed
+by a one-shot in the same deploy. Neither moves a cent of patrimonio — units and cost
+are conserved. What changes is the **ahorro medido de diciembre-2025, which loses
+4.979,55 € nobody earned**.

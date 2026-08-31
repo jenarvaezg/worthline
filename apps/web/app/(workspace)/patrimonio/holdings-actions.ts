@@ -6,6 +6,7 @@ import {
   createStableId,
   errorRedirectUrl,
   mapDomainViolation,
+  parseAvailableFromStrict,
   parseEntityId,
   parseOwnership,
   preserveFields,
@@ -42,6 +43,7 @@ import {
   baseUrl,
   boardAnchorResult,
   editAssetErrorUrl,
+  findAsset,
   holdingBoardAnchor,
   mapOwnershipSplitCommandResult,
   parseAssetType,
@@ -487,6 +489,71 @@ export async function editAssetAction(
     },
     onError: ({ formData, error }) => editAssetErrorUrl(formData, error),
     onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
+  })(formData, ..._testArgs);
+}
+
+/**
+ * Declarar desde cu\u00e1ndo se puede tocar un holding a plazo (#1528, ADR 0100).
+ *
+ * El escal\u00f3n `term-locked` es, desde ADR 0013, \u00abbloqueado hasta una fecha\u00bb \u2014 y esa
+ * fecha no exist\u00eda en el modelo, as\u00ed que un plan de pensiones se trataba como un
+ * bloque todo-o-nada. Este formulario es la fecha, y solo la fecha: lo disponible se
+ * deriva en lectura y no se guarda jam\u00e1s, porque un importe caduca cada a\u00f1o y una
+ * fecha no (ADR 0074).
+ *
+ * Vac\u00edo BORRA la declaraci\u00f3n y vuelve a \u00abnadie lo ha dicho\u00bb, el estado en el que
+ * empiezan todos los holdings: es el mismo contrato del coste de adquisici\u00f3n (#1441),
+ * y la raz\u00f3n de que el par\u00e1metro del seam sea `string | null` y no un `string`.
+ *
+ * `datedFact: false`: guardar esto no escribe ning\u00fan hecho fechado ni re-deriva
+ * historia. Lo \u00fanico que lo lee es el reparto del gasto sostenible de agotamiento,
+ * que se recalcula entero en cada lectura.
+ */
+export async function setHoldingAvailableFromAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<{ availableFrom: string | null }, { cleared: boolean }>({
+    datedFact: false,
+    missingId: "Identificador de activo no encontrado.",
+    parse: ({ formData }) => {
+      const parsed = parseAvailableFromStrict(formData);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(baseUrl(formData), {
+            formId: "availableFrom",
+            message: parsed.error,
+            values: preserveFields(formData, ["availableFrom"]),
+          }),
+        };
+      }
+      return { ok: true, value: { availableFrom: parsed.availableFrom } };
+    },
+    run: async (store, { id, parsed }) => {
+      const asset = await findAsset(store, id);
+      if (!asset) {
+        return { ok: false, error: "No se encontr\u00f3 el activo." };
+      }
+      // El mismo rechazo que el seam, dicho aqu\u00ed en las palabras del usuario: solo el
+      // escal\u00f3n que declara un plazo puede decir cu\u00e1ndo se acaba.
+      if (asset.liquidityTier !== "term-locked") {
+        return {
+          ok: false,
+          error:
+            "Solo un holding en el escal\u00f3n \u00abA plazo\u00bb puede declarar desde cu\u00e1ndo est\u00e1 disponible.",
+        };
+      }
+      await store.assets.setAvailableFrom(id, parsed.availableFrom);
+      return { ok: true, value: { cleared: parsed.availableFrom === null } };
+    },
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "availableFrom", message: error }),
+    onSuccess: ({ value }) =>
+      successRedirectUrl(
+        baseUrl(formData),
+        value?.cleared ? "available_from_cleared" : "available_from_saved",
+      ),
   })(formData, ..._testArgs);
 }
 

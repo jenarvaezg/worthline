@@ -444,6 +444,13 @@ const assetSchema = z.object({
   annualAppreciationRate: nonEmptyString.optional(),
   /** Housing valuation anchors (market appraisals + improvements); ordered by date. */
   valuationAnchors: z.array(valuationAnchorSchema).optional(),
+  /**
+   * Desde cuándo el dueño declaró que se puede tocar el holding (#1528, ADR 0100);
+   * solo lo lleva el escalón `term-locked`. Viaja en el fichero porque es una
+   * DECLARACIÓN suya y nada la puede recrear: perderla en un restore la convertiría
+   * en capital disponible desde el primer año sin que nadie lo haya dicho.
+   */
+  availableFrom: nonEmptyString.optional(),
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248);
    *  absent for a hand-maintained holding. Carried so a multi-rung source's link
    *  round-trips (the source row in `connectedSources` names only the primary asset). */
@@ -554,6 +561,13 @@ const operationSchema = reproduces<InvestmentOperation>()(
     transferId: nonEmptyString.optional(),
     /** The inherited acquisition cost, on the `transfer_in` half only (#1393). */
     transferCostMinor: z.number().int().nonnegative().optional(),
+    /**
+     * The declared inherited seniority, on a `transfer_in` only (#1518).
+     * Absent in every pre-#1518 file and on every row nobody declared one for — no
+     * default, because deriving it from `executedAt` on import is the exact
+     * invention the column exists to prevent.
+     */
+    transferSeniorityAt: nonEmptyString.optional(),
     /**
      * How honest this row's price is as a cost (#1505). Absent in every pre-#1505
      * file and on every real movement — the import must not invent one, so there is

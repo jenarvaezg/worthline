@@ -73,7 +73,7 @@ describe("schema migration v54 (operation capture)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(66);
+    expect(SCHEMA_VERSION).toBe(68);
   });
 
   test("a fresh schema already has the capture columns", async () => {

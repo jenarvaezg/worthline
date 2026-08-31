@@ -63,7 +63,7 @@ describe("schema migration v64 (housing acquisition cost, #1441)", () => {
       columnNames((await client.execute("PRAGMA table_info(assets)")).rows),
     ).toContain("acquisition_cost_minor");
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(66);
+    expect(SCHEMA_VERSION).toBe(68);
   });
 
   test("no backfill from the acquisition anchor — an old property reads null", async () => {
