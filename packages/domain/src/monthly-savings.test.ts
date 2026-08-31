@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { InvestmentOperation } from "./investment-types";
 import { measureMonthlySavings, suggestMonthlySavingsCapacity } from "./monthly-savings";
+import { derivePosition } from "./positions";
 
 /**
  * Build an investment operation. `amount` is the gross trade value in major
@@ -331,5 +332,105 @@ describe("una apertura no es ahorro (#1490)", () => {
     expect(
       measureMonthlySavings([sellOpening], { asOfDateKey: "2026-08-19" }).netMinor,
     ).toBe(0);
+  });
+});
+
+/**
+ * The three shapes, side by side, on ONE ledger (#1518). The bug this fixes is not
+ * that any single fold is wrong — each was already right in isolation — it is that
+ * the same money wore three labels and only one of them told the truth about
+ * savings. Reading them together is what pins that: same importe, same month, three
+ * kinds, and only the purchase is a euro anybody saved.
+ */
+describe("compra, traspaso interno y entrada externa: las tres formas (#1518)", () => {
+  const IMPORTE = 4979.55;
+
+  /** Half of a real pair: an origin in this book gave these units up. */
+  function internalTransferIn(executedAt: string): InvestmentOperation {
+    return {
+      assetId: "asset-1",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `internal-${executedAt}`,
+      kind: "transfer_in",
+      pricePerUnit: "1",
+      transferCostMinor: Math.round(IMPORTE * 100),
+      transferId: "trf_par",
+      units: String(IMPORTE),
+    };
+  }
+
+  /**
+   * The external entry (ADR 0083, decisión 7): a `transfer_in` carrying its OWN
+   * transferId and no counterpart anywhere, because the outgoing half belongs to
+   * another institution's ledger. Jorge's 5-dic-2025 movilización, in the shape it
+   * should always have had.
+   */
+  function externalEntry(executedAt: string): InvestmentOperation {
+    return {
+      assetId: "asset-1",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `external-${executedAt}`,
+      kind: "transfer_in",
+      pricePerUnit: "1",
+      transferCostMinor: Math.round(IMPORTE * 100),
+      transferId: "trf_ext_propio",
+      transferSeniorityAt: "2014-03-01",
+      units: String(IMPORTE),
+    };
+  }
+
+  const WINDOW = { asOfDateKey: "2026-01-31", windowMonths: 12 } as const;
+
+  it("la compra es la ÚNICA de las tres que cuenta como ahorro", () => {
+    const purchase = measureMonthlySavings([op("buy", "2025-12-05", IMPORTE)], WINDOW);
+    const internal = measureMonthlySavings([internalTransferIn("2025-12-05")], WINDOW);
+    const external = measureMonthlySavings([externalEntry("2025-12-05")], WINDOW);
+
+    expect(purchase.netMinor).toBe(497_955);
+    expect(internal.netMinor).toBe(0);
+    // The 4.979,55 € that read as December savings while the row said `buy`. Nobody
+    // earned them: the capital was already invested, in another institution.
+    expect(external.netMinor).toBe(0);
+  });
+
+  it("las tres son testigos de que el libro está despierto, aunque dos valgan 0 €", () => {
+    // The zero is on the MONEY, not on the row (#1449): a ledger whose only entry is
+    // a movilización is not a ledger with no history.
+    for (const operations of [
+      [op("buy", "2025-12-05", IMPORTE)],
+      [internalTransferIn("2025-12-05")],
+      [externalEntry("2025-12-05")],
+    ]) {
+      expect(measureMonthlySavings(operations, WINDOW).operationsCount).toBe(1);
+      expect(measureMonthlySavings(operations, WINDOW).basis).toBe("operations");
+    }
+  });
+
+  it("ninguna de las dos entradas sube la capacidad sugerida", () => {
+    const real = [op("buy", "2025-11-15", 300), op("buy", "2026-01-15", 300)];
+
+    expect(
+      suggestMonthlySavingsCapacity([...real, internalTransferIn("2025-12-05")]),
+    ).toEqual(suggestMonthlySavingsCapacity(real));
+    expect(suggestMonthlySavingsCapacity([...real, externalEntry("2025-12-05")])).toEqual(
+      suggestMonthlySavingsCapacity(real),
+    );
+  });
+
+  it("pero el coste declarado entra íntegro en el costBasis de las tres", () => {
+    for (const operation of [
+      op("buy", "2025-12-05", IMPORTE),
+      internalTransferIn("2025-12-05"),
+      externalEntry("2025-12-05"),
+    ]) {
+      expect(
+        derivePosition([operation], { assetId: "asset-1", currency: "EUR" }).costBasis
+          .amountMinor,
+      ).toBe(497_955);
+    }
   });
 });

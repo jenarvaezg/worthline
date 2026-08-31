@@ -22,6 +22,7 @@ const ENERO = {
   costRaw: "",
   dateRaw: "2026-01-23",
   priceRaw: "12,50",
+  seniorityRaw: "",
   today: TODAY,
 };
 
@@ -160,5 +161,81 @@ describe("externalTransferCaptureCopy", () => {
     // …and it does not blank the participaciones reading above it.
     expect(copy.refused).toBe(false);
     expect(copy.hint).toContain("7,6368");
+  });
+});
+
+describe("la antigüedad heredada (#1518)", () => {
+  test("empty stays empty — the landing day is never a stand-in", () => {
+    const resolved = resolveExternalTransferCapture(ENERO);
+    if (!resolved.ok) throw new Error("expected a capture");
+
+    expect(resolved.seniorityAt).toBeUndefined();
+    expect(resolved.executedAt).toBe("2026-01-23");
+  });
+
+  test("a declared date rides the entry beside the day it landed", () => {
+    const resolved = resolveExternalTransferCapture({
+      ...ENERO,
+      seniorityRaw: "2014-03-01",
+    });
+    if (!resolved.ok) throw new Error("expected a capture");
+
+    expect(resolved.seniorityAt).toBe("2014-03-01");
+  });
+
+  test("a date after the entry is refused in the gate's own words", () => {
+    const resolved = resolveExternalTransferCapture({
+      ...ENERO,
+      seniorityRaw: "2026-02-01",
+    });
+
+    expect(resolved).toEqual({
+      error:
+        "La antigüedad que traen esas participaciones (1 feb 2026) es posterior al día en que entraron (23 ene 2026). Una movilización hereda antigüedad de antes, nunca de después.",
+      ok: false,
+    });
+  });
+
+  test("an empty field says what it costs to leave it empty", () => {
+    const copy = externalTransferCaptureCopy(ENERO);
+
+    expect(copy.seniorityRefused).toBe(false);
+    expect(copy.seniorityNote).toBe(
+      "Vacío: el libro no sabrá desde cuándo cuenta la antigüedad de ese dinero — y en un plan de pensiones es lo que decide qué parte se puede rescatar.",
+    );
+  });
+
+  test("a declared date echoes what it means, in es-ES", () => {
+    const copy = externalTransferCaptureCopy({ ...ENERO, seniorityRaw: "2014-03-01" });
+
+    expect(copy.seniorityNote).toBe(
+      "Antigüedad desde el 1 mar 2014, no desde el día en que entró el dinero.",
+    );
+  });
+
+  test("its refusal sits beside its own field and blanks nothing above it", () => {
+    const copy = externalTransferCaptureCopy({ ...ENERO, seniorityRaw: "2026-02-01" });
+
+    expect(copy.seniorityRefused).toBe(true);
+    expect(copy.seniorityNote).toContain("posterior al día en que entraron");
+    expect(copy.refused).toBe(false);
+    expect(copy.hint).toContain("7,6368");
+    expect(copy.costRefused).toBe(false);
+  });
+
+  test("an unreadable importe leaves the seniority field explaining itself, not accusing it", () => {
+    // The refusal belongs under the participaciones, where the wrong figure is. This
+    // field only says what it is FOR — pointing the user here would be a dead end.
+    const copy = externalTransferCaptureCopy({
+      ...ENERO,
+      amountRaw: "noventa",
+      seniorityRaw: "2014-03-01",
+    });
+
+    expect(copy.refused).toBe(true);
+    expect(copy.seniorityRefused).toBe(false);
+    expect(copy.seniorityNote).toBe(
+      "Desde cuándo cuenta la antigüedad de ese dinero, según la entidad anterior.",
+    );
   });
 });

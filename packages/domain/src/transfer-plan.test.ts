@@ -482,3 +482,62 @@ describe("planExternalTransferIn — la mitad que no tiene pareja", () => {
     });
   });
 });
+
+describe("planExternalTransferIn — la antigüedad heredada (#1518)", () => {
+  const EXTERNAL = {
+    amountMinor: 9_546,
+    currency: "EUR" as const,
+    destinationAssetId: "plan_traido",
+    destinationPricePerUnit: "12.5",
+    executedAt: "2026-01-23",
+    inOperationId: "op_ext",
+    transferId: "trf_ext",
+  };
+
+  test("absent by default — the row claims no seniority it was not told", () => {
+    const result = planExternalTransferIn(EXTERNAL);
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.value.transferSeniorityAt).toBeUndefined();
+  });
+
+  test("a declared seniority rides the row, untouched and un-derived", () => {
+    const result = planExternalTransferIn({
+      ...EXTERNAL,
+      seniorityAt: "2014-03-01",
+    });
+    if (!result.ok) throw new Error("expected a plan");
+    // Jorge's plan was funded from 2014 contributions and MOVED in 2026. Nothing
+    // here reads the date — #1528 does — but the book cannot learn it later.
+    expect(result.value.transferSeniorityAt).toBe("2014-03-01");
+    expect(result.value.executedAt).toBe("2026-01-23");
+  });
+
+  test("the day the capital landed is itself a legal seniority", () => {
+    const result = planExternalTransferIn({
+      ...EXTERNAL,
+      seniorityAt: EXTERNAL.executedAt,
+    });
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.value.transferSeniorityAt).toBe("2026-01-23");
+  });
+
+  test("refuses a seniority AFTER the entry — inherited antiquity looks backwards", () => {
+    expect(planExternalTransferIn({ ...EXTERNAL, seniorityAt: "2026-01-24" })).toEqual({
+      ok: false,
+      violations: [
+        {
+          code: "transfer_seniority_after_execution",
+          executedAt: "2026-01-23",
+          seniorityAt: "2026-01-24",
+        },
+      ],
+    });
+  });
+
+  test("refuses a seniority that is not a real calendar day", () => {
+    expect(planExternalTransferIn({ ...EXTERNAL, seniorityAt: "2014-02-30" })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_seniority_not_a_day", seniorityAt: "2014-02-30" }],
+    });
+  });
+});

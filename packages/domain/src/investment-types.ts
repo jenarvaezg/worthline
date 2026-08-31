@@ -77,6 +77,22 @@ export interface InvestmentOperation {
    */
   transferCostMinor?: number;
   /**
+   * The day the capital this row brought in started counting its age, when the user
+   * declared it — present ONLY on an external `transfer_in` (#1518).
+   *
+   * A movilización between institutions carries the seniority of the aportaciones
+   * that funded it, and `executedAt` is the day it LANDED, not the day it was
+   * earned. Reading age off the row would say «bloqueado hasta 2035» about money
+   * that may be rescatable today, which is why it is DECLARED and never derived:
+   * the aportaciones are in another institution's ledger.
+   *
+   * Nothing reads it yet — #1528 builds partial liquidity on top. It is stored now
+   * because the door is the only moment the user has the old provider's paperwork
+   * in front of them; a column added later would face a book that can no longer
+   * learn the answer.
+   */
+  transferSeniorityAt?: string;
+  /**
    * How honest this row's price is as a COST (#1505). Absent on a real dated
    * movement, whose price IS its cost — and on every row written before #1505,
    * aperturas included; see {@link CostBasisGrade} and the v65 migration.
@@ -102,6 +118,8 @@ export interface CreateInvestmentOperationInput {
   transferId?: string;
   /** Inherited acquisition cost in minor units, on a `transfer_in` only (#1393). */
   transferCostMinor?: number;
+  /** Declared inherited seniority, on an external `transfer_in` only (#1518). */
+  transferSeniorityAt?: string;
   /**
    * The grade of the cost this row states (#1505) — written ONLY by a door that
    * knows the answer, which today is the alta stamping `source: "opening"`.

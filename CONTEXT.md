@@ -345,18 +345,21 @@ and then the unit price is derived, as on every buy and sell (#1544) — or the 
 and the unit price, and then the units are derived from them.
 The one traspaso that is a single row is the **external entry**: a plan brought in
 from another institution, whose outgoing half lives in that institution's ledger and
-can never be written here. It is an alta — the third way the add wizard answers «cuánto
-tengo» (#1541) — it carries a `transfer_id` of its own so a reader finds one row and
-names it «desde otra entidad» instead of reporting a broken pair, and its **inherited
-cost** is declared by the user, defaulting to the importe that arrived. It is not a
-purchase, so it consumes no **contribution allowance**, and the `transfer_integrity`
-data-health signal reads it the same way — an incoming row standing alone is never
-reported as a broken pair.
+can never be written here. It enters by two doors — the add wizard's third answer to
+«cuánto tengo» for the first movilización (#1541), and the ficha's «Traer de otra
+entidad» for one that lands on a holding already on the book (#1518) — it carries a
+`transfer_id` of its own so a reader finds one row and names it «desde otra entidad»
+instead of reporting a broken pair, and its **inherited cost** is declared by the user,
+defaulting to the importe that arrived. It may also declare an **inherited seniority**.
+It is not a purchase, so it consumes no **contribution allowance**, and the
+`transfer_integrity` data-health signal reads it the same way — an incoming row
+standing alone is never reported as a broken pair.
 UI label: "Traspaso".
 In prose and on screen it is always "traspaso": "transfer" on its own collides with
 the **workspace transfer** document. In code the two never meet — the transfer
 document's types are `WorkspaceExport*`/`Exported*`, so a bare `transfer*` identifier
-(`transferId`, `transferCostMinor`) belongs to this entry and nothing else.
+(`transferId`, `transferCostMinor`, `transferSeniorityAt`) belongs to this entry and
+nothing else.
 _Avoid_: calling it a transfer in prose or UI, sale + purchase (the modelling this
 replaces — it realizes a gain that never happened), rollover, switch.
 
@@ -371,6 +374,21 @@ what the origin sheds: a `transfer_integrity` data-health signal re-derives it f
 the origin's own fold at ZERO tolerance, and reports the pairs that disagree along
 with any `transfer_id` missing its outgoing half.
 _Avoid_: carried cost, transferred basis.
+
+**Inherited seniority** (antigüedad heredada):
+The day the capital an **external entry** brought over started counting its age at the
+previous institution — declared by the owner, on that row only, and never derived
+(#1518). A movilización carries the seniority of the aportaciones that funded it, and
+those sit in a ledger this book cannot read; the row's own `executedAt` is the day the
+money LANDED, so deriving age from it would call rescatable capital blocked. Absent is
+its own state and the default — «nadie lo ha dicho» — true of every row written before
+the column existed, and nothing is backfilled into it. Refused only when it is not a
+calendar day, or later than the day the capital landed; the landing day itself is
+legal. **No figure reads it yet**: it is stored so that #1528 can derive which tramo of
+a **pension plan** is available, at the one moment the owner has the old provider's
+paperwork in hand.
+_Avoid_: acquisition date (that is the **cost grade**'s question), available-from date
+(that is derived, and #1528's).
 
 **Cost grade** (grado del coste):
 How honest an **operation**'s price is *as a cost*, stored on the row: `declared_cost`

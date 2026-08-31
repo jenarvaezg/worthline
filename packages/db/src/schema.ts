@@ -351,6 +351,12 @@ export const assetOperations = sqliteTable(
     // over to another asset's ledger to learn it.
     transferId: text("transfer_id"),
     transferCostMinor: integer("transfer_cost_minor"),
+    // The seniority the incoming capital carries over from the OLD provider (#1518),
+    // on an external `transfer_in` only. NULL is the third state and the default:
+    // nobody has said it. Declared, never derived — `executed_at` is the day the
+    // movilización landed, and reading age off it would call rescatable money
+    // blocked. Nothing reads it yet; #1528 does.
+    transferSeniorityAt: text("transfer_seniority_at").$type<DateKey>(),
     /**
      * How honest this row's price is as a COST (#1505, ADR 0048/0097). NULL is the
      * third state and the default: a real dated movement, whose price IS its cost —

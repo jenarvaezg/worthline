@@ -67,13 +67,15 @@ export const INVESTMENT_REFILL_FIELDS: readonly string[] = [
   // look up.
   "cost",
   "costMode",
-  // «Viene traspasada de otra entidad» (#1541): the importe that arrived, the day
-  // it landed, that day's VL and the inherited cost. Three of the four are looked
-  // up in the old provider's paperwork.
+  // «Viene traspasada de otra entidad» (#1541, #1518): the importe that arrived, the
+  // day it landed, that day's VL, the inherited cost and the inherited seniority.
+  // Four of the five are looked up in the old provider's paperwork, so a refused
+  // alta that lost them would send the user back to the statement.
   "trAmount",
   "trDate",
   "trPrice",
   "trCost",
+  "trSeniority",
 ];
 
 /** The catalog facts the routing already resolved for this family. */
@@ -183,6 +185,10 @@ function externalTransferEntry(
       executedAt: entry.executedAt,
       inheritedCostMinor: entry.inheritedCostMinor,
       inOperationId: createStableId("op", `${assetId}_transfer_in`, seed),
+      // Absent unless the user declared it (#1518). Defaulting it to `executedAt`
+      // here would put the movilización's landing day on the row as if it were the
+      // day the capital was earned — the one derivation the column exists to stop.
+      ...(entry.seniorityAt === undefined ? {} : { seniorityAt: entry.seniorityAt }),
       transferId: createStableId("trf", assetId, seed),
     },
   };
@@ -229,6 +235,7 @@ export async function runInvestmentAlta(
           costRaw: String(ctx.formData.get(`trCost_${ctx.instrument}`) ?? ""),
           dateRaw: String(ctx.formData.get(`trDate_${ctx.instrument}`) ?? ""),
           priceRaw: String(ctx.formData.get(`trPrice_${ctx.instrument}`) ?? ""),
+          seniorityRaw: String(ctx.formData.get(`trSeniority_${ctx.instrument}`) ?? ""),
           today: ctx.today,
         })
       : null;
