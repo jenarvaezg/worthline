@@ -9,6 +9,7 @@
  * (`defaultValuationMethodForDebtModel`). No new vocabulary, no re-derivation.
  */
 
+import type { ClassifiableAsset } from "./classification";
 import { instrumentOfAsset } from "./classification";
 import type { ValuationMethod } from "./holding-valuation";
 import { defaultValuationMethodForDebtModel } from "./holding-valuation";
@@ -19,8 +20,15 @@ import type { DebtModel, ManualAsset } from "./workspace-types";
  * The valuation method an asset is configured by — sourced from its instrument's
  * defaults (ADR 0014). An investment (instrument `fund`/`etf`/…) is `derived`,
  * a property `appreciating`, cash/manual `stored`.
+ *
+ * This is the ONLY derivation of the fact (#1680, ADR 0101). The `assets.valuation_method`
+ * column is a backfilled leftover the app no longer writes, and deciding with it
+ * resurrects the pre-ADR-0014 `AssetType` mapping through its NULL fallback — which
+ * calls a connected coin collection `stored`. It takes a `ClassifiableAsset`, so a
+ * seam holding a RAW row (the document export/import, the balance-reconciliation
+ * guard) reads this seam and not the column.
  */
-export function valuationMethodOfAsset(asset: ManualAsset): ValuationMethod {
+export function valuationMethodOfAsset(asset: ClassifiableAsset): ValuationMethod {
   return defaultsFor(instrumentOfAsset(asset)).valuationMethod;
 }
 

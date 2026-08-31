@@ -92,7 +92,7 @@ export {
 } from "./broker-transaction-table";
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";
 export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
-export type { LiquidityTier } from "./classification";
+export type { ClassifiableAsset, LiquidityTier } from "./classification";
 export {
   housingAssetIdsOf,
   instrumentOfAsset,
@@ -767,11 +767,7 @@ export type {
   HoldingValuationInput,
   ValuationMethod,
 } from "./holding-valuation";
-export {
-  defaultValuationMethodForAssetType,
-  defaultValuationMethodForDebtModel,
-  valueAt,
-} from "./holding-valuation";
+export { valueAt } from "./holding-valuation";
 export type {
   AcquisitionAnchorFields,
   AcquisitionEditPreview,

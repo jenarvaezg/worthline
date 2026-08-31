@@ -8,11 +8,26 @@ export type { Instrument, LiquidityTier };
 export { isLiquid, rungForLiability };
 
 /**
+ * The minimum an asset has to carry for the instrument derivation to run: the
+ * stored instrument plus the legacy pair it falls back to. Named so a seam
+ * holding a RAW row — the document export/import, the contribution-plan guard
+ * (#1680) — can run the one derivation without first inflating a full
+ * `ManualAsset`. A `ManualAsset` satisfies it structurally.
+ */
+export type ClassifiableAsset = Pick<ManualAsset, "type" | "isPrimaryResidence"> & {
+  /**
+   * The stored instrument — absent on an in-memory asset that predates the column,
+   * and `null` on a raw DB row, which is why both are accepted here.
+   */
+  instrument?: Instrument | null | undefined;
+};
+
+/**
  * What an asset is (ADR 0014, #149). Reads the stored instrument when present
  * (the backfilled column wins), deriving it from the legacy `type` /
  * `isPrimaryResidence` only for in-memory assets that predate the column.
  */
-export function instrumentOfAsset(asset: ManualAsset): Instrument {
+export function instrumentOfAsset(asset: ClassifiableAsset): Instrument {
   return (
     asset.instrument ??
     defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence)

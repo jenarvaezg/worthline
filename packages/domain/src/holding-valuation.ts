@@ -28,7 +28,7 @@ import { derivePosition, latestOperationPrice, operationsUpTo } from "./position
 import type { ValuationCadence } from "./valuation-cadence";
 import type { ManualValuePoint } from "./value-history";
 import { lastKnownValueAtDate } from "./value-history";
-import type { AssetType, DebtModel } from "./workspace-types";
+import type { DebtModel } from "./workspace-types";
 
 /** How a holding's value/balance is computed (ADR 0014). */
 export type ValuationMethod =
@@ -39,27 +39,15 @@ export type ValuationMethod =
   | "anchored";
 
 /**
- * The valuation method an asset defaults to, by its current `AssetType` — the
- * S2 backfill (#148): cash/manual are valued by hand (`stored`), an investment is
- * `derived` (units × price), real estate `appreciating` (revaluation curve).
- */
-export function defaultValuationMethodForAssetType(type: AssetType): ValuationMethod {
-  switch (type) {
-    case "investment":
-      return "derived";
-    case "real_estate":
-      return "appreciating";
-    case "cash":
-    case "manual":
-      return "stored";
-  }
-}
-
-/**
  * The valuation method a liability defaults to, by its current `DebtModel` — the
  * S2 backfill (#148): an amortizable plan is `amortized`, a revolving/informal
  * balance is `anchored`, and a liability with no model keeps its manual balance
  * (`stored`).
+ *
+ * Module-internal on purpose (#1680): the one public door onto a liability's method
+ * is `valuationMethodOfLiability`, mirroring `valuationMethodOfAsset` on the other
+ * side. Two exported ways to derive one fact is how the asset side ended up with a
+ * stale mapping still in circulation.
  */
 export function defaultValuationMethodForDebtModel(
   model: DebtModel | null,

@@ -23,9 +23,10 @@ import {
   assertSnapshotHoldingsReconcile,
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
-  defaultValuationMethodForAssetType,
-  defaultValuationMethodForDebtModel,
+  instrumentOfAsset,
   serializeWorkspaceExport,
+  valuationMethodOfAsset,
+  valuationMethodOfLiability,
 } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 import {
@@ -34,6 +35,7 @@ import {
   publicIdTargetsForWorkspace,
   readAgentViewPublicIds,
 } from "./agent-view-public-ids";
+import { classifiableAssetFromRow } from "./asset-classification";
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
 import { managedPortfolioWitnessOfRow } from "./managed-portfolio-store";
 import {
@@ -223,6 +225,12 @@ async function importWorkspace(
     );
 
     const writeAsset = async (asset: ExportedAsset): Promise<void> => {
+      // Derived once and reused for the method below, so the row cannot land with
+      // an instrument and a valuation method that disagree (#1680).
+      const instrument =
+        asset.instrument ??
+        defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence ?? false);
+
       await db
         .insert(assets)
         .values({
@@ -241,22 +249,25 @@ async function importWorkspace(
             asset.type === "investment" ? 0 : (asset.currentValue?.amountMinor ?? 0),
           deletedAt: asset.deletedAt ?? null,
           id: asset.id,
-          instrument:
-            asset.instrument ??
-            defaultInstrumentForAssetType(asset.type, asset.isPrimaryResidence ?? false),
+          instrument,
           isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
           liquidityTier: asset.liquidityTier,
           name: asset.name,
           trashExit: asset.trashExit ?? null,
           type: asset.type,
-          // The full holding model (ADR 0015, #155): derive the method from type
-          // when the file omits it (a v1-shaped file the user hand-rolled).
           // Normalize to the canonical pair: only `interpolated` is stored, every
           // other value (incl. an explicit "step" or an absent field) is `null` = step.
           valuationCadence:
             asset.valuationCadence === "interpolated" ? "interpolated" : null,
-          valuationMethod:
-            asset.valuationMethod ?? defaultValuationMethodForAssetType(asset.type),
+          // The method is DERIVED from the instrument written just above (#1680),
+          // never copied from the file. A hand-rolled v1 document must not be able
+          // to plant a method that contradicts its own instrument — that is exactly
+          // the incoherence the round-trip used to fix instead of cure.
+          valuationMethod: valuationMethodOfAsset({
+            instrument,
+            isPrimaryResidence: asset.isPrimaryResidence ?? false,
+            type: asset.type,
+          }),
         })
         .run();
 
@@ -358,8 +369,10 @@ async function importWorkspace(
           // other value (incl. an explicit "step" or an absent field) is `null` = step.
           valuationCadence:
             liability.valuationCadence === "interpolated" ? "interpolated" : null,
-          valuationMethod:
-            liability.valuationMethod ?? defaultValuationMethodForDebtModel(debtModel),
+          // Derived from the debt model, not read off the file (#1680): the same
+          // rule as the asset above — a document cannot declare a method that
+          // contradicts the model it also declares.
+          valuationMethod: valuationMethodOfLiability(debtModel),
         })
         .run();
 
@@ -875,6 +888,7 @@ async function buildWorkspaceExport(
   const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
     const meta = investmentMetaByAsset.get(row.id);
     const anchors = anchorsByAsset.get(row.id) ?? [];
+    const classifiable = classifiableAssetFromRow(row);
 
     return {
       id: row.id,
@@ -890,11 +904,14 @@ async function buildWorkspaceExport(
           }),
       liquidityTier: row.liquidityTier,
       isPrimaryResidence: row.isPrimaryResidence === 1,
-      instrument:
-        row.instrument ??
-        defaultInstrumentForAssetType(row.type, row.isPrimaryResidence === 1),
-      valuationMethod:
-        row.valuationMethod ?? defaultValuationMethodForAssetType(row.type),
+      // Both fields off the SAME classifiable row, mirroring the import's single
+      // derivation (#1680): the exported method must be the one the exported
+      // instrument implies, or the file re-opens the gap it just closed. Derived
+      // from the instrument, never the `valuation_method` column — exporting the
+      // column would write a stale method into the file and the import would read
+      // it straight back, a round-trip that fixes the error instead of curing it.
+      instrument: instrumentOfAsset(classifiable),
+      valuationMethod: valuationMethodOfAsset(classifiable),
       // The cadence is only serialized when set away from the default `step`
       // (ADR 0031); an omitted field round-trips as step on import.
       ...(row.valuationCadence === "interpolated"
@@ -965,8 +982,7 @@ async function buildWorkspaceExport(
       currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
       instrument:
         row.instrument ?? defaultInstrumentForLiability(row.type, row.debtModel),
-      valuationMethod:
-        row.valuationMethod ?? defaultValuationMethodForDebtModel(row.debtModel ?? null),
+      valuationMethod: valuationMethodOfLiability(row.debtModel ?? null),
       // The cadence is only serialized when set away from the default `step`
       // (ADR 0031); an omitted field round-trips as step on import.
       ...(row.valuationCadence === "interpolated"
