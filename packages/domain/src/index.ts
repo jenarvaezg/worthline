@@ -529,6 +529,16 @@ export type {
 export { fireAchievement } from "./fire-achievement";
 export type { FireAssumptionOverrides } from "./fire-assumption-preview";
 export { previewFireWithAssumptions } from "./fire-assumption-preview";
+export type {
+  AvailabilityTranche,
+  DeclaredAvailability,
+  FireCapitalAvailability,
+} from "./fire-capital-availability";
+export {
+  availabilityAwareAnnuity,
+  resolveCapitalAvailability,
+  yearsUntilAvailable,
+} from "./fire-capital-availability";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
 export { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
 export type { FireCoastArrival } from "./fire-coast-arrival";

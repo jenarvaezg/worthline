@@ -5997,6 +5997,30 @@ td.rowActions > * {
   margin: 0 0 12px;
 }
 
+/* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico», no dentro
+   de «Configuración avanzada», así que lleva su tratamiento de encabezado y no el
+   uppercase apagado de las superficies plegadas. */
+.holdingAvailability {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.holdingAvailability h3 {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.availabilityReadout {
+  font-size: 0.875rem;
+  color: var(--ink);
+  margin: 0;
+}
+
 .editAdvanced {
   border-top: 1px solid var(--line);
   padding-top: 16px;

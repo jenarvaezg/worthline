@@ -41,6 +41,12 @@ export {
   parseValuationAnchorStrict,
 } from "./intake/asset";
 export {
+  AVAILABLE_FROM_HELP,
+  AVAILABLE_FROM_UNDECLARED_NOTE,
+  type AvailableFromResult,
+  parseAvailableFromStrict,
+} from "./intake/availability";
+export {
   type DebtModelResult,
   parseAmortizationPlanStrict,
   parseBalanceAnchorStrict,
@@ -521,6 +527,10 @@ export function okMessage(key: string | undefined): string | null {
     acquisition_cost_cleared: "Coste de adquisición borrado.",
     acquisition_cost_saved: "Coste de adquisición guardado.",
     asset_added: "Activo añadido.",
+    // #1528: «guardada», no «aplicada». Declarar la fecha no reescribe ninguna cifra
+    // de hoy — solo cambia de qué año puede salir el dinero en el reparto que agota.
+    available_from_cleared: "Fecha de disponibilidad borrada.",
+    available_from_saved: "Fecha de disponibilidad guardada.",
     // #1561: the alta went in exactly as any other — the acquisition-date
     // question rides beside it as its own aviso (see `resolveOkNotice`), never
     // dressed up as a confirmation.

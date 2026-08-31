@@ -181,6 +181,18 @@ export const assets = sqliteTable(
      */
     acquisitionCostMinor: integer("acquisition_cost_minor"),
     /**
+     * Desde cuándo el dueño declaró que se puede tocar este holding (`YYYY-MM-DD`,
+     * #1528, ADR 0100). Null = nadie lo ha dicho, y así se queda: la fecha NUNCA se
+     * deriva del libro, porque una movilización externa (#1518) o una apertura
+     * (#1490) llevan la fecha del trámite y no la de las aportaciones que la
+     * generaron — derivarla diría «bloqueado hasta 2035» sobre dinero rescatable hoy.
+     *
+     * Solo la reclama el escalón `term-locked`, que ADR 0013 define como «bloqueado
+     * hasta una fecha» y hasta ahora nunca decía cuál. Sin CHECK: la regla vive en el
+     * seam del store y en el dominio, igual que `acquisition_cost_minor` arriba.
+     */
+    availableFrom: text("available_from"),
+    /**
      * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
      * null for a hand-maintained holding. A source now materializes ONE asset per
      * occupied liquidity rung (Binance market + term-locked), so the back-link lives

@@ -47,6 +47,12 @@ export interface FireSustainableSpendingCopy {
   depletion: { value: string; gloss: string } | null;
   /** Qué falta para poder enseñar la versión de agotamiento. Null cuando está. */
   depletionAbsence: string | null;
+  /**
+   * Lo que la fecha de disponibilidad declarada le hizo al reparto, o el hueco que
+   * deja no haberla declarado (#1528, ADR 0100). Null cuando no hay ni bloqueo que
+   * explicar ni capital a plazo sin fecha — el caso de casi todo el mundo.
+   */
+  availabilityNote: string | null;
   /** Qué patrimonio o qué rentas NO están en la cifra, cuando hay algo que decir. */
   exclusionNote: string | null;
 }
@@ -116,6 +122,7 @@ export function fireSustainableSpendingCopy(input: {
           value: monthly(spending.depletion.total, formatMoney),
         }
       : null,
+    availabilityNote: availabilityNoteOf({ formatMoney, spending }),
     depletionAbsence: depletionAbsenceNote(spending.depletionAbsence),
     exclusionNote: exclusionNoteOf({
       formatMoney,
@@ -146,6 +153,38 @@ function depletionAbsenceNote(
     case "final_age_reached":
       return "Tu edad ya ha alcanzado la edad final que declaraste, así que no quedan años entre los que repartir el capital.";
   }
+}
+
+/**
+ * Lo que la disponibilidad declarada dice de esta tarjeta (#1528, ADR 0100). Dos frases
+ * distintas y nunca a la vez:
+ *
+ * - **Hubo recorte**: el reparto no promete, en los primeros años, dinero que todavía no
+ *   se puede tocar. Se nombra el bloqueo porque, si no, la segunda cifra baja sin
+ *   explicación y se lee como un fallo de la app.
+ * - **Falta la fecha**: hay capital a plazo que nadie ha fechado, y el reparto lo está
+ *   contando como disponible desde el primer año. El hueco se dice en voz alta y se dice
+ *   dónde se arregla; callarlo sería la ilusión de liquidez que #1447 vino a matar.
+ *
+ * El recorte manda sobre el hueco cuando se dan los dos: la cifra que el usuario está
+ * mirando ya cambió, y esa es la que hay que explicar primero.
+ */
+function availabilityNoteOf(input: {
+  formatMoney: FormatMoney;
+  spending: FireSustainableSpending;
+}): string | null {
+  const { formatMoney, spending } = input;
+  const { availability, depletion } = spending;
+
+  if (depletion?.limitedByAvailability) {
+    return `De tu capital vendible, ${formatMoney(availability.lockedMinor)} tienen fecha de disponibilidad declarada, así que la cifra de agotamiento no lo reparte antes de que puedas tocarlo.`;
+  }
+
+  if (availability.undeclaredMinor > 0) {
+    return `Tienes ${formatMoney(availability.undeclaredMinor)} en el escalón «A plazo» sin fecha de disponibilidad declarada: hasta que la digas en su ficha, el reparto los cuenta como disponibles desde el primer año.`;
+  }
+
+  return null;
 }
 
 /**

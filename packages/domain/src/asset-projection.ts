@@ -43,6 +43,12 @@ export interface RawAssetRow {
    * figure the math reads, only warnings metadata.
    */
   connectedSourceId?: string | null;
+  /**
+   * Desde cuándo el dueño declaró que se puede tocar el holding (#1528, ADR 0100);
+   * null/absent = nadie lo ha dicho. Leída tal cual de `assets`, sin derivar nunca
+   * de una fila del libro.
+   */
+  availableFrom?: string | null;
 }
 
 /** A raw investment-asset row with only the fields a position view needs. */
@@ -122,6 +128,7 @@ export function projectAssets(
       ...(providerSymbol ? { providerSymbol } : {}),
       ...(isin ? { isin } : {}),
       ...(row.connectedSourceId ? { connectedSourceId: row.connectedSourceId } : {}),
+      ...(row.availableFrom ? { availableFrom: row.availableFrom } : {}),
     });
   });
 }

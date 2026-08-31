@@ -34,6 +34,7 @@ CREATE TABLE \`assets\` (
 	\`instrument\` text,
 	\`annual_appreciation_rate\` text,
 	\`acquisition_cost_minor\` integer,
+	\`available_from\` text,
 	\`connected_source_id\` text,
 	\`deleted_at\` text,
 	\`trash_exit\` text,

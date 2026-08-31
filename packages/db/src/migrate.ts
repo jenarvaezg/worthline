@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 65;
+export const SCHEMA_VERSION = 66;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1981,6 +1981,31 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 65);
+  }
+
+  if (version < 66) {
+    // #1528 (ADR 0100): `assets.available_from` — desde cuándo se puede tocar un
+    // holding a plazo. Nullable y con CERO backfill, por la misma razón que v64 no
+    // rellena el coste de las viviendas y v65 no marca las aperturas: la fecha que el
+    // libro tiene NO es la que hace falta.
+    //
+    // Las dos entradas de plan de pensiones de la cartera real son altas por
+    // MOVILIZACIÓN desde otra entidad (#1518): la fila lleva el día del trámite
+    // (05-12-2025, 23-01-2026) y una movilización conserva la antigüedad de las
+    // aportaciones que la generaron, que están fuera del libro. Derivar de ahí diría
+    // «bloqueado hasta 2035» sobre dinero que puede ser rescatable hoy — inventando
+    // por la misma puerta que #1490. Sin declaración la columna se queda NULL, que se
+    // lee como «nadie lo ha dicho», y ninguna cifra de hoy se mueve.
+    try {
+      await client.execute("ALTER TABLE assets ADD COLUMN available_from TEXT");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Tolerado exactamente como en v59/v62/v64/v65: una BD nueva ya trae la columna
+      // desde `schema-sql`, y un test de migración recorre la escalera sobre un
+      // fixture PARCIAL que puede no haber creado nunca la tabla.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 66);
   }
 
   return { ranV18Backfill, ranV33Backfill };

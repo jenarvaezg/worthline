@@ -766,6 +766,16 @@ rungs.
 _Avoid_: treating retirement as a tier — it named why a holding is locked (a purpose), not
 a level; pensions fall on **term-locked** (see Flagged ambiguities).
 
+**Availability date**:
+The day from which a **term-locked** holding's capital can actually be touched, as its
+owner DECLARED it (`assets.available_from`, ADR 0100). The rung has always meant «locked
+until a date» and never said which; this is that date. It is only ever a date — what is
+available is DERIVED at read time from it and the day of reading, never stored, because a
+stored euro amount expires every year and nobody revalidates it (ADR 0074). Absent means
+«nobody has said», and nothing derives one: an alta by external transfer or an apertura
+carries the date of the paperwork, not the seniority of the contributions behind it.
+_Avoid_: «lo disponible» as a stored figure; deriving the date from an operation row.
+
 **Liquidity breakdown**:
 The split of a scope's holdings across the rungs of the **liquidity ladder**, each rung
 shown as its share of **gross assets**. The **cash** and **market** rungs together are
@@ -1291,6 +1301,13 @@ _Avoid_: imported history (implies verified), synced history.
 - A coin's **purchase date** is a dated fact that ripples existing **snapshots** from that date forward (frozen at ripple time); a **sync** that finds a new trade ripples only from its date, while a mere price move never rewrites a past snapshot.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
+- **Sustainable spending, depletion version** distributes today's sellable capital over
+  the years to the declared final age — and it is the ONE figure a declared **availability
+  date** changes: no year is allowed to spend capital that year cannot touch, so the level
+  payment is the smallest one every horizon can fund (ADR 0100). With nothing declared the
+  arithmetic is byte-identical to the plain annuity. Term-locked capital with NO declared
+  date is counted as available from year one, and the card says so rather than silently
+  promising it.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE. The eligible pool is printed split by nature — what can be **sold in slices** (cash + market + term-locked) against what is **immobilized** (illiquid + housing), each side netting its own debt — and whether the immobilized side counts as FIRE capital at all is the user's declaration, defaulting to yes. Declaring it out takes those rungs out of the capital AND out of the return's weighting, through one predicate: dropping the capital while keeping the weight would quote a rate nobody's money holds (ADR 0078).
 - A figure worthline **derives** is printed with the inputs it was derived from, and its explanation is a projection of the same computation — never a second one beside it (ADR 0077). Hence the **return mix** ships with the rate, and a **reference age** ships with the **birth date** it came from. An explanation that would describe a figure the app is not using (a weighting under a hand-fixed return) is not shown at all.
 - Not every plan is a FIRE plan, and for one that is not, "you are 31,5 % short" answers a question nobody asked. worthline **detects** that profile from declared data —a target retirement age at or above the user's own **ordinary retirement age**, or a Regular level the declared **savings capacity** never reaches— and **offers** to swap the question; the swap is the user's declaration, reversible, and it moves no figure (ADR 0081). The answer it leads with is the **sustainable spending**: the inverse of the FIRE formula, split into declared **net rents** plus what the **sellable** capital supports, with a depleting variant when the user says how long the capital must last. The public pension stays out of the engine — recurring income is already inside **savings capacity**, and a withdrawal rate stops applying once a pension covers part of the spending.

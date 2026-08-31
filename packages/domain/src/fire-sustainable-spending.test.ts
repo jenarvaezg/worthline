@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FireContext, FireScopeConfig } from "./fire";
+import type { FireCapitalAvailability } from "./fire-capital-availability";
 import { splitFireCapital } from "./fire-capital-split";
 import type { FireRentReturnReport } from "./fire-rent-return";
 import { fireSustainableSpending } from "./fire-sustainable-spending";
@@ -42,6 +43,7 @@ function result(
     realReturnUsed?: number;
     countsImmobilized?: boolean;
     reservedForGoalsMinor?: number;
+    availability?: FireCapitalAvailability;
   } = {},
 ) {
   const config: FireScopeConfig = {
@@ -70,6 +72,9 @@ function result(
     ),
   };
   return {
+    ...(overrides.availability === undefined
+      ? {}
+      : { availability: overrides.availability }),
     capitalSplit,
     context,
     rentReturns: {
@@ -146,6 +151,7 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     // principal se gasta.
     expect(spending.depletion).toEqual({
       capital: { annualMinor: 578_524, monthlyMinor: 48_210 },
+      limitedByAvailability: false,
       total: { annualMinor: 578_524, monthlyMinor: 48_210 },
       untilAge: 90,
       years: 27,
@@ -153,6 +159,47 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     expect(spending.depletion!.capital.annualMinor).toBeGreaterThan(
       spending.perpetual.capital.annualMinor,
     );
+  });
+
+  it("no reparte capital cuya fecha de disponibilidad es posterior al año (#1528)", () => {
+    const locked = fireSustainableSpending(
+      result({
+        availability: {
+          lockedMinor: 6_000_000,
+          resolved: true,
+          tranches: [{ amountMinor: 6_000_000, yearsUntil: 10 }],
+          undeclaredMinor: 0,
+        },
+        config: { capitalLastsUntilAge: 90 },
+      }),
+    )!;
+
+    expect(locked.depletion!.limitedByAvailability).toBe(true);
+    // Los 9 primeros años solo pueden salir de los 40.000 € que no están a plazo.
+    expect(locked.depletion!.capital.annualMinor).toBe(
+      Math.round((4_000_000 * 0.035) / (1 - 1.035 ** -9)),
+    );
+    // La perpetua no reparte nada por años, así que la fecha no la toca.
+    expect(locked.perpetual.capital.annualMinor).toBe(350_000);
+  });
+
+  it("sin declaración de disponibilidad la cifra no se mueve ni un céntimo (#1528)", () => {
+    const declaredNothing = fireSustainableSpending(
+      result({
+        availability: {
+          lockedMinor: 0,
+          resolved: true,
+          tranches: [],
+          undeclaredMinor: 497_955,
+        },
+        config: { capitalLastsUntilAge: 90 },
+      }),
+    )!;
+
+    expect(declaredNothing.depletion!.capital.annualMinor).toBe(578_524);
+    expect(declaredNothing.depletion!.limitedByAvailability).toBe(false);
+    // El hueco viaja con la cifra: la tarjeta lo nombra en vez de callarlo.
+    expect(declaredNothing.availability.undeclaredMinor).toBe(497_955);
   });
 
   it("las rentas se suman también aquí: no se agotan con el capital", () => {

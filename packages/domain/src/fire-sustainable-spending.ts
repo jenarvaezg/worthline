@@ -36,6 +36,8 @@
  */
 
 import type { ScopeFireResult } from "./fire";
+import type { FireCapitalAvailability } from "./fire-capital-availability";
+import { availabilityAwareAnnuity } from "./fire-capital-availability";
 
 /** Una mitad del gasto sostenible: al año y al mes, la misma cifra. */
 export interface FireSustainableSpendingPart {
@@ -56,6 +58,13 @@ export interface FireSustainableSpendingDepletion extends FireSustainableSpendin
   untilAge: number;
   /** Los años que tiene que durar, desde la edad de referencia de hoy. */
   years: number;
+  /**
+   * Si la cifra la fijó una fecha de disponibilidad declarada y no el horizonte
+   * completo (#1528, ADR 0100). `false` cuando nadie declaró nada o cuando el bloqueo
+   * se libera antes de apretar: entonces esta cifra es la anualidad de siempre, y
+   * decir que un bloqueo la recortó sería explicar un recorte inexistente.
+   */
+  limitedByAvailability: boolean;
 }
 
 /**
@@ -87,13 +96,21 @@ export interface FireSustainableSpending {
   withdrawalRate: number;
   /** El retorno real con el que se anualizó la versión de agotamiento. */
   realReturnUsed: number;
+  /**
+   * El calendario del capital vendible con el que se repartió (#1528, ADR 0100): lo
+   * bloqueado con fecha, lo que está a plazo sin declararla, y si se resolvió contra
+   * un día. Viaja con la cifra para que la tarjeta pueda decir de dónde sale el
+   * recorte —y nombrar el hueco— sin volver a calcular nada (ADR 0077).
+   */
+  availability: FireCapitalAvailability;
 }
 
 /** Lo que la tarjeta necesita del resultado FIRE — nada que ella pueda recalcular. */
 export type FireSustainableSpendingInput = Pick<
   ScopeFireResult,
   "capitalSplit" | "context" | "rentReturns"
->;
+> &
+  Partial<Pick<ScopeFireResult, "availability">>;
 
 /**
  * `null` cuando no hay tasa de retirada con la que dividir: sin ella no hay ni número
@@ -118,23 +135,43 @@ export function fireSustainableSpending(
 
   const perpetual = sidesOf(Math.round(sellableMinor * withdrawalRate), rentAnnualMinor);
 
+  // Sin campo = sin declaración, que es el estado por defecto y el que deja el reparto
+  // exactamente como estaba. Es opcional en el tipo por eso y no por comodidad: la
+  // ausencia de calendario y un calendario vacío significan lo mismo para la cifra.
+  const availability: FireCapitalAvailability = input.availability ?? {
+    lockedMinor: 0,
+    resolved: false,
+    tranches: [],
+    undeclaredMinor: 0,
+  };
+
   const currentAge = config.currentAge;
   const untilAge = config.capitalLastsUntilAge;
   const years =
     currentAge === undefined || untilAge === undefined ? 0 : untilAge - currentAge;
-  const depletion =
+  // La única mitad con calendario, y por eso la única que la fecha declarada cambia
+  // (#1528): la perpetua no toca el principal y el número FIRE no reparte por años.
+  const annuity =
     untilAge !== undefined && years > 0
+      ? availabilityAwareAnnuity({
+          principalMinor: sellableMinor,
+          realReturn: realReturnUsed,
+          tranches: availability.tranches,
+          years,
+        })
+      : null;
+  const depletion =
+    annuity !== null && untilAge !== undefined
       ? {
-          ...sidesOf(
-            annuityAnnualMinor(sellableMinor, realReturnUsed, years),
-            rentAnnualMinor,
-          ),
+          ...sidesOf(annuity.annualMinor, rentAnnualMinor),
+          limitedByAvailability: annuity.limitedByAvailability,
           untilAge,
           years,
         }
       : null;
 
   return {
+    availability,
     depletion,
     // El hueco lleva su razón, y las tres son distintas: falta el campo, falta la fecha
     // de nacimiento de la que sale la edad de referencia, o esa edad ya llegó a la
@@ -169,23 +206,4 @@ function sidesOf(
     capital: partOf(capitalAnnualMinor),
     total: partOf(capitalAnnualMinor + rentAnnualMinor),
   };
-}
-
-/**
- * Lo que un capital soporta al año si tiene que durar exactamente `years` y acabarse:
- * la anualidad `P · r / (1 − (1+r)^−n)`, en términos reales porque la tasa lo es.
- *
- * Con retorno cero (o por debajo de −100 %, que no compone) es un reparto lineal
- * `P / n`: el mismo resultado al que la fórmula tiende, sin dividir por cero.
- */
-function annuityAnnualMinor(
-  principalMinor: number,
-  realReturn: number,
-  years: number,
-): number {
-  if (realReturn === 0 || realReturn <= -1) {
-    return Math.round(principalMinor / years);
-  }
-  const discount = 1 - Math.pow(1 + realReturn, -years);
-  return Math.round((principalMinor * realReturn) / discount);
 }

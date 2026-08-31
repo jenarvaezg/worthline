@@ -275,6 +275,19 @@ export interface AssetStore {
   setAcquisitionCostMinor: (assetId: string, costMinor: number | null) => Promise<void>;
   /** Read a property's acquisition cost in minor units, or null if unset (#1441). */
   readAcquisitionCostMinor: (assetId: string) => Promise<number | null>;
+  /**
+   * Declarar (o borrar, con null) desde cuándo se puede tocar un holding a plazo
+   * (`YYYY-MM-DD`, #1528, ADR 0100). Rechaza cualquier holding que no esté en el
+   * escalón `term-locked`: es el único peldaño que ADR 0013 define con un plazo, y
+   * una fecha en otro sitio sería un bloqueo que nadie ha reclamado.
+   *
+   * No escribe ningún hecho fechado y NO ripplea nada: lo único que la lee es el
+   * reparto del gasto sostenible de agotamiento, que se recalcula en cada lectura.
+   * Ningún snapshot ya capturado puede moverse por declarar una fecha.
+   */
+  setAvailableFrom: (assetId: string, availableFrom: string | null) => Promise<void>;
+  /** Leer la fecha de disponibilidad declarada de un holding, o null (#1528). */
+  readAvailableFrom: (assetId: string) => Promise<string | null>;
   /** Set (or clear, with null) an asset's valuation cadence (ADR 0031). */
   setValuationCadence: (
     assetId: string,
@@ -326,6 +339,9 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     setAcquisitionCostMinor: (assetId, costMinor) =>
       setAcquisitionCostMinor(ctx, assetId, costMinor),
     readAcquisitionCostMinor: (assetId) => readAcquisitionCostMinor(ctx, assetId),
+    setAvailableFrom: (assetId, availableFrom) =>
+      setAvailableFrom(ctx, assetId, availableFrom),
+    readAvailableFrom: (assetId) => readAvailableFrom(ctx, assetId),
     setValuationCadence: (assetId, cadence) => setValuationCadence(ctx, assetId, cadence),
     readValuationCadence: (assetId) => readValuationCadence(ctx, assetId),
     valueHousingAtDate: (assetId, targetDate, today) =>
@@ -631,6 +647,68 @@ async function readAcquisitionCostMinor(
     .get();
 
   return row?.acquisitionCostMinor ?? null;
+}
+
+/**
+ * Persistir desde cuándo se puede tocar un holding a plazo (#1528, ADR 0100).
+ * `null` lo devuelve a «nadie lo ha dicho», el estado en el que empiezan todos.
+ *
+ * Lo que se declara es una FECHA y nunca un importe: un «disponible hoy: 4.979 €»
+ * caduca cada año y nadie lo revalida (la avería de #1415, prohibida por ADR 0074).
+ * El importe disponible se deriva en lectura, contra el día de quien lee.
+ *
+ * Sin ripple, por construcción: nada del histórico lee esta columna — solo el reparto
+ * del gasto sostenible de agotamiento, que se recalcula entero cada vez. Compárese con
+ * `setAnnualAppreciationRate`, cuyo seam SÍ tiene que re-derivar historia.
+ */
+async function setAvailableFrom(
+  ctx: StoreContext,
+  assetId: string,
+  availableFrom: string | null,
+): Promise<void> {
+  if (availableFrom !== null && !ISO_DATE.test(availableFrom)) {
+    throw new Error(
+      `Available-from must be a YYYY-MM-DD date (null to clear), got "${availableFrom}".`,
+    );
+  }
+
+  // Solo el escalón a plazo reclama un plazo (ADR 0013). La regla se aplica aquí y no
+  // como CHECK de SQL, la misma elección que `acquisition_cost_minor`. El seam está
+  // exportado, así que la comprueba él en vez de fiarse de sus llamadores.
+  const row = await ctx.db
+    .select({ liquidityTier: assets.liquidityTier })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  if (!row) {
+    throw new Error(`Asset "${assetId}" not found.`);
+  }
+
+  if (row.liquidityTier !== "term-locked") {
+    throw new Error("Only a term-locked holding can declare an availability date.");
+  }
+
+  await ctx.db
+    .update(assets)
+    .set({ availableFrom, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(assets.id, assetId))
+    .run();
+
+  await ctx.writeAuditEntry("set_available_from", "asset", assetId, { availableFrom });
+}
+
+async function readAvailableFrom(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<string | null> {
+  const row = await ctx.db
+    .select({ availableFrom: assets.availableFrom })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  return row?.availableFrom ?? null;
 }
 
 async function setValuationCadence(

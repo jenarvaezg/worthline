@@ -19,6 +19,7 @@ function spending(
   overrides: Partial<FireSustainableSpending> = {},
 ): FireSustainableSpending {
   return {
+    availability: { lockedMinor: 0, resolved: true, tranches: [], undeclaredMinor: 0 },
     depletion: null,
     depletionAbsence: "no_final_age",
     perpetual: {
@@ -113,6 +114,7 @@ describe("fireSustainableSpendingCopy", () => {
       spending: spending({
         depletion: {
           capital: { annualMinor: 578_524, monthlyMinor: 48_210 },
+          limitedByAvailability: false,
           total: { annualMinor: 578_524, monthlyMinor: 48_210 },
           untilAge: 90,
           years: 27,
@@ -294,5 +296,65 @@ describe("firePanelHeading", () => {
         "previsualización · sin guardar",
       );
     }
+  });
+});
+
+describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)", () => {
+  test("cuando un bloqueo recorta el reparto, la tarjeta lo nombra", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({
+        availability: {
+          lockedMinor: 6_000_000,
+          resolved: true,
+          tranches: [{ amountMinor: 6_000_000, yearsUntil: 9 }],
+          undeclaredMinor: 0,
+        },
+        depletion: {
+          capital: { annualMinor: 525_791, monthlyMinor: 43_816 },
+          limitedByAvailability: true,
+          total: { annualMinor: 525_791, monthlyMinor: 43_816 },
+          untilAge: 90,
+          years: 27,
+        },
+        depletionAbsence: null,
+      }),
+    });
+
+    expect(copy.availabilityNote).toContain("60000.00 \u20ac");
+    expect(copy.availabilityNote).toContain("antes de que puedas tocarlo");
+  });
+
+  test("el capital a plazo sin fecha es un hueco con su arreglo, no un silencio", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({
+        availability: {
+          lockedMinor: 0,
+          resolved: true,
+          tranches: [],
+          undeclaredMinor: 497_955,
+        },
+      }),
+    });
+
+    expect(copy.availabilityNote).toContain("4979.55 \u20ac");
+    expect(copy.availabilityNote).toContain("A plazo");
+    expect(copy.availabilityNote).toContain("en su ficha");
+  });
+
+  test("sin bloqueo y sin hueco no dice nada: es el caso de casi todo el mundo", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending(),
+    });
+
+    expect(copy.availabilityNote).toBeNull();
   });
 });

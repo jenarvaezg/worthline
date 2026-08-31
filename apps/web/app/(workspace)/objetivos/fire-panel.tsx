@@ -398,6 +398,14 @@ export function FirePanel({
                   </p>
                 ) : null}
 
+                {/* Lo que la fecha de disponibilidad declarada le hizo al reparto, o el
+                    hueco de no haberla declarado (#1528). Va pegada a la cifra de
+                    agotamiento porque es la única que cambia: si la segunda cifra baja
+                    y nadie dice por qué, se lee como un fallo de la app. */}
+                {sustainableCopy.availabilityNote ? (
+                  <p className="fireCoastGloss">{sustainableCopy.availabilityNote}</p>
+                ) : null}
+
                 {/* El supuesto del servicio de deuda (#1520): la cuota sale de esta
                     cifra y no se ha restado. Antes de la nota de exclusiones porque
                     habla de la cifra grande, no de lo que se quedó fuera de ella.

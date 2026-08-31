@@ -26,6 +26,10 @@ const KEY_EXPORTS = [
   "money",
   "formatMoneyMinor",
   "parseDecimalToMinor",
+  // fire-capital-availability
+  "yearsUntilAvailable",
+  "resolveCapitalAvailability",
+  "availabilityAwareAnnuity",
   // classification
   "tierOfAsset",
   "isLiquid",

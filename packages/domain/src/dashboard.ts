@@ -329,10 +329,15 @@ export function prepareDashboardState(input: {
           selectedScope.id,
           fireReservedMinor,
           // Same "today" as the reservation horizon above: a schedule's validity
-          // must not be measured on a second clock (#1448).
+          // must not be measured on a second clock (#1448) — and the declared
+          // availability dates resolve against that same day (#1528), whether or not
+          // this scope happens to have payout schedules.
           input.payoutSchedules
-            ? { rents: { schedules: input.payoutSchedules, todayISO: today } }
-            : {},
+            ? {
+                rents: { schedules: input.payoutSchedules, todayISO: today },
+                todayISO: today,
+              }
+            : { todayISO: today },
         )
       : null;
 

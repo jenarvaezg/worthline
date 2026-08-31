@@ -126,6 +126,19 @@ export interface ManualAsset {
    * its source's own sync and will never carry a `providerSymbol` (#685 bug).
    */
   connectedSourceId?: string;
+  /**
+   * Desde cuándo se puede tocar este holding (`YYYY-MM-DD`), cuando el dueño lo ha
+   * declarado (#1528, ADR 0100). Ausente = nadie lo ha dicho, y ese es el estado por
+   * defecto: la fecha NUNCA se deriva del libro, porque una movilización externa
+   * (#1518) o una apertura (#1490) llevan la fecha del trámite y no la de las
+   * aportaciones que la generaron.
+   *
+   * Solo tiene sentido en el escalón `term-locked` — el peldaño que ADR 0013 define
+   * como «bloqueado hasta una fecha» y que hasta ahora nunca decía cuál. El motor la
+   * lee solo ahí, así que cambiar de escalón deja la declaración inerte en vez de
+   * convertirla en un bloqueo que el peldaño no reclama.
+   */
+  availableFrom?: string;
 }
 
 export type LiabilityType = "mortgage" | "debt";
@@ -165,6 +178,8 @@ export interface CreateManualAssetInput {
   isin?: string;
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248), when known. */
   connectedSourceId?: string;
+  /** Desde cuándo se puede tocar el holding (#1528, ADR 0100), cuando se ha declarado. */
+  availableFrom?: string;
 }
 
 export interface CreateLiabilityInput {
@@ -205,6 +220,7 @@ export function createManualAsset(
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
     ...(input.isin ? { isin: input.isin } : {}),
     ...(input.connectedSourceId ? { connectedSourceId: input.connectedSourceId } : {}),
+    ...(input.availableFrom ? { availableFrom: input.availableFrom } : {}),
   };
 }
 

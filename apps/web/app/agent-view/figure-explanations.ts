@@ -1259,7 +1259,12 @@ async function resolveFire(
     facts.workspace,
     facts.internalScopeId,
     reservedForGoalsMinor,
-    { rents: { schedules: payoutSchedules, todayISO: systemClock().today() } },
+    {
+      rents: { schedules: payoutSchedules, todayISO: systemClock().today() },
+      // El mismo día: la disponibilidad declarada se resuelve contra el reloj de
+      // quien mide, nunca contra un segundo (#1528, ADR 0024).
+      todayISO: systemClock().today(),
+    },
   );
 
   return { config, result };

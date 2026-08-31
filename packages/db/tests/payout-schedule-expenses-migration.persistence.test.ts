@@ -58,7 +58,7 @@ describe("schema migration v57 (payout schedule expenses)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(65);
+    expect(SCHEMA_VERSION).toBe(66);
   });
 
   test("is idempotent over a DB that already carries the column", async () => {
