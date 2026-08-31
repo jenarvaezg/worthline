@@ -68,3 +68,22 @@ export function assertsAny(sentence: string, patterns: readonly RegExp[]): boole
     return match !== null && !NEGATION.test(sentence.slice(0, match.index));
   });
 }
+
+/**
+ * Does any ONE sentence of `text` assert the claim?
+ *
+ * The reading both ceremony guards do (#1697), and it is the sentence-by-sentence
+ * shape that matters rather than the loop: the whole point of splitting is that the
+ * claim and the ceremony's noun must occur TOGETHER, so a check spanning the whole
+ * text would defeat it.
+ *
+ * `patternsFor` takes the sentence because the proposal guard reads a different set
+ * depending on whether the ceremony's own noun is in it — a distinction that has to be
+ * made per sentence, for the same reason.
+ */
+export function assertedInAnySentence(
+  text: string,
+  patternsFor: (sentence: string) => readonly RegExp[],
+): boolean {
+  return sentences(text).some((sentence) => assertsAny(sentence, patternsFor(sentence)));
+}

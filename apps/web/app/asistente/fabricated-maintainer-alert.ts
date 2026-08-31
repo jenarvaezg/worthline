@@ -32,10 +32,15 @@
  * `maintainer_alert_unavailable`) means no incident exists and no number can be given.
  */
 
-import { isToolUIPart, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 
-import { assertsAny, assistantProse, sentences } from "./claim-sentences";
-import { toolCallAnswered, toolPartName } from "./tool-parts";
+import { assertedInAnySentence } from "./claim-sentences";
+import {
+  fabricatedCeremonyGuard,
+  LEAVE_IN_FLIGHT_ALONE,
+  messagesWithFabricatedCeremony,
+} from "./fabricated-ceremony";
+import { toolPartName } from "./tool-parts";
 
 /**
  * What the app says next to a fabricated incident.
@@ -138,7 +143,7 @@ const CLAIM_PATTERNS = [
  * what teach a user to ignore notes.
  */
 export function claimsRaisedMaintainerAlert(text: string): boolean {
-  return sentences(text).some((sentence) => assertsAny(sentence, CLAIM_PATTERNS));
+  return assertedInAnySentence(text, () => CLAIM_PATTERNS);
 }
 
 /** The one tool output shape that means an alert really reached the control plane. */
@@ -162,36 +167,35 @@ export function isRaisedAlertOutput(output: unknown): boolean {
  * proposal guard. The tool persists through the control plane BEFORE it returns, so a
  * stream that died after the write leaves an alert that really exists; accusing there
  * would make the app the liar. There is no third state to describe either — unlike a
- * proposal, which the user could ask for again — so the turn is simply left alone.
+ * proposal, which the user could ask for again — so the turn is simply left alone. The
+ * shared mechanics carry that asymmetry as {@link LEAVE_IN_FLIGHT_ALONE} (#1697), so it
+ * reads as a declared choice rather than an accident of two hand-written loops.
  */
+const maintainerAlertGuard = fabricatedCeremonyGuard<true>({
+  claims: claimsRaisedMaintainerAlert,
+  delivers: (part) => "output" in part && isRaisedAlertOutput(part.output),
+  interrupted: LEAVE_IN_FLIGHT_ALONE,
+  lanes: (part) => toolPartName(part) === MAINTAINER_ALERT_TOOL,
+  never: true,
+  rejected: true,
+});
+
+/** {@link maintainerAlertGuard} as the boolean both audiences ask for. */
 export function fabricatesMaintainerAlert(message: UIMessage): boolean {
-  if (message.role !== "assistant") return false;
-  const calls = message.parts.filter(
-    (part) => isToolUIPart(part) && toolPartName(part) === MAINTAINER_ALERT_TOOL,
-  );
-  if (calls.some((part) => !toolCallAnswered(part))) return false;
-  if (calls.some((part) => "output" in part && isRaisedAlertOutput(part.output))) {
-    return false;
-  }
-  return claimsRaisedMaintainerAlert(assistantProse(message));
+  return maintainerAlertGuard(message) !== null;
 }
 
 /**
  * The assistant turns that claim an incident nobody filed, by id.
  *
- * The in-flight message is left alone while the turn streams, exactly as the proposal
- * guard does: prose can land before the tool call within one turn, so judging it early
- * would flash an accusation and then withdraw it. That rule belongs to the screen only;
- * the history the model gets back is never in flight.
+ * The streaming exemption is {@link messagesWithFabricatedCeremony}'s, the same loop the
+ * proposal guard runs since #1697 — the two used to hold a copy each.
  */
 export function messagesWithFabricatedMaintainerAlert(
   messages: UIMessage[],
   streaming: boolean,
 ): ReadonlySet<string> {
-  const fabricated = new Set<string>();
-  messages.forEach((message, index) => {
-    if (streaming && index === messages.length - 1) return;
-    if (fabricatesMaintainerAlert(message)) fabricated.add(message.id);
-  });
-  return fabricated;
+  return new Set(
+    messagesWithFabricatedCeremony(messages, streaming, maintainerAlertGuard).keys(),
+  );
 }

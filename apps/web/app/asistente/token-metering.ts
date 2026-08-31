@@ -26,7 +26,7 @@
  */
 
 /** The AI SDK full-stream `finish` part shape we read — only the total we meter. */
-interface MaybeFinishPart {
+export interface MaybeFinishPart {
   type: string;
   totalUsage?: { totalTokens?: number | undefined };
 }
