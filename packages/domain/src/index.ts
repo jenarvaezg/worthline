@@ -540,7 +540,11 @@ export {
   yearsUntilAvailable,
 } from "./fire-capital-availability";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
-export { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
+export {
+  fireDrawsFromTier,
+  splitFireCapital,
+  termLockedWithinSellableMinor,
+} from "./fire-capital-split";
 export type { FireCoastArrival } from "./fire-coast-arrival";
 export { fireCoastArrival } from "./fire-coast-arrival";
 export type { BirthDate, FireAgeSource } from "./fire-current-age";

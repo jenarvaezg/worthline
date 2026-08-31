@@ -387,4 +387,52 @@ describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)
 
     expect(copy.availabilityNote).toBeNull();
   });
+
+  // ── La casilla de #1523 que #1528 acabó cumpliendo, atada aquí para que quien toque
+  // esta rama sepa qué aceptación de qué ticket está rompiendo. #1523 pedía que la
+  // tarjeta avisara «de que los primeros años del reparto cuentan con capital no
+  // disponible aún, nombrando el importe»; lo que #1528 hizo es más fuerte —el reparto
+  // deja de prometerlo— pero la casilla es la misma, y sigue teniendo que decirse.
+  test("la tarjeta nunca calla el capital a plazo que el reparto está tocando (#1523)", () => {
+    const conFecha = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({
+        availability: {
+          declaredMinor: 1_055_658,
+          lockedMinor: 1_055_658,
+          resolved: true,
+          tranches: [{ amountMinor: 1_055_658, yearsUntil: 4 }],
+          undeclaredMinor: 0,
+        },
+        depletion: {
+          capital: { annualMinor: 100_000, monthlyMinor: 8_333 },
+          limitedByAvailability: true,
+          total: { annualMinor: 100_000, monthlyMinor: 8_333 },
+          untilAge: 90,
+          years: 27,
+        },
+        depletionAbsence: null,
+      }),
+    });
+    const sinFecha = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({
+        availability: {
+          declaredMinor: 0,
+          lockedMinor: 0,
+          resolved: true,
+          tranches: [],
+          undeclaredMinor: 1_055_658,
+        },
+      }),
+    });
+
+    // Declarado o no, el importe se nombra: las dos salidas del escalón lo dicen.
+    expect(conFecha.availabilityNote).toContain("10556.58 \u20ac");
+    expect(sinFecha.availabilityNote).toContain("10556.58 \u20ac");
+  });
 });

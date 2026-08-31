@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   fireCapitalSplitRows,
   sellableFundedPercent,
+  sellableTermLockedNote,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
 
@@ -25,6 +26,7 @@ function makeSplit(overrides: {
       absorbedDebtMinor: 0,
       amountMinor: 0,
       debtMinor: 0,
+      grossByTierMinor: {},
       grossMinor: 0,
       reservedMinor: 0,
       tiers: [],
@@ -34,6 +36,7 @@ function makeSplit(overrides: {
       absorbedDebtMinor: 0,
       amountMinor: 0,
       debtMinor: 0,
+      grossByTierMinor: {},
       grossMinor: 0,
       reservedMinor: 0,
       tiers: [],
@@ -189,5 +192,114 @@ describe("la declaración sobre el inmovilizado en las filas (#1460)", () => {
     );
 
     expect(rows.every((row) => !row.outOfCalculation)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1523: el lado vendible nombra el capital bloqueado que lleva dentro.
+// ---------------------------------------------------------------------------
+
+describe("sellableTermLockedNote (#1523)", () => {
+  const fmt = (amountMinor: number) =>
+    `${(amountMinor / 100).toLocaleString("es-ES", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} €`;
+
+  test("names what is locked inside the sellable side, with its figure", () => {
+    const note = sellableTermLockedNote(
+      makeSplit({
+        immobilized: { amountMinor: 370_000, grossMinor: 370_000, tiers: ["housing"] },
+        sellable: {
+          amountMinor: 1_208_470,
+          grossByTierMinor: { market: 143_370, "term-locked": 1_065_100 },
+          grossMinor: 1_208_470,
+          tiers: ["market", "term-locked"],
+        },
+      }),
+      fmt,
+    );
+
+    expect(note).not.toBeNull();
+    expect(note).toContain("10.651,00 €");
+    expect(note).toContain("A plazo");
+    // La frase tiene que decir lo que la fila de arriba calla: que ese dinero está
+    // bloqueado. Sin esto la nota sería decorativa.
+    expect(note).toMatch(/bloquead/i);
+    // Con desglose en pantalla puede nombrar el lado, porque el lado está impreso.
+    expect(note).toContain("Dentro de lo vendible");
+  });
+
+  // La nota de #1528 vive en la misma pantalla y puede citar el MISMO importe: si las
+  // dos abrieran igual se leerían como una repetición y no como las dos preguntas
+  // distintas que son (cuánto hay bloqueado / qué hace el reparto con ello).
+  test("does not open the way the depletion card's availability note opens", () => {
+    const note = sellableTermLockedNote(
+      makeSplit({
+        immobilized: { amountMinor: 370_000, grossMinor: 370_000, tiers: ["housing"] },
+        sellable: {
+          amountMinor: 1_208_470,
+          grossByTierMinor: { "term-locked": 1_065_100 },
+          grossMinor: 1_208_470,
+          tiers: ["term-locked"],
+        },
+      }),
+      fmt,
+    );
+
+    expect(note).not.toContain("De tu capital vendible,");
+  });
+
+  // Sin ladrillo no hay desglose, así que «lo vendible» sería un término que la pantalla
+  // nunca enseñó: la frase se apoya en la cifra que sí está impresa.
+  test("leans on the eligible figure when no breakdown is printed", () => {
+    const note = sellableTermLockedNote(
+      makeSplit({
+        sellable: {
+          amountMinor: 1_065_100,
+          grossByTierMinor: { "term-locked": 1_065_100 },
+          grossMinor: 1_065_100,
+          tiers: ["term-locked"],
+        },
+      }),
+      fmt,
+    );
+
+    expect(note).toContain("Dentro de tus activos elegibles");
+    expect(note).not.toContain("vendible");
+  });
+
+  // No es una glosa fija: una cartera sin nada a plazo no tiene ilusión que deshacer.
+  test("is absent with nothing on the term-locked rung", () => {
+    expect(
+      sellableTermLockedNote(
+        makeSplit({
+          sellable: {
+            amountMinor: 143_370,
+            grossByTierMinor: { market: 143_370 },
+            grossMinor: 143_370,
+            tiers: ["market"],
+          },
+        }),
+        fmt,
+      ),
+    ).toBeNull();
+  });
+
+  test("is absent when debt and reservation left the sellable side at zero", () => {
+    expect(
+      sellableTermLockedNote(
+        makeSplit({
+          sellable: {
+            amountMinor: 0,
+            debtMinor: 200_000,
+            grossByTierMinor: { "term-locked": 100_000 },
+            grossMinor: 100_000,
+            tiers: ["term-locked"],
+          },
+        }),
+        fmt,
+      ),
+    ).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import type { FireCapitalSide, FireCapitalSplit } from "@worthline/domain";
-import { LIQUIDITY_TIER_LABELS } from "@worthline/domain";
+import { LIQUIDITY_TIER_LABELS, termLockedWithinSellableMinor } from "@worthline/domain";
 
 /** One printed row of the eligible-capital breakdown (#1447). */
 export interface FireCapitalSplitRow {
@@ -96,4 +96,49 @@ export function sellableFundedPercent(
     return null;
   }
   return (split.sellable.amountMinor / fireNumberMinor) * 100;
+}
+
+/**
+ * Lo que el lado vendible **no** dice por sí solo (#1523): que dentro lleva capital
+ * bloqueado hasta una fecha o una edad — el plan de pensiones, el depósito.
+ *
+ * La fila «vendible» responde «esto se puede vender a trozos», y sobre el escalón
+ * `term-locked` esa respuesta es cierta a treinta años y falsa hoy. El veredicto de
+ * #1523 fue dejar el peldaño donde está (para un FIRE perpetuo la clasificación es
+ * defendible: un plazo vence) y **romper el silencio**, que era la parte insostenible.
+ *
+ * La cifra sale de `termLockedWithinSellableMinor`, que es un corte del mismo reparto
+ * que produjo la fila y viene ya topada a su neto: la nota no puede nombrar más
+ * capital a plazo que el que la fila de encima está imprimiendo (ADR 0077).
+ *
+ * Null cuando no hay nada en el escalón, o cuando la deuda y la reserva se comieron el
+ * lado entero: una glosa fija que apareciera siempre dejaría de leerse.
+ *
+ * Habla de **cuánto**, nunca de *cuándo*. El calendario lo declara cada holding y lo
+ * cuenta la tarjeta del gasto sostenible (#1528, ADR 0100); repetirlo aquí sería la
+ * segunda opinión que el reparto no puede permitirse. Por eso tampoco arranca como
+ * arranca aquella («De tu capital vendible, …»): las dos frases pueden coincidir en la
+ * misma pantalla y con el mismo importe, y dos aperturas iguales las harían leerse como
+ * una repetición en vez de como las dos preguntas distintas que son — cuánto hay
+ * bloqueado, y qué hace el reparto con ello.
+ *
+ * Y nombra el lado solo cuando el lado está impreso: sin nada inmovilizado no hay
+ * desglose (`shouldShowCapitalSplit`), así que «lo vendible» sería un término que la
+ * pantalla no ha enseñado. Entonces la frase se apoya en la cifra que sí está ahí, los
+ * activos elegibles — que en esa cartera son exactamente el lado vendible.
+ */
+export function sellableTermLockedNote(
+  split: FireCapitalSplit,
+  formatMoney: (amountMinor: number) => string,
+): string | null {
+  const lockedMinor = termLockedWithinSellableMinor(split);
+  if (lockedMinor <= 0) {
+    return null;
+  }
+
+  const whereFrom = shouldShowCapitalSplit(split)
+    ? "Dentro de lo vendible hay"
+    : "Dentro de tus activos elegibles hay";
+
+  return `${whereFrom} ${formatMoney(lockedMinor)} en el escalón «${LIQUIDITY_TIER_LABELS["term-locked"]}»: capital bloqueado hasta una fecha o una edad (un plan de pensiones, un depósito). Cuenta en la cifra de arriba porque un plazo acaba venciendo y la tasa de retirada es una regla a décadas, no porque se pueda tocar hoy.`;
 }

@@ -476,6 +476,36 @@ describe("ObjetivosPage capital split (#1447)", () => {
     expect(html).not.toContain("Desglose de los activos elegibles");
     expect(html).not.toContain("no se gasta a plazos");
   });
+
+  // ── #1523: el lado vendible deja de callar el capital bloqueado que lleva dentro.
+  test("names the locked capital sitting inside the sellable side, with its figure", async () => {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(landlordLedger());
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.035,
+        expectedRealReturn: 0.05,
+      },
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Dentro de lo vendible hay");
+    // Los 10.556,58 € del plan de pensiones, nombrados por el escalón que los tiene.
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 10_556_58, currency: "EUR" }, false),
+    );
+    expect(html).toContain("capital bloqueado hasta una fecha o una edad");
+  });
+
+  test("says nothing about locked capital when no rung carries any", async () => {
+    const html = await renderedHtml();
+
+    // Contra la frase PROPIA de la nota, no contra un prefijo que la nota de #1528
+    // también usa: un fixture con fechas declaradas no puede poner esto rojo sin que
+    // se haya roto nada de #1523.
+    expect(html).not.toContain("capital bloqueado hasta una fecha o una edad");
+  });
 });
 
 describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
