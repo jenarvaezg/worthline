@@ -1,4 +1,5 @@
 import { THIRD_PARTY_AI_NOTICE_TEXT } from "@web/asistente/third-party-ai-notice";
+import LegalLinks from "@web/legal/legal-links";
 import type { CSSProperties } from "react";
 import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import styles from "./landing.module.css";
@@ -727,6 +728,8 @@ function Bookend() {
               Demo
             </a>
           </span>
+          {/* Los cinco textos legales (#1172), en el remate de la contracubierta. */}
+          <LegalLinks />
         </div>
       </div>
     </div>

@@ -208,6 +208,23 @@ and the assistant does not.
 No auth, telemetry, cloud sync, personal spreadsheet data, or machine-specific absolute paths
 are required for the bootstrap slice.
 
+## Legal pages (`/legal`)
+
+The public legal texts (#1172) render the service provider's identity — the one
+Spain's LSSI art. 10 requires — from the environment, never from source: this
+repository is public. Set these on any deploy that charges money:
+
+| Variable | Required | What it publishes |
+| --- | --- | --- |
+| `WORTHLINE_LEGAL_OPERATOR_NAME` | yes | Name of the person or entity providing the service. |
+| `WORTHLINE_LEGAL_TAX_ID` | yes | Tax id (NIF). |
+| `WORTHLINE_LEGAL_CONTACT_EMAIL` | yes | The direct, effective contact channel (also the address for GDPR requests and refunds). |
+| `WORTHLINE_LEGAL_POSTAL_ADDRESS` | no | Postal address for notices; published only when set. |
+
+With any mandatory one unset, `/legal/aviso-legal` says so in plain sight —
+naming the variable — instead of publishing a silent hole. The pages prerender,
+so a change to these values needs a redeploy.
+
 ## Contributing
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) — the

@@ -3994,6 +3994,212 @@ code {
   outline-color: var(--gilt);
 }
 
+/* === #1172 legal — la cubierta de los textos legales ===================
+   Registro de cubierta (#829/#909): los textos legales rodean el libro, no son
+   trabajo. Tinta y filete dorado fuera, hoja luminosa encartada dentro, porque
+   un texto largo se lee sobre papel. La medida de lectura se acota a 46rem. */
+
+.legalPage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.legalMasthead,
+.legalNav,
+.legalSheet {
+  max-width: 46rem;
+  width: 100%;
+}
+
+.legalBrand {
+  color: var(--cover-ink);
+  text-decoration: none;
+}
+
+.legalBrand h1 {
+  font-size: 1.1rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.legalSheet {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 32px;
+}
+
+.legalSheet h2 {
+  font-size: 1.5rem;
+}
+
+.legalSheet h3 {
+  margin-top: 16px;
+}
+
+.legalSheet li,
+.legalSheet p {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.legalSheet ol,
+.legalSheet ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.legalSheet a {
+  color: var(--blue);
+}
+
+/* La entradilla del documento: la frase que resume el texto, abierta por el
+   filete del debe — misma gramática de aviso que .premiumNotice, sin tarjeta. */
+.legalLede {
+  border-left: 2px solid var(--gold);
+  padding-left: 0.75rem;
+}
+
+.legalNotice {
+  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
+  border-left: 2px solid var(--gold);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 0.75rem 1rem;
+}
+
+.legalIdentity {
+  display: grid;
+  gap: 6px 16px;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  margin: 0;
+}
+
+.legalIdentity dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.legalIdentity dd {
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.legalTableWrap {
+  overflow-x: auto;
+}
+
+/* La medida mínima empuja el scroll del envoltorio en móvil: tres columnas
+   comprimidas a dos palabras por línea no se leen. */
+.legalTable {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 30rem;
+  width: 100%;
+}
+
+.legalTable td,
+.legalTable th {
+  border-bottom: 1px solid var(--hairline);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.legalTable thead th {
+  border-bottom: var(--rule-heavy);
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.legalTable tbody th {
+  font-weight: 650;
+}
+
+.legalIndex {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.legalIndex a {
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.legalRevision {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.legalSheet > .legalRevision {
+  border-top: 1px solid var(--hairline);
+  margin-top: 8px;
+  padding-top: 14px;
+}
+
+.legalNav {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  gap: 14px;
+  justify-content: center;
+}
+
+.legalNav a {
+  color: var(--cover-muted);
+}
+
+/* Los enlaces del pie heredan la tinta de su franja: la misma nav sirve sobre
+   la cubierta de la landing, el umbral del login y el pie de la app. */
+.legalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.legalLinks a {
+  color: inherit;
+}
+
+.legalBar {
+  border-top: 1px solid var(--gilt);
+  color: var(--muted);
+  display: flex;
+  font-size: 0.72rem;
+  justify-content: center;
+  padding: 10px 14px;
+}
+
+@media (max-width: 40rem) {
+  .legalSheet {
+    padding: 22px;
+  }
+
+  .legalIdentity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* === #59 historico === */
 
 /* Open reglada section (canon §3/§5c): no card, a heavy opening rule (via the

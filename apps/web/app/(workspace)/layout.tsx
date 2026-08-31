@@ -2,6 +2,7 @@ import SectionNav from "@web/section-nav";
 import SectionNavFallback from "@web/section-nav-fallback";
 import SignOutButton from "@web/sign-out-button";
 import WorkspaceFooter from "@web/workspace-footer";
+import WorkspaceLegalFooter from "@web/workspace-legal-footer";
 import WorkspaceScopeBar from "@web/workspace-scope-bar";
 import { Suspense } from "react";
 
@@ -61,6 +62,10 @@ export default function WorkspaceLayout({
       <Suspense fallback={null}>
         <WorkspaceFooter />
       </Suspense>
+
+      {/* ── Franja legal (#1172): fuera del Suspense, porque la LSSI la quiere
+             permanente y no puede esperar a una lectura de persistencia. ── */}
+      <WorkspaceLegalFooter />
     </main>
   );
 }
