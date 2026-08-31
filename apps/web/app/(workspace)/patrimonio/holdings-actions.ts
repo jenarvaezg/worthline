@@ -26,7 +26,7 @@ import {
   defaultsFor,
   instrumentLabelEs,
   instrumentOfAsset,
-  isAssignableInstrument,
+  isAssignableInstrumentForHolding,
   isInstrument,
   keepsKnownPartialOwnership,
   netUnitsFromOperations,
@@ -735,7 +735,14 @@ function parseCorrectedInstrument(
   if (!raw) {
     return { ok: true, instrument: undefined };
   }
-  if (!isInstrument(raw) || !isAssignableInstrument(instrumentOfAsset(current), raw)) {
+  // The gate reads the HOLDING, not just its instrument (#1691): a connected row
+  // is nobody's to reclassify even when its stored instrument would put it in a
+  // correctable shape.
+  const holding = {
+    connectedSourceId: current.connectedSourceId ?? null,
+    instrument: instrumentOfAsset(current),
+  };
+  if (!isInstrument(raw) || !isAssignableInstrumentForHolding(holding, raw)) {
     return {
       ok: false,
       error: `No se puede reclasificar «${current.name}» a ese tipo: se valora de otra forma. Para eso hay que darlo de alta de nuevo.`,

@@ -404,7 +404,15 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
       if (existing) {
         await db
           .update(assets)
-          .set({ currentValueMinor: holding.valueMinor, updatedAt: now })
+          // The instrument is re-asserted, not just the value (#1691): it is the
+          // adapter's to decide (ADR 0016/0021), and the row is matched here by
+          // (source, rung) — never by instrument — so a row carrying the wrong one
+          // kept sinking correctly-valued money into a holding the rest of the app
+          // read as a hand-valued «otro». The v14 backfill left exactly that behind
+          // for every collection connected before it (`ELSE 'other'`, blind to
+          // `connected_source_id`). Re-stating it here heals those rows on their
+          // next sync and stops any future writer from leaving them adrift.
+          .set({ currentValueMinor: holding.valueMinor, instrument, updatedAt: now })
           .where(eq(assets.id, existing.id))
           .run();
       } else {

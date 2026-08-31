@@ -12,9 +12,10 @@
  * - Adding a family is adding a case here and a module beside it. No boolean is
  *   added to the page, and no existing family is re-read to make room.
  *
- * The single read this module makes of its own is the Binance back-link, because
- * it is not a fact about the holding — it is the routing question itself, and
- * only a `crypto` asset pays for it (see {@link readBinanceSource}).
+ * The single read this module makes of its own is the connected-source back-link,
+ * because it is not a fact about the holding — it is the routing question itself,
+ * and only an asset that carries the back-link column pays for it (see
+ * {@link readConnectedSourceOfAsset}).
  *
  * Null is the answer for an id that resolved to neither an asset nor a liability
  * — a holding archived between the route table and this read. The page turns it
@@ -24,7 +25,7 @@
 import type { Liability, ManualAsset } from "@worthline/domain";
 import { instrumentOfAsset, valuationMethodOfAsset } from "@worthline/domain";
 import type { ReactNode } from "react";
-import { loadBinanceSurface, readBinanceSource } from "./binance-family";
+import { loadBinanceSurface, readConnectedSourceOfAsset } from "./binance-family";
 import { loadCoinCollectionSurface } from "./coin-collection-family";
 import { loadDebtSurface } from "./debt-family";
 import type { AssetFamilyContext, FichaContext, HoldingSurface } from "./family-contract";
@@ -46,13 +47,10 @@ export async function loadHoldingSurface(
 
   if (asset) {
     const ctx = { ...ficha, asset, payoutsPanel };
-    const binanceSource = await readBinanceSource(ficha.store, {
-      assetId: ficha.id,
-      instrument: instrumentOfAsset(asset),
-    });
+    const connectedSource = await readConnectedSourceOfAsset(ficha.store, asset);
     const method = valuationMethodOfAsset(asset);
     const family = holdingFamily({
-      hasBinanceSource: binanceSource !== null,
+      connectedSourceAdapter: connectedSource?.adapter ?? null,
       instrument: instrumentOfAsset(asset),
       kind: "asset",
       method,
@@ -62,8 +60,8 @@ export async function loadHoldingSurface(
     // Binance loader takes a source it cannot be missing — `holdingFamily` says
     // "binance" for exactly the assets this read resolved one for.
     const surface =
-      family === "binance" && binanceSource !== null
-        ? await loadBinanceSurface(ctx, binanceSource)
+      family === "binance" && connectedSource !== null
+        ? await loadBinanceSurface(ctx, connectedSource)
         : await loadAssetFamilySurface(family, ctx);
 
     // The method was derived here to route; «Lo básico» reads the same value

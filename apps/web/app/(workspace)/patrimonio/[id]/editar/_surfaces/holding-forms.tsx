@@ -271,6 +271,7 @@ export function AssetEditForm({
                 El «Tipo» heredado (cash/manual/real_estate) ya no se teclea: se
                 deriva del instrumento en el store (ADR 0098). */}
             <InstrumentPicker
+              connectedSourceId={asset.connectedSourceId ?? null}
               currentInstrument={currentInstrument}
               liquidityTier={asset.liquidityTier}
               values={values}

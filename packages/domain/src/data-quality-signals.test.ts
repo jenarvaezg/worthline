@@ -383,6 +383,33 @@ describe("collectDataQualitySignals", () => {
     expect(stale[0]!.fixable).toBe(true);
   });
 
+  test("never flags a CONNECTED holding, whatever its instrument column says", () => {
+    // The row #1691 found: a Numista collection the v14 backfill filed as `other`,
+    // so the derivation calls it `stored`. The aviso offered a puesta al día — a
+    // pass that excludes connected holdings by construction — so following it was
+    // impossible. Its value comes from the source's positions (ADR 0016); it is
+    // never stale for want of a hand edit.
+    const { asset, input } = fixture();
+    const signals = collectDataQualitySignals(
+      input({
+        asOfDateKey: "2026-07-11",
+        assetCreatedAtById: new Map([["asset_coins", "2025-01-01T00:00:00.000Z"]]),
+        assets: [
+          asset({
+            connectedSourceId: "src_numista",
+            currentValueMinor: 14_372_05,
+            id: "asset_coins",
+            instrument: "other",
+            name: "Colección Numista",
+            type: "manual",
+          }),
+        ],
+      }),
+    );
+
+    expect(signals.some((signal) => signal.code === "STALE_MANUAL_VALUE")).toBe(false);
+  });
+
   test("does not flag stored holdings updated within the threshold", () => {
     const { asset, input } = fixture();
     const signals = collectDataQualitySignals(

@@ -29,23 +29,21 @@ type ConnectedSource = Awaited<
  * what tells a mirrored crypto holding from a manual one. Only worth asking of a
  * `crypto` instrument; every other asset answers null without a read.
  */
-export async function readBinanceSource(
+export async function readConnectedSourceOfAsset(
   store: WorthlineStore,
-  input: { assetId: string; instrument: Instrument },
+  asset: { id: string; connectedSourceId?: string | null },
 ): Promise<ConnectedSource | null> {
-  if (input.instrument !== "crypto") {
-    return null;
-  }
-
-  const sourceId = await store.connectedSources.readSourceIdForAsset(input.assetId);
-
-  if (!sourceId) {
+  // Gated on the asset's own back-link column, not on its instrument (#1691): the
+  // instrument can be a stale backfill artefact, the back-link cannot — it is what
+  // the sync itself matches on. A hand-kept holding carries none, so it still pays
+  // for no read.
+  if (asset.connectedSourceId == null) {
     return null;
   }
 
   return (
     (await store.connectedSources.listSources()).find(
-      (s) => s.id === sourceId && s.adapter === "binance",
+      (source) => source.id === asset.connectedSourceId,
     ) ?? null
   );
 }

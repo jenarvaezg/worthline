@@ -9,7 +9,7 @@ import {
   signalNaturalKey,
 } from "./data-quality-collector";
 import { daysBetween } from "./dates";
-import { valuationMethodOfAsset } from "./holding-method";
+import { isValueUpdateEligible, valuationMethodOfAsset } from "./holding-method";
 import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-history";
 import type { ManualAsset } from "./workspace-types";
 
@@ -35,8 +35,16 @@ export const collectManualValueFreshnessSignals: DataQualityCollector<
   const signals: DataQualitySignal[] = [];
 
   for (const asset of input.assets) {
+    // The signal's fix is «ponlo al día», so it may only fire on a holding that
+    // pass actually lists (#1691). `isValueUpdateEligible` is that seam, and it
+    // excludes a CONNECTED holding — whose value comes from its source, never from
+    // a hand edit. Without it a connected collection filed under a `stored`
+    // instrument was told its manual value was stale and handed a fix leading
+    // somewhere it does not appear: an aviso that cannot be followed, the same
+    // dead end as #1510-#1512.
     if (
       !input.ownedAssetIds.has(asset.id) ||
+      !isValueUpdateEligible(asset) ||
       valuationMethodOfAsset(asset) !== "stored"
     ) {
       continue;

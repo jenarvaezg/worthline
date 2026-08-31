@@ -2,15 +2,39 @@ import { describe, expect, test } from "vitest";
 import { defaultsFor, INSTRUMENTS } from "./instrument-catalog";
 import {
   assignableInstruments,
+  assignableInstrumentsForHolding,
   assignableInstrumentsForShape,
   instrumentCorrectionMove,
   instrumentPickerImpact,
   instrumentShape,
   isAssignableInstrument,
+  isAssignableInstrumentForHolding,
   isAssignableInstrumentForShape,
   keepsKnownPartialOwnership,
   ownershipShortfallOnCorrection,
+  shapeOfHolding,
 } from "./instrument-correction";
+
+describe("shapeOfHolding — the row's shape, not its column's (#1691)", () => {
+  const mislabelled = { connectedSourceId: "src_1", instrument: "other" } as const;
+
+  test("a connected holding is `connected` whatever its instrument says", () => {
+    // The v14 backfill filed every pre-migration collection as `other`, which is a
+    // `manual` shape — so the mislabelled row was the one the ficha offered to
+    // relabel, and `coin_collection` was not even among the offers.
+    expect(shapeOfHolding(mislabelled)).toBe("connected");
+    expect(assignableInstrumentsForHolding(mislabelled)).toEqual([]);
+    expect(isAssignableInstrumentForHolding(mislabelled, "vehicle")).toBe(false);
+  });
+
+  test("a hand-kept holding still answers its instrument's shape", () => {
+    const handKept = { connectedSourceId: null, instrument: "other" } as const;
+    expect(shapeOfHolding(handKept)).toBe("manual");
+    expect(assignableInstrumentsForHolding(handKept)).toEqual(
+      assignableInstruments("other"),
+    );
+  });
+});
 
 describe("instrumentShape (#1512)", () => {
   test("groups the hand-valued asset instruments as `manual`", () => {

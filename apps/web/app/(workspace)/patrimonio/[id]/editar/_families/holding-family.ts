@@ -13,13 +13,18 @@
  * the rest to that family's loader. Adding a family means adding a branch here
  * and a module beside it — never another boolean in the page.
  *
- * The instrument wins over the valuation method for the two connected-source
- * families: a Numista coin collection and a Binance crypto rung are `derived`
- * (ADR 0016/0021) but mirror positions instead of keeping an operations ledger,
- * so a method-first switch would offer them a ledger they have not got.
+ * The connected SOURCE wins over everything for the two mirrored families: a
+ * Numista coin collection and a Binance crypto rung are `derived` (ADR 0016/0021)
+ * but mirror positions instead of keeping an operations ledger, so a method-first
+ * switch would offer them a ledger they have not got — and an instrument-first one
+ * trusts a column that a backfill could get wrong. It did: the v14 instrument
+ * backfill filed every collection connected before it as `other` (#1691, ADR 0102), so those
+ * fichas rendered the hand-valued surface, with no coin lens and with a picker
+ * offering to relabel the one holding whose identity is not the user's to correct.
+ * The adapter is the fact; the instrument is a column that should agree with it.
  */
 
-import type { Instrument, ValuationMethod } from "@worthline/domain";
+import type { Instrument, SourceAdapter, ValuationMethod } from "@worthline/domain";
 
 /** The surface families a ficha can render. One module per value. */
 export type HoldingFamily =
@@ -38,11 +43,11 @@ export interface HoldingFamilyInput {
   /** The asset's valuation method (#152, ADR 0014); absent for a liability. */
   method?: ValuationMethod | null;
   /**
-   * Whether this crypto asset is a rung of a connected Binance source. Only
-   * asked of a `crypto` instrument, and it is the single thing that separates a
-   * mirrored holding from a hand-kept one (#248).
+   * The adapter of the connected source that owns this holding, when one does
+   * (#248, #1691). It is the single thing that separates a mirrored holding from a
+   * hand-kept one, and it outranks the instrument column below.
    */
-  hasBinanceSource?: boolean;
+  connectedSourceAdapter?: SourceAdapter | null;
 }
 
 /** The one place a holding is routed to its surface family. */
@@ -51,12 +56,20 @@ export function holdingFamily(input: HoldingFamilyInput): HoldingFamily {
     return "debt";
   }
 
-  if (input.instrument === "coin_collection") {
+  // The source first: a mirrored holding is routed by who syncs it, never by the
+  // instrument column it happens to carry (#1691).
+  if (input.connectedSourceAdapter === "numista") {
     return "coin-collection";
   }
-
-  if (input.instrument === "crypto" && input.hasBinanceSource === true) {
+  if (input.connectedSourceAdapter === "binance") {
     return "binance";
+  }
+
+  // No source: a `coin_collection` instrument with nothing syncing it should not
+  // exist (a disconnect freezes it to `precious_metal`), but routing it here keeps
+  // an orphan on the surface that matches what it says it is.
+  if (input.instrument === "coin_collection") {
+    return "coin-collection";
   }
 
   if (input.method === "derived") {
