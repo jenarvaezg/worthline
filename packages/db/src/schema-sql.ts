@@ -202,6 +202,10 @@ CREATE TABLE \`payout_schedules\` (
 	\`cadence\` text NOT NULL,
 	\`start_date\` text NOT NULL,
 	\`end_date\` text,
+	\`lease_regime\` text,
+	\`rent_revision\` text,
+	\`rent_revision_reference\` text,
+	\`post_mandatory_term_policy\` text,
 	\`exclusions_json\` text DEFAULT '[]' NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`holding_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade

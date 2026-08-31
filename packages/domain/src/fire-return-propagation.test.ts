@@ -124,6 +124,96 @@ describe("a declared net rent resolves the rate for its own property", () => {
     expect(context.effectiveRealReturn).toBeCloseTo(0.0362, 4);
   });
 
+  // ── the lease terms (#1521) ─────────────────────────────────────────────────
+  //
+  // The acceptance box that matters most: with the three declarations undeclared, NO
+  // FIRE figure may move. Pinned against the same 3,62 % the no-schedule case above
+  // produces, because that IS today's answer for an ended lease — the housing rung's
+  // default, reached without anybody saying the rent had stopped.
+  const HOUSING_DEFAULT_MIX = 0.0362;
+
+  it("an ended rent with nothing declared lands on the very figure the tier default gives", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      {
+        rents: {
+          schedules: [{ ...rent("piso", 155_000, 25_000), endISO: "2026-07-31" }],
+          todayISO: "2026-08-18",
+        },
+      },
+    );
+
+    expect(result.rentReturns.applied).toHaveLength(0);
+    expect(result.context.effectiveRealReturn).toBeCloseTo(HOUSING_DEFAULT_MIX, 4);
+    // And it says why, instead of dropping the rate silently (#1511 + #1521).
+    expect(result.rentReturns.notices[0]?.reason).toBe("no_live_schedule");
+  });
+
+  it("the same ended rent declared as a renewing long-term lease keeps its own rate", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      {
+        rents: {
+          schedules: [
+            {
+              ...rent("piso", 155_000, 25_000),
+              endISO: "2026-07-31",
+              leaseRegime: "residential_long_term",
+              postMandatoryTermPolicy: "renew_same_real_rent",
+            },
+          ],
+          todayISO: "2026-08-18",
+        },
+      },
+    );
+
+    const brickRate = 1_560_000 / 37_000_000;
+    expect(result.rentReturns.applied[0]?.rate).toBeCloseTo(brickRate, 10);
+    expect(result.context.effectiveRealReturn).toBeCloseTo(
+      (37_000_000 / 53_800_000) * brickRate + (16_800_000 / 53_800_000) * 0.05,
+      10,
+    );
+    // The whole point of the ticket: on 2026-10-01 Jorge's flats were going to drop to
+    // the tier default with nothing on screen saying so. Now the figure holds, and the
+    // line carries the projection it rests on.
+    expect(result.context.effectiveRealReturn).not.toBeCloseTo(HOUSING_DEFAULT_MIX, 4);
+    expect(result.rentReturns.applied[0]?.projectedSchedules).toEqual([
+      { scheduleId: "sched-piso", policySource: "declared" },
+    ]);
+  });
+
+  it("a rent declared as never revised falls back to the tier default and says why", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      {
+        rents: {
+          schedules: [{ ...rent("piso", 155_000, 25_000), rentRevision: "fixed" }],
+          todayISO: "2026-08-18",
+        },
+      },
+    );
+
+    // Not a decayed rate, not the gross: the rung's default, unchanged.
+    expect(result.rentReturns.applied).toHaveLength(0);
+    expect(result.context.effectiveRealReturn).toBeCloseTo(HOUSING_DEFAULT_MIX, 4);
+    expect(result.rentReturns.notices[0]?.reason).toBe("nominal_rent_revision");
+  });
+
   it("net rent over value replaces it, and the coast math follows the new rate", () => {
     // 1.550 €/mes gross, 250 €/mes of costs → 15.600 €/año net over 370.000 € = 4,22 %.
     const result = calculateFireForScope(

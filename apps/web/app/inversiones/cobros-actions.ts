@@ -23,6 +23,7 @@ import {
   parseScheduleExpenses,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+import { parseLeaseTerms } from "@web/patrimonio/[id]/editar/_surfaces/lease-terms-form";
 
 /** Lift the one-off payout inputs off the FormData into the pure field map. */
 function parsePayoutFieldsFromForm(formData: FormData): PayoutFields {
@@ -40,6 +41,12 @@ function parsePayoutScheduleFieldsFromForm(formData: FormData): PayoutScheduleFi
     startISO: str("startISO"),
     endISO: str("endISO"),
     expenses: str("expenses"),
+    // The lease terms (#1521). A form that never carried them yields "" three times,
+    // which parses to «no declarado» — the state every schedule was in before v66.
+    leaseRegime: str("leaseRegime"),
+    rentRevision: str("rentRevision"),
+    rentRevisionReference: str("rentRevisionReference"),
+    postMandatoryTermPolicy: str("postMandatoryTermPolicy"),
   };
 }
 
@@ -140,9 +147,11 @@ export async function createPayoutScheduleAction(
  * Update a schedule via the ficha affordances (never a full re-entry): "terminar
  * hoy" posts an `endISO` (or `clearEnd=1` to reactivate a dead tail), "excluir mes"
  * posts an `excludeDate` that is toggled against the schedule's current exclusion
- * list (read back so the toggle is honest, not a blind append), and the expenses row
+ * list (read back so the toggle is honest, not a blind append), the expenses row
  * posts `expenses` — a declaration that feeds the rent-derived FIRE return (#1448),
- * with an empty field meaning "withdraw the declaration", not "zero".
+ * with an empty field meaning "withdraw the declaration", not "zero" — and the lease
+ * row posts `saveLease=1` with the three declarations that decide what happens past
+ * the mandatory term (#1521).
  */
 export async function updatePayoutScheduleAction(
   routeAssetId: string,
@@ -167,6 +176,31 @@ export async function updatePayoutScheduleAction(
       const scheduleId = extra.scheduleId!;
       const excludeDate = String(formData.get("excludeDate") ?? "").trim();
       const endISO = String(formData.get("endISO") ?? "").trim();
+
+      // `saveLease=1` marks the intent, exactly like `saveExpenses` below: an empty
+      // select then reads as «retiro la declaración» instead of being
+      // indistinguishable from a form that never carried the field (#1521).
+      if (formData.get("saveLease") === "1") {
+        const parsed = parseLeaseTerms({
+          leaseRegime: String(formData.get("leaseRegime") ?? ""),
+          rentRevision: String(formData.get("rentRevision") ?? ""),
+          rentRevisionReference: String(formData.get("rentRevisionReference") ?? ""),
+          postMandatoryTermPolicy: String(formData.get("postMandatoryTermPolicy") ?? ""),
+        });
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error };
+        }
+        // Ficha-scoped, like every other branch here: the write only lands on a
+        // schedule that belongs to the holding whose page posted it.
+        const owned = (
+          await store.payouts.readPayoutSchedulesForHolding(routeAssetId)
+        ).some((candidate) => candidate.id === scheduleId);
+        if (!owned) {
+          return { ok: false, error: "Cobro recurrente no encontrado." };
+        }
+        await store.payouts.updatePayoutSchedule(scheduleId, parsed.terms);
+        return { ok: true };
+      }
 
       // `saveExpenses=1` marks the intent, so an empty field reads as "withdraw the
       // declaration" instead of being indistinguishable from a form that never

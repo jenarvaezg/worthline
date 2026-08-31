@@ -1,4 +1,11 @@
-import type { Payout, PayoutCadence, PayoutSchedule } from "@worthline/domain";
+import type {
+  LeaseRegime,
+  Payout,
+  PayoutCadence,
+  PayoutSchedule,
+  PostMandatoryTermPolicy,
+  RentRevision,
+} from "@worthline/domain";
 import { asc, eq } from "drizzle-orm";
 
 import { payoutSchedules, payouts } from "./schema";
@@ -23,7 +30,20 @@ export interface CreatePayoutInput {
   note?: string;
 }
 
-export interface CreatePayoutScheduleInput {
+/**
+ * The lease terms of a declared rent (#1521) — what its end date MEANS, how the rent
+ * is revised, and what the owner does once the mandatory term is over. Every one of
+ * them is nullable and `null` says «not declared», never a default in disguise.
+ */
+export interface PayoutScheduleLeaseTerms {
+  leaseRegime?: LeaseRegime | null;
+  rentRevision?: RentRevision | null;
+  /** Documentary label for a `legal_reference` revision (e.g. IRAV); no engine reads it. */
+  rentRevisionReference?: string | null;
+  postMandatoryTermPolicy?: PostMandatoryTermPolicy | null;
+}
+
+export interface CreatePayoutScheduleInput extends PayoutScheduleLeaseTerms {
   holdingId: string;
   label: string;
   amountMinor: number;
@@ -35,7 +55,7 @@ export interface CreatePayoutScheduleInput {
   exclusions?: string[];
 }
 
-export interface UpdatePayoutSchedulePatch {
+export interface UpdatePayoutSchedulePatch extends PayoutScheduleLeaseTerms {
   label?: string;
   amountMinor?: number;
   /** `null` clears the declaration back to "not declared" — distinct from a declared 0. */
@@ -97,6 +117,10 @@ function rowToSchedule(row: ScheduleRow): PayoutSchedule {
     cadence: row.cadence,
     startISO: row.startDate,
     endISO: row.endDate,
+    leaseRegime: row.leaseRegime,
+    rentRevision: row.rentRevision,
+    rentRevisionReference: row.rentRevisionReference,
+    postMandatoryTermPolicy: row.postMandatoryTermPolicy,
     exclusions: JSON.parse(row.exclusionsJson) as string[],
   };
 }
@@ -159,6 +183,10 @@ async function createPayoutSchedule(
   const endISO = input.endISO ?? null;
   const exclusions = input.exclusions ?? [];
   const expensesMinor = input.expensesMinor ?? null;
+  const leaseRegime = input.leaseRegime ?? null;
+  const rentRevision = input.rentRevision ?? null;
+  const rentRevisionReference = input.rentRevisionReference ?? null;
+  const postMandatoryTermPolicy = input.postMandatoryTermPolicy ?? null;
   await ctx.db
     .insert(payoutSchedules)
     .values({
@@ -170,6 +198,10 @@ async function createPayoutSchedule(
       cadence: input.cadence,
       startDate: input.startISO,
       endDate: endISO,
+      leaseRegime,
+      rentRevision,
+      rentRevisionReference,
+      postMandatoryTermPolicy,
       exclusionsJson: JSON.stringify(exclusions),
     })
     .run();
@@ -182,6 +214,10 @@ async function createPayoutSchedule(
     cadence: input.cadence,
     startISO: input.startISO,
     endISO,
+    leaseRegime,
+    rentRevision,
+    rentRevisionReference,
+    postMandatoryTermPolicy,
     exclusions,
   };
 }
@@ -198,6 +234,14 @@ async function updatePayoutSchedule(
   if (patch.cadence !== undefined) set.cadence = patch.cadence;
   if (patch.startISO !== undefined) set.startDate = patch.startISO;
   if (patch.endISO !== undefined) set.endDate = patch.endISO;
+  // Each lease term is written only when the patch names it, so «guardar gastos» never
+  // silently clears a regime the owner declared on the other form (#1521).
+  if (patch.leaseRegime !== undefined) set.leaseRegime = patch.leaseRegime;
+  if (patch.rentRevision !== undefined) set.rentRevision = patch.rentRevision;
+  if (patch.rentRevisionReference !== undefined)
+    set.rentRevisionReference = patch.rentRevisionReference;
+  if (patch.postMandatoryTermPolicy !== undefined)
+    set.postMandatoryTermPolicy = patch.postMandatoryTermPolicy;
   if (patch.exclusions !== undefined)
     set.exclusionsJson = JSON.stringify(patch.exclusions);
   if (Object.keys(set).length === 0) return;

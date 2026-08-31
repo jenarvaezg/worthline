@@ -10,13 +10,16 @@ import type {
   Instant,
   Instrument,
   InvestmentPriceProvider,
+  LeaseRegime,
   LiabilityType,
   LiquidityTier,
   OperationKind,
   OperationSource,
   PayoutCadence,
+  PostMandatoryTermPolicy,
   PriceFreshnessState,
   PriceSource,
+  RentRevision,
   RiskTolerance,
   SnapshotHoldingKind,
   SourceAdapter,
@@ -327,6 +330,16 @@ export const payoutSchedules = sqliteTable(
     cadence: text("cadence").$type<PayoutCadence>().notNull(),
     startDate: text("start_date").notNull(),
     endDate: text("end_date"),
+    /** What `end_date` MEANS: the legal nature of the lease; NULL = not declared (#1521). */
+    leaseRegime: text("lease_regime").$type<LeaseRegime>(),
+    /** How the rent is revised; `fixed`/`none` stop the FIRE rate reading it as real (#1521). */
+    rentRevision: text("rent_revision").$type<RentRevision>(),
+    /** Documentary label of the statutory index behind `legal_reference` (e.g. IRAV). */
+    rentRevisionReference: text("rent_revision_reference"),
+    /** What the owner does once the mandatory term is over; NULL = not declared (#1521). */
+    postMandatoryTermPolicy: text(
+      "post_mandatory_term_policy",
+    ).$type<PostMandatoryTermPolicy>(),
     exclusionsJson: text("exclusions_json").notNull().default("[]"),
     createdAt: timestamp("created_at"),
   },

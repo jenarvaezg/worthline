@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 67;
+export const SCHEMA_VERSION = 68;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2038,6 +2038,36 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 67);
+  }
+
+  if (version < 68) {
+    // #1521: what a lease's END DATE means, and what happens after it. Until now an
+    // `end_date` in the past was read as «esta renta desaparece para siempre», which
+    // is `stop` assumed in silence — honest for a season's let, an invention for a
+    // long-term residential lease that continues past its signed date by law.
+    //
+    // Four columns, all nullable, NOTHING backfilled — the ADR 0074 rule this whole
+    // ticket rests on: a NULL reads as «nadie lo ha dicho» and the engine keeps
+    // behaving exactly as it did before these columns existed. Guessing a regime from
+    // the label («Alquiler») or from the length of the window would seal the very
+    // invention the issue is about, and in the direction that MOVES the FIRE date.
+    for (const column of [
+      "lease_regime TEXT",
+      "rent_revision TEXT",
+      "rent_revision_reference TEXT",
+      "post_mandatory_term_policy TEXT",
+    ]) {
+      try {
+        await client.execute(`ALTER TABLE payout_schedules ADD COLUMN ${column}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Tolerated exactly as in v59/v62/v64/v65: a fresh DB already has the column
+        // from schema-sql, and a migration test walks the ladder over a PARTIAL
+        // fixture that may never have created the table.
+        if (!/duplicate column name|no such table/i.test(message)) throw error;
+      }
+    }
+    await writeSchemaVersion(client, 68);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -245,6 +245,9 @@ function rentGapClause(notices: readonly RentReturnNotice[]): string | null {
   if (reasons.has("foreign_currency")) {
     clauses.push("están en una divisa que sus cobros no declaran");
   }
+  if (reasons.has("nominal_rent_revision")) {
+    clauses.push("su renta no se revisa, así que su rendimiento no es real");
+  }
 
   if (clauses.length === 0) {
     return null;

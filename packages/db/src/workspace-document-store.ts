@@ -610,6 +610,12 @@ async function importWorkspace(
             cadence: schedule.cadence,
             startDate: schedule.startISO,
             endDate: schedule.endISO,
+            // The lease terms (#1521): null on any document written before v66, which
+            // is the same thing as «nadie lo ha dicho» — never a default in disguise.
+            leaseRegime: schedule.leaseRegime ?? null,
+            rentRevision: schedule.rentRevision ?? null,
+            rentRevisionReference: schedule.rentRevisionReference ?? null,
+            postMandatoryTermPolicy: schedule.postMandatoryTermPolicy ?? null,
             exclusionsJson: JSON.stringify(schedule.exclusions),
           })),
         )
@@ -1174,6 +1180,10 @@ async function buildWorkspaceExport(
       cadence: row.cadence,
       startISO: row.startDate,
       endISO: row.endDate,
+      leaseRegime: row.leaseRegime,
+      rentRevision: row.rentRevision,
+      rentRevisionReference: row.rentRevisionReference,
+      postMandatoryTermPolicy: row.postMandatoryTermPolicy,
       exclusions: JSON.parse(row.exclusionsJson) as string[],
     })),
     contributionPlans: [...contributionsByScope.values()],

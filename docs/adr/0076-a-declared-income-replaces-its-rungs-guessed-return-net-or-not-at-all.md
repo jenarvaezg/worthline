@@ -58,10 +58,13 @@ declared cost, or it does not happen.**
    What the scope owns decides how much that percentage WEIGHS in the pool
    (`assembleFireEligiblePool`), exactly as it decides the capital.
 
-6. **A lapsed schedule is not income.** Validity is measured against the same "today"
-   the rest of the screen uses (start reached, end not passed — inclusive). Two of
-   Jorge's rents expire on 2026-09-01 and 2026-10-01: after those dates the flats
-   return to their rung's default, with the row saying why.
+6. ~~**A lapsed schedule is not income.**~~ **Amended by #1521 — see the amendment
+   below.** Validity was measured against the same "today" the rest of the screen uses
+   (start reached, end not passed — inclusive), and past the end date the flat returned
+   to its rung's default. Two of Jorge's rents expire on 2026-09-01 and 2026-10-01, and
+   that is exactly the case that showed the rule was wrong: what looked like reading the
+   calendar was assuming an answer. The window still decides which past **payouts**
+   exist; it no longer decides, on its own, what the flat is expected to yield.
 
 7. **A negative net applies, and is named.** Declared costs above the rent mean a real
    negative yield, which is a real situation — it is applied as-is, never clamped, and
@@ -72,6 +75,80 @@ declared cost, or it does not happen.**
    itself; the home, /objetivos, the figure explanations and the MCP tools all pass what
    they already read. There is no second place where a rate can be resolved, so the
    assistant cannot quote 3 % while the screen shows 4,5 %.
+
+## Amendment (#1521) — what a lease's end date means, and what happens after it
+
+Point 6 above treated a signed `end_date` as an economic fact: past it, the flat pays
+nothing and goes back to the housing rung's guess. That reads as the cautious choice,
+and it is not a choice at all — it is `stop` assumed in silence, in a case where the
+assumption is usually false. A long-term residential lease continues past its signed
+date **by law**; the date the owner gets the decision back is the end of the mandatory
+term, not the date on the contract. And the assumption had a calendar: on 2026-10-01
+two of Jorge's flats were due to drop from their declared net yield to 3 %, lowering
+his weighted expected return, raising his coast figure and moving his FIRE date — with
+nothing on screen saying anything had happened. Same failure shape as ADR 0074's: an
+input with a second source nobody revalidates, and here the second source is the clock.
+
+**Three declarations on `payout_schedules` (schema v66, additive, nothing backfilled),
+and the engine reads all three together.**
+
+| Column | Values | NULL means |
+|---|---|---|
+| `lease_regime` | `residential_long_term` \| `seasonal` \| `vacation` \| `other` | not declared |
+| `rent_revision` | `legal_reference` (+ a free label, e.g. IRAV) \| `contractual` \| `fixed` \| `none` | not declared |
+| `post_mandatory_term_policy` | `renew_same_real_rent` \| `stop` \| `unknown` | not declared |
+
+A fourth column, `rent_revision_reference`, carries the free label of a
+`legal_reference` revision (IRAV). It is documentary: no figure reads it, there is no
+legal engine behind it, and it is dropped rather than kept beside a revision it does not
+annotate.
+
+1. **NULL is not a default in disguise.** Undeclared, the engine does exactly what it
+   did before v66 (`stop`) **and the ficha says so** — the row prints «régimen sin
+   declarar · … · al terminar deja de rentar (supuesto: nadie lo ha declarado)». What
+   #1521 closed is the silence, not the behaviour: with all three undeclared not one
+   FIRE figure moves.
+2. **The regime says what `end_date` MEANS, so the policy's default is read from it.**
+   In `seasonal` / `vacation` / `other` the date is a real ending and `stop` is honest.
+   In `residential_long_term` it is the end of the mandatory term and `stop` is an
+   invention, so there the default flips to `renew_same_real_rent`. `unknown` is an
+   absence of decision, not a third behaviour: it falls back to the regime exactly as
+   an absent value does, and only the copy distinguishes them.
+3. **`rent_revision` moves figures — it is not decorative.** Point 4 above substitutes a
+   net rental yield for the rung's default *because rent is inflation-linked*, i.e. the
+   net yield already IS a real yield. `legal_reference` and `contractual` satisfy that
+   premise. `fixed` and `none` break it: the declared yield would be read as real while
+   it loses purchasing power every year — overstating, in the dangerous direction, which
+   is the error "net or nothing" exists to prevent. There the engine **refuses to read it
+   as real**: notice, the rung's default stays, and **no invented decay rate**. worthline
+   does not forecast.
+4. **All-or-nothing per asset (point 3) is untouched**, and the nominal veto is read
+   BEFORE the missing expenses: a nominal rent is the one refusal declaring the costs
+   cannot lift, so «declara tus gastos y contará» would be a promise the engine will not
+   keep.
+5. **No `payout` is materialized.** Occurrences are still derived to today and only to
+   today (ADR 0054 point 4). `isScheduleLiveOn` keeps that job; the rate now goes through
+   `isScheduleProjectedOn`, which is the same window plus the declared policy. A rate
+   resting on an ended lease says so on its own line — an unannounced projection would be
+   the same silence pointing the other way — and the line names WHICH provenance it has:
+   «lo has declarado» for an explicit policy, «por el régimen que has declarado» for one
+   the regime implies. The report carries the provenance per schedule for that reason;
+   telling the owner he declared a renewal he never typed would be a new invention in
+   place of the old one.
+
+**Deliberately out of scope.** Computing a legal right: worthline does not derive how
+many years of statutory extension are left from a date and a regime — that is a legal
+engine with a version and a territory. The regime declares the NATURE of the contract;
+if the date on which the decision comes back to the owner is not `end_date`, the owner
+declares it. Also out: `renew_with_growth` (a real rent-growth rate is a forecast) and
+materializing payouts.
+
+**Consequences.** `payout_schedules` gains the four columns (v66); they travel in the
+workspace transfer document, `null` on any document written before v66. The Cobros
+surface gains a lease-terms block under each declared rent — the sentence in force plus
+the three selects, every one opening on «Sin declarar» — shown only on a property, since
+`end_date` on a coupon means what it says. /objetivos gains a `nominal_rent_revision`
+notice and names a projection on an applied rate.
 
 ## Relationship to ADR 0074
 
@@ -110,7 +187,8 @@ fixed rate the substitution changes nothing.
 
 - `payout_schedules` gains `expenses_minor` (v57, additive, nothing backfilled). It
   travels in the workspace transfer document, defaulting to `null` on a document written
-  before v57 — never to 0.
+  before v57 — never to 0. It gained the four **lease-term** columns the same way in v66
+  (see the amendment above).
 - The Cobros surface gains a "Gastos" field on the recurring-payout form and an inline
   "Guardar gastos" control on each declared schedule, so the four rents Jorge entered
   before the field existed can be completed without re-entering them (which would lose

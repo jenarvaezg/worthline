@@ -316,6 +316,7 @@ describe("assembleFireEligiblePool + rent-derived rates", () => {
     assetId,
     assetName: assetId,
     isNetNegative: false,
+    projectedSchedules: [],
     rate,
     scheduleIds: ["s1"],
     valueMinor: 20_000_000,

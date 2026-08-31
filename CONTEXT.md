@@ -452,7 +452,8 @@ income is forecast, the **contribution plan** family's territory, not this.
 Amending it re-derives the list live: a retroactive end date removes a dead tail
 in one edit, and an **exclusion** removes a single occurrence (an unpaid month).
 A variable amount never gets a schedule — estimating one would invent facts;
-enter those as one-off **payouts**. It may also carry **declared expenses**.
+enter those as one-off **payouts**. It may also carry **declared expenses** and, when
+its income is a rent, its **lease terms**.
 UI label: "Cobro recurrente".
 _Avoid_: recurring income, planned payout (a schedule derives past truth; a plan
 forecasts the future).
@@ -469,6 +470,21 @@ UI label: "Gastos".
 _Avoid_: net rent (that is the derived figure, not the field), budget, spending (this
 is a cost OF an asset, not the user's **declared spending**).
 
+**Lease terms**:
+The three declarations on a **payout schedule** that say what its end date MEANS and
+what happens after it: the **lease regime** (long-term residential, seasonal,
+vacation, other), the **rent revision** (by legal reference, by contract, fixed, none)
+and the **post-mandatory-term policy** (keeps renting at the same real rent, stops, or
+undecided). Every one of them may be undeclared, and undeclared is a state of its own:
+the engine then behaves exactly as it did before they existed — the rent stops at its
+end date — and the ficha SAYS that is an assumption (ADR 0074, ADR 0076). They decide
+no **payout**: past occurrences are still derived to today and only to today
+(ADR 0054), and nothing is materialized.
+UI labels: "Régimen", "Revisión de la renta", "Al terminar el plazo obligatorio".
+_Avoid_: projection policy (it hangs off the end of the MANDATORY term, not off the
+signed end date — the name is half the point), lease renewal (worthline derives no
+statutory extension: the owner declares, the app never computes a legal right).
+
 **Rent-derived real return**:
 The expected real return of a **real-estate** holding whose rent is declared: its
 annual net rent (income minus **declared expenses**) over its value, substituting the
@@ -478,7 +494,10 @@ appreciation is ~0 by construction — a deposit's interest is nominal and a fun
 dividend is only part of its return, so neither substitutes. The rate is
 share-invariant (rent and value are both declared for 100 % of the property); only its
 weight is scoped. Without **declared expenses** it does not happen: the gross yield is
-never used, and the FIRE panel names it as the figure being withheld (ADR 0076).
+never used, and the FIRE panel names it as the figure being withheld (ADR 0076). A rent
+whose **lease terms** declare it as never revised does not happen either — a nominal
+yield read as real overstates — and one whose lease has ended keeps feeding the rate
+when the declared policy says the income continues.
 _Avoid_: rental yield (ambiguous about gross vs net — this one is always net), cap
 rate (property-investing jargon the app does not otherwise speak).
 

@@ -1484,6 +1484,88 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
 
     expect(result.ok && result.value.payoutSchedules[0]?.expensesMinor).toBe(25000);
   });
+
+  test("a schedule with no declared lease terms lands as null on all of them (#1521)", () => {
+    // A document written before v66 carries none of the three. Defaulting the regime
+    // or the policy would import a declaration nobody made — and unlike a missing
+    // cost, one of the two possible defaults MOVES the FIRE date.
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: "2026-09-01",
+            exclusions: [],
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.payoutSchedules[0]).toMatchObject({
+      leaseRegime: null,
+      rentRevision: null,
+      rentRevisionReference: null,
+      postMandatoryTermPolicy: null,
+    });
+  });
+
+  test("the declared lease terms survive the transfer (#1521)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: "2026-09-01",
+            exclusions: [],
+            leaseRegime: "residential_long_term",
+            rentRevision: "legal_reference",
+            rentRevisionReference: "IRAV",
+            postMandatoryTermPolicy: "renew_same_real_rent",
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok && result.value.payoutSchedules[0]).toMatchObject({
+      leaseRegime: "residential_long_term",
+      rentRevision: "legal_reference",
+      rentRevisionReference: "IRAV",
+      postMandatoryTermPolicy: "renew_same_real_rent",
+    });
+  });
+
+  test("a lease regime outside the vocabulary is rejected, not coerced (#1521)", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+        (doc.payoutSchedules[0] as unknown as Record<string, unknown>).leaseRegime =
+          "piso_entero";
+      }),
+      /leaseRegime: valor no admitido/,
+    );
+  });
 });
 
 describe("parseWorkspaceExport — el traspaso y el apunte capturado viajan (#1393, #1401)", () => {

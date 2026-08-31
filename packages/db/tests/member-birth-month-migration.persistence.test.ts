@@ -47,7 +47,7 @@ describe("schema migration v55 (member birth month)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(67);
+    expect(SCHEMA_VERSION).toBe(68);
   });
 
   test("is idempotent over a DB that already carries the column", async () => {

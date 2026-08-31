@@ -67,7 +67,7 @@ describe("schema migration v66 (la antigüedad heredada, #1518)", () => {
       columnNames((await client.execute("PRAGMA table_info(asset_operations)")).rows),
     ).toContain("transfer_seniority_at");
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(67);
+    expect(SCHEMA_VERSION).toBe(68);
   });
 
   test("sin backfill: la entrada externa de enero sigue muda sobre su antigüedad", async () => {

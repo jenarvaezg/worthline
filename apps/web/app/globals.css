@@ -10543,11 +10543,16 @@ td.rowActions > * {
 }
 .cobrosSchedule {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.cobrosScheduleTop {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
 }
 .cobrosScheduleMeta {
   display: flex;
@@ -10584,6 +10589,43 @@ td.rowActions > * {
   padding: 4px 8px;
   font-size: 0.8rem;
   width: 96px;
+}
+/* The lease terms of a declared rent (#1521): what its end date MEANS and what
+   happens after it. A block under the row rather than another inline control —
+   the sentence it prints is about the rent's future, and the selects that change
+   it need room to be readable. */
+.cobrosLease {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+}
+.cobrosLeaseWarning {
+  color: var(--gold);
+  font-size: 0.78rem;
+}
+.cobrosLeaseForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  align-items: end;
+  gap: 8px;
+}
+.cobrosLeaseForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  min-width: 0;
+}
+.cobrosLeaseForm select,
+.cobrosLeaseForm input {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  max-width: 100%;
 }
 .cobrosHonestNote {
   color: var(--muted);

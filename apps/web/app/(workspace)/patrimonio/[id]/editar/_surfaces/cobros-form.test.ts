@@ -31,6 +31,10 @@ function scheduleFields(over: Partial<PayoutScheduleFields> = {}): PayoutSchedul
     startISO: "2024-01-01",
     endISO: "",
     expenses: "",
+    leaseRegime: "",
+    rentRevision: "",
+    rentRevisionReference: "",
+    postMandatoryTermPolicy: "",
     ...over,
   };
 }
@@ -78,6 +82,12 @@ describe("buildPayoutScheduleResult", () => {
         cadence: "monthly",
         startISO: "2024-01-01",
         endISO: "2026-02-01",
+        // The lease terms are always present and always explicit (#1521): a form
+        // that never showed them declares three nulls, not three absences.
+        leaseRegime: null,
+        rentRevision: null,
+        rentRevisionReference: null,
+        postMandatoryTermPolicy: null,
       },
     });
   });

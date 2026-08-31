@@ -23,6 +23,8 @@ import {
 import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
 import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
+import { LeaseTermFields } from "./lease-term-fields";
+import { LeaseTermsRow } from "./lease-terms-row";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -69,6 +71,7 @@ export function CobrosSection({
   payouts,
   privacyMode,
   schedules,
+  showLeaseTerms,
   today,
   updatePayoutScheduleAction,
 }: {
@@ -85,6 +88,12 @@ export function CobrosSection({
   payouts: Payout[];
   privacyMode: boolean;
   schedules: PayoutSchedule[];
+  /**
+   * Whether this holding's income can be a LEASE (#1521) — decided by the caller,
+   * which knows the instrument. A coupon's end date means what it says, so offering
+   * it a rental regime would invite a declaration that decides nothing.
+   */
+  showLeaseTerms: boolean;
   today: string;
   updatePayoutScheduleAction: FormAction;
 }) {
@@ -251,6 +260,11 @@ export function CobrosSection({
               placeholder="opcional"
             />
           </label>
+          {/* The lease terms, only where a lease is what this income is (#1521).
+              Every one of them opens on «Sin declarar»: the form asks, it never
+              guesses, and what an undeclared field implies is spelled out on the
+              declared row below. */}
+          {showLeaseTerms ? <LeaseTermFields values={null} /> : null}
         </div>
         <p className="cobrosCap">
           Los gastos van en la misma cadencia que el importe (comunidad, IBI, seguro,
@@ -270,62 +284,77 @@ export function CobrosSection({
           <h4>Cobros recurrentes declarados</h4>
           {schedules.map((schedule) => (
             <div className="cobrosSchedule" key={schedule.id}>
-              <div className="cobrosScheduleMeta">
-                <strong>{schedule.label}</strong>
-                <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
-              </div>
-              <div className="cobrosScheduleActions">
-                {/* Declare (or correct) the costs of an existing rent without
-                    re-entering it: the four rents Jorge already had were declared
-                    before this field existed. */}
-                <form action={updatePayoutScheduleAction} className="cobrosExpensesForm">
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="scheduleId" type="hidden" value={schedule.id} />
-                  <input name="saveExpenses" type="hidden" value="1" />
-                  <label>
-                    Gastos
-                    <input
-                      aria-label={`Gastos de ${schedule.label}`}
-                      defaultValue={
-                        schedule.expensesMinor == null
-                          ? ""
-                          : formatMoneyInput(schedule.expensesMinor)
-                      }
-                      inputMode="decimal"
-                      name="expenses"
-                    />
-                  </label>
-                  <button className="btnSmall" type="submit">
-                    Guardar gastos
-                  </button>
-                </form>
-                {schedule.endISO ? (
-                  <form action={updatePayoutScheduleAction}>
+              <div className="cobrosScheduleTop">
+                <div className="cobrosScheduleMeta">
+                  <strong>{schedule.label}</strong>
+                  <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
+                </div>
+                <div className="cobrosScheduleActions">
+                  {/* Declare (or correct) the costs of an existing rent without
+                      re-entering it: the four rents Jorge already had were declared
+                      before this field existed. */}
+                  <form
+                    action={updatePayoutScheduleAction}
+                    className="cobrosExpensesForm"
+                  >
                     <input name="currentUrl" type="hidden" value={currentUrl} />
                     <input name="scheduleId" type="hidden" value={schedule.id} />
-                    <input name="clearEnd" type="hidden" value="1" />
+                    <input name="saveExpenses" type="hidden" value="1" />
+                    <label>
+                      Gastos
+                      <input
+                        aria-label={`Gastos de ${schedule.label}`}
+                        defaultValue={
+                          schedule.expensesMinor == null
+                            ? ""
+                            : formatMoneyInput(schedule.expensesMinor)
+                        }
+                        inputMode="decimal"
+                        name="expenses"
+                      />
+                    </label>
                     <button className="btnSmall" type="submit">
-                      Reactivar
+                      Guardar gastos
                     </button>
                   </form>
-                ) : (
-                  <form action={updatePayoutScheduleAction}>
+                  {schedule.endISO ? (
+                    <form action={updatePayoutScheduleAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="scheduleId" type="hidden" value={schedule.id} />
+                      <input name="clearEnd" type="hidden" value="1" />
+                      <button className="btnSmall" type="submit">
+                        Reactivar
+                      </button>
+                    </form>
+                  ) : (
+                    <form action={updatePayoutScheduleAction}>
+                      <input name="currentUrl" type="hidden" value={currentUrl} />
+                      <input name="scheduleId" type="hidden" value={schedule.id} />
+                      <input name="endISO" type="hidden" value={today} />
+                      <button className="btnSmall" type="submit">
+                        Terminar hoy
+                      </button>
+                    </form>
+                  )}
+                  <form action={deletePayoutScheduleAction}>
                     <input name="currentUrl" type="hidden" value={currentUrl} />
                     <input name="scheduleId" type="hidden" value={schedule.id} />
-                    <input name="endISO" type="hidden" value={today} />
-                    <button className="btnSmall" type="submit">
-                      Terminar hoy
+                    <button className="btnSmall btnWarning" type="submit">
+                      Eliminar
                     </button>
                   </form>
-                )}
-                <form action={deletePayoutScheduleAction}>
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="scheduleId" type="hidden" value={schedule.id} />
-                  <button className="btnSmall btnWarning" type="submit">
-                    Eliminar
-                  </button>
-                </form>
+                </div>
               </div>
+              {/* What the end date MEANS, and what happens after it (#1521). Below
+                  the row rather than inside it: the sentence it prints is about the
+                  rent's future, not another button. */}
+              {showLeaseTerms ? (
+                <LeaseTermsRow
+                  action={updatePayoutScheduleAction}
+                  currentUrl={currentUrl}
+                  schedule={schedule}
+                />
+              ) : null}
             </div>
           ))}
         </div>

@@ -577,6 +577,7 @@ export type {
 export { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 export type {
   AppliedRentReturn,
+  EffectivePostMandatoryTermPolicy,
   FireRentReturnReport,
   RentDerivedReturn,
   RentRealReturns,
@@ -587,7 +588,10 @@ export type {
 export {
   annualizedMinor,
   deriveRentRealReturns,
+  effectivePostMandatoryTermPolicy,
   isScheduleLiveOn,
+  isScheduleProjectedOn,
+  rentRevisionIsRealTerms,
 } from "./fire-rent-return";
 export type {
   FireRetirementPlan,
@@ -929,10 +933,13 @@ export { classifyOversellExcess, oversellConfirmMessage } from "./oversell";
 export type {
   DatedAmount,
   DerivedPayout,
+  LeaseRegime,
   PassiveIncomeWindow,
   Payout,
   PayoutCadence,
   PayoutSchedule,
+  PostMandatoryTermPolicy,
+  RentRevision,
 } from "./payouts";
 export {
   collectHoldingPayouts,
