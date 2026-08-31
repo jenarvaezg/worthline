@@ -12,12 +12,9 @@ import {
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
 import { assertMinorUnits } from "./liability-fact-guards";
+import { hardDeleteLiabilityTx, readLiabilities } from "./liability-reads";
 import { liabilities, liabilityOwnerships } from "./schema";
-import {
-  hardDeleteLiabilityTx,
-  readLiabilities,
-  type StoreContext,
-} from "./store-context";
+import type { StoreContext } from "./store-context";
 
 /** Fields that can be changed when editing an existing liability. */
 export interface UpdateLiabilityInput {

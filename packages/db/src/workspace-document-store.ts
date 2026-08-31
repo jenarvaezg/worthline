@@ -36,8 +36,16 @@ import {
   readAgentViewPublicIds,
 } from "./agent-view-public-ids";
 import { classifiableAssetFromRow } from "./asset-classification";
+import { groupContributionLotsByAsset } from "./asset-reads";
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
 import { managedPortfolioWitnessOfRow } from "./managed-portfolio-store";
+import {
+  operationCaptureColumns,
+  operationCostBasisColumns,
+  operationTransferColumns,
+  toOperation,
+} from "./operation-reads";
+import { readAssetOwnerships, readLiabilityOwnerships } from "./ownership-reads";
 import {
   agentViewPublicIds,
   amortizationPlans,
@@ -76,17 +84,7 @@ import {
   workspace as workspaceTable,
 } from "./schema";
 import { readSnapshots } from "./snapshot-store";
-import {
-  groupContributionLotsByAsset,
-  operationCaptureColumns,
-  operationCostBasisColumns,
-  operationTransferColumns,
-  readAssetOwnerships,
-  readLiabilityOwnerships,
-  type StoreContext,
-  type StoreDb,
-  toOperation,
-} from "./store-context";
+import type { StoreContext, StoreDb } from "./store-context";
 import { wipeWorkspaceTables } from "./workspace-tables";
 
 /**

@@ -27,6 +27,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { hardDeleteAssetTx, readAssets } from "./asset-reads";
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 import {
@@ -36,7 +37,7 @@ import {
   contributionLots,
   investmentAssets,
 } from "./schema";
-import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
+import type { StoreContext } from "./store-context";
 import { checkAssetTrashGate } from "./trash-gate";
 import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
 

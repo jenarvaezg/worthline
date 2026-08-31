@@ -13,7 +13,12 @@ import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
-
+import {
+  operationCaptureColumns,
+  operationCostBasisColumns,
+  operationTransferColumns,
+  toOperation,
+} from "./operation-reads";
 import {
   assetOperations,
   assetPriceCache,
@@ -22,13 +27,7 @@ import {
   contributionOccurrenceReconciliations,
   liabilities,
 } from "./schema";
-import {
-  operationCaptureColumns,
-  operationCostBasisColumns,
-  operationTransferColumns,
-  type StoreContext,
-  toOperation,
-} from "./store-context";
+import type { StoreContext } from "./store-context";
 import {
   assertAssetAllowsOperationWrite,
   assertAssetAllowsStoredValuationWrite,

@@ -35,14 +35,11 @@ import type { BalanceRebaselineRecord } from "./liability-balance-rebaseline-sto
 import type { EarlyRepaymentRecord } from "./liability-early-repayment-store";
 import type { InterestRateRevisionRecord } from "./liability-rate-revision-store";
 import { readManualValueHistory } from "./manual-value-history";
+import { readAllOperations as readAllAssetOperations } from "./operation-reads";
+import { groupOwnershipByOwner } from "./ownership-reads";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
-import {
-  groupOwnershipByOwner,
-  readAllOperations as readAllAssetOperations,
-  type StoreContext,
-  type StoreDb,
-} from "./store-context";
+import type { StoreContext, StoreDb } from "./store-context";
 import { type SyncRun, syncRunInstant } from "./sync-run-store";
 
 /**
