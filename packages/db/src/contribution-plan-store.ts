@@ -15,6 +15,7 @@ import {
 } from "@worthline/domain";
 import { and, asc, eq, sql } from "drizzle-orm";
 
+import { classifiableAssetFromRow } from "./asset-classification";
 import {
   assetOperations,
   assets,
@@ -444,11 +445,7 @@ async function assertStoredDestination(
   // that column is a leftover the app no longer writes, and a row that kept `stored`
   // on it walked straight through this door even when its instrument says `derived` —
   // which is what a connected coin collection (ADR 0016) is.
-  const method = valuationMethodOfAsset({
-    instrument: row.instrument,
-    isPrimaryResidence: row.isPrimaryResidence === 1,
-    type: row.type,
-  });
+  const method = valuationMethodOfAsset(classifiableAssetFromRow(row));
   if (method !== "stored") {
     throw new Error("Only stored-value destinations use balance reconciliation.");
   }

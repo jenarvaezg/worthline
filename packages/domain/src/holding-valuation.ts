@@ -43,6 +43,11 @@ export type ValuationMethod =
  * S2 backfill (#148): an amortizable plan is `amortized`, a revolving/informal
  * balance is `anchored`, and a liability with no model keeps its manual balance
  * (`stored`).
+ *
+ * Module-internal on purpose (#1680): the one public door onto a liability's method
+ * is `valuationMethodOfLiability`, mirroring `valuationMethodOfAsset` on the other
+ * side. Two exported ways to derive one fact is how the asset side ended up with a
+ * stale mapping still in circulation.
  */
 export function defaultValuationMethodForDebtModel(
   model: DebtModel | null,

@@ -26,9 +26,12 @@ let client: Client;
 let store: PersistenceTestStore;
 
 afterEach(() => {
+  // `store.close()` closes the client it was built on; the handle is nulled so a
+  // test that never seeded cannot close a stale one.
   store?.close();
 });
 
+/** Seed a workspace and expose the raw client the rotten-column fixtures need. */
 async function freshStore(): Promise<PersistenceTestStore> {
   client = openLibsqlClient(":memory:");
   store = await createStoreFromSqlite(client);
@@ -51,7 +54,7 @@ const storedMethodOf = async (assetId: string): Promise<string | null> =>
 
 describe("balance reconciliation — the destination's method comes from its instrument", () => {
   test("rejects a coin collection whose stored column still says `stored`", async () => {
-    const store = await freshStore();
+    await freshStore();
     await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 50_000,
@@ -91,7 +94,7 @@ describe("balance reconciliation — the destination's method comes from its ins
   });
 
   test("still admits a cash account whose column was never backfilled", async () => {
-    const store = await freshStore();
+    await freshStore();
     await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 100_000,
@@ -159,7 +162,7 @@ function makeContradictoryDocument(): WorkspaceExport {
 
 describe("workspace document — the method is derived on both sides", () => {
   test("an imported document cannot plant a method that contradicts its instrument", async () => {
-    const store = await freshStore();
+    await freshStore();
 
     await store.workspace.importWorkspace(makeContradictoryDocument());
 
@@ -167,7 +170,7 @@ describe("workspace document — the method is derived on both sides", () => {
   });
 
   test("the export derives the method, so a rotten column never reaches the file", async () => {
-    const store = await freshStore();
+    await freshStore();
     await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 50_000,
@@ -189,7 +192,7 @@ describe("workspace document — the method is derived on both sides", () => {
   });
 
   test("a round-trip cures the incoherence instead of fixing it", async () => {
-    const store = await freshStore();
+    await freshStore();
     await store.workspace.importWorkspace(makeContradictoryDocument());
 
     const doc = await store.workspace.exportWorkspace();

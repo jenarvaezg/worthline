@@ -758,10 +758,7 @@ export type {
   HoldingValuationInput,
   ValuationMethod,
 } from "./holding-valuation";
-export {
-  defaultValuationMethodForDebtModel,
-  valueAt,
-} from "./holding-valuation";
+export { valueAt } from "./holding-valuation";
 export type {
   AcquisitionAnchorFields,
   AcquisitionEditPreview,

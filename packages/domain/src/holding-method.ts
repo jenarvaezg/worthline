@@ -21,7 +21,7 @@ import type { DebtModel, ManualAsset } from "./workspace-types";
  * defaults (ADR 0014). An investment (instrument `fund`/`etf`/…) is `derived`,
  * a property `appreciating`, cash/manual `stored`.
  *
- * This is the ONLY derivation of the fact (#1680). The `assets.valuation_method`
+ * This is the ONLY derivation of the fact (#1680, ADR 0101). The `assets.valuation_method`
  * column is a backfilled leftover the app no longer writes, and deciding with it
  * resurrects the pre-ADR-0014 `AssetType` mapping through its NULL fallback — which
  * calls a connected coin collection `stored`. It takes a `ClassifiableAsset`, so a

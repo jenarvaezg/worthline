@@ -142,7 +142,7 @@ export const assets = sqliteTable(
      * appreciating | amortized | anchored. Nullable — backfilled from `type` by the
      * v13 migration. No CHECK — the enum is enforced in TS, like `liquidity_tier`.
      *
-     * DEAD COLUMN: nothing reads it to decide anything (#1680). The method is
+     * DEAD COLUMN (ADR 0101): nothing reads it to decide anything (#1680). The method is
      * derived from the instrument (`valuationMethodOfAsset`), which is the ADR 0014
      * derivation; this column's NULL fallback was the pre-ADR-0014 `AssetType`
      * mapping, and a stale `stored` on a connected coin collection walked through
@@ -438,7 +438,7 @@ export const liabilities = sqliteTable(
     debtModel: text("debt_model").$type<DebtModel>(),
     /**
      * Valuation method (ADR 0014, #148); backfilled from `debt_model` by the v13
-     * migration. DEAD COLUMN like the asset one above (#1680): the method is derived
+     * migration. DEAD COLUMN like the asset one above (#1680, ADR 0101): the method is derived
      * from `debt_model` (`valuationMethodOfLiability`), never read from here.
      */
     valuationMethod: text("valuation_method").$type<ValuationMethod>(),

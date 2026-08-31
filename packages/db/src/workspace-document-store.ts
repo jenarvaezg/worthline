@@ -34,6 +34,7 @@ import {
   publicIdTargetsForWorkspace,
   readAgentViewPublicIds,
 } from "./agent-view-public-ids";
+import { classifiableAssetFromRow } from "./asset-classification";
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
 import { managedPortfolioWitnessOfRow } from "./managed-portfolio-store";
 import {
@@ -876,11 +877,7 @@ async function buildWorkspaceExport(
       // exporting the column would write a stale method into the file, and the
       // import would read it straight back — a round-trip that fixes the error
       // instead of curing it.
-      valuationMethod: valuationMethodOfAsset({
-        instrument: row.instrument,
-        isPrimaryResidence: row.isPrimaryResidence === 1,
-        type: row.type,
-      }),
+      valuationMethod: valuationMethodOfAsset(classifiableAssetFromRow(row)),
       // The cadence is only serialized when set away from the default `step`
       // (ADR 0031); an omitted field round-trips as step on import.
       ...(row.valuationCadence === "interpolated"
