@@ -253,6 +253,39 @@ describe("AdminCatalogPage", () => {
     expect(html).toContain("baja · lectura del mandato, no de la cartera");
   });
 
+  test("the list prints the SIZE of the gap, and a trivial one is not flagged (#1678)", async () => {
+    const TRIVIAL: GlobalExposureProfile = {
+      ...COVERED,
+      identity: { kind: "isin", isin: "IE00BYX5NX33" },
+      displayName: "Tres decimas",
+      // Geografia y clase completas; a la divisa le faltan tres decimas, que es
+      // el caso real de un fondo cuya linea de efectivo no declara divisa.
+      breakdowns: {
+        geography: { us: "1" },
+        currency: { USD: "0.997" },
+        assetClass: { equity: "1" },
+      },
+    };
+
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([UNCOVERED, TRIVIAL]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage());
+
+    // El hueco grande sale con su tamano y con la marca dorada. A UNCOVERED le
+    // falta la divisa ENTERA, y la celda elige el PEOR eje: 100%, no el 40% de
+    // geografia.
+    expect(html).toContain('<span class="catalogAviso"');
+    expect(html).toContain('title="Sin declarar 100% en divisa"');
+    // ...y el de tres decimas se ve, en apagado, sin entrar en la cola de trabajo.
+    expect(html).toContain('<span class="catalogAvisoNone"');
+    expect(html).toContain("0,3%");
+    // Solo una de las dos cuenta como «por categorizar».
+    expect(html).toContain("1 por categorizar");
+    expect(html).not.toContain("2 por categorizar");
+  });
+
   test("propagates guardAdmin's notFound() unchanged for a non-admin request", async () => {
     vi.mocked(guardAdmin).mockImplementation(async () => notFound());
 
