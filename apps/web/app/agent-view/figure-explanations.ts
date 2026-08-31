@@ -1252,6 +1252,7 @@ async function resolveFire(
   const payoutSchedules =
     config.expectedRealReturn === undefined ? await store.readPayoutSchedules() : [];
 
+  const today = systemClock().today();
   const result = calculateFireForScope(
     config,
     facts.assets,
@@ -1260,10 +1261,11 @@ async function resolveFire(
     facts.internalScopeId,
     reservedForGoalsMinor,
     {
-      rents: { schedules: payoutSchedules, todayISO: systemClock().today() },
-      // El mismo día: la disponibilidad declarada se resuelve contra el reloj de
-      // quien mide, nunca contra un segundo (#1528, ADR 0024).
-      todayISO: systemClock().today(),
+      rents: { schedules: payoutSchedules, todayISO: today },
+      // El MISMO día que las rentas, leído una sola vez: la disponibilidad declarada
+      // se resuelve contra el reloj de quien mide, nunca contra un segundo (#1528,
+      // ADR 0024) — y dos llamadas al reloj en el mismo literal son dos relojes.
+      todayISO: today,
     },
   );
 

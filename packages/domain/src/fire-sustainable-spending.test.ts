@@ -20,6 +20,15 @@ const BASE_CONFIG: FireScopeConfig = {
   targetRetirementAge: 67,
 };
 
+/** Nadie ha declarado nada, resuelto contra un día: el estado por defecto. */
+const NO_AVAILABILITY: FireCapitalAvailability = {
+  declaredMinor: 0,
+  lockedMinor: 0,
+  resolved: true,
+  tranches: [],
+  undeclaredMinor: 0,
+};
+
 const NO_RENTS: FireRentReturnReport = {
   applied: [],
   netRentAnnualMinor: 0,
@@ -72,9 +81,9 @@ function result(
     ),
   };
   return {
-    ...(overrides.availability === undefined
-      ? {}
-      : { availability: overrides.availability }),
+    // Siempre presente: el motor lo produce siempre, y dejarlo opcional aquí abriría
+    // un camino que producción no tiene.
+    availability: overrides.availability ?? NO_AVAILABILITY,
     capitalSplit,
     context,
     rentReturns: {
@@ -165,6 +174,7 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     const locked = fireSustainableSpending(
       result({
         availability: {
+          declaredMinor: 6_000_000,
           lockedMinor: 6_000_000,
           resolved: true,
           tranches: [{ amountMinor: 6_000_000, yearsUntil: 10 }],
@@ -187,6 +197,7 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     const declaredNothing = fireSustainableSpending(
       result({
         availability: {
+          declaredMinor: 0,
           lockedMinor: 0,
           resolved: true,
           tranches: [],

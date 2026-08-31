@@ -53,15 +53,27 @@ export interface FireCapitalAvailability {
   /** Σ `tranches`, ya topado al capital vendible neto. */
   lockedMinor: number;
   /**
+   * Lo declarado ANTES de resolverlo contra ningún día. Sin reloj es lo único que se
+   * sabe, y por eso existe: es la cifra con la que la pantalla puede decir «hay esto
+   * declarado y no lo he podido situar en el calendario» en vez de callar.
+   */
+  declaredMinor: number;
+  /**
    * Capital a plazo que el ámbito posee y que **no** ha declarado fecha. No es cero
    * ni es bloqueo: es un hueco, y la pantalla lo nombra en vez de repartirlo en
    * silencio como si estuviera disponible hoy.
+   *
+   * Topado igual que `lockedMinor`, contra lo que queda del vendible neto una vez
+   * descontado el bloqueo: las dos cifras salen en la MISMA tarjeta, y con bases
+   * distintas un ámbito endeudado podría leer más «a plazo sin fecha» que todo su
+   * lado vendible (ADR 0077).
    */
   undeclaredMinor: number;
   /**
    * `false` cuando el llamador no trajo día de lectura: entonces no se resolvió
    * ninguna fecha y el reparto es el de siempre. Existe para que una pantalla no
-   * pueda imprimir «sin bloqueos» cuando lo que pasa es que nadie miró el reloj.
+   * pueda imprimir «sin bloqueos» cuando lo que pasa es que nadie miró el reloj —
+   * y lo que hace posible decirlo es `declaredMinor`, que no necesita reloj.
    */
   resolved: boolean;
 }
@@ -110,8 +122,20 @@ export function resolveCapitalAvailability(
 ): FireCapitalAvailability {
   const { declared, sellableMinor, todayISO, undeclaredMinor } = input;
 
+  const cap = Math.max(0, sellableMinor);
+  const declaredMinor = declared.reduce(
+    (sum, declaration) => sum + Math.max(0, declaration.amountMinor),
+    0,
+  );
+
   if (todayISO === undefined) {
-    return { lockedMinor: 0, resolved: false, tranches: [], undeclaredMinor };
+    return {
+      declaredMinor,
+      lockedMinor: 0,
+      resolved: false,
+      tranches: [],
+      undeclaredMinor: Math.min(undeclaredMinor, cap),
+    };
   }
 
   const byYear = new Map<number, number>();
@@ -128,7 +152,6 @@ export function resolveCapitalAvailability(
     .sort(([a], [b]) => a - b)
     .map(([yearsUntil, amountMinor]) => ({ amountMinor, yearsUntil }));
 
-  const cap = Math.max(0, sellableMinor);
   const total = ordered.reduce((sum, tranche) => sum + tranche.amountMinor, 0);
   let excess = Math.max(0, total - cap);
 
@@ -142,11 +165,16 @@ export function resolveCapitalAvailability(
     }
   }
 
+  const lockedMinor = tranches.reduce((sum, tranche) => sum + tranche.amountMinor, 0);
+
   return {
-    lockedMinor: tranches.reduce((sum, tranche) => sum + tranche.amountMinor, 0),
+    declaredMinor,
+    lockedMinor,
     resolved: true,
     tranches,
-    undeclaredMinor,
+    // Contra lo que queda del vendible neto después del bloqueo: las dos cifras se
+    // imprimen juntas y no pueden estar en bases distintas.
+    undeclaredMinor: Math.min(undeclaredMinor, Math.max(0, cap - lockedMinor)),
   };
 }
 

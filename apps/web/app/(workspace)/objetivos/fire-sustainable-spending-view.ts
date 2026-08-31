@@ -166,6 +166,11 @@ function depletionAbsenceNote(
  *   contando como disponible desde el primer año. El hueco se dice en voz alta y se dice
  *   dónde se arregla; callarlo sería la ilusión de liquidez que #1447 vino a matar.
  *
+ * Y antes que las dos, la que no depende del usuario: **el calendario no se resolvió**
+ * porque quien pidió la cifra no trajo día (`resolved === false`, ADR 0100 §5). Entonces
+ * el reparto es el de siempre aunque haya fechas declaradas, y esta tarjeta lo dice en vez
+ * de imprimir «sin bloqueos» — que sería afirmar algo que nadie ha comprobado.
+ *
  * El recorte manda sobre el hueco cuando se dan los dos: la cifra que el usuario está
  * mirando ya cambió, y esa es la que hay que explicar primero.
  */
@@ -175,6 +180,12 @@ function availabilityNoteOf(input: {
 }): string | null {
   const { formatMoney, spending } = input;
   const { availability, depletion } = spending;
+
+  // Sin día no se resolvió nada, y lo declarado sigue ahí: decirlo es la única forma
+  // de que la ausencia de bloqueo no se lea como ausencia de fechas (ADR 0100 §5).
+  if (!availability.resolved && availability.declaredMinor > 0) {
+    return `Hay ${formatMoney(availability.declaredMinor)} con fecha de disponibilidad declarada que esta pantalla no ha situado en el calendario, así que el reparto de abajo los cuenta como disponibles desde el primer año.`;
+  }
 
   if (depletion?.limitedByAvailability) {
     return `De tu capital vendible, ${formatMoney(availability.lockedMinor)} tienen fecha de disponibilidad declarada, así que la cifra de agotamiento no lo reparte antes de que puedas tocarlo.`;

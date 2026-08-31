@@ -18,6 +18,7 @@ import {
   defaultInstrumentForAssetType,
   defaultInvestmentPriceProvider,
   defaultsFor,
+  isRealCalendarDay,
   validIsinOrNull,
   valueHousingAtDate,
 } from "@worthline/domain";
@@ -666,7 +667,12 @@ async function setAvailableFrom(
   assetId: string,
   availableFrom: string | null,
 ): Promise<void> {
-  if (availableFrom !== null && !ISO_DATE.test(availableFrom)) {
+  // `isRealCalendarDay` y no solo la forma: `2035-02-30` pasa el patrón AAAA-MM-DD y
+  // `Date` lo desplaza en silencio al 1 de marzo, así que guardarlo sería un bloqueo
+  // que nadie ha declarado. El parser de la web ya lo rechaza; el seam está exportado
+  // (el import de un workspace escribe la columna sin pasar por él), así que lo
+  // comprueba con la MISMA regla en vez de con una más laxa.
+  if (availableFrom !== null && !isRealCalendarDay(availableFrom)) {
     throw new Error(
       `Available-from must be a YYYY-MM-DD date (null to clear), got "${availableFrom}".`,
     );

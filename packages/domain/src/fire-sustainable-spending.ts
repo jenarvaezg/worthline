@@ -108,9 +108,8 @@ export interface FireSustainableSpending {
 /** Lo que la tarjeta necesita del resultado FIRE — nada que ella pueda recalcular. */
 export type FireSustainableSpendingInput = Pick<
   ScopeFireResult,
-  "capitalSplit" | "context" | "rentReturns"
-> &
-  Partial<Pick<ScopeFireResult, "availability">>;
+  "availability" | "capitalSplit" | "context" | "rentReturns"
+>;
 
 /**
  * `null` cuando no hay tasa de retirada con la que dividir: sin ella no hay ni número
@@ -119,7 +118,7 @@ export type FireSustainableSpendingInput = Pick<
 export function fireSustainableSpending(
   input: FireSustainableSpendingInput,
 ): FireSustainableSpending | null {
-  const { capitalSplit, context, rentReturns } = input;
+  const { availability, capitalSplit, context, rentReturns } = input;
   const { config, realReturnUsed } = context;
   const withdrawalRate = config.safeWithdrawalRate;
 
@@ -134,16 +133,6 @@ export function fireSustainableSpending(
   const rents = rentAnnualMinor === 0 ? null : partOf(rentAnnualMinor);
 
   const perpetual = sidesOf(Math.round(sellableMinor * withdrawalRate), rentAnnualMinor);
-
-  // Sin campo = sin declaración, que es el estado por defecto y el que deja el reparto
-  // exactamente como estaba. Es opcional en el tipo por eso y no por comodidad: la
-  // ausencia de calendario y un calendario vacío significan lo mismo para la cifra.
-  const availability: FireCapitalAvailability = input.availability ?? {
-    lockedMinor: 0,
-    resolved: false,
-    tranches: [],
-    undeclaredMinor: 0,
-  };
 
   const currentAge = config.currentAge;
   const untilAge = config.capitalLastsUntilAge;

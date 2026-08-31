@@ -5985,45 +5985,43 @@ td.rowActions > * {
   color: var(--blue);
 }
 
+/* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico» y que el
+   plegable, no dentro de ellos, así que comparte su ritmo y su encabezado en vez de
+   repetir una receta equivalente al lado (design-system §7). */
 .editBasic,
-.editAdvanced {
+.editAdvanced,
+.holdingAvailability {
   margin-top: 18px;
 }
 
-.editBasic h3 {
+.editBasic h3,
+.holdingAvailability h3 {
   color: var(--ink);
   font-size: 1rem;
   font-weight: 650;
   margin: 0 0 12px;
 }
 
-/* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico», no dentro
-   de «Configuración avanzada», así que lleva su tratamiento de encabezado y no el
-   uppercase apagado de las superficies plegadas. */
+.editAdvanced,
 .holdingAvailability {
-  margin-top: 18px;
   border-top: 1px solid var(--line);
   padding-top: 16px;
+}
+
+.holdingAvailability {
   display: grid;
   gap: 8px;
 }
 
+/* El h3 de esta sección abre una rejilla, así que su hueco lo pone el `gap`. */
 .holdingAvailability h3 {
-  color: var(--ink);
-  font-size: 1rem;
-  font-weight: 650;
-  margin: 0;
+  margin-bottom: 0;
 }
 
 .availabilityReadout {
   font-size: 0.875rem;
   color: var(--ink);
   margin: 0;
-}
-
-.editAdvanced {
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
 }
 
 .editAdvanced > summary {

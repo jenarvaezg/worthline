@@ -68,16 +68,31 @@ FIRE number, the perpetual half and every figure of today stay exactly as they w
 5. **The clock comes from the caller.** `calculateFireForScope` takes `todayISO` in its
    options (falling back to `rents.todayISO`, which is the same day of the same screen),
    because the domain does not read the clock (ADR 0024). Without a day nothing is
-   resolved and `availability.resolved` says so — a screen must not be able to print
-   «no locks» when what happened is that nobody looked at a clock.
+   resolved, and the result carries two fields that say so out loud: `resolved: false`,
+   and `declaredMinor` — the declared total, which needs no clock. The sustainable-spending
+   card reads both and prints «hay X declarado que no he situado en el calendario»
+   **before** either of its other two sentences. A screen must not be able to print «no
+   locks» when what happened is that nobody looked at a clock, and a field nothing reads
+   would not have prevented that.
 
 6. **The gap is named, not silenced.** Term-locked capital with no declared date is
    neither zero nor a lock: the reparto counts it as available from year one, and both
    the holding's ficha and the sustainable-spending card say so, with where to fix it.
    Silence there is the liquidity illusion #1447 exists to kill.
 
+7. **Both figures on the card share one base.** `lockedMinor` and `undeclaredMinor` are
+   printed in the same card, so both are capped against the **net** sellable side — the
+   undeclared one against what is left of it after the lock. On two different bases an
+   indebted scope could read more «a plazo sin fecha» than its whole sellable side, which
+   is a figure the card's own arithmetic contradicts (ADR 0077).
+
 ## Consequences
 
+- ADR 0013 carries an amendment saying the rung owns the field, so the rung's own ADR is
+  no longer a definition with nowhere to store half of itself.
+- The declaration rides the workspace transfer document (ADR 0010/0015). It is a fact only
+  its owner can state and nothing can re-derive: losing it on a restore would silently turn
+  locked capital into money available from year one.
 - A holding on the `term-locked` rung gets an availability surface on its ficha
   (`_chrome/availability-panel`), keyed on the **rung** and not on a family (ADR 0095):
   a pension plan, a term deposit and a fund with a redemption window are valued three

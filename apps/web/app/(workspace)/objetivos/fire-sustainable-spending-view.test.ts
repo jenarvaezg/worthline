@@ -19,7 +19,13 @@ function spending(
   overrides: Partial<FireSustainableSpending> = {},
 ): FireSustainableSpending {
   return {
-    availability: { lockedMinor: 0, resolved: true, tranches: [], undeclaredMinor: 0 },
+    availability: {
+      declaredMinor: 0,
+      lockedMinor: 0,
+      resolved: true,
+      tranches: [],
+      undeclaredMinor: 0,
+    },
     depletion: null,
     depletionAbsence: "no_final_age",
     perpetual: {
@@ -307,6 +313,7 @@ describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)
       rentNotices: [],
       spending: spending({
         availability: {
+          declaredMinor: 6_000_000,
           lockedMinor: 6_000_000,
           resolved: true,
           tranches: [{ amountMinor: 6_000_000, yearsUntil: 9 }],
@@ -334,6 +341,7 @@ describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)
       rentNotices: [],
       spending: spending({
         availability: {
+          declaredMinor: 0,
           lockedMinor: 0,
           resolved: true,
           tranches: [],
@@ -345,6 +353,28 @@ describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)
     expect(copy.availabilityNote).toContain("4979.55 \u20ac");
     expect(copy.availabilityNote).toContain("A plazo");
     expect(copy.availabilityNote).toContain("en su ficha");
+  });
+
+  test("sin día de lectura lo dice, en vez de callar el bloqueo declarado", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({
+        availability: {
+          declaredMinor: 6_000_000,
+          lockedMinor: 0,
+          resolved: false,
+          tranches: [],
+          undeclaredMinor: 0,
+        },
+      }),
+    });
+
+    // Sin esto, un llamador que no trajera reloj imprimiría una tarjeta idéntica a la
+    // de quien no ha declarado nada (ADR 0100 §5).
+    expect(copy.availabilityNote).toContain("60000.00 \u20ac");
+    expect(copy.availabilityNote).toContain("no ha situado en el calendario");
   });
 
   test("sin bloqueo y sin hueco no dice nada: es el caso de casi todo el mundo", () => {

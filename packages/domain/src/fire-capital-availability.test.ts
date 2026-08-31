@@ -47,6 +47,9 @@ describe("resolveCapitalAvailability (#1528)", () => {
     expect(availability.resolved).toBe(false);
     expect(availability.tranches).toEqual([]);
     expect(availability.lockedMinor).toBe(0);
+    // Lo declarado no necesita reloj, y es lo que deja decir «hay esto y no lo he
+    // situado» en vez de callar (ADR 0100 §5).
+    expect(availability.declaredMinor).toBe(500_000);
   });
 
   it("deja fuera lo que ya está disponible: una fecha pasada no bloquea nada", () => {
@@ -113,6 +116,21 @@ describe("resolveCapitalAvailability (#1528)", () => {
     expect(availability.undeclaredMinor).toBe(4_979_55);
     expect(availability.lockedMinor).toBe(0);
     expect(availability.resolved).toBe(true);
+  });
+
+  it("topa también lo NO declarado, para que las dos cifras compartan base", () => {
+    // Vendible neto 700.000: 300.000 bloqueados y, de los 900.000 a plazo sin fecha,
+    // solo caben los 400.000 que quedan. Con bases distintas la tarjeta imprimiría
+    // más «a plazo sin fecha» que todo el lado vendible.
+    const availability = resolveCapitalAvailability({
+      declared: [{ amountMinor: 300_000, availableFrom: "2035-01-01" }],
+      sellableMinor: 700_000,
+      todayISO: TODAY,
+      undeclaredMinor: 900_000,
+    });
+
+    expect(availability.lockedMinor).toBe(300_000);
+    expect(availability.undeclaredMinor).toBe(400_000);
   });
 });
 
