@@ -489,7 +489,10 @@ describe("finectProvider", () => {
   });
 
   it("reports an HTTP-error failure when Finect responds with a non-2xx status", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 503 } as Response);
+    // 503 is transient, so the shared retry (#1694) spends all three attempts
+    // before the provider gets to answer — hence a persistent stub, not `Once`.
+    // The reported failure is unchanged: the retry only delays the verdict.
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
 
     const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "N5394" });
 
@@ -497,6 +500,7 @@ describe("finectProvider", () => {
       failed: true,
       reason: "El proveedor respondió con un error (503)",
     });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });
 

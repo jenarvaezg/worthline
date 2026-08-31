@@ -1,11 +1,12 @@
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { DEFAULT_APP_PATH } from "@web/return-to";
-import { createControlPlaneStore, type TenancyDirectory } from "@worthline/db";
+import type { TenancyDirectory } from "@worthline/db";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
+import { controlPlaneTargetFromEnv, withControlPlaneStore } from "./control-plane-store";
 import {
   normalizeAdminEmail,
   resolveStoreTarget,
@@ -92,32 +93,30 @@ export async function lookupImpersonationTarget(input: {
   const { workspaceId, env } = input;
   if (!workspaceId) return null;
 
-  const controlPlaneUrl = env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!controlPlaneUrl) return null;
+  const target = controlPlaneTargetFromEnv(env);
+  if (!target) return null;
 
-  const open =
-    input.openControlPlane ??
-    (() =>
-      createControlPlaneStore({
-        url: controlPlaneUrl,
-        ...(env.WORTHLINE_DB_AUTH_TOKEN
-          ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN }
-          : {}),
-      }));
-
-  const controlPlane = await open();
-  try {
-    const found = await controlPlane.getWorkspaceWithOwner(workspaceId);
-    if (!found || !found.ownerEmail) return null;
-    return {
-      workspaceId: found.id,
-      dbUrl: found.dbUrl,
-      email: found.ownerEmail,
-      dbAuthToken: found.dbAuthToken,
-    };
-  } finally {
-    controlPlane.close();
-  }
+  return withControlPlaneStore<
+    {
+      workspaceId: string;
+      dbUrl: string;
+      email: string;
+      dbAuthToken: string | null;
+    } | null,
+    Pick<TenancyDirectory, "getWorkspaceWithOwner">
+  >(
+    async (controlPlane) => {
+      const found = await controlPlane.getWorkspaceWithOwner(workspaceId);
+      if (!found || !found.ownerEmail) return null;
+      return {
+        workspaceId: found.id,
+        dbUrl: found.dbUrl,
+        email: found.ownerEmail,
+        dbAuthToken: found.dbAuthToken,
+      };
+    },
+    input.openControlPlane ? { open: input.openControlPlane } : { target },
+  );
 }
 
 /**

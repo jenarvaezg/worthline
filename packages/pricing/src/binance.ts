@@ -11,11 +11,35 @@
  * env or persists anything. Built over the global `fetch` (stubbed in tests, like
  * the Numista/CoinGecko clients); `nowMs` is injected so the signed timestamp is
  * deterministic and testable.
+ *
+ * ## Why these calls do NOT go through `fetchHttpWithRetry` (#1694)
+ *
+ * Every other external fetch in this package retries transient failures. The
+ * signed endpoints below are the documented exclusion, for two independent
+ * reasons:
+ *
+ *  1. **The timestamp is signed.** `timestamp=<nowMs>` is part of the query the
+ *     HMAC covers, so a retry cannot refresh it — it re-presents the same,
+ *     now-older stamp. Binance rejects anything outside its `recvWindow`
+ *     (5 s by default, and no `recvWindow` is sent here), so a retry after an
+ *     8 s timeout is guaranteed to fail with `-1021`: it would replace an honest
+ *     timeout with a bogus "outside recvWindow" error. Retrying properly would
+ *     mean re-signing per attempt, i.e. a fresh `nowMs` per attempt — which this
+ *     module deliberately does not have (`nowMs` is injected so the signature is
+ *     deterministic and testable).
+ *  2. **Binance escalates rate limits.** A repeated 429 becomes an IP ban (418).
+ *     A retry burst on `getSpotBalances` — real user money — would trade a
+ *     recoverable blip for a locked-out key.
+ *
+ * The shared per-attempt deadline is still shared: {@link PRICING_FETCH_TIMEOUT_MS}
+ * rather than five copies of `8000`.
  */
 
 import { createHmac } from "node:crypto";
 import type { DecimalString } from "@worthline/domain";
 import { addUnits, compareUnits } from "@worthline/domain";
+
+import { PRICING_FETCH_TIMEOUT_MS } from "./fetch-with-retry";
 
 /**
  * The Binance API origin. Defaults to the real host; overridable via
@@ -119,7 +143,7 @@ export async function getSpotBalances(
     `${binanceBaseUrl()}/api/v3/account?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(PRICING_FETCH_TIMEOUT_MS),
     },
   );
 
@@ -157,7 +181,7 @@ export async function getAccountSnapshots(
     `${binanceBaseUrl()}/sapi/v1/accountSnapshot?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(PRICING_FETCH_TIMEOUT_MS),
     },
   );
 
@@ -196,7 +220,7 @@ export async function getFundingBalances(
     {
       method: "POST",
       headers: { "X-MBX-APIKEY": credentials.apiKey },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(PRICING_FETCH_TIMEOUT_MS),
     },
   );
 
@@ -241,7 +265,7 @@ export async function getFlexibleEarnBalances(
     `${binanceBaseUrl()}/sapi/v1/simple-earn/flexible/position?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(PRICING_FETCH_TIMEOUT_MS),
     },
   );
 
@@ -286,7 +310,7 @@ export async function getLockedEarnBalances(
     `${binanceBaseUrl()}/sapi/v1/simple-earn/locked/position?${query}&signature=${signature}`,
     {
       headers: { "X-MBX-APIKEY": credentials.apiKey },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(PRICING_FETCH_TIMEOUT_MS),
     },
   );
 

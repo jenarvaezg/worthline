@@ -1,5 +1,6 @@
-import { createControlPlaneStore, type EntitlementDirectory } from "@worthline/db";
+import type { EntitlementDirectory } from "@worthline/db";
 
+import { controlPlaneTargetFromEnv, withControlPlaneStore } from "./control-plane-store";
 import { readStoreTarget } from "./read-store-target";
 import type { StoreTarget } from "./store-resolver";
 
@@ -28,8 +29,11 @@ async function markActivation(
   >,
   target?: StoreTarget,
 ): Promise<void> {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
+  // Probed BEFORE resolving the target: with no control plane there is no row to
+  // stamp, and this runs from `afterCommit` seams where a target resolve is a
+  // cookie read worth skipping entirely.
+  const controlPlane = controlPlaneTargetFromEnv();
+  if (!controlPlane) {
     return;
   }
 
@@ -38,17 +42,10 @@ async function markActivation(
     if (resolved.kind !== "authenticated") {
       return;
     }
-    const store = await createControlPlaneStore({
-      url,
-      ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-        ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-        : {}),
-    });
-    try {
-      await store[mark](resolved.workspaceId, new Date().toISOString());
-    } finally {
-      store.close();
-    }
+    await withControlPlaneStore<void, Pick<EntitlementDirectory, typeof mark>>(
+      (store) => store[mark](resolved.workspaceId, new Date().toISOString()),
+      { target: controlPlane },
+    );
   } catch {
     // Best-effort: the caller's write already committed and must not fail.
   }

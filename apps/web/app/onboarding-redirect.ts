@@ -1,6 +1,7 @@
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
 import type { StoreTarget } from "@web/store-resolver";
-import { createControlPlaneStore, type WorkspaceEntitlement } from "@worthline/db";
+import type { EntitlementDirectory, WorkspaceEntitlement } from "@worthline/db";
 
 export { ONBOARDING_PATH };
 
@@ -51,23 +52,14 @@ export async function readOnboardingEntryRedirect(
     return null;
   }
 
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  if (!url) {
-    return null;
-  }
-
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
   try {
-    const controlPlane = await createControlPlaneStore({
-      url,
-      ...(authToken ? { authToken } : {}),
-    });
-    try {
+    return await withOptionalControlPlaneStore<
+      string | null,
+      Pick<EntitlementDirectory, "readWorkspaceEntitlement">
+    >(async (controlPlane) => {
       const entitlement = await controlPlane.readWorkspaceEntitlement(target.workspaceId);
       return shouldEnterOnboarding(target, entitlement) ? ONBOARDING_PATH : null;
-    } finally {
-      controlPlane.close();
-    }
+    });
   } catch (error) {
     console.warn(
       `onboarding: could not read the entitlement for workspace ${target.workspaceId}; not redirecting`,

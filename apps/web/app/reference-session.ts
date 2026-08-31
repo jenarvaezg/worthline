@@ -1,8 +1,4 @@
-import {
-  type BenchmarkPriceCache,
-  createControlPlaneStore,
-  type ExposureProfileCatalog,
-} from "@worthline/db";
+import type { BenchmarkPriceCache, ExposureProfileCatalog } from "@worthline/db";
 import type { ReferenceDataReaders } from "@worthline/domain";
 
 /** The two catalog/benchmark readers a reference session needs, plus its lifecycle. */
@@ -11,6 +7,7 @@ type ReferenceControlPlane = Pick<ExposureProfileCatalog, "readGlobalExposurePro
 
 import { after } from "next/server";
 import { cache } from "react";
+import { openControlPlaneStore } from "./control-plane-store";
 import { readStoreTarget } from "./read-store-target";
 import {
   createControlPlaneReferenceDataReaders,
@@ -29,17 +26,8 @@ const DEMO_EXPOSURE_CATALOG = {
   profiles: [] as const,
 };
 
-async function openControlPlaneStoreFromEnv(): Promise<ReferenceControlPlane> {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
-    throw new Error("WORTHLINE_CONTROL_PLANE_DB_URL is not configured.");
-  }
-  return createControlPlaneStore({
-    url,
-    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-      : {}),
-  });
+function openControlPlaneStoreFromEnv(): Promise<ReferenceControlPlane> {
+  return openControlPlaneStore({ purpose: "The reference session" });
 }
 
 export function createReferenceSessionForTarget(

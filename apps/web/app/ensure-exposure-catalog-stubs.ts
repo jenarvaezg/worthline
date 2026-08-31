@@ -1,10 +1,12 @@
-import { createControlPlaneStore, type ExposureProfileCatalog } from "@worthline/db";
+import type { ExposureProfileCatalog } from "@worthline/db";
 import {
   deriveExposureCatalogIdentity,
   type ExposureCatalogIdentitySource,
   type GlobalExposureProfileIdentity,
   globalExposureProfileIdentityKey,
 } from "@worthline/domain";
+
+import { withOptionalControlPlaneStore } from "./control-plane-store";
 
 /**
  * A holding to register in the global exposure catalog: its identity fields plus
@@ -31,11 +33,6 @@ export interface ExposureCatalogStubCandidate extends ExposureCatalogIdentitySou
 export async function ensureExposureCatalogStubs(
   candidates: readonly ExposureCatalogStubCandidate[],
 ): Promise<void> {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
-    return;
-  }
-
   const byKey = new Map<
     string,
     { identity: GlobalExposureProfileIdentity; displayName: string | null }
@@ -54,29 +51,20 @@ export async function ensureExposureCatalogStubs(
     return;
   }
 
-  let store: Pick<ExposureProfileCatalog, "ensureGlobalExposureProfileStub"> & {
-    close(): void;
-  };
   try {
-    store = await createControlPlaneStore({
-      url,
-      ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-        ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-        : {}),
+    await withOptionalControlPlaneStore<
+      void,
+      Pick<ExposureProfileCatalog, "ensureGlobalExposureProfileStub">
+    >(async (store) => {
+      for (const { identity, displayName } of byKey.values()) {
+        try {
+          await store.ensureGlobalExposureProfileStub(identity, displayName);
+        } catch {
+          // One identity failing must not abort the rest, nor the caller's write.
+        }
+      }
     });
   } catch {
-    return;
-  }
-
-  try {
-    for (const { identity, displayName } of byKey.values()) {
-      try {
-        await store.ensureGlobalExposureProfileStub(identity, displayName);
-      } catch {
-        // One identity failing must not abort the rest, nor the caller's write.
-      }
-    }
-  } finally {
-    store.close();
+    // An open failure is swallowed too: the next write retries the registration.
   }
 }

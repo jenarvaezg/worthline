@@ -1,4 +1,5 @@
-import { createControlPlaneStore, type UsageLimits } from "@worthline/db";
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import type { UsageLimits } from "@worthline/db";
 
 /**
  * The courtesy quota's persistence half (PRD #1160 S2, #1162): count this
@@ -12,21 +13,8 @@ export async function countAssistantCourtesyUse(
   rateKey: string,
   monthKey: string,
 ): Promise<number | null> {
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  if (!url) {
-    return null;
-  }
-
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
-  const controlPlane: Pick<UsageLimits, "recordAssistantCourtesyUse"> & {
-    close(): void;
-  } = await createControlPlaneStore({
-    url,
-    ...(authToken ? { authToken } : {}),
-  });
-  try {
-    return await controlPlane.recordAssistantCourtesyUse(rateKey, monthKey);
-  } finally {
-    controlPlane.close();
-  }
+  return withOptionalControlPlaneStore<
+    number,
+    Pick<UsageLimits, "recordAssistantCourtesyUse">
+  >((controlPlane) => controlPlane.recordAssistantCourtesyUse(rateKey, monthKey));
 }

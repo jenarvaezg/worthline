@@ -8,7 +8,7 @@
 import type { DecimalString } from "@worthline/domain";
 
 import { fetchEcbDailyRatesEur } from "./ecb";
-import { fetchHttpWithRetry, HttpTransientError } from "./fetch-with-retry";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 import type { HistoricalPriceSeries } from "./historical-price-source";
 import { decimalFromNumber } from "./yahoo";
 
@@ -225,7 +225,6 @@ async function fetchYahooHistoryChunk(
   try {
     const res = await fetchHttpWithRetry(url, {
       headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       return {
@@ -251,12 +250,11 @@ async function fetchYahooHistoryChunk(
       ...(result.meta?.currency ? { currency: result.meta.currency } : {}),
     };
   } catch (err) {
+    // Only a network error / timeout reaches here: an exhausted transient STATUS
+    // comes back as the response and is reported by the `!res.ok` branch above,
+    // with the same message (#1694).
     const message =
-      err instanceof HttpTransientError
-        ? `Yahoo respondió con un error (${err.status})`
-        : err instanceof Error
-          ? err.message
-          : "Error de red al consultar Yahoo";
+      err instanceof Error ? err.message : "Error de red al consultar Yahoo";
     return { points: [], fetchError: message };
   }
 }

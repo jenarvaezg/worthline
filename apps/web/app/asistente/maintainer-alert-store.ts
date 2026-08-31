@@ -1,8 +1,8 @@
-import {
-  createControlPlaneStore,
-  type MaintainerAlertCategory,
-  type MaintainerAlertLog,
-  type RaisedMaintainerAlert,
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import type {
+  MaintainerAlertCategory,
+  MaintainerAlertLog,
+  RaisedMaintainerAlert,
 } from "@worthline/db";
 
 /**
@@ -17,25 +17,6 @@ import {
  * repair NEVER waits on the alert (framing of map #1033).
  */
 
-function controlPlaneConfig(): { url: string; authToken?: string } | null {
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"]?.trim();
-  if (!url) return null;
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"]?.trim();
-  return { url, ...(authToken ? { authToken } : {}) };
-}
-
-async function runWithControlPlane<T>(
-  config: { url: string; authToken?: string },
-  run: (store: MaintainerAlertLog) => Promise<T>,
-): Promise<T> {
-  const controlPlane = await createControlPlaneStore(config);
-  try {
-    return await run(controlPlane);
-  } finally {
-    controlPlane.close();
-  }
-}
-
 export interface RaiseMaintainerAlertRequest {
   workspaceId: string;
   holdingId: string;
@@ -47,15 +28,14 @@ export interface RaiseMaintainerAlertRequest {
 export async function raiseMaintainerAlert(
   request: RaiseMaintainerAlertRequest,
 ): Promise<RaisedMaintainerAlert | null> {
-  const config = controlPlaneConfig();
-  if (!config) return null;
-  return runWithControlPlane(config, (controlPlane) =>
-    controlPlane.raiseMaintainerAlert({
-      workspaceId: request.workspaceId,
-      holdingId: request.holdingId,
-      category: request.category,
-      payload: request.payload,
-      ...(request.occurredAt === undefined ? {} : { occurredAt: request.occurredAt }),
-    }),
+  return withOptionalControlPlaneStore<RaisedMaintainerAlert, MaintainerAlertLog>(
+    (controlPlane) =>
+      controlPlane.raiseMaintainerAlert({
+        workspaceId: request.workspaceId,
+        holdingId: request.holdingId,
+        category: request.category,
+        payload: request.payload,
+        ...(request.occurredAt === undefined ? {} : { occurredAt: request.occurredAt }),
+      }),
   );
 }

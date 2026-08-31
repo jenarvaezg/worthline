@@ -1,11 +1,8 @@
-import {
-  type BenchmarkPriceCache,
-  createControlPlaneStore,
-  type ExposureProfileCatalog,
-} from "@worthline/db";
+import type { BenchmarkPriceCache, ExposureProfileCatalog } from "@worthline/db";
 import type { ExposureCatalogAvailability, ExposureProfile } from "@worthline/domain";
 import { exposureProfileLookthroughMap } from "@worthline/domain";
 
+import { withOptionalControlPlaneStore } from "./control-plane-store";
 import { createControlPlaneReferenceDataReaders } from "./reference-data-readers";
 
 /**
@@ -17,32 +14,22 @@ import { createControlPlaneReferenceDataReaders } from "./reference-data-readers
  * catalog is admin-curated and must be read-after-write, so a workspace read must
  * never serve a stale cross-request snapshot. No control-plane URL is
  * `not_configured` (not an empty catalog); an open/read failure degrades to
- * `read_failed`. The connection is always closed in `finally`.
+ * `read_failed`. The connection is opened and always closed by
+ * {@link withOptionalControlPlaneStore} (#1694).
  */
 export async function readExposureCatalogFromControlPlane(): Promise<ExposureCatalogAvailability> {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
-    return { status: "unavailable", reason: "not_configured" };
-  }
-
-  let store: Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
-    Pick<BenchmarkPriceCache, "readBenchmarkPrices"> & { close(): void };
   try {
-    store = await createControlPlaneStore({
-      url,
-      ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-        ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-        : {}),
+    const availability = await withOptionalControlPlaneStore<
+      ExposureCatalogAvailability,
+      Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
+        Pick<BenchmarkPriceCache, "readBenchmarkPrices">
+    >(async (store) => {
+      const readers = createControlPlaneReferenceDataReaders(store);
+      return await readers.exposureCatalogReader.readCatalog();
     });
+    return availability ?? { status: "unavailable", reason: "not_configured" };
   } catch {
     return { status: "unavailable", reason: "read_failed" };
-  }
-
-  try {
-    const readers = createControlPlaneReferenceDataReaders(store);
-    return await readers.exposureCatalogReader.readCatalog();
-  } finally {
-    store.close();
   }
 }
 

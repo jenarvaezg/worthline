@@ -1,8 +1,5 @@
-import {
-  type AiTokenUsage,
-  createControlPlaneStore,
-  type UsageLimits,
-} from "@worthline/db";
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import type { AiTokenUsage, UsageLimits } from "@worthline/db";
 
 /**
  * The token meter's persistence half (PRD #1160 S3, #1163). Two operations over
@@ -18,30 +15,15 @@ import {
 
 type TokenMeterPort = Pick<UsageLimits, "readAiTokenUsage" | "recordAiTokenUsage">;
 
-function controlPlaneConfig(): { url: string; authToken?: string } | null {
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  if (!url) return null;
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
-  return { url, ...(authToken ? { authToken } : {}) };
-}
-
 /**
  * Open the control-plane token-meter port, hand it to `run`, and always close
  * it — or return null without touching a store when unmetered (local dev, no
- * URL). One opener for both operations, as `provider-cooldown-store` does.
+ * URL). One opener for both operations, over the shared helper (#1694).
  */
-async function withTokenMeter<T>(
+function withTokenMeter<T>(
   run: (store: TokenMeterPort) => Promise<T>,
 ): Promise<T | null> {
-  const config = controlPlaneConfig();
-  if (!config) return null;
-  const controlPlane: TokenMeterPort & { close(): void } =
-    await createControlPlaneStore(config);
-  try {
-    return await run(controlPlane);
-  } finally {
-    controlPlane.close();
-  }
+  return withOptionalControlPlaneStore<T, TokenMeterPort>(run);
 }
 
 /** The day's accumulated token totals, or null when unmetered (local dev). */

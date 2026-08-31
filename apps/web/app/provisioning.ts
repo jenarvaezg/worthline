@@ -1,5 +1,6 @@
+import { withControlPlaneStore } from "@web/control-plane-store";
 import { createTursoPort } from "@web/turso-port";
-import { createControlPlaneStore, provisionWorkspaceForUser } from "@worthline/db";
+import { provisionWorkspaceForUser } from "@worthline/db";
 
 /**
  * Hosted provision-on-first-login wiring (ADR 0030). Composes the control-plane
@@ -21,7 +22,6 @@ export async function provisionWorkspaceForEmail(
   env: Record<string, string | undefined> = process.env,
 ): Promise<ResolvedWorkspace> {
   const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
   const tursoOrg = env["TURSO_ORG"];
   const tursoToken = env["TURSO_API_TOKEN"];
 
@@ -31,29 +31,20 @@ export async function provisionWorkspaceForEmail(
     );
   }
 
-  const controlPlane = await createControlPlaneStore({
-    url: controlPlaneUrl,
-    ...(groupToken ? { authToken: groupToken } : {}),
-  });
-  try {
-    const turso = createTursoPort({
-      org: tursoOrg,
-      token: tursoToken,
-      ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
-    });
-    const workspace = await provisionWorkspaceForUser(
-      {
-        controlPlane,
-        turso,
-      },
-      email,
-    );
-    return {
-      id: workspace.id,
-      dbUrl: workspace.dbUrl,
-      dbAuthToken: workspace.dbAuthToken,
-    };
-  } finally {
-    controlPlane.close();
-  }
+  return withControlPlaneStore(
+    async (controlPlane) => {
+      const turso = createTursoPort({
+        org: tursoOrg,
+        token: tursoToken,
+        ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
+      });
+      const workspace = await provisionWorkspaceForUser({ controlPlane, turso }, email);
+      return {
+        id: workspace.id,
+        dbUrl: workspace.dbUrl,
+        dbAuthToken: workspace.dbAuthToken,
+      };
+    },
+    { env, purpose: "Hosted provisioning" },
+  );
 }

@@ -18,7 +18,7 @@ import type { BinanceHistoryCurve, DecimalString } from "@worthline/domain";
 
 import { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
 import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
-import { fetchHttpWithRetry, HttpTransientError } from "./fetch-with-retry";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 
 /** One normalized daily SPOT snapshot (mirrors `BinanceAccountSnapshot`). */
 interface AccountSnapshot {
@@ -146,10 +146,7 @@ export async function fetchCoinGeckoHistoryEur(
     `?vs_currency=eur&from=${fromSec}&to=${toSec}`;
 
   try {
-    const res = await fetchHttpWithRetry(url, {
-      headers: coingeckoHeaders(),
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetchHttpWithRetry(url, { headers: coingeckoHeaders() });
     if (!res.ok) {
       return {
         pricesByDate: new Map(),
@@ -166,12 +163,11 @@ export async function fetchCoinGeckoHistoryEur(
     }
     return { pricesByDate: byDate };
   } catch (err) {
+    // Only a network error / timeout reaches here: an exhausted transient STATUS
+    // comes back as the response and is reported by the `!res.ok` branch above,
+    // with the same message (#1694).
     const message =
-      err instanceof HttpTransientError
-        ? `CoinGecko respondió con un error (${err.status})`
-        : err instanceof Error
-          ? err.message
-          : "Error de red al consultar CoinGecko";
+      err instanceof Error ? err.message : "Error de red al consultar CoinGecko";
     return { pricesByDate: new Map(), fetchError: message };
   }
 }

@@ -19,7 +19,9 @@ export const ecbProvider: PriceProvider = {
   fetchPrice: async (ctx) => {
     const url =
       ECB_EXR_URL + ctx.symbol + ".EUR.SP00.A?format=jsondata&lastNObservations=1";
-    const res = await fetchHttpWithRetry(url, { signal: AbortSignal.timeout(5000) });
+    // A tighter deadline than the shared default: this one sits inline in a
+    // price fetch, so a slow ECB must lose fast.
+    const res = await fetchHttpWithRetry(url, undefined, { timeoutMs: 5_000 });
     if (!res.ok) return null;
     const data = (await res.json()) as EcbExrResponse;
     const obs = data?.dataSets?.[0]?.series?.["0:0:0:0:0"]?.observations?.["0"];
@@ -50,7 +52,7 @@ export async function fetchEcbDailyRatesEur(
     `.EUR.SP00.A?format=jsondata&startPeriod=${startPeriod}&endPeriod=${endPeriod}`;
 
   try {
-    const res = await fetchHttpWithRetry(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetchHttpWithRetry(url);
     if (!res.ok) return rates;
 
     const data = (await res.json()) as EcbExrResponse;

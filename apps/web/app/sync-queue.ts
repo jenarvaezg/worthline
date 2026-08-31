@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { buildDailyCaptureDeps } from "@web/api/cron/snapshot/daily-capture-deps";
+import { openControlPlaneStore, withControlPlaneStore } from "@web/control-plane-store";
 import { openAuthorizedStore } from "@web/principal";
 import type { StoreTarget } from "@web/store-resolver";
 import {
-  createControlPlaneStore,
   createJobQueue,
   createSyncJobWorker,
   createVercelQueueTransport,
@@ -65,14 +65,7 @@ export function isDurableQueueConfigured(env: Env = process.env): boolean {
 }
 
 function openControlPlane(env: Env): Promise<SyncQueueControlPlane> {
-  const url = env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
-    throw new Error("Durable job queue requires WORTHLINE_CONTROL_PLANE_DB_URL.");
-  }
-  return createControlPlaneStore({
-    url,
-    ...(env.WORTHLINE_DB_AUTH_TOKEN ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN } : {}),
-  });
+  return openControlPlaneStore({ env, purpose: "Durable job queue" });
 }
 
 /**
@@ -101,16 +94,19 @@ async function openWorkspaceStoreById(
   env: Env,
   workspaceId: string,
 ): Promise<WorthlineStore> {
-  const controlPlane = await openControlPlane(env);
-  let dbUrl: string | null = null;
-  let dbAuthToken: string | null = null;
-  try {
-    const workspace = await controlPlane.getWorkspaceWithOwner(workspaceId);
-    dbUrl = workspace?.dbUrl ?? null;
-    dbAuthToken = workspace?.dbAuthToken ?? null;
-  } finally {
-    controlPlane.close();
-  }
+  const { dbUrl, dbAuthToken } = await withControlPlaneStore<
+    { dbUrl: string | null; dbAuthToken: string | null },
+    SyncQueueControlPlane
+  >(
+    async (controlPlane) => {
+      const workspace = await controlPlane.getWorkspaceWithOwner(workspaceId);
+      return {
+        dbUrl: workspace?.dbUrl ?? null,
+        dbAuthToken: workspace?.dbAuthToken ?? null,
+      };
+    },
+    { open: () => openControlPlane(env) },
+  );
   if (!dbUrl) {
     throw new Error(`Durable sync job targets unknown workspace ${workspaceId}.`);
   }
@@ -239,26 +235,26 @@ export async function enqueueSyncJob(
   input: EnqueueSyncJobInput,
   deps: SyncQueueDeps,
 ): Promise<EnqueueJobResult> {
-  const controlPlane = await deps.openControlPlane();
-  try {
-    const queue = createJobQueue({
-      store: controlPlane,
-      ...(deps.transport ? { transport: deps.transport } : {}),
-    });
-    const result = await queue.enqueue(input);
+  return withControlPlaneStore<EnqueueJobResult, SyncQueueControlPlane>(
+    async (controlPlane) => {
+      const queue = createJobQueue({
+        store: controlPlane,
+        ...(deps.transport ? { transport: deps.transport } : {}),
+      });
+      const result = await queue.enqueue(input);
 
-    if (!deps.transport) {
-      await drainToIdle(
-        controlPlane,
-        deps.resolver,
-        deps.owner,
-        deps.leaseMs ?? DEFAULT_JOB_LEASE_MS,
-      );
-    }
-    return result;
-  } finally {
-    controlPlane.close();
-  }
+      if (!deps.transport) {
+        await drainToIdle(
+          controlPlane,
+          deps.resolver,
+          deps.owner,
+          deps.leaseMs ?? DEFAULT_JOB_LEASE_MS,
+        );
+      }
+      return result;
+    },
+    { open: deps.openControlPlane },
+  );
 }
 
 /** A production sync-queue bound to the environment. */
@@ -287,14 +283,12 @@ export function productionSyncQueue(env: Env = process.env): ProductionSyncQueue
   };
   return {
     enqueue: (input) => enqueueSyncJob(input, deps),
-    drain: async () => {
-      const controlPlane = await openControlPlane(env);
-      try {
-        return await drainToIdle(controlPlane, resolver, owner, DEFAULT_JOB_LEASE_MS);
-      } finally {
-        controlPlane.close();
-      }
-    },
+    drain: () =>
+      withControlPlaneStore<DrainOutcome[], SyncQueueControlPlane>(
+        (controlPlane) =>
+          drainToIdle(controlPlane, resolver, owner, DEFAULT_JOB_LEASE_MS),
+        { open: () => openControlPlane(env) },
+      ),
   };
 }
 

@@ -45,7 +45,6 @@ export const yahooProvider: PriceProvider = {
         YAHOO_CHART_URL + encodeURIComponent(ctx.symbol) + "?interval=1d&range=5d";
       const res = await fetchHttpWithRetry(url, {
         headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(8000),
       });
 
       if (!res.ok) return null;
