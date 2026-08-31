@@ -1,11 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import { VALUE_ONLY_PNL_NOTICE } from "./cost-basis-grade";
+import type { AssetClassResolution } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./index";
+import type { Instrument } from "./instrument-catalog";
 import { money } from "./money";
 import type { IrrResult, SimpleGain, TwrResult } from "./returns";
 import {
   APPRECIATING_CAVEAT,
+  ATTRIBUTED_ONLY_NOTICE,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
@@ -698,5 +701,68 @@ describe("returnsByAssetClassView", () => {
         valuationDate: "2026-07-04",
       }),
     ).toBeNull();
+  });
+});
+
+describe("una clase sin producto propio no presenta su rentabilidad (#1458)", () => {
+  // El caso real: el «efectivo» del patrimonio no es una cuenta, es la manga de
+  // tesorería dentro de un plan de pensiones mixto. Su +10,4% era el del plan.
+  const mixedBook = () =>
+    returnsByAssetClassView({
+      assetClassByAsset: new Map<string, AssetClassResolution>([
+        ["plan", { breakdown: { cash: "0.13", equity: "0.87" }, kind: "classified" }],
+        ["fondo", { breakdown: { equity: "1" }, kind: "classified" }],
+      ]),
+      cachedPriceByAsset: new Map([
+        ["plan", "130"],
+        ["fondo", "150"],
+      ]),
+      currency: "EUR",
+      instrumentByAsset: new Map<string, Instrument>([
+        ["plan", "pension_plan"],
+        ["fondo", "fund"],
+      ]),
+      manualPriceByAsset: new Map(),
+      monthlyClosesByAsset: new Map(),
+      operationsByAsset: new Map([
+        ["plan", [op("buy", "10", "100", "2024-01-01", "plan")]],
+        ["fondo", [op("buy", "10", "100", "2024-01-01", "fondo")]],
+      ]),
+      valuationDate: "2026-07-04",
+    })!;
+
+  test("la clase prestada deja en blanco las tres medidas y dice por qué", () => {
+    const cash = mixedBook().classes.find((entry) => entry.key === "cash")!;
+
+    expect(cash.attributedOnly).toBe(true);
+    expect(cash.measuredValue.amountMinor).toBe(0);
+    // Sigue teniendo valor y peso: lo que no tiene es una rentabilidad que
+    // defender. El +30% del plan no se reimprime como si fuese del efectivo.
+    expect(cash.value.amountMinor).toBeGreaterThan(0);
+    expect(cash.view.totalReturnRatio).toBeNull();
+    expect(cash.view.cagr).toBeNull();
+    expect(cash.view.irr).toBeNull();
+    expect(cash.view.twr).toBeNull();
+    expect(cash.view.caveats).toContain(ATTRIBUTED_ONLY_NOTICE);
+  });
+
+  test("la clase con producto propio se muestra exactamente igual que antes", () => {
+    const equity = mixedBook().classes.find((entry) => entry.key === "equity")!;
+
+    expect(equity.attributedOnly).toBe(false);
+    expect(equity.measuredValue.amountMinor).toBe(150_000);
+    expect(equity.view.totalReturnRatio).not.toBeNull();
+    expect(equity.view.irr).not.toBeNull();
+    expect(equity.view.caveats).not.toContain(ATTRIBUTED_ONLY_NOTICE);
+    expect(equity.view.caveats).toContain(CLASS_ATTRIBUTION_CAVEAT);
+  });
+
+  test("una clase medida a medias sigue midiendo: el corte es no tener nada propio", () => {
+    // Renta variable recibe el fondo puro Y el 87% del plan. Presta parte de su
+    // resultado, pero tiene euros propios con los que responder.
+    const equity = mixedBook().classes.find((entry) => entry.key === "equity")!;
+
+    expect(equity.value.amountMinor).toBeGreaterThan(equity.measuredValue.amountMinor);
+    expect(equity.view.totalReturnRatio).not.toBeNull();
   });
 });

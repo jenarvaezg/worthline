@@ -10529,3 +10529,16 @@ td.rowActions > * {
     grid-template-columns: 1fr;
   }
 }
+
+/* Una clase que no tiene ni un producto suyo se nombra como lo que es (#1458):
+   un reparto, no una medida. La marca va en palabra —oro, el registro de aviso
+   del canon— y no solo en color, y su frase entera se imprime en el pie, porque
+   un teléfono no tiene hover donde leerla. */
+.returnsClassAttributed {
+  color: var(--gold);
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  margin-left: 6px;
+  text-transform: uppercase;
+}

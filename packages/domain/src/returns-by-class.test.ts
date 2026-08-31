@@ -4,7 +4,11 @@ import type { AssetClassResolution, ExposureProfile } from "./exposure-lookthrou
 import { lookThroughExposure } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
-import { returnsByAssetClass, UNCLASSIFIED_ASSET_CLASS_KEY } from "./returns-by-class";
+import {
+  OTHER_ASSET_CLASS_KEY,
+  returnsByAssetClass,
+  UNCLASSIFIED_ASSET_CLASS_KEY,
+} from "./returns-by-class";
 import { subsetReturns } from "./returns-subset";
 
 function op(
@@ -791,5 +795,94 @@ describe("un solo reparto de céntimos para exposición y clase (#1610)", () => 
     expect(
       result.classes.find((entry) => entry.key === "bond")!.simpleGain.totalInvestedMinor,
     ).toBe(39_995);
+  });
+});
+
+describe("lo medido y lo prestado se distinguen (#1458)", () => {
+  const pureEquityFund = {
+    assetClass: classified({ equity: "1" }),
+    marketValueMinor: 100_000,
+    monthlyCloses: [] as MonthlyCloseValue[],
+    operations: [buy("10", "80", "2023-01-01")],
+  };
+  // El caso real: el efectivo del patrimonio no es una cuenta, es la manga de
+  // tesorería DENTRO de un plan mixto. Ni un euro suyo vive en un producto propio.
+  const mixedPensionPlan = {
+    assetClass: classified({ cash: "0.13", equity: "0.87" }),
+    marketValueMinor: 40_000,
+    monthlyCloses: [] as MonthlyCloseValue[],
+    operations: [buy("10", "30", "2023-01-01")],
+  };
+
+  const classOf = (
+    holdings: readonly Parameters<typeof returnsByAssetClass>[0]["holdings"][number][],
+    key: string,
+  ) =>
+    returnsByAssetClass({
+      currency: "EUR",
+      holdings: [...holdings],
+      valuationDate: "2024-01-01",
+    }).classes.find((entry) => entry.key === key)!;
+
+  test("una clase que solo existe como fracción de un mixto no mide nada propio", () => {
+    const cash = classOf([pureEquityFund, mixedPensionPlan], "cash");
+
+    expect(cash.value.amountMinor).toBe(5_200);
+    expect(cash.measuredValue.amountMinor).toBe(0);
+    expect(cash.attributedOnly).toBe(true);
+  });
+
+  test("una clase de holdings enteramente suyos mide todo su valor", () => {
+    const equityOnly = classOf([pureEquityFund], "equity");
+
+    expect(equityOnly.measuredValue).toEqual(equityOnly.value);
+    expect(equityOnly.attributedOnly).toBe(false);
+  });
+
+  test("una clase con parte propia y parte prestada mide solo la propia", () => {
+    // Renta variable recibe el fondo puro (100.000) y el 87% del plan (34.800).
+    const equity = classOf([pureEquityFund, mixedPensionPlan], "equity");
+
+    expect(equity.value.amountMinor).toBe(134_800);
+    expect(equity.measuredValue.amountMinor).toBe(100_000);
+    expect(equity.attributedOnly).toBe(false);
+  });
+
+  test("un holding sin clase resoluble se mide entero: `unclassified` no es un préstamo", () => {
+    const unclassifiedClass = classOf(
+      [{ ...pureEquityFund, assetClass: unknown }],
+      UNCLASSIFIED_ASSET_CLASS_KEY,
+    );
+
+    expect(unclassifiedClass.measuredValue).toEqual(unclassifiedClass.value);
+    expect(unclassifiedClass.attributedOnly).toBe(false);
+  });
+
+  test("el remanente `other` de un mixto es prestado, como cualquier otra fracción", () => {
+    const other = classOf(
+      [{ ...mixedPensionPlan, assetClass: classified({ equity: "0.7" }) }],
+      OTHER_ASSET_CLASS_KEY,
+    );
+
+    expect(other.attributedOnly).toBe(true);
+  });
+
+  test("una clase sin valor hoy no se marca como prestada: no afirma nada de hoy", () => {
+    // Vendida entera: `closed` ya la repliega, y una pureza sobre cero valor
+    // sería una afirmación sobre un valor que no multiplica nada.
+    const sold = classOf(
+      [
+        {
+          assetClass: classified({ bond: "0.4", equity: "0.6" }),
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01"), sell("10", "120", "2023-09-01")],
+        },
+      ],
+      "bond",
+    );
+
+    expect(sold.closed).toBe(true);
+    expect(sold.attributedOnly).toBe(false);
   });
 });

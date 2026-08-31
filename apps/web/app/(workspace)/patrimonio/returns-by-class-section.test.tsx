@@ -48,14 +48,18 @@ function marketView(overrides: {
 const result: AssetClassReturnsViewResult = {
   classes: [
     {
+      attributedOnly: false,
       closed: false,
       key: "equity",
+      measuredValue: { amountMinor: 150_000, currency: EUR },
       value: { amountMinor: 150_000, currency: EUR },
       view: marketView({ irrRate: 0.082, totalReturnRatio: 0.5, twrRate: 0.071 }),
     },
     {
+      attributedOnly: false,
       closed: false,
       key: "unclassified",
+      measuredValue: { amountMinor: 40_000, currency: EUR },
       value: { amountMinor: 40_000, currency: EUR },
       view: marketView({ irrRate: null, totalReturnRatio: 0.1, twrRate: null }),
     },
@@ -104,8 +108,10 @@ describe("una TWR ausente dice por qué (#1457)", () => {
         returns={{
           classes: [
             {
+              attributedOnly: false,
               closed: false,
               key: "commodity",
+              measuredValue: { amountMinor: 99_900, currency: EUR },
               value: { amountMinor: 99_900, currency: EUR },
               view: {
                 ...marketView({ irrRate: 0.05, totalReturnRatio: 0.1, twrRate: null }),
@@ -141,8 +147,10 @@ describe("una clase cerrada no compite con las vivas (#1456)", () => {
     classes: [
       ...result.classes,
       {
+        attributedOnly: false,
         closed: true,
         key: "crypto",
+        measuredValue: { amountMinor: 0, currency: EUR },
         value: { amountMinor: 0, currency: EUR },
         view: marketView({ irrRate: -0.971, totalReturnRatio: -0.075, twrRate: null }),
       },
@@ -182,8 +190,10 @@ describe("una clase cerrada no compite con las vivas (#1456)", () => {
     const losing: AssetClassReturnsViewResult = {
       classes: [
         {
+          attributedOnly: false,
           closed: false,
           key: "commodity",
+          measuredValue: { amountMinor: 40_000, currency: EUR },
           value: { amountMinor: 40_000, currency: EUR },
           view: marketView({ irrRate: -0.31, totalReturnRatio: -0.6, twrRate: -0.28 }),
         },
@@ -226,5 +236,73 @@ describe("una clase cerrada no compite con las vivas (#1456)", () => {
 
     expect(html).not.toContain("<details");
     expect(html).not.toContain("Clases cerradas");
+  });
+});
+
+describe("una clase sin producto propio no promete medición (#1458)", () => {
+  // El caso real: 1.312 € de «efectivo» que son la manga de tesorería de dos
+  // planes mixtos, presentados con un +10,4% que era el de los planes.
+  const borrowed: AssetClassReturnsViewResult = {
+    classes: [
+      result.classes[0]!,
+      {
+        attributedOnly: true,
+        closed: false,
+        key: "cash",
+        measuredValue: { amountMinor: 0, currency: EUR },
+        value: { amountMinor: 131_200, currency: EUR },
+        view: {
+          ...marketView({ irrRate: null, totalReturnRatio: null, twrRate: null }),
+          cagr: null,
+          irr: null,
+          twr: null,
+        },
+      },
+    ],
+    coverage: result.coverage,
+  };
+
+  const html = (): string =>
+    renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={borrowed} />,
+    );
+
+  test("la fila lleva su marca y explica en el pie qué significa", () => {
+    expect(html()).toContain("atribuida");
+    expect(html()).toContain("Ni un euro de esta clase está en un producto suyo");
+  });
+
+  test("la fila prestada no imprime ninguna de las tres tasas", () => {
+    const row = html().split('<li class="returnsClassRow"')[2]!.split("</li>")[0]!;
+    const measures = row.split('<dl class="returnsClassMeasures">')[1]!;
+
+    expect(row).toContain("Efectivo");
+    expect(measures).not.toContain(" %");
+    expect(measures.match(/—/g)).toHaveLength(3);
+    // Valor y peso sobreviven: el reparto de euros sí se sabe.
+    expect(row.split("<dl")[0]).toContain("<b>1312");
+  });
+
+  test("el guion de una clase prestada dice ese motivo, no el de una TWR corta", () => {
+    const row = html().split('<li class="returnsClassRow"')[2]!.split("</li>")[0]!;
+
+    expect(row).not.toContain("Sin TWR");
+    expect(row).toContain("fracción de productos mixtos");
+  });
+
+  test("la sección solo cambia de titular; la clase con producto propio sigue igual", () => {
+    const measuredRow = html().split('<li class="returnsClassRow"')[1]!;
+
+    expect(measuredRow).toContain("+50,0 %");
+    expect(measuredRow).not.toContain("atribuida");
+  });
+
+  test("sin ninguna clase prestada, ni la marca ni su nota aparecen", () => {
+    const plain = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={result} />,
+    );
+
+    expect(plain).not.toContain("atribuida");
+    expect(plain).not.toContain("producto suyo");
   });
 });

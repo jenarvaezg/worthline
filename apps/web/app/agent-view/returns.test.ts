@@ -182,6 +182,35 @@ describe("buildPortfolioReturns byAssetClass", () => {
     expect(classes.find((c) => c.key === "crypto")?.closed).toBe(true);
     expect(classes.find((c) => c.key === "equity")).not.toHaveProperty("closed");
   });
+
+  test("marca la clase que no tiene producto suyo, y dice cuánto de ella es propio (#1458)", async () => {
+    // Un plan mixto 87/13 y un fondo puro: el efectivo del patrimonio existe solo
+    // como manga dentro del plan, así que su rentabilidad es la del plan.
+    const returns = await portfolioReturns({
+      holdings: [
+        {
+          assetClass: { breakdown: { cash: "0.13", equity: "0.87" }, kind: "classified" },
+          currentValueMinor: 40_000,
+          id: "plan",
+        },
+        { assetClass: equityClass, currentValueMinor: 100_000, id: "fondo" },
+      ],
+      operations: {
+        fondo: [buy("fondo", "10", "80", "2023-01-01")],
+        plan: [buy("plan", "10", "30", "2023-01-01")],
+      },
+      valuationDate: "2024-06-01",
+    });
+
+    const classes = returns!.byAssetClass!.classes;
+    const cash = classes.find((c) => c.key === "cash")!;
+    expect(cash.attributedOnly).toBe(true);
+    expect(cash.measuredValue.amountMinor).toBe(0);
+    // Renta variable presta parte, pero tiene 100.000 € propios que sí midió.
+    const equity = classes.find((c) => c.key === "equity")!;
+    expect(equity).not.toHaveProperty("attributedOnly");
+    expect(equity.measuredValue.amountMinor).toBe(100_000);
+  });
 });
 
 /**
