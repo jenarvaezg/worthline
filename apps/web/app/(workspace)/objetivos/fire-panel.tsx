@@ -34,12 +34,14 @@ import type {
   FireSustainableSpending,
   SavingsCoherence,
   ScopeFireResult,
+  SpendingDebtServiceCoherence,
 } from "@worthline/domain";
 import {
   describeSavingsDivergence,
   formatMoneyMinorPrivacy,
   isManualFireReturn,
   monthlySavingsCapacityForFire,
+  spendingDebtServiceSustainableNote,
 } from "@worthline/domain";
 import Link from "next/link";
 import {
@@ -103,6 +105,11 @@ export interface FirePanelProps {
    */
   retirementProfile: FireRetirementProfile | null;
   savingsCoherence: SavingsCoherence | null;
+  /**
+   * El gasto declarado contra las cuotas vigentes (#1520). La tarjeta de gasto
+   * sostenible nombra con esto el supuesto bajo el que habla; no mueve ninguna cifra.
+   */
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
   /** El ámbito y la URL que los botones del ofrecimiento necesitan para escribir. */
   scopeId: string | null;
   currentUrl: string;
@@ -168,6 +175,7 @@ export function FirePanel({
   coastTickFraction,
   currency,
   currentUrl,
+  debtServiceCoherence,
   fireLevelRail,
   fireProjection,
   fireResult,
@@ -238,6 +246,13 @@ export function FirePanel({
   // El titular solo se troca si hay una respuesta con la que trocarlo: sin tasa de
   // retirada no hay gasto sostenible, y un encabezado que promete «cuánto puedes
   // gastar» sobre una tarjeta ausente es peor que no cambiar nada.
+  // El supuesto bajo el que habla el gasto sostenible (#1520). Calla mientras hay
+  // supuestos sin guardar, como el ofrecimiento de arriba: la glosa juzga lo
+  // DECLARADO, y a media edición todavía no hay declaración nueva que juzgar.
+  const debtServiceNote =
+    debtServiceCoherence && !previewing
+      ? spendingDebtServiceSustainableNote(debtServiceCoherence, currency, privacyMode)
+      : null;
   const heading = firePanelHeading({ ordinary: sustainableCopy !== null, previewing });
   const coastProgress = fireResult
     ? coastProgressPercent(
@@ -379,6 +394,17 @@ export function FirePanel({
                     {sustainableCopy.depletionAbsence}{" "}
                     <a href="#supuestos">Tus supuestos</a>
                   </p>
+                ) : null}
+
+                {/* El supuesto del servicio de deuda (#1520): la cuota sale de esta
+                    cifra y no se ha restado. Antes de la nota de exclusiones porque
+                    habla de la cifra grande, no de lo que se quedó fuera de ella.
+
+                    La frase la escribe el dominio, como la del ahorro medido de más
+                    abajo: la tarjeta de renta pasiva dice lo mismo sobre el mismo
+                    hecho, y dos redacciones acabarían discrepando. */}
+                {debtServiceNote ? (
+                  <p className="objetivosSubNote">{debtServiceNote}</p>
                 ) : null}
 
                 {sustainableCopy.exclusionNote ? (

@@ -66,6 +66,10 @@ import {
 } from "./data-quality-savings-coherence";
 import { collectSourceFreshnessSignals } from "./data-quality-source-freshness";
 import {
+  collectSpendingDebtServiceSignals,
+  type DataQualitySpendingDebtServiceInput,
+} from "./data-quality-spending-debt-service";
+import {
   collectTransferIntegritySignals,
   type DataQualityTransferIntegrityInput,
 } from "./data-quality-transfer-integrity";
@@ -118,6 +122,7 @@ export {
 export { PORTFOLIO_DECLARED_VS_DERIVED_CODE } from "./data-quality-portfolio-reconciliation";
 export type { DataQualityPriceFreshness } from "./data-quality-price-freshness";
 export { SAVINGS_DECLARED_VS_MEASURED_CODE } from "./data-quality-savings-coherence";
+export { SPENDING_VS_DEBT_SERVICE_CODE } from "./data-quality-spending-debt-service";
 export { TRANSFER_PAIR_BROKEN_CODE } from "./data-quality-transfer-integrity";
 export type { DataQualityTrashedHolding } from "./data-quality-trashed-balance";
 export { TRASHED_WITH_BALANCE_CODE } from "./data-quality-trashed-balance";
@@ -155,6 +160,7 @@ export interface CollectDataQualitySignalsInput
     DataQualityInstrumentIdentityInput,
     DataQualityCostBasisInput,
     DataQualitySavingsCoherenceInput,
+    DataQualitySpendingDebtServiceInput,
     DataQualityPortfolioReconciliationInput,
     DataQualityTransferIntegrityInput,
     DataQualityHistoryCoverageInput,
@@ -178,6 +184,7 @@ const DATA_QUALITY_COLLECTORS: readonly DataQualityCollector<CollectDataQualityS
     collectInstrumentIdentitySignals,
     collectCostBasisSignals,
     collectSavingsCoherenceSignals,
+    collectSpendingDebtServiceSignals,
     collectPortfolioReconciliationSignals,
     collectTransferIntegritySignals,
     collectHistoryCoverageSignals,

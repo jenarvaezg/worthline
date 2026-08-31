@@ -343,9 +343,12 @@ export type {
 export {
   debtAccrualAtDate,
   debtBalanceAtDate,
+  debtServiceAtDate,
   effectiveAmortizationPlan,
   storedBalanceGovernsDebtFigure,
 } from "./debt-balance";
+export type { MonthlyDebtService } from "./debt-service";
+export { monthlyDebtServiceAtDate } from "./debt-service";
 export type { DecimalString, WeightedDestination } from "./decimal";
 export {
   addUnits,
@@ -1143,6 +1146,22 @@ export {
   createNetWorthSnapshot,
   deriveFramedSnapshotDeltas,
 } from "./snapshot-types";
+export type {
+  ScopeDebtService,
+  ScopeMonthlyDebtServiceInput,
+  SpendingDebtServiceCoherence,
+  SpendingDebtServiceDeclaration,
+  SpendingDebtServiceState,
+} from "./spending-debt-service";
+export {
+  assessSpendingDebtService,
+  describeSpendingDebtServiceGap,
+  SPENDING_DEBT_SERVICE_MATERIAL_RATIO,
+  scopeMonthlyDebtService,
+  spendingDebtServiceCoverageNote,
+  spendingDebtServiceDeclaration,
+  spendingDebtServiceSustainableNote,
+} from "./spending-debt-service";
 export type {
   ColumnResolution,
   StatementBrokerAdapter,

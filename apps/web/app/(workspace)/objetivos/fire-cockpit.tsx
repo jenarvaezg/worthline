@@ -38,6 +38,7 @@ import type {
   MonthlySavingsSuggestion,
   SavingsCoherence,
   ScopeFireResult,
+  SpendingDebtServiceCoherence,
 } from "@worthline/domain";
 import {
   fireCoastArrival,
@@ -83,6 +84,8 @@ export interface FireCockpitProps {
   /** El borrador inicial: exactamente lo guardado, tal como lo pinta el formulario. */
   savedDraft: FireAssumptionDraft;
   savingsCoherence: SavingsCoherence | null;
+  /** El gasto declarado contra las cuotas vigentes (#1520): solo se nombra, no resta. */
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
   savingsSuggestion: MonthlySavingsSuggestion;
   scopeId: string | null;
   seededFromPlan: boolean;
@@ -170,6 +173,7 @@ export function FireCockpit(props: FireCockpitProps) {
         coastTickFraction={coastTick}
         currency={props.currency}
         currentUrl={props.currentUrl}
+        debtServiceCoherence={props.debtServiceCoherence}
         fireLevelRail={levelRail}
         fireProjection={projection}
         fireResult={result}

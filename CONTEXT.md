@@ -844,6 +844,27 @@ _Avoid_: net savings (a different figure — the residual band of the **delta
 breakdown**, computed from snapshots), savings capacity (the user's declaration),
 savings rate (a ratio).
 
+**Debt service**:
+What the live amortizable debts of a scope cost per month — the sum of their cuotas in
+effect today, weighted by the scope's ownership share, read off the **cuadro** and never
+re-simulated (ADR 0099). The **flow** side of a debt, as against the outstanding balance
+(its **stock**), which keeps netting against FIRE capital in its own rung. It is a
+witness and never a subtraction: it is crossed against the **spending-includes-debt
+declaration** as a **data-quality signal**, and no €/month figure on screen is reduced by
+it. A `revolving` / `informal` debt has none — it declares a balance on a date, not a
+schedule — and that absence is "unknown", not zero.
+_Avoid_: cuota (one payment of one debt, not the scope's monthly total), debt burden,
+DTI.
+
+**Spending-includes-debt declaration**:
+The user's answer to whether their declared monthly spending already covers their **debt
+service** — `true`, `false`, or **absent**, and absent is a real state, not a `false`
+(ADR 0099, ADR 0074). It decides nothing arithmetically and everything semantically: the
+same coverage percentage means "you already live off your assets" or "you are a third
+short" depending on it, so while it is absent the passive-income and sustainable-spending
+cards say out loud that they do not know.
+_Avoid_: includes mortgage (the debt service is not only the mortgage).
+
 **Achievement badge**:
 The "FIRE alcanzado" / "Coast FIRE alcanzado" mark on the home glance and the
 /objetivos hero. A claim about the future made from today's capital, so it answers to

@@ -201,6 +201,25 @@ export function parseFireConfigFormStrict(
     }
   }
 
+  // ¿El gasto mensual declarado incluye el servicio de deuda? (#1520, ADR 0099.)
+  //
+  // TRES estados, y el que importa es el tercero: `undefined` = sin declarar. Un
+  // booleano de dos estados escribiría «no incluye» por omisión y la app decidiría por
+  // el usuario qué significa el porcentaje de cobertura que le está imprimiendo — la
+  // misma trampa del formulario parcial que degrada un flag con `get(campo) === "on"`.
+  // Por eso es un `select` de tres opciones y no una casilla: un valor que no
+  // reconocemos se lee como «sin declarar», igual que en el plan de jubilación de
+  // abajo, en vez de tumbar el guardado entero por una elección de una lista.
+  const spendingIncludesDebtRaw = (
+    (formData.get("monthlySpendingIncludesDebtService") as string) ?? ""
+  ).trim();
+  const monthlySpendingIncludesDebtService =
+    spendingIncludesDebtRaw === "yes"
+      ? true
+      : spendingIncludesDebtRaw === "no"
+        ? false
+        : undefined;
+
   // La declaración sobre el propio plan (#1428): vacío = sin contestar, y ese es el
   // único estado en el que la pantalla se atreve a ofrecer el cambio. Un valor que no
   // reconocemos se lee como «sin contestar» en vez de rechazar el formulario entero:
@@ -244,6 +263,9 @@ export function parseFireConfigFormStrict(
       immobilizedCountsAsFireCapital,
       ordinaryRetirementAge,
       ...(hasFinalAge ? { capitalLastsUntilAge: finalAgeParsed } : {}),
+      ...(monthlySpendingIncludesDebtService === undefined
+        ? {}
+        : { monthlySpendingIncludesDebtService }),
       ...(retirementPlan === undefined ? {} : { retirementPlan }),
       ...(tierRealReturns ? { tierRealReturns } : {}),
     },

@@ -572,6 +572,9 @@ const fireScopeConfigSchema = reproduces<FireScopeConfig>()(
     retirementPlan: fireRetirementPlanSchema.optional(),
     ordinaryRetirementAge: z.number().optional(),
     capitalLastsUntilAge: z.number().optional(),
+    /** ¿El gasto declarado incluye la cuota? (#1520.) Tres estados: ausente = sin
+     *  declarar, y traerlo de vuelta como `false` sería inventar la respuesta. */
+    monthlySpendingIncludesDebtService: z.boolean().optional(),
   }),
 );
 

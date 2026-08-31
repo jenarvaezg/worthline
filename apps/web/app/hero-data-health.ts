@@ -133,6 +133,10 @@ const NON_FIGURE_CATEGORIES: ReadonlySet<DataQualityCategory> = new Set([
   // actually moves; here it would push a real doubt about today's figure off the
   // hero. The agent view keeps it in the shared inventory.
   "savings_coherence",
+  // El gasto declarado contra las cuotas vigentes (#1520) es hermano del anterior:
+  // pone en duda las dos cifras de €/mes de /objetivos, nunca el patrimonio de hoy.
+  // Su superficie humana son esas dos tarjetas, que ya nombran el supuesto.
+  "spending_coherence",
   // A half-written traspaso (#1519) corrupts a COST BASIS, never a market value:
   // today's headline is exactly the same figure with the pair broken or whole. It
   // is a real corruption and it stays `high` in the shared inventory, where the
@@ -250,6 +254,10 @@ function fixSurface(
       // capacity is typed in the FIRE form, which since #1450 sits beside the
       // figures it governs — that is where the gap gets settled.
       return { href: "/objetivos#supuestos", label: "Revisar ahorro" };
+    case "spending_coherence":
+      // El mismo formulario, otro campo (#1520): el gasto mensual y la declaración de
+      // si incluye las cuotas están uno debajo del otro.
+      return { href: "/objetivos#supuestos", label: "Revisar gasto" };
     case "history_coverage":
     case "transfer_integrity":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.

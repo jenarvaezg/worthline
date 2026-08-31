@@ -209,3 +209,21 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     ).toBeNull();
   });
 });
+
+describe("la declaración del servicio de deuda no mueve ninguna cifra (#1520)", () => {
+  it("las tres respuestas producen exactamente el mismo gasto sostenible", () => {
+    const undeclared = fireSustainableSpending(result())!;
+    const included = fireSustainableSpending(
+      result({ config: { monthlySpendingIncludesDebtService: true } }),
+    )!;
+    const excluded = fireSustainableSpending(
+      result({ config: { monthlySpendingIncludesDebtService: false } }),
+    )!;
+
+    // La opción de RESTAR la cuota se dejó fuera a propósito (ADR 0099): este ticket
+    // nombra el supuesto y mide el testigo. Si alguna vez una de estas tres cifras se
+    // separa de las otras, es que la resta entró por la puerta de atrás.
+    expect(included).toEqual(undeclared);
+    expect(excluded).toEqual(undeclared);
+  });
+});

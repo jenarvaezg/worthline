@@ -119,6 +119,23 @@ export interface FireScopeConfig {
    * voz alta.
    */
   capitalLastsUntilAge?: number;
+  /**
+   * ¿El gasto mensual declarado incluye el servicio de deuda —la cuota de la hipoteca
+   * y de los préstamos— o no? (#1520, ADR 0099.)
+   *
+   * **Tres estados**, y `undefined` = sin declarar es el importante: el mismo 114,9 %
+   * de cobertura del gasto significa «ya vives de tus activos» o «te falta un tercio»
+   * según esta respuesta, y hasta que exista la pantalla no sabe cuál está imprimiendo.
+   * Sin declarar, ninguna cifra cambia **y las tarjetas lo dicen**; un booleano de dos
+   * estados escribiría «no incluye» por omisión, que es justo la invención que este
+   * campo viene a matar (ADR 0074, y la trampa del formulario parcial que degrada un
+   * flag con `get(campo) === "on"`).
+   *
+   * Se lee por `spendingDebtServiceDeclaration`, nunca a pelo. No entra en ninguna
+   * aritmética: la cuota se mide y se cruza (ADR 0075), y restarla del gasto sostenible
+   * se dejó fuera a propósito.
+   */
+  monthlySpendingIncludesDebtService?: boolean;
 }
 
 export interface FireResult {

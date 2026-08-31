@@ -283,3 +283,46 @@ describe("parseFireConfigFormStrict — el perfil de jubilación ordinaria (#142
     }
   });
 });
+
+describe("parseFireConfigFormStrict — ¿el gasto incluye la cuota? (#1520)", () => {
+  it("guarda la declaración en los dos sentidos", () => {
+    expect(
+      parseFireConfigFormStrict(fireForm({ monthlySpendingIncludesDebtService: "yes" })),
+    ).toMatchObject({
+      command: { monthlySpendingIncludesDebtService: true },
+      ok: true,
+    });
+    expect(
+      parseFireConfigFormStrict(fireForm({ monthlySpendingIncludesDebtService: "no" })),
+    ).toMatchObject({
+      command: { monthlySpendingIncludesDebtService: false },
+      ok: true,
+    });
+  });
+
+  it("un formulario que no habla del campo NO lo degrada a «no incluye»", () => {
+    // El estado que este ticket viene a proteger: el silencio es «sin declarar», no
+    // una respuesta. Con un booleano de dos estados, cualquier guardado que no
+    // trajera el campo declararía por el usuario que su gasto no incluye la hipoteca.
+    const result = parseFireConfigFormStrict(fireForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.monthlySpendingIncludesDebtService).toBeUndefined();
+      expect("monthlySpendingIncludesDebtService" in result.command).toBe(false);
+    }
+  });
+
+  it("un valor desconocido se lee como «sin declarar» y no tumba el guardado", () => {
+    for (const value of ["", "on", "true", "SI"]) {
+      const result = parseFireConfigFormStrict(
+        fireForm({ monthlySpendingIncludesDebtService: value }),
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.command.monthlySpendingIncludesDebtService).toBeUndefined();
+      }
+    }
+  });
+});
