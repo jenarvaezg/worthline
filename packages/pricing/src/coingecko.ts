@@ -39,10 +39,7 @@ export const coingeckoProvider: PriceProvider = {
       `${coingeckoBaseUrl()}/simple/price?ids=` +
       encodeURIComponent(id) +
       "&vs_currencies=eur";
-    const res = await fetchHttpWithRetry(url, {
-      headers: coingeckoHeaders(),
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetchHttpWithRetry(url, { headers: coingeckoHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, { eur?: number }>;
     const eur = data?.[id]?.eur;

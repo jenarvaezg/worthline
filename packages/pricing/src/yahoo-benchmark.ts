@@ -1,8 +1,10 @@
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 import type { BenchmarkPricePoint } from "./ine-cpi";
 import { decimalFromNumber } from "./yahoo";
 
 const YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/";
 const MONTHLY_RANGE = "10y";
+const MONTHLY_FETCH_TIMEOUT_MS = 15_000;
 
 interface YahooMonthlyChartResponse {
   chart?: {
@@ -44,12 +46,17 @@ export async function fetchYahooMonthlyBenchmark(
     fetchImpl?: typeof fetch;
   } = {},
 ): Promise<BenchmarkPricePoint[]> {
-  const fetchImpl = options.fetchImpl ?? fetch;
   const url = `${YAHOO_CHART_URL}${encodeURIComponent(symbol)}?interval=1mo&range=${MONTHLY_RANGE}`;
-  const res = await fetchImpl(url, {
-    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
-    signal: AbortSignal.timeout(15_000),
-  });
+  const res = await fetchHttpWithRetry(
+    url,
+    { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } },
+    {
+      // A 10-year monthly series is a bigger payload than a spot quote, so it
+      // keeps its own, wider deadline instead of the shared default.
+      timeoutMs: MONTHLY_FETCH_TIMEOUT_MS,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Yahoo responded with ${res.status}`);
   }

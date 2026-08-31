@@ -1,5 +1,6 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { createControlPlaneStore, type TenancyDirectory } from "@worthline/db";
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import type { TenancyDirectory } from "@worthline/db";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
 import { mcpSubjectRatePlan } from "./rate-limit";
 import { enforceMcpRateLimit } from "./rate-limit-store";
@@ -360,37 +361,29 @@ async function envResolveWorkspace(
   claims: McpTokenClaims,
   env: Env,
 ): Promise<McpWorkspaceRef | null> {
-  const url = env["WORTHLINE_CONTROL_PLANE_DB_URL"]?.trim();
-  if (!url) return null;
-  const authToken = env["WORTHLINE_DB_AUTH_TOKEN"];
-  const controlPlane: Pick<
-    TenancyDirectory,
-    "findUserByEmail" | "listWorkspacesForUser"
-  > & { close(): void } = await createControlPlaneStore({
-    url,
-    ...(authToken ? { authToken } : {}),
-  });
-  try {
-    const user = await controlPlane.findUserByEmail(claims.email);
-    if (!user) return null;
-    const workspaces = await controlPlane.listWorkspacesForUser(user.id);
-    if (workspaces.length > 1) {
-      console.warn("[mcp-auth] reject: caller has multiple granted workspaces", {
-        workspaceCount: workspaces.length,
-      });
-    }
-    const workspace = selectSingleMcpWorkspace(
-      workspaces.map((entry) => ({
-        workspaceId: entry.id,
-        dbUrl: entry.dbUrl,
-        dbAuthToken: entry.dbAuthToken,
-      })),
-    );
-    if (!workspace) return null;
-    return workspace;
-  } finally {
-    controlPlane.close();
-  }
+  return withOptionalControlPlaneStore<
+    McpWorkspaceRef | null,
+    Pick<TenancyDirectory, "findUserByEmail" | "listWorkspacesForUser">
+  >(
+    async (controlPlane) => {
+      const user = await controlPlane.findUserByEmail(claims.email);
+      if (!user) return null;
+      const workspaces = await controlPlane.listWorkspacesForUser(user.id);
+      if (workspaces.length > 1) {
+        console.warn("[mcp-auth] reject: caller has multiple granted workspaces", {
+          workspaceCount: workspaces.length,
+        });
+      }
+      return selectSingleMcpWorkspace(
+        workspaces.map((entry) => ({
+          workspaceId: entry.id,
+          dbUrl: entry.dbUrl,
+          dbAuthToken: entry.dbAuthToken,
+        })),
+      );
+    },
+    { env },
+  );
 }
 
 /**

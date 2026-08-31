@@ -91,9 +91,12 @@ describe("fetchYahooMonthlyBenchmark", () => {
   });
 
   test("throws on an HTTP error so the cron records the series as failed", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
+    // A persistent stub: 429 is transient, so the shared retry (#1694) spends its
+    // three attempts first. The series still fails loudly — never an empty row set.
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 429 } as Response);
 
     await expect(fetchYahooMonthlyBenchmark("EUNL.DE")).rejects.toThrow(/429/);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   test("an HTML anti-bot page is a failure, never a parsed row (#1354)", async () => {

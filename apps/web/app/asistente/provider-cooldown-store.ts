@@ -1,19 +1,13 @@
 import {
-  createControlPlaneStore,
-  type ProviderCooldown,
-  type UsageLimits,
-} from "@worthline/db";
+  type ControlPlaneTarget,
+  controlPlaneTargetFromEnv,
+  withControlPlaneStore,
+} from "@web/control-plane-store";
+import type { ProviderCooldown, UsageLimits } from "@worthline/db";
 
 export type ProviderCooldownRead =
   | { mode: "local" }
   | { mode: "hosted"; deploymentKey: string; cooldowns: ProviderCooldown[] };
-
-function controlPlaneConfig(): { url: string; authToken?: string } | null {
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"]?.trim();
-  if (!url) return null;
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"]?.trim();
-  return { url, ...(authToken ? { authToken } : {}) };
-}
 
 const CONTROL_PLANE_TIMEOUT_MS = 1_000;
 
@@ -60,29 +54,31 @@ export function providerCooldownDeploymentKey(
   return key;
 }
 
+/**
+ * The shared opener (#1694) plus this store's own deadline: the cooldown read
+ * sits in front of every chat turn, so a slow control plane must lose the race
+ * rather than hold the turn. The timeout wraps open AND run — the whole task,
+ * exactly as before the helper existed.
+ */
 async function runWithControlPlane<T>(
-  config: { url: string; authToken?: string },
+  target: ControlPlaneTarget,
   operation: "read" | "write",
   run: (
     store: Pick<UsageLimits, "readProviderCooldowns" | "recordProviderCooldown">,
   ) => Promise<T>,
 ): Promise<T> {
-  const task = (async () => {
-    const controlPlane = await createControlPlaneStore(config);
-    try {
-      return await run(controlPlane);
-    } finally {
-      controlPlane.close();
-    }
-  })();
+  const task = withControlPlaneStore<
+    T,
+    Pick<UsageLimits, "readProviderCooldowns" | "recordProviderCooldown">
+  >(run, { target });
   return withProviderCooldownTimeout(operation, task);
 }
 
 export async function readProviderCooldowns(): Promise<ProviderCooldownRead> {
-  const config = controlPlaneConfig();
-  if (!config) return { mode: "local" };
+  const target = controlPlaneTargetFromEnv();
+  if (!target) return { mode: "local" };
   const deploymentKey = providerCooldownDeploymentKey();
-  return runWithControlPlane(config, "read", async (controlPlane) => {
+  return runWithControlPlane(target, "read", async (controlPlane) => {
     return {
       mode: "hosted" as const,
       deploymentKey,
@@ -95,10 +91,10 @@ export async function recordProviderCooldown(
   provider: string,
   cooldownUntil: Date,
 ): Promise<boolean> {
-  const config = controlPlaneConfig();
-  if (!config) return false;
+  const target = controlPlaneTargetFromEnv();
+  if (!target) return false;
   const deploymentKey = providerCooldownDeploymentKey();
-  return runWithControlPlane(config, "write", async (controlPlane) => {
+  return runWithControlPlane(target, "write", async (controlPlane) => {
     await controlPlane.recordProviderCooldown(
       deploymentKey,
       provider,

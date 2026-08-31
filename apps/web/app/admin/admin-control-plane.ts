@@ -3,24 +3,19 @@
  * `runActionWithStore`: opens a `ControlPlaneStore` from env, hands it to
  * `run`, and always closes it — unless a store is injected (tests), whose
  * lifecycle the caller owns instead.
+ *
+ * The WIDE twin of `app/control-plane-store.ts` (#1694): identical lifecycle,
+ * only the opener differs — this one is the sole surface from which exposure-
+ * catalog curation writes are reachable (#1123), which is exactly why it stays a
+ * separate module instead of an option on the shared helper. The env coordinates
+ * are read by the shared `requireControlPlaneTarget`, so there is still one
+ * place that knows how the control plane is addressed.
  */
+import { requireControlPlaneTarget } from "@web/control-plane-store";
 import { type AdminControlPlaneStore, createAdminControlPlaneStore } from "@worthline/db";
 
-function requireControlPlaneUrl(env: Record<string, string | undefined>): string {
-  const url = env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) {
-    throw new Error("WORTHLINE_CONTROL_PLANE_DB_URL is not configured.");
-  }
-  return url;
-}
-
 async function openControlPlaneStore(): Promise<AdminControlPlaneStore> {
-  const env = process.env;
-  const url = requireControlPlaneUrl(env);
-  return createAdminControlPlaneStore({
-    url,
-    ...(env.WORTHLINE_DB_AUTH_TOKEN ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN } : {}),
-  });
+  return createAdminControlPlaneStore(requireControlPlaneTarget("The admin surface"));
 }
 
 /**

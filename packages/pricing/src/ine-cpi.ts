@@ -1,3 +1,5 @@
+import { fetchHttpWithRetry } from "./fetch-with-retry";
+
 export const INE_SPANISH_CPI_TABLE_ID = "24077";
 
 export interface BenchmarkPricePoint {
@@ -18,11 +20,11 @@ interface IneSeries {
 export async function fetchSpanishCpi(
   options: { tableId?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<BenchmarkPricePoint[]> {
-  const fetchImpl = options.fetchImpl ?? fetch;
   const tableId = options.tableId ?? INE_SPANISH_CPI_TABLE_ID;
-  const res = await fetchImpl(
+  const res = await fetchHttpWithRetry(
     `https://servicios.ine.es/wstempus/js/es/DATOS_TABLA/${tableId}`,
-    { signal: AbortSignal.timeout(8000) },
+    undefined,
+    options.fetchImpl ? { fetchImpl: options.fetchImpl } : {},
   );
   if (!res.ok) throw new Error(`INE responded with ${res.status}`);
 

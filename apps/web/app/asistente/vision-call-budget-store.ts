@@ -1,8 +1,5 @@
-import {
-  createControlPlaneStore,
-  type UsageLimits,
-  type VisionCallUsage,
-} from "@worthline/db";
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import type { UsageLimits, VisionCallUsage } from "@worthline/db";
 
 /**
  * The vision-call fuse's persistence half (#1258). Two operations over the
@@ -19,26 +16,11 @@ import {
 
 type VisionMeterPort = Pick<UsageLimits, "readVisionCallUsage" | "recordVisionCalls">;
 
-function controlPlaneConfig(): { url: string; authToken?: string } | null {
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  if (!url) return null;
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
-  return { url, ...(authToken ? { authToken } : {}) };
-}
-
 /** Open the control-plane vision meter, hand it to `run`, and always close it. */
-async function withVisionMeter<T>(
+function withVisionMeter<T>(
   run: (store: VisionMeterPort) => Promise<T>,
 ): Promise<T | null> {
-  const config = controlPlaneConfig();
-  if (!config) return null;
-  const controlPlane: VisionMeterPort & { close(): void } =
-    await createControlPlaneStore(config);
-  try {
-    return await run(controlPlane);
-  } finally {
-    controlPlane.close();
-  }
+  return withOptionalControlPlaneStore<T, VisionMeterPort>(run);
 }
 
 /** The day's accumulated readings, or null when unmetered (local dev). */

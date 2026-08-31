@@ -16,6 +16,8 @@
  * added against the committed S0 fixtures (spike #161).
  */
 
+import { fetchHttpWithRetry } from "./fetch-with-retry";
+
 const NUMISTA_BASE = "https://api.numista.com/v3";
 
 /** Re-mint when fewer than this many ms remain, so a sync never races expiry. */
@@ -61,14 +63,16 @@ export async function mintNumistaToken(
     scope: "view_collection",
   });
 
-  const res = await fetch(`${NUMISTA_BASE}/oauth_token`, {
+  // Retriable: `client_credentials` carries no nonce and no timestamp, so a
+  // re-presented mint is the same request, not a stale one (contrast the signed
+  // Binance calls). A blip here otherwise fails a whole collection sync.
+  const res = await fetchHttpWithRetry(`${NUMISTA_BASE}/oauth_token`, {
     method: "POST",
     headers: {
       "Numista-API-Key": credentials.apiKey,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: body.toString(),
-    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {
@@ -140,10 +144,7 @@ async function numistaGet<T>(path: string, apiKey: string, token?: string): Prom
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const res = await fetch(`${NUMISTA_BASE}${path}`, {
-    headers,
-    signal: AbortSignal.timeout(8000),
-  });
+  const res = await fetchHttpWithRetry(`${NUMISTA_BASE}${path}`, { headers });
   if (!res.ok) {
     throw new Error(`Numista GET ${path} failed (HTTP ${res.status}).`);
   }

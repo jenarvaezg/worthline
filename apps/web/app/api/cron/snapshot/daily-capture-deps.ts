@@ -1,11 +1,11 @@
 import { buildMissedCaptureAlerts } from "@web/admin/missed-capture-alert";
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
+import { withControlPlaneStore } from "@web/control-plane-store";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import { openAuthorizedStore } from "@web/principal";
 import {
   type BenchmarkPriceCache,
-  createControlPlaneStore,
   type DailyCaptureFetchedPrice,
   type DailyCaptureLog,
   deriveEffectivePlan,
@@ -28,6 +28,14 @@ import {
 type CronEnv = Record<string, string | undefined>;
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
+/** The exact control-plane surface the daily capture touches — nothing wider. */
+type DailyCaptureControlPlane = Pick<TenancyDirectory, "listAllWorkspaces"> &
+  Pick<EntitlementDirectory, "readWorkspaceEntitlement"> &
+  Pick<MaintainerAlertLog, "raiseMaintainerAlert"> &
+  Pick<JobStore, "readLatestJobDedupeKey"> &
+  DailyCaptureLog &
+  BenchmarkPriceCache;
+
 /**
  * Wire the real dependencies for the daily-capture cron (ADR 0037, PRD #528).
  * The system actor lists every workspace from the control plane and opens each
@@ -44,25 +52,22 @@ export function buildDailyCaptureDeps(
   env: CronEnv = process.env,
   opts: { now?: string } = {},
 ): RunDailyCaptureDeps {
-  const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
   const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
   const now = opts.now ?? new Date().toISOString();
-  const openControlPlane = async (): Promise<
-    Pick<TenancyDirectory, "listAllWorkspaces"> &
-      Pick<EntitlementDirectory, "readWorkspaceEntitlement"> &
-      Pick<MaintainerAlertLog, "raiseMaintainerAlert"> &
-      Pick<JobStore, "readLatestJobDedupeKey"> &
-      DailyCaptureLog &
-      BenchmarkPriceCache & { close(): void }
-  > => {
-    if (!controlPlaneUrl) {
-      throw new Error("Daily capture requires WORTHLINE_CONTROL_PLANE_DB_URL.");
-    }
-    return createControlPlaneStore({
-      url: controlPlaneUrl,
-      ...(groupToken ? { authToken: groupToken } : {}),
+
+  /**
+   * The cron's control-plane port: every dep below is one short-lived connection
+   * (the pass spans hours; holding one open across it would be the leak). Before
+   * #1694 the open/try/finally block was written out seven times in this object;
+   * now each dep is one call to the shared helper.
+   */
+  const withCron = <T>(
+    run: (store: DailyCaptureControlPlane) => Promise<T>,
+  ): Promise<T> =>
+    withControlPlaneStore<T, DailyCaptureControlPlane>(run, {
+      env,
+      purpose: "Daily capture",
     });
-  };
 
   return {
     // The daily-capture job pins its capture instant at ENQUEUE time (S4 #1064) and
@@ -70,9 +75,8 @@ export function buildDailyCaptureDeps(
     // date/run-key/snapshot instant it deduped on (never the drain clock). Falls
     // back to the wall clock for a direct, un-queued call.
     now,
-    listAllWorkspaces: async () => {
-      const controlPlane = await openControlPlane();
-      try {
+    listAllWorkspaces: () =>
+      withCron(async (controlPlane) => {
         const workspaces = await controlPlane.listAllWorkspaces();
         return workspaces.map((w) => ({
           id: w.id,
@@ -85,39 +89,20 @@ export function buildDailyCaptureDeps(
               ? { authToken: groupToken }
               : {}),
         }));
-      } finally {
-        controlPlane.close();
-      }
-    },
+      }),
     // Premium gate (#1162): a workspace whose plan has lapsed to free keeps its
     // ingested data, but its connected sources are PAUSED — the cron skips their
     // sync so nothing new is ingested, while the snapshot still freezes
     // last-known values. Derived server-side from the entitlement row (S1).
-    shouldSyncConnectedSources: async (workspace) => {
-      const controlPlane = await openControlPlane();
-      try {
+    shouldSyncConnectedSources: (workspace) =>
+      withCron(async (controlPlane) => {
         const entitlement = await controlPlane.readWorkspaceEntitlement(workspace.id);
         return isPremiumIngestionAllowed(deriveEffectivePlan(entitlement, now));
-      } finally {
-        controlPlane.close();
-      }
-    },
-    isRunFinalized: async (runKey) => {
-      const controlPlane = await openControlPlane();
-      try {
-        return await controlPlane.hasDailyCaptureRun(runKey);
-      } finally {
-        controlPlane.close();
-      }
-    },
-    markRunFinalized: async (runKey, finalizedAt) => {
-      const controlPlane = await openControlPlane();
-      try {
-        await controlPlane.recordDailyCaptureRun(runKey, finalizedAt);
-      } finally {
-        controlPlane.close();
-      }
-    },
+      }),
+    isRunFinalized: (runKey) =>
+      withCron((controlPlane) => controlPlane.hasDailyCaptureRun(runKey)),
+    markRunFinalized: (runKey, finalizedAt) =>
+      withCron((controlPlane) => controlPlane.recordDailyCaptureRun(runKey, finalizedAt)),
     // Missed-pass detection (#1339). Vercel Cron is best-effort on the current
     // plan: whole passes are never invoked (evidence on the issue) and the loss is
     // invisible today. The baseline is the durable QUEUE, exactly the table that
@@ -125,41 +110,24 @@ export function buildDailyCaptureDeps(
     // dedupe key before doing anything else, so the newest key below this pass is
     // the last pass that actually arrived. The gap is raised as a maintainer alert
     // on the control plane — no new table, no new dependency, nothing user-facing.
-    readLatestInvokedPass: async (before) => {
-      const controlPlane = await openControlPlane();
-      try {
-        return await controlPlane.readLatestJobDedupeKey({
-          kind: "daily-capture",
-          before,
-        });
-      } finally {
-        controlPlane.close();
-      }
-    },
-    reportMissedPasses: async (report) => {
-      const controlPlane = await openControlPlane();
-      try {
+    readLatestInvokedPass: (before) =>
+      withCron((controlPlane) =>
+        controlPlane.readLatestJobDedupeKey({ kind: "daily-capture", before }),
+      ),
+    reportMissedPasses: (report) =>
+      withCron(async (controlPlane) => {
         // One alert per missed pass, keyed so a re-detection accumulates an
         // occurrence instead of minting a duplicate (see the alert contract).
         for (const alert of buildMissedCaptureAlerts(report)) {
           await controlPlane.raiseMaintainerAlert(alert);
         }
-      } finally {
-        controlPlane.close();
-      }
-    },
+      }),
     listBenchmarkSeries: async () => [
       { id: SPANISH_CPI_SERIES_ID },
       ...listMarketIndexSeriesIds().map((id) => ({ id })),
     ],
-    readBenchmarkPrices: async (seriesId) => {
-      const controlPlane = await openControlPlane();
-      try {
-        return await controlPlane.readBenchmarkPrices(seriesId);
-      } finally {
-        controlPlane.close();
-      }
-    },
+    readBenchmarkPrices: (seriesId) =>
+      withCron((controlPlane) => controlPlane.readBenchmarkPrices(seriesId)),
     fetchBenchmarkPrices: async (series) => {
       if (series.id === SPANISH_CPI_SERIES_ID) {
         return fetchSpanishCpi();
@@ -168,14 +136,8 @@ export function buildDailyCaptureDeps(
       if (!entry) return [];
       return fetchYahooMonthlyBenchmark(entry.yahooSymbol);
     },
-    saveBenchmarkPrices: async (seriesId, prices) => {
-      const controlPlane = await openControlPlane();
-      try {
-        await controlPlane.upsertBenchmarkPrices(seriesId, prices);
-      } finally {
-        controlPlane.close();
-      }
-    },
+    saveBenchmarkPrices: (seriesId, prices) =>
+      withCron((controlPlane) => controlPlane.upsertBenchmarkPrices(seriesId, prices)),
     // The cron is a `system` actor: it carries its own workspace coordinates
     // (per-workspace URL + scoped Turso JWT) rather than resolving them from a
     // request, and opens each workspace THROUGH the authorization port like

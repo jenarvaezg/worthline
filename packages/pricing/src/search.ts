@@ -1,6 +1,10 @@
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 
 import { coingeckoBaseUrl } from "./coingecko";
+import {
+  fetchHttpWithRetry,
+  TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT,
+} from "./fetch-with-retry";
 import { resolveFinectPlanSymbolByCode, resolveFinectProduct } from "./finect";
 
 /**
@@ -53,10 +57,14 @@ export async function searchYahooSymbols(query: string): Promise<SymbolCandidate
     const url =
       `${YAHOO_SEARCH_URL}?q=${encodeURIComponent(trimmed)}` +
       "&quotesCount=10&newsCount=0";
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
+    // Interactive path: the retry budget is deliberately smaller than the shared
+    // default (#1694). One extra shot rescues a blip; three would let a hanging
+    // Yahoo hold the search box for 3 × 8 s while the user waits on a list.
+    const res = await fetchHttpWithRetry(
+      url,
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+      { maxAttempts: 2 },
+    );
 
     if (!res.ok) return [];
 
@@ -129,10 +137,15 @@ async function probeYahooChartHasCloseSeries(symbol: string): Promise<boolean> {
   try {
     const url =
       `${YAHOO_CHART_URL}${encodeURIComponent(symbol)}` + "?interval=1d&range=5d";
-    const res = await fetch(url, {
-      headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(8000),
-    });
+    // NOT retried, on purpose: this probe only REORDERS results (a failed probe
+    // keeps Yahoo's own order), and it runs once per candidate — up to ten per
+    // search. Retrying decoration is the one thing that could make a search feel
+    // broken rather than merely unranked.
+    const res = await fetchHttpWithRetry(
+      url,
+      { headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" } },
+      { maxAttempts: 1 },
+    );
     if (!res.ok) return false;
 
     const data = (await res.json()) as YahooChartProbeResponse;
@@ -193,7 +206,13 @@ export async function searchCoinGeckoSymbols(query: string): Promise<SymbolCandi
 
   try {
     const url = `${coingeckoBaseUrl()}/search?query=${encodeURIComponent(trimmed)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    // A 429 is NOT retried here: the free CoinGecko tier answers it for a whole
+    // window, and a typing user who gets no suggestion just types again — three
+    // requests would only deepen the limit for the price fetches that matter.
+    const res = await fetchHttpWithRetry(url, undefined, {
+      maxAttempts: 2,
+      retryStatuses: TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT,
+    });
 
     if (!res.ok) return [];
 

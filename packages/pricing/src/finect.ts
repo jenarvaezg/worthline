@@ -1,4 +1,5 @@
 import { convertPriceToEur } from "./convert-to-eur";
+import { fetchHttpWithRetry } from "./fetch-with-retry";
 import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
 // One base URL covers both product sections: `/planes-pensiones/<slug>`
@@ -23,9 +24,9 @@ export interface FinectQuote {
 export const finectProvider: PriceProvider = {
   name: "finect",
   fetchPrice: async (ctx) => {
-    const res = await fetch(FINECT_PRODUCT_URL + encodeURIComponent(ctx.symbol), {
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetchHttpWithRetry(
+      FINECT_PRODUCT_URL + encodeURIComponent(ctx.symbol),
+    );
 
     if (!res.ok) {
       return { failed: true, reason: PRICE_FAILURE_REASONS.httpError(res.status) };
@@ -78,9 +79,7 @@ export async function resolveFinectProduct(symbol: string): Promise<
     })
   | null
 > {
-  const res = await fetch(FINECT_PRODUCT_URL + encodeURIComponent(symbol), {
-    signal: AbortSignal.timeout(8000),
-  });
+  const res = await fetchHttpWithRetry(FINECT_PRODUCT_URL + encodeURIComponent(symbol));
 
   if (!res.ok) return null;
 
@@ -109,14 +108,13 @@ export async function resolveFinectPlanSymbolByCode(
   const normalizedCode = code.trim().toUpperCase();
   if (!/^[A-Z]?\d{3,}$/.test(normalizedCode)) return null;
 
-  const res = await fetch(
+  const res = await fetchHttpWithRetry(
     `${FINECT_API_BASE_URL}products/collectives/plans/${encodeURIComponent(normalizedCode)}`,
     {
       headers: {
         Accept: "application/json",
         key: FINECT_API_KEY,
       },
-      signal: AbortSignal.timeout(8000),
     },
   );
 

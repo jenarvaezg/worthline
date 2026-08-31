@@ -19,6 +19,10 @@ import type { DistributiveOmit, TokenPosition } from "@worthline/domain";
 import { rungForWallet } from "./binance-rung";
 import { isBinanceFiatEur, resolveCoinGeckoId } from "./binance-symbols";
 import { coingeckoBaseUrl, coingeckoHeaders } from "./coingecko";
+import {
+  fetchHttpWithRetry,
+  TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT,
+} from "./fetch-with-retry";
 import { fetchPriceNow } from "./registry";
 
 /** A token position ready to persist — the store assigns its id + sourceId. */
@@ -157,10 +161,16 @@ export async function fetchCoinGeckoLogos(
     const url =
       `${coingeckoBaseUrl()}/coins/markets?vs_currency=eur&ids=` +
       `${coingeckoIds.join(",")}&per_page=${perPage}&page=1`;
-    const res = await fetch(url, {
-      headers: coingeckoHeaders(),
-      signal: AbortSignal.timeout(8000),
-    });
+    // A 429 is NOT retried: logos are cosmetic (the glyph fallback is fine) and
+    // the free CoinGecko tier shares its window with the price fetches of this
+    // very sync — spending three requests on an image would starve them.
+    const res = await fetchHttpWithRetry(
+      url,
+      {
+        headers: coingeckoHeaders(),
+      },
+      { retryStatuses: TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT },
+    );
     if (!res.ok) return {};
     const data = (await res.json()) as { id?: unknown; image?: unknown }[];
     const logos: Record<string, string | null> = {};

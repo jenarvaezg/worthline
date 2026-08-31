@@ -1,5 +1,6 @@
+import { withOptionalControlPlaneStore } from "@web/control-plane-store";
 import type { StoreTarget } from "@web/store-resolver";
-import { createControlPlaneStore, type EntitlementPlan } from "@worthline/db";
+import type { EntitlementDirectory, EntitlementPlan } from "@worthline/db";
 
 import { effectivePlanForTarget } from "./effective-plan";
 
@@ -24,23 +25,16 @@ export async function readEffectivePlan(
     return effectivePlanForTarget(target, null, nowIso);
   }
 
-  const url = process.env["WORTHLINE_CONTROL_PLANE_DB_URL"];
-  if (!url) {
-    return "free";
-  }
-
-  const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
   try {
-    const controlPlane = await createControlPlaneStore({
-      url,
-      ...(authToken ? { authToken } : {}),
-    });
-    try {
+    const plan = await withOptionalControlPlaneStore<
+      EntitlementPlan,
+      Pick<EntitlementDirectory, "readWorkspaceEntitlement">
+    >(async (controlPlane) => {
       const entitlement = await controlPlane.readWorkspaceEntitlement(target.workspaceId);
       return effectivePlanForTarget(target, entitlement, nowIso);
-    } finally {
-      controlPlane.close();
-    }
+    });
+    // No control plane configured → fail closed, exactly like a read that threw.
+    return plan ?? "free";
   } catch (error) {
     console.warn(
       `entitlements: could not read the plan for workspace ${target.workspaceId}; gating ingestion as free`,
