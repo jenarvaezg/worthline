@@ -90,7 +90,47 @@ describe("balance reconciliation — the destination's method comes from its ins
         newValueMinor: 60_000,
         occurrenceId: `${contribution.id}:2026-01-01`,
       }),
-    ).rejects.toThrow(/stored-value/i);
+      // The exact message of the METHOD guard: `/stored-value/i` alone also matches
+      // the destination-mismatch error two lines above it in the same function, so a
+      // broken contribution↔destination pairing would read as green.
+    ).rejects.toThrow(/Only stored-value destinations/);
+  });
+
+  test("rejects the real row: a CONNECTED collection with a rotten column", async () => {
+    await freshStore();
+    // The row as production has it — a live Numista source, whose rolled-up holding
+    // is `coin_collection` and whose value comes from its positions (ADR 0016) — with
+    // the stale `stored` the audit found on it. `assertStoredDestination` runs first
+    // inside `applyStoredContributionValue`, so the rejection under test is this
+    // guard's and not the connected-valuation guard behind it.
+    const { assetId } = await store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: "secret" }),
+      label: "Colección Numista",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+    });
+    await client.execute({
+      args: [assetId],
+      sql: "UPDATE assets SET valuation_method = 'stored' WHERE id = ?",
+    });
+
+    const contribution = await store.contributionPlan.createPlannedContribution({
+      amount: { mode: "money", value: 100_00 },
+      cadence: { dayOfMonth: 1, kind: "monthly" },
+      destinationHoldingId: assetId,
+      scopeId: "default",
+      startDate: "2026-01-01",
+    });
+
+    await expect(
+      store.command.applyStoredContributionValue({
+        assetId,
+        contributionId: contribution.id,
+        executedMinor: 100_00,
+        newValueMinor: 60_000,
+        occurrenceId: `${contribution.id}:2026-01-01`,
+      }),
+    ).rejects.toThrow(/Only stored-value destinations/);
   });
 
   test("still admits a cash account whose column was never backfilled", async () => {

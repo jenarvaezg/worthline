@@ -23,6 +23,7 @@ import {
   assertSnapshotHoldingsReconcile,
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
+  instrumentOfAsset,
   serializeWorkspaceExport,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
@@ -855,6 +856,7 @@ async function buildWorkspaceExport(
   const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
     const meta = investmentMetaByAsset.get(row.id);
     const anchors = anchorsByAsset.get(row.id) ?? [];
+    const classifiable = classifiableAssetFromRow(row);
 
     return {
       id: row.id,
@@ -870,14 +872,14 @@ async function buildWorkspaceExport(
           }),
       liquidityTier: row.liquidityTier,
       isPrimaryResidence: row.isPrimaryResidence === 1,
-      instrument:
-        row.instrument ??
-        defaultInstrumentForAssetType(row.type, row.isPrimaryResidence === 1),
-      // Derived from the instrument (#1680), never the `valuation_method` column:
-      // exporting the column would write a stale method into the file, and the
-      // import would read it straight back — a round-trip that fixes the error
-      // instead of curing it.
-      valuationMethod: valuationMethodOfAsset(classifiableAssetFromRow(row)),
+      // Both fields off the SAME classifiable row, mirroring the import's single
+      // derivation (#1680): the exported method must be the one the exported
+      // instrument implies, or the file re-opens the gap it just closed. Derived
+      // from the instrument, never the `valuation_method` column — exporting the
+      // column would write a stale method into the file and the import would read
+      // it straight back, a round-trip that fixes the error instead of curing it.
+      instrument: instrumentOfAsset(classifiable),
+      valuationMethod: valuationMethodOfAsset(classifiable),
       // The cadence is only serialized when set away from the default `step`
       // (ADR 0031); an omitted field round-trips as step on import.
       ...(row.valuationCadence === "interpolated"
