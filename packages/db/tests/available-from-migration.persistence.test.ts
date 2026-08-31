@@ -63,7 +63,7 @@ describe("schema migration v67 (declared availability date, #1528)", () => {
       columnNames((await client.execute("PRAGMA table_info(assets)")).rows),
     ).toContain("available_from");
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(68);
+    expect(SCHEMA_VERSION).toBe(69);
   });
 
   test("no date is derived from the ledger — an alta por traspaso externo reads null", async () => {

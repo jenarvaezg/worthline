@@ -244,6 +244,8 @@ export {
   assertContributionAllowanceInput,
   computeContributionAllowanceUsage,
 } from "./contribution-allowance";
+export type { ContributionLot, HoldingAvailability } from "./contribution-lots";
+export { resolveHoldingLots } from "./contribution-lots";
 export type {
   ContributionCadence,
   ContributionOccurrence,

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import type {
   AssetProjectionContext,
+  ContributionLot,
   CostBasisGrade,
   DateKey,
   DecimalString,
@@ -31,6 +32,7 @@ import {
   assetPriceCache,
   assets,
   auditLog,
+  contributionLots,
   investmentAssets,
   liabilities,
   liabilityOwnerships,
@@ -684,18 +686,46 @@ export async function readAssets(
     .orderBy(asc(assets.createdAt), asc(assets.id))
     .all();
 
-  const rawRows: RawAssetRow[] = rows.map((row) => ({
-    availableFrom: row.availableFrom,
-    connectedSourceId: row.connectedSourceId,
-    currency: row.currency,
-    currentValueMinor: row.currentValueMinor,
-    id: row.id,
-    instrument: row.instrument,
-    isPrimaryResidence: row.isPrimaryResidence === 1,
-    liquidityTier: row.liquidityTier,
-    name: row.name,
-    type: row.type,
-  }));
+  // Los lotes de aportación (#1676) en UNA consulta para todos los holdings, no una
+  // por fila: la escalera de un plan es una lista corta, pero un `readAssets` puede
+  // traer cientos de holdings y una consulta por cada uno es la forma de avería que
+  // #1295 dejó en la navegación. Solo los tiene el escalón a plazo, así que para casi
+  // toda cartera el mapa sale vacío.
+  //
+  // Y solo se lanza si el workspace TIENE algún holding a plazo, el mismo gate con el
+  // que este módulo evita el contexto de inversiones más abajo: la escalera es una
+  // superficie de nicho y casi ninguna cartera paga por preguntarlo.
+  const hasTermLocked = rows.some((row) => row.liquidityTier === "term-locked");
+  const lotRows = hasTermLocked
+    ? await db
+        .select({
+          amountMinor: contributionLots.amountMinor,
+          assetId: contributionLots.assetId,
+          availableFrom: contributionLots.availableFrom,
+        })
+        .from(contributionLots)
+        .orderBy(asc(contributionLots.assetId), asc(contributionLots.availableFrom))
+        .all()
+    : [];
+
+  const lotsByAssetId = groupContributionLotsByAsset(lotRows);
+
+  const rawRows: RawAssetRow[] = rows.map((row) => {
+    const lots = lotsByAssetId.get(row.id);
+    return {
+      availableFrom: row.availableFrom,
+      ...(lots === undefined ? {} : { contributionLots: lots }),
+      connectedSourceId: row.connectedSourceId,
+      currency: row.currency,
+      currentValueMinor: row.currentValueMinor,
+      id: row.id,
+      instrument: row.instrument,
+      isPrimaryResidence: row.isPrimaryResidence === 1,
+      liquidityTier: row.liquidityTier,
+      name: row.name,
+      type: row.type,
+    };
+  });
 
   const ctx =
     projectionContext ??
@@ -920,4 +950,26 @@ export async function hardDeleteLiabilityTx(
   });
 
   return result.rowsAffected;
+}
+
+/**
+ * Agrupar filas de `contribution_lots` por holding (#1676), conservando el orden en
+ * que llegan. Vive aquí y se exporta porque el documento de workspace hace el MISMO
+ * pliegue al exportar: dos copias de esta forma se separan en cuanto una se toca, y lo
+ * que se separaría es qué lotes lleva un holding.
+ */
+export function groupContributionLotsByAsset(
+  rows: readonly { assetId: string; availableFrom: string; amountMinor: number }[],
+): Map<string, ContributionLot[]> {
+  const byAssetId = new Map<string, ContributionLot[]>();
+  for (const row of rows) {
+    const entry = { amountMinor: row.amountMinor, availableFrom: row.availableFrom };
+    const existing = byAssetId.get(row.assetId);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      byAssetId.set(row.assetId, [entry]);
+    }
+  }
+  return byAssetId;
 }

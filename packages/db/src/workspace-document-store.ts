@@ -48,6 +48,7 @@ import {
   connectedSources,
   contributionAllowanceHoldings,
   contributionAllowances,
+  contributionLots,
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   earlyRepayments,
@@ -74,6 +75,7 @@ import {
 } from "./schema";
 import { readSnapshots } from "./snapshot-store";
 import {
+  groupContributionLotsByAsset,
   operationCaptureColumns,
   operationCostBasisColumns,
   operationTransferColumns,
@@ -283,6 +285,24 @@ async function importWorkspace(
               id: anchor.id,
               valuationDate: anchor.valuationDate,
               valueMinor: anchor.valueMinor,
+            })),
+          )
+          .run();
+      }
+
+      // Los lotes de aportación (#1676), restaurados tal cual. Ids nuevos a
+      // propósito: un lote no es una entidad que nadie siga entre ediciones —es una
+      // línea de una declaración que se reemplaza de una pieza— así que el fichero
+      // no los lleva y aquí no hay ninguno que preservar.
+      if (asset.contributionLots && asset.contributionLots.length > 0) {
+        await db
+          .insert(contributionLots)
+          .values(
+            asset.contributionLots.map((lot) => ({
+              amountMinor: lot.amountMinor,
+              assetId: asset.id,
+              availableFrom: lot.availableFrom,
+              id: randomUUID(),
             })),
           )
           .run();
@@ -839,6 +859,18 @@ async function buildWorkspaceExport(
   // Housing valuation anchors grouped by asset (ADR 0015, #155), ordered by
   // date then id so the restored curve matches what the live store reads back.
   const anchorsByAsset = await readValuationAnchorsByAsset(db);
+  // Los lotes de aportación por holding (#1676), ordenados por fecha para que el
+  // fichero salga siempre igual y un diff entre dos exportaciones diga la verdad.
+  const lotRows = await db
+    .select({
+      amountMinor: contributionLots.amountMinor,
+      assetId: contributionLots.assetId,
+      availableFrom: contributionLots.availableFrom,
+    })
+    .from(contributionLots)
+    .orderBy(asc(contributionLots.assetId), asc(contributionLots.availableFrom))
+    .all();
+  const lotsByAsset = groupContributionLotsByAsset(lotRows);
 
   const toExportedAsset = (row: typeof assets.$inferSelect): ExportedAsset => {
     const meta = investmentMetaByAsset.get(row.id);
@@ -876,6 +908,9 @@ async function buildWorkspaceExport(
       // La fecha de disponibilidad declarada (#1528, ADR 0100): una declaración del
       // dueño, así que viaja verbatim — nada la puede volver a derivar en el destino.
       ...(row.availableFrom ? { availableFrom: row.availableFrom } : {}),
+      // La escalera de lotes (#1676), verbatim y por lo mismo: sin ella el plan
+      // vuelve a ser un bloque y el reparto pierde el tramo ya rescatable.
+      ...(lotsByAsset.has(row.id) ? { contributionLots: lotsByAsset.get(row.id) } : {}),
       // The connected-source back-link (ADR 0016/0021, #248), so a multi-rung
       // source's per-rung assets round-trip their link (the source row names only
       // the primary asset).

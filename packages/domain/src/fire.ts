@@ -593,6 +593,11 @@ export function calculateFireForScope(
           todayISO: rents.todayISO,
         });
 
+  // Un solo día para toda esta función: lo usan los lotes de aportación al armar el
+  // pool (#1676) y el calendario del vendible más abajo (#1528). Cae a `rents.todayISO`
+  // cuando el llamador ya lo trajo ahí — es el MISMO día de la misma pantalla.
+  const todayForAvailability = options.todayISO ?? rents?.todayISO;
+
   // The risk-bearing pool assembly lives in its own tested module (#1122).
   const pool = assembleFireEligiblePool({
     config,
@@ -601,6 +606,10 @@ export function calculateFireForScope(
     rentRealReturns,
     workspace,
     scopeId,
+    // El MISMO día con el que se resuelve el calendario más abajo: el pool solo lo
+    // usa para saber qué lote de aportación ya venció (#1676), y dos relojes delante
+    // de la misma tarjeta es la avería que #1597 cerró.
+    ...(todayForAvailability === undefined ? {} : { todayISO: todayForAvailability }),
   });
   const { excludedAssets, eligibleByTierMinor, scopedDebtByTierMinor } = pool;
 
@@ -643,14 +652,10 @@ export function calculateFireForScope(
   // neto de deuda y reserva —la misma cifra que la pantalla imprime— para que lo
   // bloqueado nunca pueda superar lo que hay, y se topa recortando por el tramo que
   // antes se libera: la deuda se paga con el primer dinero que se pueda tocar.
-  //
-  // El día cae a `rents.todayISO` cuando el llamador ya lo trajo ahí: es el MISMO día
-  // de la misma pantalla, y dos relojes delante de la misma tarjeta es la avería que
-  // #1597 cerró.
   const availability = resolveCapitalAvailability({
     declared: pool.declaredAvailability,
     sellableMinor: capitalSplit.sellable.amountMinor,
-    todayISO: options.todayISO ?? rents?.todayISO,
+    todayISO: todayForAvailability,
     undeclaredMinor: pool.undeclaredTermLockedMinor,
   });
 

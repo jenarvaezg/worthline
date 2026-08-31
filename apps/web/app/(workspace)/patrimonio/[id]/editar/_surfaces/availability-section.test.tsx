@@ -11,13 +11,14 @@ import { AvailabilitySection } from "./availability-section";
  */
 const TODAY = "2026-08-31";
 
-function renderFor(availableFrom: string | null) {
+function renderFor(availableFrom: string | null, supersededByLots = false) {
   return renderToStaticMarkup(
     <AvailabilitySection
       assetId="a_pp"
       availableFrom={availableFrom}
       currentUrl="/patrimonio/wl_hld_a_pp/editar"
       formError={null}
+      supersededByLots={supersededByLots}
       today={TODAY}
     />,
   );
@@ -82,5 +83,23 @@ describe("AvailabilitySection — el hueco se dice en voz alta (#1528)", () => {
     const markup = renderFor("2035-06-01");
 
     expect(markup).not.toContain("disponible desde el primer año");
+  });
+});
+
+// Un campo que sigue guardando y ya no decide nada es peor que no estar: el dueño cree
+// haber declarado algo que el motor no lee (#1676).
+describe("cuando los lotes mandan sobre esta fecha (#1676)", () => {
+  test("lo dice en voz alta en vez de dejar la fecha decidiendo en silencio", () => {
+    const html = renderFor("2035-06-01", true);
+
+    expect(html).toContain("mandan ellos");
+    expect(html).not.toContain("dentro de");
+  });
+
+  test("sin lotes la fecha sigue mandando y la lectura se enseña", () => {
+    const html = renderFor("2035-06-01", false);
+
+    expect(html).not.toContain("mandan ellos");
+    expect(html).toContain("dentro de");
   });
 });

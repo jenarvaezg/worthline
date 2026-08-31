@@ -64,7 +64,7 @@ describe("schema migration v65 (el grado del coste, #1505)", () => {
       columnNames((await client.execute("PRAGMA table_info(asset_operations)")).rows),
     ).toContain("cost_basis_grade");
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(68);
+    expect(SCHEMA_VERSION).toBe(69);
   });
 
   test("sin backfill: la apertura vieja y la compra real quedan igual de mudas", async () => {

@@ -63,7 +63,7 @@ describe("schema migration v63 (declared balance)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(68);
+    expect(SCHEMA_VERSION).toBe(69);
   });
 
   test("a fresh schema already has the three columns", async () => {
