@@ -270,6 +270,13 @@ export {
   plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
 } from "./contribution-plan";
+export type {
+  LedgerSeniority,
+  LedgerSeniorityReport,
+  SeniorityGap,
+  SeniorityGapReason,
+} from "./contribution-seniority";
+export { readLedgerSeniority } from "./contribution-seniority";
 export type { CostBasisGrade } from "./cost-basis-grade";
 export {
   costBasisGradeMark,

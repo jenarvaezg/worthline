@@ -14,12 +14,12 @@
  * exactamente lo que #1607 vino a quitar.
  */
 
-import { suggestedLotAvailableFrom } from "@web/intake";
+import { proposeLadderFromLedger, suggestedLotAvailableFrom } from "@web/intake";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { AvailabilitySection } from "@web/patrimonio/[id]/editar/_surfaces/availability-section";
 import { ContributionLotsSection } from "@web/patrimonio/[id]/editar/_surfaces/contribution-lots-section";
 import type { ManualAsset } from "@worthline/domain";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, readLedgerSeniority } from "@worthline/domain";
 import type { ReactNode } from "react";
 
 export async function loadAvailabilityPanel(
@@ -46,6 +46,12 @@ export async function loadAvailabilityPanel(
   // Nunca de `executed_at`: esa es la fecha del trámite, y leerla como antigüedad
   // diría «bloqueado hasta 2035» sobre dinero rescatable hoy (#1490, #1518).
   const operations = await store.operations.readOperations(id);
+  // La escalera que el libro sabe proponer (#1687). Null cuando no tiene ni un tramo
+  // que ofrecer ni un hueco que nombrar: un botón que no puede cumplir es peor que no
+  // estar, y una frase sobre capital sin fechar que no viene a cuento es ruido.
+  const proposal = proposeLadderFromLedger(readLedgerSeniority(operations));
+  const proposed =
+    proposal.lots.length === 0 && proposal.gaps.length === 0 ? null : proposal;
   const seniorityAt = operations
     .map((operation) => operation.transferSeniorityAt)
     .filter((date): date is string => typeof date === "string")
@@ -74,6 +80,7 @@ export async function loadAvailabilityPanel(
         formError={formError}
         holdingMinor={asset.currentValue.amountMinor}
         lots={lots}
+        proposed={proposed}
         suggestedAvailableFrom={suggestedLotAvailableFrom(seniorityAt ?? null)}
         today={today}
       />

@@ -155,6 +155,41 @@ Two things phase 2 deliberately does NOT change: the engine still reads no clock
 gap rather than as a lock), and `sideOfTier` remains #1523's decision — a lot says *when*,
 never *which column*.
 
+## Amendment (#1687): the ledger may PROPOSE a ladder; the engine still derives none
+
+#1676 made the ten-year window an interface suggestion, filled from inherited seniority
+(#1518). That left a gap it did not name: a holding whose own ledger carries dated
+contributions knows every date already, and still made its owner type each lot by hand.
+
+So the ficha can now derive a whole ladder from the holding's ledger and offer it. The
+line this amendment defends is the one #1676 drew, unchanged: **proposing is not
+applying.** The proposal is rendered, the owner confirms or corrects it, and only then is
+anything stored. `calculateFireForScope` still reads declared lots and nothing else.
+
+Three decisions inside it:
+
+- **Which rows can date capital, and which cannot.** A real `buy` dates from `executedAt`.
+  A `transfer_in` dates from its declared seniority and NEVER from `executedAt` — the
+  paperwork day. A `transfer_in` without one, and any row with `source: "opening"` (whose
+  date and price the alta fabricated, #1490), date nothing. The ones that cannot are
+  **named on screen with their amount**, because a holding that proposes half a ladder
+  without saying which half is missing is worse than one that proposes nothing.
+- **Exits do not subtract from any tranche.** A `sell` or `transfer_out` shrinks the plan,
+  but the ledger does not say which contribution it came out of, and splitting it FIFO
+  would invent descuadres — the cost here is average, never FIFO, and this split is about
+  liquidity. The cap to the holding's value does the trimming instead.
+- **The proposed amount is what was CONTRIBUTED, not what it is worth today.** A pension
+  plan is unit-based, so the return attributable to each contribution is exactly
+  derivable — but a lot storing today's value of those units would expire daily, which is
+  the #1415 failure ADR 0074 forbids. Contributions do not move. The consequence is stated
+  on screen: the return earned since is left undated, so the proposal is a **floor** on
+  what is redeemable, never the figure the gestora holds.
+
+What this does NOT settle is whether the ten-year rule attaches to the nominal contributed
+or to the consolidated right it grew into. The floor above is correct under either reading,
+which is why it ships before that question is answered; resolving it can only raise the
+proposal, never invalidate a lot already declared.
+
 ## Status
 
-Accepted (#1528); amended and extended by #1676.
+Accepted (#1528); amended and extended by #1676 and #1687.
