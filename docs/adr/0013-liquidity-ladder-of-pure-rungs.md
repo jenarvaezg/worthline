@@ -45,3 +45,30 @@ housing equity are derived from the instrument rather than from a tier.
 - FIRE eligibility already keys off an explicit primary-residence flag, not the housing
   tier — so primary-residence becomes a first-class flag on the property instrument,
   decoupled from liquidity.
+
+
+## Amendment (#1528): the `term-locked` rung finally has somewhere to keep its date
+
+This ADR defines `term-locked` as *«locked until a date or an age»* — and for as long as
+it stood alone, that date existed nowhere. There was no column for it, on `assets` or
+anywhere else: the rung asserted that there was a plazo and could never say which one.
+
+The consequence was not cosmetic. A pension plan became a **block**, and both of the only
+two answers available were false — counting it whole as capital you can sell in slices
+promises money the owner cannot touch, and taking it out whole hides money that is already
+redeemable. Every downstream reading inherited that, including the reparto that spends
+today's capital over a calendar.
+
+`assets.available_from` (ADR 0100) is that date, declared by the owner and never derived
+from the book. Two things about it belong here, in the rung's own ADR:
+
+- **The rung owns the field.** Only `term-locked` may carry a date, because it is the only
+  rung whose definition mentions one. A holding that moves to another rung leaves its
+  declaration **inert rather than wrong** — nothing reads it, nothing deletes it, and
+  moving back recovers it as declared.
+- **The vocabulary does not grow.** There is still no sixth rung, and no rung is split in
+  two. The ladder stays five pure accessibility rungs; what changed is that one of them can
+  now answer *«until when?»* instead of only *«not yet»*.
+
+What the date does NOT do is move `term-locked` on the ladder or across the sellable /
+immobilized partition — that is a separate question, and it is #1523's to answer.

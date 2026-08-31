@@ -1,4 +1,6 @@
 import type { ContributionPlan } from "./contribution-plan";
+import type { FireCapitalAvailability } from "./fire-capital-availability";
+import { resolveCapitalAvailability } from "./fire-capital-availability";
 import type { FireCapitalSplit } from "./fire-capital-split";
 import { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
 import { assembleFireEligiblePool, type FireExcludedAsset } from "./fire-eligible-pool";
@@ -235,6 +237,16 @@ export interface ScopeFireResult extends FireResult {
    * table must say so or hide it.
    */
   readonly returnMix: FireReturnMix;
+  /**
+   * El calendario del capital vendible (#1528, ADR 0100): qué parte tiene fecha de
+   * disponibilidad futura declarada, qué parte está a plazo sin declararla, y si se
+   * resolvió contra un día. Lo consume el gasto sostenible **de agotamiento**, que es
+   * el único cálculo con calendario; ni el número FIRE ni la versión perpetua lo miran.
+   *
+   * Vacío y sin bloqueos cuando nadie ha declarado nada — el estado por defecto, en el
+   * que ninguna cifra de hoy se mueve.
+   */
+  readonly availability: FireCapitalAvailability;
 }
 
 /**
@@ -536,6 +548,18 @@ export interface CalculateFireForScopeOptions {
     /** Today (YYYY-MM-DD) — the page's own "today", not the system's. */
     todayISO: string;
   };
+  /**
+   * El día contra el que se resuelven las fechas de disponibilidad declaradas
+   * (#1528, ADR 0100). El dominio no lee el reloj (ADR 0024), así que quien mide
+   * trae el día; cuando falta, no se resuelve ninguna fecha, el reparto es el de
+   * siempre y `availability.resolved` lo dice en voz alta en vez de dejar creer
+   * que no había bloqueos.
+   *
+   * Cae a `rents.todayISO` cuando el llamador ya lo trajo ahí: es el MISMO día de
+   * la misma pantalla, y un segundo reloj delante de la misma tarjeta es la avería
+   * que #1597 vino a cerrar.
+   */
+  todayISO?: string;
 }
 
 export function calculateFireForScope(
@@ -615,6 +639,21 @@ export function calculateFireForScope(
     capitalSplit.sellable.reservedMinor + capitalSplit.immobilized.reservedMinor;
   const eligibleAfterReservation = capitalSplit.drawableMinor;
 
+  // El calendario del vendible (#1528, ADR 0100). Se resuelve contra el vendible YA
+  // neto de deuda y reserva —la misma cifra que la pantalla imprime— para que lo
+  // bloqueado nunca pueda superar lo que hay, y se topa recortando por el tramo que
+  // antes se libera: la deuda se paga con el primer dinero que se pueda tocar.
+  //
+  // El día cae a `rents.todayISO` cuando el llamador ya lo trajo ahí: es el MISMO día
+  // de la misma pantalla, y dos relojes delante de la misma tarjeta es la avería que
+  // #1597 cerró.
+  const availability = resolveCapitalAvailability({
+    declared: pool.declaredAvailability,
+    sellableMinor: capitalSplit.sellable.amountMinor,
+    todayISO: options.todayISO ?? rents?.todayISO,
+    undeclaredMinor: pool.undeclaredTermLockedMinor,
+  });
+
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   // A per-asset rate substitutes its tier's over its own slice (#1448) — it is not
   // an extra weight, so the eligible total the rate describes is unchanged.
@@ -657,6 +696,7 @@ export function calculateFireForScope(
 
   return {
     ...base,
+    availability,
     excludedAssets,
     reservedForGoals: money(reserved, workspace.baseCurrency),
     context,

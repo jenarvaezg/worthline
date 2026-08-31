@@ -14,6 +14,7 @@
 
 import { tierOfAsset } from "./classification";
 import type { FireScopeConfig } from "./fire";
+import type { DeclaredAvailability } from "./fire-capital-availability";
 import type { RentRealReturns, RentReturnNotice } from "./fire-rent-return";
 import type { AssetRateOverride } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
@@ -93,6 +94,24 @@ export interface FireEligiblePool {
    * residence's rent would be noise, since its capital is out of FIRE too.
    */
   rentReturnNotices: RentReturnNotice[];
+  /**
+   * Las fechas de disponibilidad declaradas que ACTÚAN sobre este ámbito (#1528,
+   * ADR 0100): elegibles, poseídas, y en el escalón `term-locked` — el único peldaño
+   * que reclama un plazo (ADR 0013). El importe es lo que el ámbito posee, bruto de
+   * deuda y de reserva, igual que `eligibleByTierMinor`.
+   *
+   * Se recogen AQUÍ y no en un segundo recorrido a propósito: el bucle que ya decide
+   * elegibilidad y propiedad es el único con derecho a decir qué declaración tuvo
+   * efecto para este ámbito — la misma razón por la que `assetRateOverrides` se filtra
+   * aquí y no en el llamador.
+   */
+  declaredAvailability: DeclaredAvailability[];
+  /**
+   * Capital a plazo elegible y poseído que NO ha declarado fecha. No es cero y no es
+   * bloqueo: es un hueco, y la pantalla lo nombra en vez de repartirlo como si
+   * estuviera disponible hoy. Bruto de deuda y de reserva, como el de arriba.
+   */
+  undeclaredTermLockedMinor: number;
 }
 
 /**
@@ -117,6 +136,8 @@ export function assembleFireEligiblePool(
   const rentReturnNotices: RentReturnNotice[] = [];
   const excludedAssets: FireExcludedAsset[] = [];
   const excludedAssetIds = new Set<string>();
+  const declaredAvailability: DeclaredAvailability[] = [];
+  let undeclaredTermLockedMinor = 0;
   // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
   const eligibleByTierMinor: Partial<Record<LiquidityTier, number>> = {};
   // The rung of every eligible asset, so a secured debt can inherit it below.
@@ -140,6 +161,19 @@ export function assembleFireEligiblePool(
       const tier = tierOfAsset(asset);
       eligibleByTierMinor[tier] = (eligibleByTierMinor[tier] ?? 0) + ownedMinor;
       eligibleTierByAssetId.set(asset.id, tier);
+      // La declaración de disponibilidad (#1528) se recoge en este mismo paso, y solo
+      // en el escalón que la reclama: un holding que cambia de peldaño deja su fecha
+      // inerte en vez de convertirla en un bloqueo que el peldaño no pide.
+      if (ownedMinor > 0 && tier === "term-locked") {
+        if (asset.availableFrom) {
+          declaredAvailability.push({
+            amountMinor: ownedMinor,
+            availableFrom: asset.availableFrom,
+          });
+        } else {
+          undeclaredTermLockedMinor += ownedMinor;
+        }
+      }
       // An asset the scope owns nothing of weighs nothing, so neither its derived
       // rate nor a warning about it belongs to this scope (#1448).
       if (ownedMinor > 0) {
@@ -197,6 +231,8 @@ export function assembleFireEligiblePool(
   const netEligibleMinor = Math.max(0, eligiblePreDebtMinor - scopedDebtMinor);
 
   return {
+    declaredAvailability,
+    undeclaredTermLockedMinor,
     eligiblePreDebtMinor,
     scopedDebtMinor,
     netEligibleMinor,
