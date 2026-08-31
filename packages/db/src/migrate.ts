@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 66;
+export const SCHEMA_VERSION = 67;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1984,6 +1984,33 @@ export async function migrate(client: Client): Promise<MigrateResult> {
   }
 
   if (version < 66) {
+    // #1518 (ADR 0083, decisión 7): `asset_operations.transfer_seniority_at` — the
+    // day the capital an EXTERNAL `transfer_in` brought over started counting its
+    // age at the old provider. Nullable, and NOTHING is backfilled — the same rule
+    // as v64 and v65, and here it is not caution but the whole point.
+    //
+    // The one derivation available is `executed_at`, and it is precisely the lie
+    // this column exists to stop: a movilización carries the seniority of the
+    // aportaciones that funded it, which sit in another institution's ledger. Jorge's
+    // two entries are dated dic-2025 and ene-2026 for capital aportado years
+    // earlier; backfilled from the row they would tell #1528 «bloqueado hasta 2035»
+    // about money that may be rescatable today. NULL reads as «nadie lo ha dicho»,
+    // which is true of every row written before this door existed.
+    try {
+      await client.execute(
+        "ALTER TABLE asset_operations ADD COLUMN transfer_seniority_at TEXT",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Tolerated exactly as in v59/v62/v64/v65: a fresh DB already has the column
+      // from schema-sql, and a migration test walks the ladder over a PARTIAL
+      // fixture that may never have created the table.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 66);
+  }
+
+  if (version < 67) {
     // #1528 (ADR 0100): `assets.available_from` — desde cuándo se puede tocar un
     // holding a plazo. Nullable y con CERO backfill, por la misma razón que v64 no
     // rellena el coste de las viviendas y v65 no marca las aperturas: la fecha que el
@@ -1996,16 +2023,21 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     // «bloqueado hasta 2035» sobre dinero que puede ser rescatable hoy — inventando
     // por la misma puerta que #1490. Sin declaración la columna se queda NULL, que se
     // lee como «nadie lo ha dicho», y ninguna cifra de hoy se mueve.
+    //
+    // Y tampoco se deriva del `transfer_seniority_at` que el paso v66 acaba de abrir,
+    // aunque ahora exista: esa fecha dice desde cuándo CUENTA la antigüedad, no desde
+    // cuándo el dinero está disponible. Ir de una a otra exige la ventana normativa y
+    // el reparto por lotes, que es la fase 2 (#1676) y no esta.
     try {
       await client.execute("ALTER TABLE assets ADD COLUMN available_from TEXT");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Tolerado exactamente como en v59/v62/v64/v65: una BD nueva ya trae la columna
-      // desde `schema-sql`, y un test de migración recorre la escalera sobre un
-      // fixture PARCIAL que puede no haber creado nunca la tabla.
+      // Tolerado exactamente como en v59/v62/v64/v65/v66: una BD nueva ya trae la
+      // columna desde `schema-sql`, y un test de migración recorre la escalera sobre
+      // un fixture PARCIAL que puede no haber creado nunca la tabla.
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
-    await writeSchemaVersion(client, 66);
+    await writeSchemaVersion(client, 67);
   }
 
   return { ranV18Backfill, ranV33Backfill };

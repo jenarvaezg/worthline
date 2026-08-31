@@ -1,5 +1,5 @@
 /**
- * Schema migration v66 (#1528, ADR 0100): `assets.available_from` lands on a
+ * Schema migration v67 (#1528, ADR 0100): `assets.available_from` lands on a
  * pre-existing database and on a fresh one built from `schemaSql`, with the same
  * shape in both — the ladder and the fresh schema drifting apart is how a column
  * ends up existing only for new workspaces (ADR 0002).
@@ -18,12 +18,12 @@ import { schemaSql } from "@db/schema-sql";
 import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-/** A pre-v66 database: the full fresh schema minus the new column, pinned at 65. */
-async function seedV65(): Promise<Client> {
+/** A pre-v67 database: the full fresh schema minus the new column, pinned at 66. */
+async function seedV66(): Promise<Client> {
   const client = openLibsqlClient(":memory:");
   await client.executeMultiple(schemaSql.replace(/[ \t]*`available_from` text,\n/g, ""));
   await client.execute("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
-  await client.execute("INSERT INTO schema_meta (version) VALUES (65)");
+  await client.execute("INSERT INTO schema_meta (version) VALUES (66)");
   await client.executeMultiple(`
     INSERT INTO assets (id, name, type, currency, current_value_minor, liquidity_tier, instrument) VALUES
       ('a_pp', 'Plan de pensiones', 'manual', 'EUR', 497955, 'term-locked', 'pension_plan');
@@ -53,9 +53,9 @@ async function availableFrom(client: Client, id: string): Promise<unknown> {
   ).rows[0]!.d;
 }
 
-describe("schema migration v66 (declared availability date, #1528)", () => {
+describe("schema migration v67 (declared availability date, #1528)", () => {
   test("an existing database gains the column", async () => {
-    const client = await seedV65();
+    const client = await seedV66();
 
     await migrate(client);
 
@@ -63,11 +63,11 @@ describe("schema migration v66 (declared availability date, #1528)", () => {
       columnNames((await client.execute("PRAGMA table_info(assets)")).rows),
     ).toContain("available_from");
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(66);
+    expect(SCHEMA_VERSION).toBe(67);
   });
 
   test("no date is derived from the ledger — an alta por traspaso externo reads null", async () => {
-    const client = await seedV65();
+    const client = await seedV66();
 
     await migrate(client);
 
@@ -77,7 +77,7 @@ describe("schema migration v66 (declared availability date, #1528)", () => {
   });
 
   test("a second run is a no-op", async () => {
-    const client = await seedV65();
+    const client = await seedV66();
 
     await migrate(client);
     await migrate(client);

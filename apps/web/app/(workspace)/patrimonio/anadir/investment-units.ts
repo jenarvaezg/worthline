@@ -318,13 +318,14 @@ export function resolveOpeningCapture({
 }
 
 /**
- * es-ES reading of a saldo date for the pane's copy: "31 jul 2026".
+ * es-ES reading of a `YYYY-MM-DD` for a capture pane's copy: "31 jul 2026".
  *
- * Exported since #1541: the «viene traspasada de otra entidad» pane of the same
- * wizard reads its date back in the same words, and two spellings of «al 23 ene 2026»
- * in two panes of one form is how a wizard starts sounding like two products.
+ * Not named after the apertura since #1541: the «viene traspasada de otra entidad»
+ * pane reads its landing date back in the same words, and #1518 its inherited
+ * seniority — three dates, one spelling. Two spellings of «al 23 ene 2026» in two
+ * panes of one form is how a wizard starts sounding like two products.
  */
-export function readOpeningDate(dateKey: string): string {
+export function readDayEs(dateKey: string): string {
   return new Intl.DateTimeFormat("es-ES", {
     day: "numeric",
     month: "short",
@@ -461,7 +462,7 @@ export function openingCaptureCopy({
   // one that blocks the alta; both refuse the same captures, and each names the
   // field the user is looking at.
   const date = resolveOpeningDate(dateRaw, today);
-  const backdatedTo = date.ok && date.date !== today ? readOpeningDate(date.date) : null;
+  const backdatedTo = date.ok && date.date !== today ? readDayEs(date.date) : null;
   const units = deriveOpeningUnits({ priceRaw, saldoRaw });
   // The cost reads on its own, beside its own field: a refusal there must not blank
   // the units reading, and the units reading must not swallow a cost refusal.

@@ -363,6 +363,20 @@ export const assetOperations = sqliteTable(
     // over to another asset's ledger to learn it.
     transferId: text("transfer_id"),
     transferCostMinor: integer("transfer_cost_minor"),
+    // The seniority the incoming capital carries over from the OLD provider (#1518),
+    // on a `transfer_in` — the row that RECEIVES. NULL is the third state and the
+    // default: nobody has said it. Declared, never derived — `executed_at` is the day
+    // the movilización landed, and reading age off it would call rescatable money
+    // blocked. Nothing reads it yet; #1528 does.
+    //
+    // In practice only the two external-entry doors write it, because only they ask:
+    // an internal pair's incoming half inherits from an origin whose own dates are
+    // already in this book. That is a fact about the WRITERS, not an invariant of the
+    // column — a `transfer_in` carries its own `transfer_id` whether or not it has a
+    // counterpart (ADR 0083, decisión 7), so the row itself cannot tell the two apart
+    // and nothing here could enforce «external only». `planTransfer` never sets it,
+    // and a test pins that.
+    transferSeniorityAt: text("transfer_seniority_at").$type<DateKey>(),
     /**
      * How honest this row's price is as a COST (#1505, ADR 0048/0097). NULL is the
      * third state and the default: a real dated movement, whose price IS its cost —

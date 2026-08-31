@@ -1,6 +1,6 @@
 import type { CostBasisGrade } from "./cost-basis-grade";
 import { worseCostBasisGrade } from "./cost-basis-grade";
-import { asInstant } from "./dates";
+import { asInstant, isRealCalendarDay } from "./dates";
 import type { DecimalString } from "./decimal";
 import {
   addUnits,
@@ -117,6 +117,9 @@ export function createInvestmentOperation(
       ? {}
       : { transferCostMinor: input.transferCostMinor }),
     ...(input.transferId === undefined ? {} : { transferId: input.transferId }),
+    ...(input.transferSeniorityAt === undefined
+      ? {}
+      : { transferSeniorityAt: input.transferSeniorityAt }),
     units: input.units,
   };
 }
@@ -159,6 +162,22 @@ function assertTransferColumns(input: CreateInvestmentOperationInput): void {
     if (input.transferCostMinor < 0) {
       throw new Error("An inherited transferCostMinor must not be negative.");
     }
+  }
+
+  // The inherited seniority (#1518) rides the SAME row as the inherited cost, and
+  // for the same reason: it is a fact about capital that arrived, and there is
+  // nothing on a `transfer_out` — or on a buy — that could have inherited one. A
+  // date that is not a calendar day is a programmer error here; a user who typed
+  // one was already refused by `planExternalTransferIn` in words.
+  if (input.kind !== "transfer_in" && input.transferSeniorityAt !== undefined) {
+    throw new Error("Only a transfer_in may carry a transferSeniorityAt.");
+  }
+
+  if (
+    input.transferSeniorityAt !== undefined &&
+    !isRealCalendarDay(input.transferSeniorityAt)
+  ) {
+    throw new Error("A transferSeniorityAt must be a real calendar day.");
   }
 
   // A commission has exactly ONE place to live in a traspaso: capitalized into the

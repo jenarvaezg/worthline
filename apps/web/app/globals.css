@@ -4557,6 +4557,25 @@ code {
   color: var(--muted);
   text-wrap: pretty;
 }
+/* The «Traer de otra entidad» section's derived reading (#1518): the participaciones
+   the entry will carry, in the primary voice — it is the figure that will be STORED,
+   not guidance about it.
+   Its own `op…` class rather than the alta's `.invUnitsHint`: that one is a full-width
+   cell of the `.invCapture` grid (`grid-column: 1 / -1`), so inside this section's
+   `.inversionesForm` flex column the track claim is inert while its weight stays
+   calibrated for a two-column pane. Same words, different container. */
+.opEntryReading {
+  margin: 0.1rem 0 0;
+  font-weight: 650;
+  color: var(--ink);
+}
+/* A refused figure reads as a refusal, not as a neutral reading — `var(--red)`, the
+   colour `.errorBand` and `.invUnitsRefused` already use for a form that cannot be
+   submitted as typed. A modifier, so it rides both the reading above and the muted
+   notes that sit beside a single field. */
+.opEntryRefused {
+  color: var(--red);
+}
 
 /* The apunte a converted operation was captured in, under the euro figure it folded
    as (#1401). Muted and smaller: the euros are the figure, the dollars are the

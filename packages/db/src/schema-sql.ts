@@ -161,6 +161,7 @@ CREATE TABLE \`asset_operations\` (
 	\`capture_eur_per_unit\` text,
 	\`transfer_id\` text,
 	\`transfer_cost_minor\` integer,
+	\`transfer_seniority_at\` text,
 	\`cost_basis_grade\` text,
 	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,

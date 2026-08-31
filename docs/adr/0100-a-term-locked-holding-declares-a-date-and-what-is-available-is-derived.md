@@ -100,11 +100,16 @@ FIRE number, the perpetual half and every figure of today stay exactly as they w
 - The declared amount available is never persisted, so it can never go stale. The cost
   is that every read resolves it — which is cheap, and is the point.
 - **This is phase 1.** One date per holding covers «locked until 65» entirely. The plan
-  that is genuinely a ladder needs per-lot dates (`contribution_lots`, #1676), and those
-  lots cannot be filled for transferred-in capital until the inherited seniority #1518
-  writes on the row is available. A lot split here is about **liquidity, never fiscal
-  basis**: the cost stays average, not FIFO, and any reader that reconstructs FIFO from
-  such lots invents descuadres.
+  that is genuinely a ladder needs per-lot dates (`contribution_lots`, #1676). Its input
+  now exists: `asset_operations.transfer_seniority_at` (#1518, ADR 0083 amendment) landed
+  alongside this work and carries the inherited seniority a transferred-in row could never
+  derive from `executed_at`.
+  What phase 2 must not do is treat that column as an availability date. Seniority says
+  when the capital *started counting its age*; availability is what the redemption window
+  turns that into, and going from one to the other needs the norm plus a per-lot split —
+  which is exactly the work #1676 is, and exactly why phase 1 does not attempt it.
+  A lot split there is about **liquidity, never fiscal basis**: the cost stays average, not
+  FIFO, and any reader that reconstructs FIFO from such lots invents descuadres.
 - `sideOfTier` is untouched: which column `term-locked` occupies is #1523's decision,
   and it is orthogonal to this one. This ADR says *how much* is available and *from
   when*; that one says which side the rest sits on.

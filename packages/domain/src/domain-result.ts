@@ -40,6 +40,22 @@ export type DomainViolation =
       code: "transfer_inherited_cost_negative";
     }
   | {
+      /**
+       * The declared inherited seniority is LATER than the day the capital landed
+       * (#1518). Inherited antiquity looks backwards by definition — a date after
+       * the entry is a typo, and stored it would make #1528 read the tramo as
+       * available later than either date supports.
+       */
+      code: "transfer_seniority_after_execution";
+      seniorityAt: string;
+      executedAt: string;
+    }
+  | {
+      /** The declared inherited seniority is not a real calendar day (#1518). */
+      code: "transfer_seniority_not_a_day";
+      seniorityAt: string;
+    }
+  | {
       /** The two holdings' ledgers are in different currencies, so no cost can travel. */
       code: "transfer_currency_mismatch";
       origin: string;

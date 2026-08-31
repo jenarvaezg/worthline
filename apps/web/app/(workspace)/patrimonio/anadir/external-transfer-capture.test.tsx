@@ -36,6 +36,7 @@ function render(
       defaultCost=""
       defaultDate=""
       defaultPrice=""
+      defaultSeniority=""
       instrument="pension_plan"
       today={TODAY}
       {...props}

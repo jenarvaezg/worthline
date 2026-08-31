@@ -143,6 +143,19 @@ describe("auditTransferPairs — an orphan leg", () => {
     expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([]);
   });
 
+  test("the external entry stays exempt once it declares an inherited seniority", () => {
+    // #1518 added a column to that row. The audit judges CARDINALITY, so a declared
+    // seniority must not change its verdict — and the ficha, reading the same row,
+    // prints «desde otra entidad · antigüedad desde …». Two screens, one reading
+    // (#1422).
+    const operations = ledger({
+      ...transferIn("inv_dest", "op_in", "2026-03-01", "25", "24", "trf_1", 500_00),
+      transferSeniorityAt: "2014-03-01",
+    });
+
+    expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([]);
+  });
+
   test("two incoming halves under one id have no external reading and are reported", () => {
     const operations = ledger(
       transferIn("inv_dest", "op_in", "2026-03-01", "25", "24", "trf_1", 500_00),

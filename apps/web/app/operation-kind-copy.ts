@@ -1,3 +1,4 @@
+import { formatIsoDayEs } from "@web/asistente/iso-day-es";
 import type { OperationKind } from "@worthline/domain";
 import {
   BASE_CURRENCY,
@@ -50,6 +51,12 @@ export type TransferRowCounterpart =
  * checks against the origin's statement, so neither side may round. Privacy mode
  * masks it rather than dropping it — the row keeps its shape.
  *
+ * The inherited SENIORITY prints too, when one was declared (#1518). No figure reads
+ * it yet — #1528 will — and that is exactly why it has to be visible: a declared date
+ * nobody can see is a date nobody can correct, and a year typed wrong would sit in the
+ * ledger until a calculation quietly built on it (the failure mode of #1415). It is
+ * never masked: it is a date, not money.
+ *
  * Returns null when there is nothing true to say (a buy/sell, or an unresolved
  * counterpart with no cost to show).
  */
@@ -57,6 +64,7 @@ export function transferRowNote(input: {
   kind: OperationKind;
   counterpart: TransferRowCounterpart;
   transferCostMinor?: number | undefined;
+  transferSeniorityAt?: string | undefined;
   privacyMode: boolean;
 }): string | null {
   if (!isTransferKind(input.kind)) return null;
@@ -79,6 +87,10 @@ export function transferRowNote(input: {
       currency: BASE_CURRENCY,
     });
     segments.push(`coste heredado ${input.privacyMode ? maskMoneyString(exact) : exact}`);
+  }
+
+  if (input.kind === "transfer_in" && input.transferSeniorityAt !== undefined) {
+    segments.push(`antigüedad desde ${formatIsoDayEs(input.transferSeniorityAt)}`);
   }
 
   return segments.length > 0 ? segments.join(" · ") : null;
