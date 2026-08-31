@@ -826,8 +826,14 @@ is locked; whatever the lots do not cover is term-locked capital with no date, n
 capital. With no lots declared, the holding behaves by its **availability date** alone.
 The ten-year window that turns **inherited seniority** into a lot's date is an interface
 suggestion the owner confirms — it lives in the intake layer, never in the engine.
-_Avoid_: reading lots as a cost basis; deriving lots from the ledger; storing a euro amount
-of «what is available today».
+A holding whose OWN ledger carries dated contributions can have its ladder **proposed**
+from it (#1687) — each `buy` plus the window, each declared **inherited seniority** plus the
+window, and never an `opening` or an undated transfer, which carry paperwork dates. The
+proposal is shown for the owner to confirm or correct; the engine still derives no lot, and
+the amounts proposed are what was CONTRIBUTED, so the return earned since is left undated
+and the proposal reads as a floor, not as the gestora's figure.
+_Avoid_: reading lots as a cost basis; the engine deriving lots on its own; storing a euro
+amount of «what is available today».
 
 **Liquidity breakdown**:
 The split of a scope's holdings across the rungs of the **liquidity ladder**, each rung

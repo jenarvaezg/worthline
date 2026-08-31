@@ -11,6 +11,7 @@ import {
   parseEntityId,
   parseOwnership,
   preserveFields,
+  proposeLadderFromLedger,
   successRedirectUrl,
 } from "@web/intake";
 import type { WorthlineStore } from "@web/store";
@@ -31,6 +32,7 @@ import {
   netUnitsFromOperations,
   ownershipShortfallOnCorrection,
   parseTrashExit,
+  readLedgerSeniority,
 } from "@worthline/domain";
 import { convertCapturedOperation } from "@worthline/pricing";
 
@@ -569,6 +571,60 @@ export async function addContributionLotAction(
     onError: ({ error }) =>
       errorRedirectUrl(baseUrl(formData), { formId: "contributionLot", message: error }),
     onSuccess: () => successRedirectUrl(baseUrl(formData), "contribution_lot_saved"),
+  })(formData, ..._testArgs);
+}
+
+/**
+ * Guardar la escalera que el libro propuso (#1687).
+ *
+ * La propuesta se vuelve a derivar AQUÍ, del mismo ledger y con la misma función que la
+ * pintó, en vez de viajar por el formulario: un importe que va y vuelve por la red es un
+ * importe que se puede manipular, y sobre todo es una cifra que ya no está atada a la
+ * fuente que la produjo (ADR 0077). El formulario sólo dice «sí, guarda lo que me
+ * enseñaste».
+ *
+ * Reemplaza la escalera entera, y por eso la pantalla pide confirmación cuando ya hay
+ * lotes declarados: lo que se pierde es trabajo del dueño, no un derivado.
+ */
+export async function applyProposedLotsAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<Record<string, never>, { lots: number }>({
+    datedFact: false,
+    missingId: "Identificador de activo no encontrado.",
+    parse: () => ({ ok: true, value: {} }),
+    run: async (store, { id }) => {
+      const asset = await findAsset(store, id);
+      if (!asset) {
+        return { ok: false, error: "No se encontr\u00f3 el activo." };
+      }
+      if (asset.liquidityTier !== "term-locked") {
+        return {
+          ok: false,
+          error:
+            "Solo un holding en el escal\u00f3n \u00abA plazo\u00bb puede declarar lotes de aportaci\u00f3n.",
+        };
+      }
+
+      const proposed = proposeLadderFromLedger(
+        readLedgerSeniority(await store.operations.readOperations(id)),
+      );
+
+      if (proposed.lots.length === 0) {
+        return {
+          ok: false,
+          error:
+            "Tu libro no tiene ninguna aportaci\u00f3n con antig\u00fcedad conocida, as\u00ed que no hay escalera que proponer.",
+        };
+      }
+
+      await store.assets.replaceContributionLots(id, proposed.lots);
+      return { ok: true, value: { lots: proposed.lots.length } };
+    },
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "contributionLot", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "contribution_lots_proposed"),
   })(formData, ..._testArgs);
 }
 

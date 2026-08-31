@@ -29,9 +29,12 @@ import {
   CONTRIBUTION_LOT_HELP,
   CONTRIBUTION_LOT_PARTIAL_NOTE,
   type FormErrorContext,
+  type ProposedLadder,
+  SENIORITY_GAP_LABELS,
 } from "@web/intake";
 import {
   addContributionLotAction,
+  applyProposedLotsAction,
   removeContributionLotAction,
 } from "@web/patrimonio/actions";
 import { formatDateKeyEs, resolveHoldingLots } from "@worthline/domain";
@@ -49,6 +52,7 @@ export function ContributionLotsSection({
   formError,
   holdingMinor,
   lots,
+  proposed,
   suggestedAvailableFrom,
   today,
 }: {
@@ -62,6 +66,12 @@ export function ContributionLotsSection({
   holdingMinor: number;
   /** Los lotes declarados, de antes a después. */
   lots: DeclaredLotRow[];
+  /**
+   * La escalera que el LIBRO sabe proponer (#1687), y el capital que no sabe fechar.
+   * Null cuando no hay ni lo uno ni lo otro: un botón que no puede cumplir es peor que
+   * no tenerlo.
+   */
+  proposed: ProposedLadder | null;
   /**
    * La fecha que la antigüedad heredada sugiere (#1518 + la ventana normativa), o null
    * cuando no hay antigüedad declarada — que es el caso por defecto.
@@ -139,6 +149,62 @@ export function ContributionLotsSection({
           bloque: manda la fecha única de arriba.
         </p>
       )}
+
+      {proposed !== null ? (
+        <div className="lotProposal">
+          {proposed.lots.length > 0 ? (
+            <>
+              <p className="infoNote">
+                De tus aportaciones registradas sale esta escalera:{" "}
+                {proposed.lots
+                  .map(
+                    (lot) =>
+                      `${formatMoney(lot.amountMinor)} el ${formatDateKeyEs(lot.availableFrom)}`,
+                  )
+                  .join("; ")}
+                . Son diez años desde la fecha de cada aportación.
+              </p>
+              {/* El importe propuesto es lo APORTADO, no lo que vale hoy: un lote que
+                  guardase el valor de hoy caducaría cada día (ADR 0074). Hay que
+                  decirlo, porque la diferencia es dinero que el usuario tiene. */}
+              <p className="infoNote">
+                Es un <strong>suelo</strong>: cuenta lo que aportaste, no lo que ha
+                rentado desde entonces. La cifra exacta de lo rescatable te la da tu
+                gestora, y puedes corregir cada lote después.
+              </p>
+              <form action={applyProposedLotsAction}>
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="id" type="hidden" value={assetId} />
+                <button type="submit">
+                  {lots.length > 0
+                    ? "Reemplazar mis lotes por esta escalera"
+                    : "Usar esta escalera"}
+                </button>
+                {/* Lo que se pierde es trabajo del dueño, no un derivado: se avisa
+                    antes, no después. */}
+                {lots.length > 0 ? (
+                  <p className="infoNote">
+                    Esto borra los {lots.length} lotes que ya has declarado.
+                  </p>
+                ) : null}
+              </form>
+            </>
+          ) : null}
+
+          {proposed.gaps.length > 0 ? (
+            <p className="infoNote">
+              De tu libro no se puede fechar todo:{" "}
+              {proposed.gaps
+                .map(
+                  (gap) =>
+                    `${formatMoney(gap.amountMinor)} ${SENIORITY_GAP_LABELS[gap.reason]}`,
+                )
+                .join("; ")}
+              . Ese capital lo tienes que fechar tú, con el extracto de tu gestora.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <form action={addContributionLotAction} className="stackForm">
         <input name="currentUrl" type="hidden" value={currentUrl} />

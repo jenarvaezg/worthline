@@ -1,3 +1,8 @@
+import type {
+  LedgerSeniorityReport,
+  SeniorityGap,
+  SeniorityGapReason,
+} from "@worthline/domain";
 import { isRealCalendarDay } from "@worthline/domain";
 import { parseMoneyMinorField } from "./shared";
 
@@ -89,3 +94,63 @@ export function parseContributionLot(formData: FormData): ContributionLotResult 
 
   return { amountMinor, availableFrom, ok: true };
 }
+
+/** Un lote propuesto desde el libro, antes de que nadie lo confirme (#1687). */
+export interface ProposedLot {
+  availableFrom: string;
+  amountMinor: number;
+}
+
+export interface ProposedLadder {
+  /** Los lotes que el libro sabe proponer, de antes a después. Vacío = no hay nada. */
+  lots: ProposedLot[];
+  /** El capital que el libro NO sabe fechar, por razón — para nombrarlo, no callarlo. */
+  gaps: SeniorityGap[];
+}
+
+/**
+ * La escalera que el libro propone (#1687): cada entrada de capital con antigüedad
+ * conocida, más la ventana normativa.
+ *
+ * **Propone, nunca aplica.** Lo que sale de aquí se enseña para que el dueño lo
+ * confirme o lo corrija; el motor sigue sin derivar un solo tramo, y la cifra de FIRE
+ * sólo se mueve cuando él ha declarado algo (ADR 0100, enmienda #1676).
+ *
+ * **El importe es el APORTADO, no el que vale hoy.** Un plan crece, y un lote que
+ * guardase el valor de hoy de unas participaciones caducaría cada día — la forma de
+ * fallo de #1415 que ADR 0074 prohíbe. Lo aportado es un hecho que no se mueve, y el
+ * tope al valor del holding lo hace `resolveHoldingLots` en cada lectura. La
+ * consecuencia hay que decirla en pantalla: el rendimiento acumulado queda sin fechar,
+ * así que la propuesta es un SUELO de lo rescatable y no la cifra de la gestora.
+ *
+ * Dos lotes que caen en la misma fecha se funden: son un solo tramo del calendario, y
+ * dos líneas idénticas en la ficha sólo dan trabajo de leer.
+ */
+export function proposeLadderFromLedger(report: LedgerSeniorityReport): ProposedLadder {
+  const byDate = new Map<string, number>();
+
+  for (const entry of report.entries) {
+    const availableFrom = suggestedLotAvailableFrom(entry.seniorityAt);
+    // Una antigüedad que no es un día real del calendario no puede proponer nada; el
+    // libro no debería tenerla, y si la tiene se calla en vez de desplazarla.
+    if (availableFrom === null) {
+      continue;
+    }
+    byDate.set(availableFrom, (byDate.get(availableFrom) ?? 0) + entry.amountMinor);
+  }
+
+  return {
+    gaps: [...report.gaps],
+    lots: [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([availableFrom, amountMinor]) => ({ amountMinor, availableFrom })),
+  };
+}
+
+/** Cómo se llama en pantalla el capital que el libro no sabe fechar (#1687). */
+export const SENIORITY_GAP_LABELS: Record<SeniorityGapReason, string> = {
+  opening: "entró como apertura, con una fecha que puso el alta y no tus aportaciones",
+  transfer_without_seniority:
+    "vino por traspaso sin declarar desde cuándo cuenta su antigüedad",
+  unpriced: "no lleva importe en el libro",
+};

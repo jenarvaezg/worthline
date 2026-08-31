@@ -13,7 +13,11 @@ import { createInMemoryStore } from "@worthline/db/testing";
 import { type Clock, fixedClock } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
 
-import { addContributionLotAction, removeContributionLotAction } from "./actions";
+import {
+  addContributionLotAction,
+  applyProposedLotsAction,
+  removeContributionLotAction,
+} from "./actions";
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
@@ -200,5 +204,70 @@ describe("removeContributionLotAction (#1676)", () => {
     await runRemove(form({ id: "pp", lotId: only!.id }), store);
 
     expect(await store.assets.readContributionLots("pp")).toEqual([]);
+  });
+});
+
+describe("applyProposedLotsAction (#1687)", () => {
+  async function seedWithLedger(store: WorthlineStore): Promise<void> {
+    await store.operations.recordOperation({
+      assetId: "pp",
+      currency: "EUR",
+      executedAt: "2014-03-01",
+      feesMinor: 0,
+      id: "op_a",
+      kind: "buy",
+      pricePerUnit: "4000",
+      units: "1",
+    });
+  }
+
+  test("guarda la escalera que sale del libro, sin que el importe viaje por el formulario", async () => {
+    const store = await seed();
+    await seedWithLedger(store);
+
+    const url = await runAction(() =>
+      applyProposedLotsAction(form({ id: "pp" }), store, CLOCK),
+    );
+
+    expect(url).toContain("ok=contribution_lots_proposed");
+    expect(await store.assets.readContributionLots("pp")).toEqual([
+      expect.objectContaining({ amountMinor: 400_000, availableFrom: "2024-03-01" }),
+    ]);
+  });
+
+  test("reemplaza la escalera anterior entera", async () => {
+    const store = await seed();
+    await seedWithLedger(store);
+    await store.assets.replaceContributionLots("pp", [
+      { amountMinor: 999_999, availableFrom: "2040-01-01" },
+    ]);
+
+    await runAction(() => applyProposedLotsAction(form({ id: "pp" }), store, CLOCK));
+
+    const lots = await store.assets.readContributionLots("pp");
+    expect(lots).toHaveLength(1);
+    expect(lots[0]!.availableFrom).toBe("2024-03-01");
+  });
+
+  // El caso de la cartera real: dos movilizaciones mudas y nada que proponer.
+  test("un libro sin antigüedad conocida se rechaza con su razón, sin tocar nada", async () => {
+    const store = await seed();
+
+    const url = await runAction(() =>
+      applyProposedLotsAction(form({ id: "pp" }), store, CLOCK),
+    );
+
+    expect(url).toContain("error=");
+    expect(await store.assets.readContributionLots("pp")).toEqual([]);
+  });
+
+  test("un holding fuera del escalón a plazo no acepta la propuesta", async () => {
+    const store = await seed("cash");
+
+    const url = await runAction(() =>
+      applyProposedLotsAction(form({ id: "pp" }), store, CLOCK),
+    );
+
+    expect(url).toContain("error=");
   });
 });

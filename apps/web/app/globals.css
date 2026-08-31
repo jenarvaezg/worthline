@@ -6069,6 +6069,22 @@ td.rowActions > * {
   color: var(--blue);
 }
 
+/* La escalera que el libro propone (#1687). Va bandeada porque es una oferta y no un
+   estado: el usuario tiene que poder distinguir de un vistazo lo que ya declaró (arriba,
+   sobre papel) de lo que la app le está ofreciendo derivar. */
+.lotProposal {
+  background: var(--band);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.lotProposal .infoNote {
+  margin: 0;
+}
+
 .lotDate {
   color: var(--muted);
   overflow: hidden;

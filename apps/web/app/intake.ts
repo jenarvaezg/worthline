@@ -51,7 +51,11 @@ export {
   CONTRIBUTION_LOT_PARTIAL_NOTE,
   type ContributionLotResult,
   PENSION_LIQUIDITY_WINDOW_YEARS,
+  type ProposedLadder,
+  type ProposedLot,
   parseContributionLot,
+  proposeLadderFromLedger,
+  SENIORITY_GAP_LABELS,
   suggestedLotAvailableFrom,
 } from "./intake/contribution-lots";
 export {
@@ -541,6 +545,7 @@ export function okMessage(key: string | undefined): string | null {
     available_from_saved: "Fecha de disponibilidad guardada.",
     contribution_lot_removed: "Lote quitado.",
     contribution_lot_saved: "Lote de aportaci\u00f3n guardado.",
+    contribution_lots_proposed: "Escalera guardada desde tus aportaciones.",
     // #1561: the alta went in exactly as any other — the acquisition-date
     // question rides beside it as its own aviso (see `resolveOkNotice`), never
     // dressed up as a confirmation.
