@@ -3,7 +3,12 @@ import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-type
 import { holdingEventInContext } from "@web/asistente/operation-document-frontier";
 import { describe, expect, it } from "vitest";
 
-import { ATTACHMENT_QUESTIONS, SUBSCRIPTION_RECEIPT } from "./golden-attachments";
+import { BROKER_TRANSACTIONS_FIXTURE_FILE } from "./broker-transactions-fixture";
+import {
+  ATTACHMENT_QUESTIONS,
+  BROKER_TRANSACTIONS_IN_CONTEXT,
+  SUBSCRIPTION_RECEIPT,
+} from "./golden-attachments";
 import type { GoldenQuestion } from "./golden-question";
 import { READING_QUESTIONS } from "./golden-reading";
 import {
@@ -79,6 +84,33 @@ describe("golden attachments", () => {
     expect(block?.text).toContain("Ahorro estudios peques");
   });
 
+  it("hands the broker's export to the model as a document worthline validated", async () => {
+    // The positive lane of #1516, and the one assertion that keeps its question
+    // honest: this is the only fixture worthline VALIDATES, so a reader change that
+    // dropped it back to `unstructured` would arm the #1248 gate and grade the model
+    // for being refused by the app.
+    const reading = await readGoldenAttachmentTurn(
+      { file: BROKER_TRANSACTIONS_FIXTURE_FILE, lane: "validated" },
+      TODAY,
+    );
+
+    expect(reading.unstructured).toBeNull();
+    expect(reading.preview.result.status).toBe("valid");
+    if (reading.preview.result.status !== "valid") return;
+    const document = reading.preview.result.data;
+    expect(document.documentType).toBe("broker_transactions");
+    if (document.documentType !== "broker_transactions") return;
+    // The three facts #1513 measured on Jorge's own export, through the seam the
+    // harness runs: eleven operations and the three instruments.
+    expect(document.transactions).toHaveLength(11);
+    expect(new Set(document.transactions.map((row) => row.isin))).toEqual(
+      new Set(["IE00B52MJY50", "IE00BM67HK77", "US18915M1071"]),
+    );
+    // And the direction is READ, not assumed: two rows carry a negative `Número`, so
+    // the ledger resolves buys from sells the way the real export does.
+    expect(document.transactions.filter((row) => row.kind === "sell")).toHaveLength(2);
+  });
+
   it("refuses to grade a turn whose document arrived through another lane", async () => {
     await expect(
       readGoldenAttachmentTurn({ file: "apuntes-familia.csv", lane: "validated" }, TODAY),
@@ -140,6 +172,23 @@ describe("golden validated documents (#1376)", () => {
     expect(event?.amount).toBe(480);
     expect(event?.units).toBe(13.7213);
     expect(event?.label).toContain("SMALL CAP");
+  });
+
+  it("carries the broker's ledger into the NEXT turn, gate down (#1516)", async () => {
+    // The ordinary path — upload, then ask — and the one thing that separates it from
+    // the same question with the file attached: `propose_statement_import` applies the
+    // #1248 gate before it looks at the document, so a harness that armed the gate over
+    // a history document would grade every model as refused.
+    const preview = await readGoldenValidatedDocument(BROKER_TRANSACTIONS_IN_CONTEXT);
+    const history = documentHistoryMessages(preview);
+
+    expect(unvalidatedEvidenceFor(null)).toBe(false);
+    expect(
+      validatedDocumentsFor(null, history).map((document) => document.documentType),
+    ).toEqual(["broker_transactions"]);
+    // The upload turn says nothing about what kind of paper this is: what the model
+    // routes on has to come off the document.
+    expect(JSON.stringify(history)).not.toContain("justificante");
   });
 
   it("refuses to grade a fixture that parsed as another document", async () => {
@@ -356,6 +405,28 @@ describe("prepareGoldenTurn", () => {
 
     expect(turn.unvalidatedEvidence).toBe(true);
     expect(turn.validatedDocuments).toEqual([]);
+  });
+
+  it("stands the gate down and hands over the ledger on a validated attachment (#1516)", async () => {
+    // The turn that carries the broker's export: the frontier does NOT bite — a
+    // document worthline validated is the sanctioned input of the bulk lane — and the
+    // rows the tool will write from are the reading's.
+    // By id, not by lane: a second validated fixture would otherwise silently move this
+    // assertion onto another question.
+    const question = ATTACHMENT_QUESTIONS.find(
+      (candidate) => candidate.id === "attachment-imports-the-broker-statement",
+    )!;
+
+    const turn = await prepareGoldenTurn(question, PRIMARY, TODAY);
+
+    expect(turn.unvalidatedEvidence).toBe(false);
+    expect(turn.validatedDocuments.map((document) => document.documentType)).toEqual([
+      "broker_transactions",
+    ]);
+    expect(turn.validatedAttachments.map((attachment) => attachment.fileName)).toEqual([
+      BROKER_TRANSACTIONS_FIXTURE_FILE,
+    ]);
+    expect(JSON.stringify(turn.messages)).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
   });
 
   it("composes a plain turn for a question with no document at all", async () => {

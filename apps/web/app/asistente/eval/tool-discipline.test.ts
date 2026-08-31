@@ -8,6 +8,7 @@ import {
   claimsCeremonyOverRejectedProposal,
   fakesProposalCeremony,
   proposedHoldingLabels,
+  proposedThroughTool,
   reachedForBulkImportTool,
   ungroundedProposalIds,
 } from "./tool-discipline";
@@ -103,6 +104,67 @@ describe("claimsCeremonyOverRejectedProposal (#1468)", () => {
             },
           ],
         }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("proposedThroughTool (#1516)", () => {
+  const STATEMENT_CARD = {
+    proposalType: "statement_import",
+    draft: { proposalId: "prop_1" },
+    funds: [],
+  };
+
+  test("sees the lane that answered with a card", () => {
+    expect(
+      proposedThroughTool(
+        answer({
+          toolCalls: [{ input: {}, name: "propose_statement_import" }],
+          toolResults: [{ name: "propose_statement_import", output: STATEMENT_CARD }],
+        }),
+        "propose_statement_import",
+      ),
+    ).toBe(true);
+  });
+
+  test("does not count a lane that was refused", () => {
+    // The whole reason this grades the ANSWER and not the call: on 2026-08-21 the
+    // model reached a lane, the frontier said no, and the user was left with prose.
+    expect(
+      proposedThroughTool(
+        answer({
+          toolCalls: [{ input: {}, name: "propose_statement_import" }],
+          toolResults: [
+            {
+              name: "propose_statement_import",
+              output: { error: "statement_document_required" },
+            },
+          ],
+        }),
+        "propose_statement_import",
+      ),
+    ).toBe(false);
+  });
+
+  test("does not count another lane's card", () => {
+    expect(
+      proposedThroughTool(
+        answer({
+          toolResults: [
+            { name: "propose_correction", output: correctionProposalOutput() },
+          ],
+        }),
+        "propose_statement_import",
+      ),
+    ).toBe(false);
+  });
+
+  test("does not count a call nothing answered", () => {
+    expect(
+      proposedThroughTool(
+        answer({ toolCalls: [{ input: {}, name: "propose_statement_import" }] }),
+        "propose_statement_import",
       ),
     ).toBe(false);
   });
