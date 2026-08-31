@@ -16,6 +16,61 @@
 
 export type PayoutCadence = "weekly" | "monthly" | "quarterly" | "annual";
 
+/**
+ * What kind of lease this income comes from — and therefore **what `endISO`
+ * means** (#1521).
+ *
+ * A season's let or a holiday let ends when its date says it ends: the flat really
+ * does stop paying, and projecting nothing after it is the honest answer. A
+ * long-term residential lease is the opposite case — the signed date is the end of
+ * the *mandatory* term, and the contract may well continue by law past it, so
+ * reading that date as "the rent disappears for ever" is an assumption nobody
+ * declared.
+ *
+ * The regime declares the NATURE of the contract; worthline never derives how many
+ * years of statutory extension are left from it. That is a legal engine with a
+ * version and a territory, and it is deliberately out of scope: if the date on
+ * which the decision comes back to the owner is not `endISO`, the owner declares it.
+ */
+export type LeaseRegime = "residential_long_term" | "seasonal" | "vacation" | "other";
+
+/**
+ * How the rent is revised over time (#1521). Not decorative: ADR 0076 point 4
+ * substitutes a net rental yield for the housing rung's default **because rent is
+ * inflation-linked**, i.e. a net rental yield already IS a real yield.
+ *
+ * - `legal_reference` (revised by a statutory index — the free label says which,
+ *   e.g. IRAV) and `contractual` (revised by a clause in the contract) both keep
+ *   that assumption.
+ * - `fixed` (a nominal amount that never moves) and `none` break it: the declared
+ *   yield would be read as real while it loses purchasing power every year, which
+ *   overstates in the dangerous direction. The engine refuses to read those as real
+ *   rather than inventing a decay rate for them.
+ *
+ * Absent / null is **not declared**, and assumes nothing: the engine keeps doing
+ * exactly what it did before this field existed.
+ */
+export type RentRevision = "legal_reference" | "contractual" | "fixed" | "none";
+
+/**
+ * What the owner says happens once the period in which the decision is HIS again
+ * begins — the end of the mandatory term, not the signed `endISO` (#1521). The name
+ * carries half the fix: `projection_policy` would have re-attached the policy to a
+ * date that, under a long-term residential regime, decides nothing.
+ *
+ * - `renew_same_real_rent`: the rent keeps running at the same REAL amount.
+ * - `stop`: the asset goes back to its rung's default. What the app did for every
+ *   ended lease before this field existed — honest for a season's let, an invention
+ *   for a long-term residential one.
+ * - `unknown`: declared as undecided. Falls back to what the regime implies, exactly
+ *   like an absent value, and the difference is what the ficha SAYS, not what the
+ *   engine computes.
+ *
+ * A real rent-growth rate (`renew_with_growth`) is deliberately not offered: that is
+ * a forecast, and worthline does not make forecasts.
+ */
+export type PostMandatoryTermPolicy = "renew_same_real_rent" | "stop" | "unknown";
+
 /** A one-off recorded payout: a variable dividend, an extraordinary distribution. */
 export interface Payout {
   id: string;
@@ -53,6 +108,29 @@ export interface PayoutSchedule {
   endISO: string | null;
   /** ISO dates removed one by one (an unpaid month). */
   exclusions: string[];
+  /**
+   * The legal nature of the lease (#1521) — what `endISO` MEANS. Absent / null is
+   * "not declared" and the engine keeps behaving as it always did (`stop`), saying
+   * so on the ficha rather than hiding it. See {@link LeaseRegime}.
+   */
+  leaseRegime?: LeaseRegime | null;
+  /**
+   * How the rent is revised (#1521). Absent / null assumes nothing; `fixed` / `none`
+   * are the two declarations that STOP the FIRE rate from reading the yield as real.
+   * See {@link RentRevision}.
+   */
+  rentRevision?: RentRevision | null;
+  /**
+   * The free label naming the statutory index behind `rentRevision === "legal_reference"`
+   * (e.g. "IRAV"). Documentary only — there is no legal engine behind it, and no figure
+   * anywhere reads it. Null / absent on every other revision.
+   */
+  rentRevisionReference?: string | null;
+  /**
+   * What happens once the mandatory term is over (#1521). Absent / null and `unknown`
+   * both fall back to what {@link leaseRegime} implies. See {@link PostMandatoryTermPolicy}.
+   */
+  postMandatoryTermPolicy?: PostMandatoryTermPolicy | null;
 }
 
 /** A single occurrence derived from a schedule. */

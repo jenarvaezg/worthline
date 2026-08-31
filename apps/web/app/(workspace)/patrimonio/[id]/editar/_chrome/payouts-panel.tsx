@@ -21,20 +21,25 @@ import {
 } from "@web/inversiones/cobros-actions";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
-import type { CurrencyCode } from "@worthline/domain";
+import type { ManualAsset } from "@worthline/domain";
+import { isHousingAsset } from "@worthline/domain";
 import type { ReactNode } from "react";
 
 export async function loadPayoutsPanel(
   ficha: FichaContext,
   input: {
-    /** The asset's currency — every payout on it is denominated in it. */
-    currency: CurrencyCode;
+    /**
+     * The holding this panel sits on. Taken whole rather than as a currency, so the
+     * one branch this panel needs — whether its income can be a LEASE (#1521) — is
+     * derived HERE and not as another instrument boolean on the page (ADR 0095).
+     */
+    asset: ManualAsset;
     /** The scope whose declared spending frames the renta-pasiva coverage. */
     scopeId: string | undefined;
   },
 ): Promise<ReactNode> {
   const { currentUrl, formError, id, privacyMode, store, today } = ficha;
-  const { currency, scopeId } = input;
+  const { asset, scopeId } = input;
 
   const [payouts, schedules, fireConfig] = await Promise.all([
     store.payouts.readPayoutsForHolding(id),
@@ -73,7 +78,7 @@ export async function loadPayoutsPanel(
     <CobrosSection
       createPayoutAction={boundCreatePayoutAction}
       createPayoutScheduleAction={boundCreatePayoutScheduleAction}
-      currency={currency}
+      currency={asset.currency}
       currentUrl={currentUrl}
       deletePayoutAction={boundDeletePayoutAction}
       deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
@@ -84,6 +89,7 @@ export async function loadPayoutsPanel(
       payouts={payouts}
       privacyMode={privacyMode}
       schedules={schedules}
+      showLeaseTerms={isHousingAsset(asset)}
       today={today}
       updatePayoutScheduleAction={boundUpdatePayoutScheduleAction}
     />

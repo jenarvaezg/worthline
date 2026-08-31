@@ -63,7 +63,14 @@ import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { ManagedPortfolio } from "./managed-portfolio";
 import type { ManagedPortfolioWitness } from "./managed-portfolio-reconciliation";
 import type { CurrencyCode, MoneyMinor } from "./money";
-import type { Payout, PayoutCadence, PayoutSchedule } from "./payouts";
+import type {
+  LeaseRegime,
+  Payout,
+  PayoutCadence,
+  PayoutSchedule,
+  PostMandatoryTermPolicy,
+  RentRevision,
+} from "./payouts";
 import type {
   AssetPrice,
   InvestmentPriceProvider,
@@ -233,6 +240,25 @@ const payoutCadenceSchema = vocabularyOf<PayoutCadence>()([
   "monthly",
   "quarterly",
   "annual",
+]);
+// The lease vocabularies (#1521). They travel as fields like any other; a document
+// written before v66 simply carries null in all of them.
+const leaseRegimeSchema = vocabularyOf<LeaseRegime>()([
+  "residential_long_term",
+  "seasonal",
+  "vacation",
+  "other",
+]);
+const rentRevisionSchema = vocabularyOf<RentRevision>()([
+  "legal_reference",
+  "contractual",
+  "fixed",
+  "none",
+]);
+const postMandatoryTermPolicySchema = vocabularyOf<PostMandatoryTermPolicy>()([
+  "renew_same_real_rent",
+  "stop",
+  "unknown",
 ]);
 const warningEntityTypeSchema = vocabularyOf<DomainWarning["entityType"]>()([
   "asset",
@@ -807,6 +833,13 @@ const payoutScheduleSchema = reproduces<PayoutSchedule>()(
     cadence: payoutCadenceSchema,
     startISO: nonEmptyString,
     endISO: nonEmptyString.nullable().default(null),
+    // The lease terms (#1521). All four default to null, which is what a document
+    // written before v66 carries and what «nadie lo ha dicho» means: the importing
+    // engine goes on behaving exactly as it did before these fields existed.
+    leaseRegime: leaseRegimeSchema.nullable().default(null),
+    rentRevision: rentRevisionSchema.nullable().default(null),
+    rentRevisionReference: nonEmptyString.nullable().default(null),
+    postMandatoryTermPolicy: postMandatoryTermPolicySchema.nullable().default(null),
     exclusions: z.array(nonEmptyString).default([]),
   }),
 );

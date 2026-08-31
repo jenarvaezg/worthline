@@ -40,7 +40,11 @@ const DIVIDEND: Payout = {
 const noop = async () => {};
 
 function renderSection(
-  over: { monthlySpendingMinor?: number | null; schedules?: PayoutSchedule[] } = {},
+  over: {
+    monthlySpendingMinor?: number | null;
+    schedules?: PayoutSchedule[];
+    showLeaseTerms?: boolean;
+  } = {},
 ) {
   return renderToStaticMarkup(
     <CobrosSection
@@ -54,6 +58,7 @@ function renderSection(
       payouts={[DIVIDEND]}
       privacyMode={false}
       schedules={over.schedules ?? [RENT]}
+      showLeaseTerms={over.showLeaseTerms ?? false}
       today={TODAY}
       updatePayoutScheduleAction={noop}
     />,
@@ -193,5 +198,68 @@ describe("CobrosSection — net passive income (#1463)", () => {
     // expenses 1.050.000 → net −316.000: declarable, and the bar clamps at 0.
     expect(markup).toContain("Renta pasiva neta");
     expect(markup).toContain("width:0%");
+  });
+});
+
+// ── the lease terms (#1521) ───────────────────────────────────────────────────
+
+describe("CobrosSection — lease terms (#1521)", () => {
+  test("a coupon or a dividend is offered no regime at all", () => {
+    // `endISO` on a coupon means exactly what it says, so there is nothing to
+    // declare — and a select that decides nothing is worse than no select.
+    const markup = renderSection();
+
+    expect(markup).not.toContain('name="leaseRegime"');
+    expect(markup).not.toContain('name="saveLease"');
+  });
+
+  test("a rented property gets the three selects on the row and on the alta form", () => {
+    const markup = renderSection({ showLeaseTerms: true });
+
+    expect(markup).toContain('name="leaseRegime"');
+    expect(markup).toContain('name="rentRevision"');
+    expect(markup).toContain('name="postMandatoryTermPolicy"');
+    expect(markup).toContain('name="saveLease"');
+    // Every one of them opens on «Sin declarar»: the form asks, it never guesses.
+    expect(markup).toContain("Sin declarar");
+  });
+
+  test("with nothing declared the row SAYS the assumption instead of leaving it blank", () => {
+    // The whole of #1521: the app used to drop the flat to its rung's default past
+    // the end date without a word. The behaviour is unchanged; the silence is not.
+    const markup = renderSection({ showLeaseTerms: true });
+
+    expect(markup).toContain("régimen sin declarar");
+    expect(markup).toContain("supuesto: nadie lo ha declarado");
+  });
+
+  test("a declared renewal is attributed to the owner and prefilled for correction", () => {
+    const markup = renderSection({
+      schedules: [
+        {
+          ...RENT,
+          endISO: "2026-09-01",
+          leaseRegime: "residential_long_term",
+          postMandatoryTermPolicy: "renew_same_real_rent",
+          rentRevision: "legal_reference",
+          rentRevisionReference: "IRAV",
+        },
+      ],
+      showLeaseTerms: true,
+    });
+
+    expect(markup).toContain("sigue rentando lo mismo en términos reales");
+    expect(markup).toContain("lo has declarado");
+    expect(markup).toContain("IRAV");
+    expect(markup).toContain('value="residential_long_term" selected');
+  });
+
+  test("a nominal rent carries the warning that its yield is not read as real", () => {
+    const markup = renderSection({
+      schedules: [{ ...RENT, rentRevision: "fixed" }],
+      showLeaseTerms: true,
+    });
+
+    expect(markup).toContain("no la lee como rentabilidad real");
   });
 });

@@ -9,7 +9,9 @@ import type { RentRealReturns, RentScheduleWindow } from "./fire-rent-return";
 import {
   annualizedMinor,
   deriveRentRealReturns,
+  effectivePostMandatoryTermPolicy,
   isScheduleLiveOn,
+  isScheduleProjectedOn,
 } from "./fire-rent-return";
 import type { PayoutCadence, PayoutSchedule } from "./payouts";
 import type { ManualAsset } from "./workspace-types";
@@ -438,5 +440,347 @@ describe("deriveRentRealReturns", () => {
     });
 
     expect(half.byAssetId.get("piso")?.rate).toBe(whole.byAssetId.get("piso")?.rate);
+  });
+});
+
+/**
+ * The projection policy (#1521). Before it, an `endISO` in the past was the whole
+ * answer: the flat went back to the housing rung's 3 % for ever, which is `stop`
+ * assumed in silence. These tests pin the three declarations that can change that
+ * and — first of all — that declaring NOTHING changes nothing.
+ */
+describe("effectivePostMandatoryTermPolicy", () => {
+  it("nothing declared → stop, and it is reported as undeclared", () => {
+    expect(effectivePostMandatoryTermPolicy(schedule("s1", "piso"))).toEqual({
+      policy: "stop",
+      source: "undeclared",
+    });
+  });
+
+  it("a long-term residential regime alone implies renewal", () => {
+    expect(
+      effectivePostMandatoryTermPolicy(
+        schedule("s1", "piso", { leaseRegime: "residential_long_term" }),
+      ),
+    ).toEqual({ policy: "renew_same_real_rent", source: "regime" });
+  });
+
+  it("a season's let and a holiday let end when their date says so", () => {
+    for (const leaseRegime of ["seasonal", "vacation", "other"] as const) {
+      expect(
+        effectivePostMandatoryTermPolicy(schedule("s1", "piso", { leaseRegime })),
+      ).toEqual({ policy: "stop", source: "regime" });
+    }
+  });
+
+  it("an explicit policy overrides what the regime would imply, both ways", () => {
+    expect(
+      effectivePostMandatoryTermPolicy(
+        schedule("s1", "piso", {
+          leaseRegime: "residential_long_term",
+          postMandatoryTermPolicy: "stop",
+        }),
+      ),
+    ).toEqual({ policy: "stop", source: "declared" });
+    expect(
+      effectivePostMandatoryTermPolicy(
+        schedule("s1", "piso", {
+          leaseRegime: "seasonal",
+          postMandatoryTermPolicy: "renew_same_real_rent",
+        }),
+      ),
+    ).toEqual({ policy: "renew_same_real_rent", source: "declared" });
+  });
+
+  it("`unknown` is an absence of decision, so the regime still answers", () => {
+    expect(
+      effectivePostMandatoryTermPolicy(
+        schedule("s1", "piso", {
+          leaseRegime: "residential_long_term",
+          postMandatoryTermPolicy: "unknown",
+        }),
+      ),
+    ).toEqual({ policy: "renew_same_real_rent", source: "regime" });
+    expect(
+      effectivePostMandatoryTermPolicy(
+        schedule("s1", "piso", { postMandatoryTermPolicy: "unknown" }),
+      ),
+    ).toEqual({ policy: "stop", source: "undeclared" });
+  });
+});
+
+describe("isScheduleProjectedOn", () => {
+  it("an ended rent with no declaration stops, exactly as before #1521", () => {
+    const ended = schedule("s1", "piso", { endISO: "2026-07-31" });
+    expect(isScheduleProjectedOn(ended, TODAY)).toBe(false);
+    expect(isScheduleLiveOn(ended, TODAY)).toBe(false);
+  });
+
+  it("an ended long-term residential rent keeps projecting", () => {
+    const ended = schedule("s1", "piso", {
+      endISO: "2026-07-31",
+      leaseRegime: "residential_long_term",
+    });
+    expect(isScheduleProjectedOn(ended, TODAY)).toBe(true);
+    // The window itself did not move: the rate reads the policy, the payout
+    // derivation still reads the window (ADR 0054 point 4).
+    expect(isScheduleLiveOn(ended, TODAY)).toBe(false);
+  });
+
+  it("a rent that has not started yet never projects, whatever its policy", () => {
+    expect(
+      isScheduleProjectedOn(
+        schedule("s1", "piso", {
+          startISO: "2027-01-01",
+          leaseRegime: "residential_long_term",
+          postMandatoryTermPolicy: "renew_same_real_rent",
+        }),
+        TODAY,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("deriveRentRealReturns · projection policy (#1521)", () => {
+  it("declaring nothing changes no figure: an ended rent still falls back", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices[0]?.reason).toBe("no_live_schedule");
+  });
+
+  it("an ended rent declared as renewing keeps feeding the rate", () => {
+    // 600 €/mes brutos − 100 €/mes de gastos = 6.000 €/año sobre 100.000 € → 6 %.
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 60_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+          leaseRegime: "residential_long_term",
+          postMandatoryTermPolicy: "renew_same_real_rent",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    const derived = result.byAssetId.get("piso");
+    expect(derived?.rate).toBeCloseTo(0.06, 10);
+    expect(derived?.scheduleIds).toEqual(["s1"]);
+    // The rate rests on a projection, and the row has to be able to say so — with
+    // the provenance, because «lo has declarado» is a different sentence from «lo
+    // implica el régimen».
+    expect(derived?.projectedSchedules).toEqual([
+      { scheduleId: "s1", policySource: "declared" },
+    ]);
+    expect(result.notices).toEqual([]);
+  });
+
+  it("a live rent is not a projection, so nothing is flagged as one", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          expensesMinor: 10_000,
+          leaseRegime: "residential_long_term",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.get("piso")?.projectedSchedules).toEqual([]);
+  });
+
+  it("a renewal implied by the regime alone is reported as the regime's, not the owner's", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 60_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+          leaseRegime: "residential_long_term",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.get("piso")?.projectedSchedules).toEqual([
+      { scheduleId: "s1", policySource: "regime" },
+    ]);
+  });
+
+  it("a seasonal let that ended stops even with the regime declared", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+          leaseRegime: "seasonal",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices[0]?.reason).toBe("no_live_schedule");
+  });
+
+  it("all-or-nothing survives: a projected rent with no expenses withholds the asset", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", { amountMinor: 50_000, expensesMinor: 10_000 }),
+        schedule("s2", "piso", {
+          amountMinor: 20_000,
+          endISO: "2026-07-31",
+          leaseRegime: "residential_long_term",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices[0]?.reason).toBe("missing_expenses");
+  });
+});
+
+describe("deriveRentRealReturns · rent revision (#1521)", () => {
+  it("a legally revised rent is a real yield: it derives", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          expensesMinor: 10_000,
+          rentRevision: "legal_reference",
+          rentRevisionReference: "IRAV",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.get("piso")?.rate).toBeCloseTo(0.048, 10);
+    expect(result.notices).toEqual([]);
+  });
+
+  it("a contractually revised rent derives too", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          expensesMinor: 10_000,
+          rentRevision: "contractual",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.get("piso")?.rate).toBeCloseTo(0.048, 10);
+  });
+
+  it("a nominal rent refuses to be read as real: notice, tier default, no decay", () => {
+    for (const rentRevision of ["fixed", "none"] as const) {
+      const result = deriveRentRealReturns({
+        assets: [flat("piso", 10_000_000)],
+        baseCurrency: EUR,
+        schedules: [
+          schedule("s1", "piso", {
+            amountMinor: 50_000,
+            expensesMinor: 10_000,
+            rentRevision,
+          }),
+        ],
+        todayISO: TODAY,
+      });
+
+      expect(result.byAssetId.size).toBe(0);
+      expect(result.notices).toEqual([
+        {
+          assetId: "piso",
+          assetName: "piso",
+          // 6.000 €/año brutos sobre 100.000 € → el 6 % que NO se está usando.
+          grossRate: 0.06,
+          reason: "nominal_rent_revision",
+        },
+      ]);
+    }
+  });
+
+  it("one nominal rent takes the whole asset down (ADR 0076 point 3)", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          expensesMinor: 10_000,
+          rentRevision: "legal_reference",
+        }),
+        schedule("s2", "piso", {
+          amountMinor: 10_000,
+          expensesMinor: 0,
+          rentRevision: "fixed",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices[0]?.reason).toBe("nominal_rent_revision");
+  });
+
+  it("the nominal veto is read before the missing expenses, because it is the one that cannot be fixed by declaring them", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [schedule("s1", "piso", { amountMinor: 50_000, rentRevision: "fixed" })],
+      todayISO: TODAY,
+    });
+
+    expect(result.notices[0]?.reason).toBe("nominal_rent_revision");
+  });
+
+  it("a nominal revision on a rent that is not counted at all says nothing new", () => {
+    // Ended, no policy: the calendar answers first, and the revision of a rent that
+    // feeds no rate is not a reason to withhold anything.
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+          rentRevision: "fixed",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(result.notices[0]?.reason).toBe("no_live_schedule");
   });
 });

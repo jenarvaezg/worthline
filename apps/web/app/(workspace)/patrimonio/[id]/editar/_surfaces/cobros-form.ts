@@ -11,6 +11,8 @@
 
 import type { PayoutCadence } from "@worthline/domain";
 import { parseDecimalToMinor, parseDecimalToMinorStrict } from "@worthline/domain";
+import type { LeaseTermsFields, ParsedLeaseTerms } from "./lease-terms-form";
+import { parseLeaseTerms } from "./lease-terms-form";
 
 /** The cadences in render order, with their Spanish labels. */
 export const PAYOUT_CADENCE_LABELS: ReadonlyArray<{
@@ -75,8 +77,15 @@ export function buildPayoutResult(fields: PayoutFields): PayoutResult {
 
 // ── payout schedule ─────────────────────────────────────────────────────────
 
-/** The raw schedule fields lifted straight off the form. */
-export interface PayoutScheduleFields {
+/**
+ * The raw schedule fields lifted straight off the form.
+ *
+ * The lease terms ride along (#1521) and are optional in the same sense the expenses
+ * are: an empty select is «no lo he dicho», so a form that never showed them (a
+ * coupon, a dividend — anything that is not a rented property) parses to three nulls
+ * and declares nothing.
+ */
+export interface PayoutScheduleFields extends LeaseTermsFields {
   label: string;
   amount: string;
   cadence: string;
@@ -93,7 +102,7 @@ export interface PayoutScheduleFields {
 }
 
 /** A validated schedule write — holdingId is added by the action. */
-export interface ParsedPayoutSchedule {
+export interface ParsedPayoutSchedule extends ParsedLeaseTerms {
   label: string;
   amountMinor: number;
   cadence: PayoutCadence;
@@ -164,6 +173,10 @@ export function buildPayoutScheduleResult(
   if (!expenses.ok) {
     return { ok: false, error: expenses.error };
   }
+  const lease = parseLeaseTerms(fields);
+  if (!lease.ok) {
+    return { ok: false, error: lease.error };
+  }
   return {
     ok: true,
     schedule: {
@@ -175,6 +188,7 @@ export function buildPayoutScheduleResult(
       ...(expenses.expensesMinor === null
         ? {}
         : { expensesMinor: expenses.expensesMinor }),
+      ...lease.terms,
     },
   };
 }

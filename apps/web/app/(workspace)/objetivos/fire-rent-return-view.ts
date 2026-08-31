@@ -85,8 +85,14 @@ export function fireRentReturnLines(
         : ` Cifras del 100 % del inmueble; en este ámbito pesa ${formatMoney(
             entry.scopedValueMinor,
           )}.`;
+    // Una tasa que se apoya en un alquiler YA terminado no puede callarlo (#1521): una
+    // proyección sin anunciar sería el mismo silencio que este issue vino a cerrar,
+    // apuntando al otro lado. Y la frase distingue de dónde viene el supuesto: decirle
+    // «lo has declarado» de una renovación que solo implica el régimen sería ponerle
+    // en la boca una declaración que no hizo.
+    const projected = projectedClause(entry.projectedSchedules);
     return {
-      gloss: `${body}${share}`,
+      gloss: `${body}${share}${projected}`,
       href: null,
       key: entry.assetId,
       kind: "applied",
@@ -107,6 +113,25 @@ export function fireRentReturnLines(
   return [...applied, ...withheld];
 }
 
+/**
+ * The clause naming a projection behind an applied rate (#1521), or "" when the rate
+ * only reads rents in force today — which is every rate that existed before #1521.
+ *
+ * An explicit declaration wins the sentence when both provenances are present: the
+ * owner's own words are the stronger claim, and the regime-implied half is not being
+ * hidden — it is being described by the weaker of two true statements.
+ */
+function projectedClause(
+  projected: FireRentReturnReport["applied"][number]["projectedSchedules"],
+): string {
+  if (projected.length === 0) {
+    return "";
+  }
+  return projected.some((entry) => entry.policySource === "declared")
+    ? " Incluye un alquiler cuyo contrato ya terminó: has declarado que sigue rentando lo mismo en términos reales pasado el plazo obligatorio."
+    : " Incluye un alquiler cuyo contrato ya terminó: por el régimen que has declarado, el plazo firmado no es el fin de la renta, así que se sigue contando la misma renta real.";
+}
+
 function withheldHref(
   notice: RentReturnNotice,
   publicIdByAssetId: Readonly<Record<string, string>>,
@@ -118,6 +143,8 @@ function withheldHref(
   const publicId = publicIdByAssetId[notice.assetId];
   return publicId ? holdingCobrosHref(publicId) : null;
 }
+
+const TIER_FALLBACK_CLAUSE = "cuenta con el retorno por defecto de su tramo";
 
 function noticeGloss(notice: RentReturnNotice): string {
   switch (notice.reason) {
@@ -135,6 +162,16 @@ function noticeGloss(notice: RentReturnNotice): string {
       return noLiveScheduleGloss(notice.scheduleWindow);
     case "foreign_currency":
       return "Está valorado en otra divisa y un cobro no lleva divisa propia, así que su alquiler no se usa para derivar la rentabilidad.";
+    case "nominal_rent_revision":
+      // Ni «declara algo más» ni «te falta un dato»: es una consecuencia de lo que
+      // el usuario YA declaró. Nombrar el bruto aquí sería una invitación a usarlo,
+      // y es justo el número que no se puede usar — así que se dice por qué no, y
+      // qué declaración lo cambiaría.
+      return `Su alquiler está declarado como renta que no se revisa, así que su rendimiento no es real: pierde poder de compra cada año${
+        notice.grossRate === null
+          ? ""
+          : `, y leer el ${formatRatePercent(notice.grossRate)} que da hoy como si fuera real sobreestimaría`
+      }. Mientras siga así, ${TIER_FALLBACK_CLAUSE}. Si en realidad se revisa por una referencia legal o por contrato, decláralo y volverá a contar.`;
     case "immobilized_not_counted":
       // Ni un fallo ni una invitación: es la consecuencia de lo que el usuario
       // declaró, así que la línea no le pide arreglar nada — le recuerda dónde se
@@ -142,8 +179,6 @@ function noticeGloss(notice: RentReturnNotice): string {
       return "Has declarado que tu patrimonio inmovilizado no cuenta como capital FIRE, así que su alquiler tampoco alimenta la rentabilidad esperada. Se cambia en «Tus supuestos».";
   }
 }
-
-const TIER_FALLBACK_CLAUSE = "cuenta con el retorno por defecto de su tramo";
 
 /**
  * The sentence for `no_live_schedule` (#1511). The reason merges «terminó» with «aún no

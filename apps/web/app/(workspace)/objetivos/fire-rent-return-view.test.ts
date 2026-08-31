@@ -22,6 +22,7 @@ const APPLIED: FireRentReturnReport["applied"][number] = {
   assetId: "a-naval",
   assetName: "Piso Navalcarnero",
   isNetNegative: false,
+  projectedSchedules: [],
   rate: 1_560_000 / 37_000_000,
   scheduleIds: ["s1"],
   scopedValueMinor: 37_000_000,
@@ -359,5 +360,78 @@ describe("fireRentReturnLines", () => {
     });
 
     expect(line?.href).toBeNull();
+  });
+});
+
+describe("fireRentReturnLines — the lease terms (#1521)", () => {
+  test("a rate resting on a rent whose contract ended says so, in the owner's words", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [
+          {
+            ...APPLIED,
+            projectedSchedules: [{ scheduleId: "s1", policySource: "declared" }],
+          },
+        ],
+        notices: [],
+      },
+    });
+
+    expect(line?.gloss).toContain("cuyo contrato ya terminó");
+    expect(line?.gloss).toContain("has declarado que sigue rentando");
+  });
+
+  test("a renewal implied by the regime is not reported as the owner's own declaration", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [
+          {
+            ...APPLIED,
+            projectedSchedules: [{ scheduleId: "s1", policySource: "regime" }],
+          },
+        ],
+        notices: [],
+      },
+    });
+
+    expect(line?.gloss).toContain("cuyo contrato ya terminó");
+    expect(line?.gloss).toContain("por el régimen que has declarado");
+    // Putting a declaration he never made in his mouth is the failure to avoid.
+    expect(line?.gloss).not.toContain("has declarado que sigue rentando");
+  });
+
+  test("a rate built only from rents in force claims no projection", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: { applied: [APPLIED], notices: [] },
+    });
+
+    expect(line?.gloss).not.toContain("ya terminó");
+  });
+
+  test("a nominal rent is told why its yield is not real, and what would change it", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Piso Yeles",
+            grossRate: 0.063,
+            reason: "nominal_rent_revision",
+          },
+        ],
+      },
+    });
+
+    expect(line?.kind).toBe("withheld");
+    expect(line?.gloss).toContain("no se revisa");
+    // The gross is named as what it is NOT, never as an invitation to use it.
+    expect(line?.gloss).toContain("6,3 %");
+    expect(line?.gloss).toContain("retorno por defecto de su tramo");
+    expect(line?.gloss).toContain("referencia legal");
   });
 });

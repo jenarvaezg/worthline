@@ -263,3 +263,141 @@ describe("updatePayoutScheduleAction — declared expenses (#1448)", () => {
     ).toBe(18_000);
   });
 });
+
+describe("updatePayoutScheduleAction — lease terms (#1521)", () => {
+  async function withSchedule(): Promise<{ store: WorthlineStore; id: string }> {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+    const schedule = await store.payouts.createPayoutSchedule({
+      amountMinor: 100_000,
+      cadence: "monthly",
+      holdingId: HOLDING,
+      label: "Alquiler",
+      startISO: "2024-01-01",
+    });
+    return { id: schedule.id, store };
+  }
+
+  const readBack = (store: WorthlineStore) =>
+    store.payouts.readPayoutSchedulesForHolding(HOLDING).then((rows) => rows[0]);
+
+  test("a rent declared before the fields existed carries none of them", async () => {
+    const { store } = await withSchedule();
+
+    expect(await readBack(store)).toMatchObject({
+      leaseRegime: null,
+      rentRevision: null,
+      rentRevisionReference: null,
+      postMandatoryTermPolicy: null,
+    });
+  });
+
+  test("declares the three terms on an existing rent", async () => {
+    const { id, store } = await withSchedule();
+
+    const digest = await run(
+      updatePayoutScheduleAction,
+      form({
+        leaseRegime: "residential_long_term",
+        postMandatoryTermPolicy: "renew_same_real_rent",
+        rentRevision: "legal_reference",
+        rentRevisionReference: "IRAV",
+        saveLease: "1",
+        scheduleId: id,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("ok=payout_schedule_updated");
+    expect(await readBack(store)).toMatchObject({
+      leaseRegime: "residential_long_term",
+      postMandatoryTermPolicy: "renew_same_real_rent",
+      rentRevision: "legal_reference",
+      rentRevisionReference: "IRAV",
+    });
+  });
+
+  test("emptied selects withdraw the declaration instead of freezing the old one", async () => {
+    const { id, store } = await withSchedule();
+    await store.payouts.updatePayoutSchedule(id, {
+      leaseRegime: "residential_long_term",
+      postMandatoryTermPolicy: "stop",
+    });
+
+    await run(
+      updatePayoutScheduleAction,
+      form({
+        leaseRegime: "",
+        postMandatoryTermPolicy: "",
+        rentRevision: "",
+        rentRevisionReference: "",
+        saveLease: "1",
+        scheduleId: id,
+      }),
+      store,
+    );
+
+    expect(await readBack(store)).toMatchObject({
+      leaseRegime: null,
+      postMandatoryTermPolicy: null,
+    });
+  });
+
+  test("a value outside the vocabulary is rejected at the section, nothing written", async () => {
+    const { id, store } = await withSchedule();
+
+    const digest = await run(
+      updatePayoutScheduleAction,
+      form({ leaseRegime: "piso", saveLease: "1", scheduleId: id }),
+      store,
+    );
+
+    expect(digest).toContain("form=payout");
+    expect(await readBack(store)).toMatchObject({ leaseRegime: null });
+  });
+
+  test("saving the expenses never clears a regime declared on the other form", async () => {
+    const { id, store } = await withSchedule();
+    await store.payouts.updatePayoutSchedule(id, {
+      leaseRegime: "residential_long_term",
+    });
+
+    await run(
+      updatePayoutScheduleAction,
+      form({ expenses: "180", saveExpenses: "1", scheduleId: id }),
+      store,
+    );
+
+    expect(await readBack(store)).toMatchObject({
+      expensesMinor: 18_000,
+      leaseRegime: "residential_long_term",
+    });
+  });
+
+  test("the creation form carries the lease terms straight through", async () => {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+
+    await run(
+      createPayoutScheduleAction,
+      form({
+        amount: "1000",
+        cadence: "monthly",
+        label: "Alquiler",
+        leaseRegime: "seasonal",
+        postMandatoryTermPolicy: "stop",
+        rentRevision: "fixed",
+        startISO: "2024-01-01",
+      }),
+      store,
+    );
+
+    expect(await readBack(store)).toMatchObject({
+      leaseRegime: "seasonal",
+      postMandatoryTermPolicy: "stop",
+      rentRevision: "fixed",
+      // Never kept beside a revision it does not annotate.
+      rentRevisionReference: null,
+    });
+  });
+});

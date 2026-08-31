@@ -50,12 +50,18 @@ describe("schema migration v42 (payouts)", () => {
       // `amount_minor`, where schema.ts declares it. SQLite's ALTER cannot insert
       // mid-table and nothing reads a column by position.
       "expenses_minor",
+      // v66 (#1521), appended for the same reason: the lease terms of a declared
+      // rent — what its end date means and what happens after it.
+      "lease_regime",
+      "rent_revision",
+      "rent_revision_reference",
+      "post_mandatory_term_policy",
     ]);
 
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(65);
+    expect(SCHEMA_VERSION).toBe(66);
   });
 
   test("fresh schemaSql includes both payout tables", async () => {

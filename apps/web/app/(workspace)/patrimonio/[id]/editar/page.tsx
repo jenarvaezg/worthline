@@ -108,10 +108,7 @@ export default async function EditarPage({
   // and PLACED by the family — only the family knows where in its own order the
   // panel belongs. A liability pays nobody and loads nothing.
   const payoutsPanel = asset
-    ? await loadPayoutsPanel(ficha, {
-        currency: asset.currency,
-        scopeId: selectedScope?.id,
-      })
+    ? await loadPayoutsPanel(ficha, { asset, scopeId: selectedScope?.id })
     : null;
 
   // The one dispatch: which family this holding belongs to, and everything that

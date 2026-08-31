@@ -26,6 +26,16 @@
  *    and a fund's dividend is a fraction of its total return, not the whole of it.
  *    Substituting a declared yield there would be a category error, so a
  *    non-property asset with declared payouts keeps its tier rate, silently.
+ * 3. **The lease's future is a declaration, not a reading of the calendar (#1521).**
+ *    A signed `endISO` used to be the whole answer: past it, the flat went back to
+ *    the housing rung's 3 % for ever, which is `stop` assumed in silence. It is not
+ *    a neutral assumption — a long-term residential lease continues past its signed
+ *    date by law — so three declarations now decide it: `leaseRegime` (what the date
+ *    MEANS), `postMandatoryTermPolicy` (what the owner will do once the decision is
+ *    his again), and `rentRevision`, which guards rule 2 — a rent revised by a legal
+ *    or contractual reference IS inflation-linked, a `fixed` or unrevised one is NOT,
+ *    and there the engine refuses to read the yield as real rather than inventing a
+ *    decay rate. Declaring nothing keeps every figure exactly where it was.
  *
  * The rate is share-invariant on purpose: rent and value are both declared for
  * 100 % of the property, so a 50 %-owned flat yields the same percentage — only
@@ -70,6 +80,99 @@ export function isScheduleLiveOn(
     : schedule.endISO >= todayISO;
 }
 
+/**
+ * What the schedule's post-mandatory-term policy resolves to, and where the answer
+ * came from (#1521). The `source` is not decoration: it is what lets the ficha say
+ * «se está asumiendo que la renta desaparece» instead of showing a blank field, which
+ * is the silence this issue closes (ADR 0074).
+ */
+export interface EffectivePostMandatoryTermPolicy {
+  /** The two policies the engine can act on. `unknown` never reaches here. */
+  policy: "renew_same_real_rent" | "stop";
+  /**
+   * - `declared`: the owner said it outright (`renew_same_real_rent` / `stop`).
+   * - `regime`: read off {@link PayoutSchedule.leaseRegime}, because the regime is what
+   *   says whether `endISO` is a real ending.
+   * - `undeclared`: nothing to read. `stop` stands — the behaviour that predates this
+   *   field — and the ficha says it is an assumption.
+   */
+  source: "declared" | "regime" | "undeclared";
+}
+
+/**
+ * The policy actually in force past the mandatory term: declared if declared,
+ * otherwise implied by the lease regime (#1521).
+ *
+ * `unknown` is treated exactly like an absent policy on purpose. It means «lo he
+ * mirado y no lo he decidido», which is not a third behaviour — the engine still has
+ * to do something, and the honest something is what the regime implies. The
+ * difference between the two lives in the copy, not in the arithmetic.
+ */
+export function effectivePostMandatoryTermPolicy(
+  schedule: Pick<PayoutSchedule, "leaseRegime" | "postMandatoryTermPolicy">,
+): EffectivePostMandatoryTermPolicy {
+  const declared = schedule.postMandatoryTermPolicy;
+  if (declared === "renew_same_real_rent" || declared === "stop") {
+    return { policy: declared, source: "declared" };
+  }
+  const regime = schedule.leaseRegime;
+  if (regime == null) {
+    return { policy: "stop", source: "undeclared" };
+  }
+  // A long-term residential lease continues past its signed date by law, so reading
+  // that date as the end of the income is the invention. Every other regime names a
+  // contract whose end date IS an end date.
+  return {
+    policy: regime === "residential_long_term" ? "renew_same_real_rent" : "stop",
+    source: "regime",
+  };
+}
+
+/**
+ * Whether the declared revision keeps ADR 0076's load-bearing assumption — that a
+ * net rental yield already IS a real yield (#1521).
+ *
+ * Not declared (null) returns `true`: this field assumes nothing, and the engine goes
+ * on doing what it did before it existed. `fixed` and `none` return `false`, and the
+ * consequence is a refusal, never a made-up decay rate: worthline does not forecast.
+ */
+export function rentRevisionIsRealTerms(
+  schedule: Pick<PayoutSchedule, "rentRevision">,
+): boolean {
+  const revision = schedule.rentRevision;
+  return revision == null || revision === "legal_reference" || revision === "contractual";
+}
+
+/**
+ * Whether this schedule feeds the expected rate on `todayISO` — the gate that
+ * replaced `isScheduleLiveOn` as the only door (#1521).
+ *
+ * Two differences from the window, and only two:
+ *
+ * - A rent that has NOT started never projects. A policy is about what happens after
+ *   a lease, and a lease that has not begun has no after.
+ * - A rent whose window has ENDED still projects when the policy in force says the
+ *   income continues. That is the whole of this issue: `stop` used to be assumed.
+ *
+ * `isScheduleLiveOn` keeps its own job — deriving past occurrences up to today, and
+ * only up to today (ADR 0054 point 4). Nothing here materializes a payout.
+ */
+export function isScheduleProjectedOn(
+  schedule: Pick<
+    PayoutSchedule,
+    "startISO" | "endISO" | "leaseRegime" | "postMandatoryTermPolicy"
+  >,
+  todayISO: string,
+): boolean {
+  if (schedule.startISO > todayISO) {
+    return false;
+  }
+  if (isScheduleLiveOn(schedule, todayISO)) {
+    return true;
+  }
+  return effectivePostMandatoryTermPolicy(schedule).policy === "renew_same_real_rent";
+}
+
 /** Why a declared rent did NOT become a rate. Each one is shown, never swallowed. */
 export type RentReturnNoticeReason =
   /** Some live schedule has no `expensesMinor`: the gross would flatter, so nothing is used. */
@@ -85,6 +188,14 @@ export type RentReturnNoticeReason =
   | "no_live_schedule"
   /** The property is valued in a currency the payout amounts do not declare (#1401). */
   | "foreign_currency"
+  /**
+   * Some rent feeding this asset is declared as revised nominally (`fixed`) or never
+   * revised (`none`), so its yield is NOT a real yield and ADR 0076's substitution
+   * does not hold (#1521). The refusal is the point: reading a nominal yield as real
+   * overstates in the dangerous direction, and inventing a decay rate for it would be
+   * a forecast. All-or-nothing per asset, like the missing expenses.
+   */
+  | "nominal_rent_revision"
   /**
    * The rate WAS derived, and then the scope's own declaration took its rung out of
    * FIRE (#1460): the user said the immobilized capital does not count, so neither
@@ -107,8 +218,27 @@ export interface RentDerivedReturn {
   annualNetRentMinor: number;
   /** The property's declared value (100 %), the denominator of `rate`. */
   valueMinor: number;
-  /** The live schedules that fed it, so the UI can name what it read. */
+  /** The schedules that fed it, so the UI can name what it read. */
   scheduleIds: string[];
+  /**
+   * The schedules whose declared window has ALREADY ENDED and that keep feeding the
+   * rate because the policy in force says the income continues (#1521).
+   *
+   * Empty on every rate built only from schedules in force today — which is every rate
+   * that existed before #1521. Non-empty means the figure rests on a projection, and a
+   * screen that prints the rate has to be able to say so: an unannounced projection
+   * would be the same silence, pointing the other way.
+   *
+   * Each entry carries WHERE its policy came from, because the two provenances are
+   * different sentences: `declared` is the owner's own words, `regime` is what the
+   * declared lease regime implies. Saying «lo has declarado» about a regime-implied
+   * renewal would put words in his mouth. `undeclared` cannot appear — a schedule with
+   * nothing declared stops, so it never projects.
+   */
+  projectedSchedules: {
+    scheduleId: string;
+    policySource: Exclude<EffectivePostMandatoryTermPolicy["source"], "undeclared">;
+  }[];
   /**
    * True when declared expenses exceed the rent. Declarable and real (a flat can
    * cost more than it earns), so it is applied — but it is never applied quietly:
@@ -341,9 +471,14 @@ export function deriveRentRealReturns(
     }
 
     const valueMinor = asset.currentValue.amountMinor;
-    const live = declared.filter((schedule) => isScheduleLiveOn(schedule, todayISO));
+    // #1521: the window is no longer the only door. A lease that ended keeps feeding
+    // the rate when the policy in force says the income continues; one that has not
+    // started never does.
+    const projected = declared.filter((schedule) =>
+      isScheduleProjectedOn(schedule, todayISO),
+    );
 
-    const annualGrossRentMinor = live.reduce(
+    const annualGrossRentMinor = projected.reduce(
       (total, schedule) =>
         total + annualizedMinor(schedule.amountMinor, schedule.cadence),
       0,
@@ -352,7 +487,7 @@ export function deriveRentRealReturns(
     // no value to divide by cannot produce one.
     const grossRate = valueMinor > 0 ? annualGrossRentMinor / valueMinor : null;
 
-    if (live.length === 0) {
+    if (projected.length === 0) {
       notices.push({
         assetId: asset.id,
         assetName: asset.name,
@@ -376,10 +511,24 @@ export function deriveRentRealReturns(
       continue;
     }
 
+    // Rule 3's guard (#1521), read BEFORE the expenses on purpose: a nominal rent is
+    // the one refusal that declaring the costs cannot lift, so telling the owner
+    // «declara tus gastos y contará» here would be a promise the engine will not keep.
+    // All-or-nothing per asset, exactly like the expenses.
+    if (projected.some((schedule) => !rentRevisionIsRealTerms(schedule))) {
+      notices.push({
+        assetId: asset.id,
+        assetName: asset.name,
+        grossRate,
+        reason: "nominal_rent_revision",
+      });
+      continue;
+    }
+
     // Rule 1: net or nothing, and it is all-or-nothing per asset. Netting only the
     // schedules that happen to declare expenses would understate the costs — the
     // optimistic direction, which is the one this issue exists to close.
-    if (live.some((schedule) => schedule.expensesMinor == null)) {
+    if (projected.some((schedule) => schedule.expensesMinor == null)) {
       notices.push({
         assetId: asset.id,
         assetName: asset.name,
@@ -395,7 +544,7 @@ export function deriveRentRealReturns(
       continue;
     }
 
-    const annualExpensesMinor = live.reduce(
+    const annualExpensesMinor = projected.reduce(
       (total, schedule) =>
         total + annualizedMinor(schedule.expensesMinor ?? 0, schedule.cadence),
       0,
@@ -409,8 +558,19 @@ export function deriveRentRealReturns(
       assetId: asset.id,
       assetName: asset.name,
       isNetNegative: annualNetRentMinor < 0,
+      projectedSchedules: projected
+        .filter((schedule) => !isScheduleLiveOn(schedule, todayISO))
+        .map((schedule) => ({
+          scheduleId: schedule.id,
+          // Narrowed, not asserted: an ended schedule only reaches this list when the
+          // policy said «renew», and `undeclared` always resolves to `stop`.
+          policySource:
+            effectivePostMandatoryTermPolicy(schedule).source === "declared"
+              ? ("declared" as const)
+              : ("regime" as const),
+        })),
       rate: annualNetRentMinor / valueMinor,
-      scheduleIds: live.map((schedule) => schedule.id),
+      scheduleIds: projected.map((schedule) => schedule.id),
       valueMinor,
     });
   }

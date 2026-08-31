@@ -134,6 +134,12 @@ describe("payout schedule CRUD", () => {
         cadence: "monthly",
         startISO: "2024-01-01",
         endISO: null,
+        // The lease terms, undeclared for the same reason (#1521): NULL says «nadie
+        // lo ha dicho», and the engine then behaves exactly as it did before v66.
+        leaseRegime: null,
+        rentRevision: null,
+        rentRevisionReference: null,
+        postMandatoryTermPolicy: null,
         exclusions: [],
       },
     ]);
@@ -263,6 +269,57 @@ describe("payout schedule CRUD", () => {
     expect(await target.payouts.readPayoutSchedules()).toEqual(
       await store.payouts.readPayoutSchedules(),
     );
+  });
+
+  it("the lease terms round-trip through the transfer document (#1521)", async () => {
+    const store = await freshStore();
+    await store.payouts.createPayoutSchedule({
+      holdingId: "h1",
+      label: "Alquiler",
+      amountMinor: 100000,
+      cadence: "monthly",
+      startISO: "2024-01-01",
+      endISO: "2026-09-01",
+      leaseRegime: "residential_long_term",
+      rentRevision: "legal_reference",
+      rentRevisionReference: "IRAV",
+      postMandatoryTermPolicy: "renew_same_real_rent",
+    });
+
+    const doc = await store.workspace.exportWorkspace();
+    expect(doc.payoutSchedules[0]).toMatchObject({
+      leaseRegime: "residential_long_term",
+      postMandatoryTermPolicy: "renew_same_real_rent",
+      rentRevision: "legal_reference",
+      rentRevisionReference: "IRAV",
+    });
+
+    const target = await freshStore();
+    await target.workspace.importWorkspace(doc);
+
+    expect(await target.payouts.readPayoutSchedules()).toEqual(
+      await store.payouts.readPayoutSchedules(),
+    );
+  });
+
+  it("a schedule declared with no lease terms keeps every one of them null (#1521)", async () => {
+    const store = await freshStore();
+    const created = await store.payouts.createPayoutSchedule({
+      holdingId: "h1",
+      label: "Alquiler",
+      amountMinor: 100000,
+      cadence: "monthly",
+      startISO: "2024-01-01",
+    });
+
+    // Not a default in disguise: the engine goes on behaving as it did before v66.
+    expect(created).toMatchObject({
+      leaseRegime: null,
+      postMandatoryTermPolicy: null,
+      rentRevision: null,
+      rentRevisionReference: null,
+    });
+    expect((await store.payouts.readPayoutSchedules())[0]).toEqual(created);
   });
 
   it("export/import: an older export omitting the payout sections defaults to []", async () => {
