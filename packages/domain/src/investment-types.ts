@@ -78,7 +78,8 @@ export interface InvestmentOperation {
   transferCostMinor?: number;
   /**
    * The day the capital this row brought in started counting its age, when the user
-   * declared it — present ONLY on an external `transfer_in` (#1518).
+   * declared it — present only on a `transfer_in`, and in practice only on an
+   * external one, because only its doors ask (#1518).
    *
    * A movilización between institutions carries the seniority of the aportaciones
    * that funded it, and `executedAt` is the day it LANDED, not the day it was
@@ -118,7 +119,7 @@ export interface CreateInvestmentOperationInput {
   transferId?: string;
   /** Inherited acquisition cost in minor units, on a `transfer_in` only (#1393). */
   transferCostMinor?: number;
-  /** Declared inherited seniority, on an external `transfer_in` only (#1518). */
+  /** Declared inherited seniority, on a `transfer_in` only (#1518). */
   transferSeniorityAt?: string;
   /**
    * The grade of the cost this row states (#1505) — written ONLY by a door that

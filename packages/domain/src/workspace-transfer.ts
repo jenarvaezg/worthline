@@ -529,7 +529,7 @@ const operationSchema = reproduces<InvestmentOperation>()(
     /** The inherited acquisition cost, on the `transfer_in` half only (#1393). */
     transferCostMinor: z.number().int().nonnegative().optional(),
     /**
-     * The declared inherited seniority, on an external `transfer_in` only (#1518).
+     * The declared inherited seniority, on a `transfer_in` only (#1518).
      * Absent in every pre-#1518 file and on every row nobody declared one for — no
      * default, because deriving it from `executedAt` on import is the exact
      * invention the column exists to prevent.

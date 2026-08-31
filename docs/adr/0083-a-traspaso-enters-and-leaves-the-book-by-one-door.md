@@ -416,6 +416,18 @@ implementation anywhere:
   `destinationAssetId` since #1479; `ExternalEntrySection` is the missing product path
   onto it, previewing with the same `externalTransferCaptureCopy` the pane runs, so the
   two doors cannot disagree about a figure or word a refusal differently.
+- **«External only» is a fact about the writers, not an invariant of the column.** A
+  `transfer_in` carries its own `transfer_id` whether or not a counterpart exists — the
+  whole point of decision 7 — so the row cannot say which kind it is and nothing could
+  enforce the restriction. What is true, and pinned by a test, is that `planTransfer`
+  never sets it: an internal pair's origin already has its dates in this book, so only
+  the two external doors ask.
+- **A declared seniority is VISIBLE.** `transferRowNote` prints «antigüedad desde …»
+  beside the inherited cost. No figure reads the date yet, which is precisely why it
+  has to be readable: a declared date nobody can see is one nobody can correct, and a
+  year typed wrong would sit in the ledger until #1528 quietly built on it — the
+  failure mode of #1415, and what ADR 0074 forbids. It is never masked by privacy
+  mode: it is a date, not money.
 - **The chat still does not learn it.** Out to its own ticket, as #1541 left it.
 
 The data: Jorge's `op_n5459` was already a correct external entry after the #1485

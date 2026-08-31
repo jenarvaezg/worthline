@@ -35,9 +35,15 @@ import { type FormEvent, useRef, useState, useTransition } from "react";
 
 import { stampTransferSubmission } from "./transfer-form";
 
-function RecordExternalEntrySubmit({ pending }: { pending: boolean }) {
+function RecordExternalEntrySubmit({
+  disabled = false,
+  pending,
+}: {
+  disabled?: boolean;
+  pending: boolean;
+}) {
   return (
-    <button aria-busy={pending} disabled={pending} type="submit">
+    <button aria-busy={pending} disabled={pending || disabled} type="submit">
       {pending ? "Registrando…" : "Registrar entrada"}
     </button>
   );
@@ -152,7 +158,7 @@ export default function ExternalEntrySection({
             about — the same order as the add wizard's pane. */}
         <p
           aria-live="polite"
-          className={refused ? "invUnitsHint invUnitsRefused" : "invUnitsHint"}
+          className={refused ? "opEntryReading opEntryRefused" : "opEntryReading"}
         >
           {hint}
         </p>
@@ -181,7 +187,7 @@ export default function ExternalEntrySection({
         </label>
         <p
           aria-live="polite"
-          className={costRefused ? "invCostNote invUnitsRefused" : "invCostNote"}
+          className={costRefused ? "opCaptureHint opEntryRefused" : "opCaptureHint"}
         >
           {costNote}
         </p>
@@ -198,18 +204,12 @@ export default function ExternalEntrySection({
         </label>
         <p
           aria-live="polite"
-          className={seniorityRefused ? "invCostNote invUnitsRefused" : "invCostNote"}
+          className={seniorityRefused ? "opCaptureHint opEntryRefused" : "opCaptureHint"}
         >
           {seniorityNote}
         </p>
 
-        {readOnly ? (
-          <button disabled type="button">
-            Registrar entrada
-          </button>
-        ) : (
-          <RecordExternalEntrySubmit pending={isRecording} />
-        )}
+        <RecordExternalEntrySubmit disabled={readOnly} pending={isRecording} />
       </form>
     </section>
   );

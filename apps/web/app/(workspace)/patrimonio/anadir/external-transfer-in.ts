@@ -9,7 +9,7 @@ import { formatUnits, planExternalTransferIn } from "@worthline/domain";
 import {
   euros,
   latentPnlReading,
-  readOpeningDate,
+  readDayEs,
   resolveOpeningDate,
 } from "./investment-units";
 
@@ -229,8 +229,7 @@ export function externalTransferCaptureCopy(
   input: ExternalTransferCaptureInput,
 ): ExternalTransferCaptureCopy {
   const date = resolveOpeningDate(input.dateRaw, input.today);
-  const backdatedTo =
-    date.ok && date.date !== input.today ? readOpeningDate(date.date) : null;
+  const backdatedTo = date.ok && date.date !== input.today ? readDayEs(date.date) : null;
 
   // The figures WITHOUT the cost: the participaciones and the default the cost note
   // has to name are facts of the importe and the VL alone, so an unreadable cost
@@ -240,7 +239,10 @@ export function externalTransferCaptureCopy(
     costRaw: "",
     seniorityRaw: "",
   });
-  const notes = { ...readCostNote(input, withoutCost), ...readSeniorityNote(input) };
+  const notes = {
+    ...readCostNote(input, withoutCost),
+    ...readSeniorityNote(input, withoutCost),
+  };
 
   if (!date.ok) {
     return { ...notes, hint: date.error, refused: true };
@@ -289,7 +291,11 @@ type SeniorityNote = Pick<
 const SENIORITY_PURPOSE =
   "Desde cuándo cuenta la antigüedad de ese dinero, según la entidad anterior.";
 
-function readSeniorityNote(input: ExternalTransferCaptureInput): SeniorityNote {
+function readSeniorityNote(
+  input: ExternalTransferCaptureInput,
+  /** The capture WITHOUT the cost and without the seniority — the caller's own. */
+  withoutSeniority: ExternalTransferCaptureResult,
+): SeniorityNote {
   if (input.seniorityRaw.trim() === "") {
     return {
       seniorityNote:
@@ -298,25 +304,30 @@ function readSeniorityNote(input: ExternalTransferCaptureInput): SeniorityNote {
     };
   }
 
-  const base = { ...input, costRaw: "" };
-  const declared = resolveExternalTransferCapture(base);
-  if (declared.ok) {
-    return declared.seniorityAt === undefined
-      ? { seniorityNote: SENIORITY_PURPOSE, seniorityRefused: false }
-      : {
-          seniorityNote: `Antigüedad desde el ${readOpeningDate(declared.seniorityAt)}, no desde el día en que entró el dinero.`,
-          seniorityRefused: false,
-        };
+  const declared = resolveExternalTransferCapture({ ...input, costRaw: "" });
+  if (!declared.ok) {
+    // A refusal belongs beside THIS field only when the seniority is what caused it —
+    // which `withoutSeniority` settles, never a match on the message text. An
+    // unreadable importe or a VL of zero is already said under the participaciones,
+    // and repeating it here would point the user at the wrong input.
+    return withoutSeniority.ok
+      ? { seniorityNote: declared.error, seniorityRefused: true }
+      : { seniorityNote: SENIORITY_PURPOSE, seniorityRefused: false };
   }
 
-  // A refusal belongs beside THIS field only when the seniority is what caused it —
-  // established by asking the same capture without it, never by matching the message
-  // text. An unreadable importe or a VL of zero is already said under the
-  // participaciones, and repeating it here would point at the wrong input.
-  const withoutSeniority = resolveExternalTransferCapture({ ...base, seniorityRaw: "" });
-  return withoutSeniority.ok
-    ? { seniorityNote: declared.error, seniorityRefused: true }
-    : { seniorityNote: SENIORITY_PURPOSE, seniorityRefused: false };
+  // The field is not empty and the plan accepted it, so the date IS on the row. Its
+  // absence would be a bug upstream, not a shape this copy can describe — the same
+  // reasoning `resolveExternalTransferCapture` applies to the inherited cost.
+  if (declared.seniorityAt === undefined) {
+    throw new Error(
+      "resolveExternalTransferCapture accepted a seniority it did not return.",
+    );
+  }
+
+  return {
+    seniorityNote: `Antigüedad desde el ${readDayEs(declared.seniorityAt)}, no desde el día en que entró el dinero.`,
+    seniorityRefused: false,
+  };
 }
 
 type CostNote = Pick<ExternalTransferCaptureCopy, "costNote" | "costRefused">;

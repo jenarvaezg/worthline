@@ -377,8 +377,10 @@ _Avoid_: carried cost, transferred basis.
 
 **Inherited seniority** (antigüedad heredada):
 The day the capital an **external entry** brought over started counting its age at the
-previous institution — declared by the owner, on that row only, and never derived
-(#1518). A movilización carries the seniority of the aportaciones that funded it, and
+previous institution — declared by the owner, on the incoming row, and never derived
+(#1518). Only the external-entry doors ask for it, because an internal pair's origin
+already has its dates in this book; the column itself lives on any `transfer_in`, since
+a row with a `transfer_id` cannot say whether a counterpart exists. A movilización carries the seniority of the aportaciones that funded it, and
 those sit in a ledger this book cannot read; the row's own `executedAt` is the day the
 money LANDED, so deriving age from it would call rescatable capital blocked. Absent is
 its own state and the default — «nadie lo ha dicho» — true of every row written before

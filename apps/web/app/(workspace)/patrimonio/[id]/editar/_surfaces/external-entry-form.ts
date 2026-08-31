@@ -11,28 +11,34 @@
 
 import type { ExternalTransferCaptureInput } from "@web/patrimonio/anadir/external-transfer-in";
 
-/**
- * The five fields, in posting order. They keep the pane's `tr*` names so the two
- * doors read the same document — a section that renamed them would drift the moment
- * one door gained a field.
- */
-export const EXTERNAL_ENTRY_FORM_FIELDS = [
-  "trAmount",
-  "trPrice",
-  "trDate",
-  "trCost",
-  "trSeniority",
-] as const;
-
 /** The posted capture, minus `today` — the action owns the clock. */
 export type ExternalEntryFormValues = Omit<ExternalTransferCaptureInput, "today">;
 
+/**
+ * Posted field → the capture key it fills, in posting order. ONE table rather than a
+ * name list beside a reader that spells the same five names again: the two would
+ * drift the moment a sixth field appears, and the list is what a refusal round-trips
+ * with (`preserveFields`), so a name missing from it silently loses what the user
+ * typed.
+ *
+ * The names stay the pane's `tr*` so both doors post the same document.
+ */
+const FIELD_KEYS = {
+  trAmount: "amountRaw",
+  trPrice: "priceRaw",
+  trDate: "dateRaw",
+  trCost: "costRaw",
+  trSeniority: "seniorityRaw",
+} as const satisfies Record<string, keyof ExternalEntryFormValues>;
+
+export const EXTERNAL_ENTRY_FORM_FIELDS = Object.keys(FIELD_KEYS) as ReadonlyArray<
+  keyof typeof FIELD_KEYS
+>;
+
 export function readExternalEntryFormValues(formData: FormData): ExternalEntryFormValues {
-  return {
-    amountRaw: String(formData.get("trAmount") ?? ""),
-    costRaw: String(formData.get("trCost") ?? ""),
-    dateRaw: String(formData.get("trDate") ?? ""),
-    priceRaw: String(formData.get("trPrice") ?? ""),
-    seniorityRaw: String(formData.get("trSeniority") ?? ""),
-  };
+  const values = {} as ExternalEntryFormValues;
+  for (const [field, key] of Object.entries(FIELD_KEYS)) {
+    values[key as keyof ExternalEntryFormValues] = String(formData.get(field) ?? "");
+  }
+  return values;
 }

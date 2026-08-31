@@ -64,10 +64,11 @@ describe("ExternalEntrySection", () => {
   });
 
   test("demo disables the submit instead of lying about it", () => {
-    const markup = render({ readOnly: true });
-
-    expect(markup).toContain("disabled");
-    expect(markup).not.toContain('type="submit"');
+    // The button stays a submit and goes disabled — the shape the «Traspasar»
+    // sibling has. Swapping it for a lookalike would leave the demo with a control
+    // that cannot be told from a live one by anything a screen reader announces.
+    expect(render({ readOnly: true })).toMatch(/<button[^>]*disabled[^>]*type="submit"/);
+    expect(render()).not.toMatch(/<button[^>]*disabled/);
   });
 
   test("a refused entry comes back with its fields typed and its message shown", () => {

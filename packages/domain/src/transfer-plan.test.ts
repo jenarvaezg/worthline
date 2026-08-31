@@ -483,6 +483,20 @@ describe("planExternalTransferIn — la mitad que no tiene pareja", () => {
   });
 });
 
+describe("la antigüedad heredada no la escribe el par interno (#1518)", () => {
+  test("planTransfer nunca pone antigüedad en su transfer_in", () => {
+    const result = plan();
+    if (!result.ok) throw new Error("expected a plan");
+
+    // The column lives on any `transfer_in` — a row carrying a `transfer_id` cannot
+    // say whether a counterpart exists (ADR 0083, decisión 7), so «external only» is
+    // a fact about the WRITERS, not something the shape enforces. This is the writer
+    // that must never ask: an internal origin's own dates are already in this book.
+    expect(result.value.incoming.transferSeniorityAt).toBeUndefined();
+    expect(result.value.out).not.toHaveProperty("transferSeniorityAt");
+  });
+});
+
 describe("planExternalTransferIn — la antigüedad heredada (#1518)", () => {
   const EXTERNAL = {
     amountMinor: 9_546,
