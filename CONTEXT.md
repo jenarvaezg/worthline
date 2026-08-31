@@ -422,8 +422,9 @@ cost never triggers a **ripple recalculation** (ADR 0093). Absent by default and
 from an anchor — a property whose owner has not read the escritura shows no result at
 all, rather than a fabricated 0 %. Financing (comisión de apertura, the bank's insurance)
 is cost of the LOAN, not of the asset, and stays out (art. 35 LIRPF).
-_Avoid_: purchase price, precio de adquisición (that is the anchor's **value**), cost
-basis (reserved for **investment** units).
+_Avoid_: purchase price, precio de adquisición (a name for neither figure since
+#1635 — the anchor's value is «valor en la fecha de compra»), cost basis (reserved for
+**investment** units).
 
 **Payout**:
 Money a **holding** paid its owner on a date — a dividend, deposit or account
@@ -617,17 +618,22 @@ as a renovation, does not alter the underlying appreciation rate). One market ap
 may additionally carry `kind = 'acquisition'` (#1437): the **acquisition anchor**, the
 purchase that starts the property's history — editable by name in the UI, never deletable.
 It is the property's market **value** on that day, never what acquiring it cost: what was
-disbursed is the separate **acquisition cost** (#1441), and the alta names the anchor
-«valor en la fecha de compra» for exactly that reason.
-Its edit is a **reconstruction**, not a field change: moving its date or price redraws
+disbursed is the separate **acquisition cost** (#1441). Every surface that asks for the
+figure names it «valor en la fecha de compra» for exactly that reason — the alta, the
+ficha's acquisition editor, and both assistant lanes that write it (#1635) — because the ficha
+renders the cost right beside it, and one figure with two names on one screen is the
+confusion the split was meant to end. The DATE keeps its own name («fecha de
+adquisición»): it was only the amount that was mis-named.
+Its edit is a **reconstruction**, not a field change: moving its date or value redraws
 every day up to the next **market appraisal** and re-ripples every **snapshot** since, so
 it goes through a preview→confirm that says how much history the save rewrites, and the
 confirm's verb says it (#1562, ADR 0070 §4). Editing it always keeps it a market
-appraisal — an acquisition price is a total, never an **improvement** increment. Since
+appraisal — an acquisition value is a total, never an **improvement** increment. Since
 #1563 the assistant can also PROPOSE that edit (`propose_property_acquisition`): it is the
-allowed side of the unvalidated-evidence frontier — a date and a price the card shows back
+allowed side of the unvalidated-evidence frontier — a date and a value the card shows back
 with the pair they replace — and confirming it goes through the same seam as the form.
-_Avoid_: price point, historical value (too vague).
+_Avoid_: price point, historical value (too vague), precio de adquisición (#1635: the
+anchor holds a value, and the name belonged to no figure at all).
 
 **Market appraisal**:
 A **valuation anchor** that reflects what the market actually pays for the asset on

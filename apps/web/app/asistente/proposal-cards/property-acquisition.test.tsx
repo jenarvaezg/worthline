@@ -56,7 +56,11 @@ function acquisitionProposal(): PropertyAcquisitionProposal {
     proposalType: "property_acquisition",
     rows: [
       { after: "19/05/2004", before: "02/07/2026", label: "Fecha de adquisición" },
-      { after: "150.253,03 €", before: "210.000,00 €", label: "Precio de adquisición" },
+      {
+        after: "150.253,03 €",
+        before: "210.000,00 €",
+        label: "Valor en la fecha de compra",
+      },
     ],
     summary: "Adquisición de «Piso de Plasencia»: 19/05/2004 · 150.253,03 €",
   };
@@ -83,7 +87,7 @@ describe("the acquisition card (#1563)", () => {
     expect(markup).toContain("Fecha de adquisición");
     expect(markup).toContain("02/07/2026");
     expect(markup).toContain("19/05/2004");
-    expect(markup).toContain("Precio de adquisición");
+    expect(markup).toContain("Valor en la fecha de compra");
     expect(markup).toContain("210.000,00 €");
     expect(markup).toContain("150.253,03 €");
   });

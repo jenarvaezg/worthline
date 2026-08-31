@@ -81,7 +81,7 @@ describe("property acquisition assistant proposal (#1563)", () => {
       {
         after: "150.253,03\u00a0€",
         before: "210.000,00\u00a0€",
-        label: "Precio de adquisición",
+        label: "Valor en la fecha de compra",
       },
     ]);
     // The curve now starts where the acquisition does — the whole point of the

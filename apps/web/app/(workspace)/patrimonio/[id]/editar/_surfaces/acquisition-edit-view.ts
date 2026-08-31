@@ -39,7 +39,7 @@ export function acquisitionRewriteSentence(
   preview: AcquisitionAnchorEditPreview,
 ): string {
   if (!acquisitionEditChangesSomething(preview)) {
-    return "La fecha y el precio son los que ya están guardados: guardar no cambia nada.";
+    return "La fecha y el valor son los que ya están guardados: guardar no cambia nada.";
   }
   if (acquisitionSnapshotCount(preview) === 0) {
     return "Todavía no hay histórico que reescribir: la curva se recalculará sola en la próxima captura diaria.";

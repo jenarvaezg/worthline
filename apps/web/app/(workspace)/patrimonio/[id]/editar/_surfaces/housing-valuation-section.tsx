@@ -125,10 +125,10 @@ export function HousingValuationSection({
           anchorId={acquisition.id}
           assetId={assetId}
           currentUrl={currentUrl}
-          defaultDate={acquisitionValues["valuationDate"] ?? acquisition.valuationDate}
-          defaultPrice={
+          defaultAnchorValue={
             acquisitionValues["anchorValue"] ?? formatMoneyInput(acquisition.valueMinor)
           }
+          defaultDate={acquisitionValues["valuationDate"] ?? acquisition.valuationDate}
           privacyMode={privacyMode}
           today={today}
         />

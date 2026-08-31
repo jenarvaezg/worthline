@@ -3,7 +3,7 @@
 /**
  * The named acquisition editor, with a preview before the rewrite (#1437, #1562).
  *
- * Changing the acquisition date or price is not a field edit: it redraws the
+ * Changing the acquisition date or value is not a field edit: it redraws the
  * whole interpolated stretch between the acquisition and the next appraisal — 22
  * years of curve in the measured case — and re-ripples every snapshot since.
  * That is a reconstruction, so it gets the reconstruction ceremony
@@ -53,8 +53,8 @@ export function AcquisitionEditForm({
   anchorId,
   assetId,
   currentUrl,
+  defaultAnchorValue,
   defaultDate,
-  defaultPrice,
   privacyMode = false,
   today,
 }: {
@@ -62,9 +62,9 @@ export function AcquisitionEditForm({
   /** Internal storage id — hidden form plumbing, never a URL (#1318). */
   assetId: string;
   currentUrl: string;
+  /** The stored acquisition value, already formatted for the money input. */
+  defaultAnchorValue: string;
   defaultDate: string;
-  /** The stored acquisition price, already formatted for the money input. */
-  defaultPrice: string;
   /** Same masking the appraisals table honors — figures, not just totals. */
   privacyMode?: boolean;
   today: string;
@@ -119,11 +119,14 @@ export function AcquisitionEditForm({
           type="date"
         />
       </label>
+      {/* Same name the alta gives it (#1441, #1635) — see CONTEXT.md, **valuation
+          anchor**. This screen renders «Coste de adquisición» a few pixels below,
+          so a second name for the value is a question the reader has to answer. */}
       <label>
-        Precio de adquisición (EUR)
+        Valor en la fecha de compra (EUR)
         <input
-          aria-label="Precio de adquisición en EUR"
-          defaultValue={defaultPrice}
+          aria-label="Valor en la fecha de compra en EUR"
+          defaultValue={defaultAnchorValue}
           inputMode="decimal"
           min="0"
           name="anchorValue"

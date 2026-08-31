@@ -39,8 +39,9 @@ describe("unvalidated-evidence classification (#1248)", () => {
     for (const name of [
       "propose_correction",
       "propose_property_valuation_anchor",
-      // La fecha y el precio de adquisición (#1563): el lado permitido de la
-      // frontera que la propia #1437 nombró — un dato que se verifica de un vistazo.
+      // La fecha de adquisición y el valor en la fecha de compra (#1563): el
+      // lado permitido de la frontera que la propia #1437 nombró — un dato que
+      // se verifica de un vistazo.
       "propose_property_acquisition",
       "propose_holding",
       "propose_early_repayment",

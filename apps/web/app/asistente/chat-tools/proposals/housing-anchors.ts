@@ -43,10 +43,10 @@ export function housingAnchorProposalTools(turn: ChatToolTurn): ToolSet {
     }),
     propose_property_acquisition: tool({
       description:
-        "Prepara una propuesta para CORREGIR la fecha y el precio de adquisición de UN inmueble que el usuario declara. No añade una tasación: MUEVE el ancla de adquisición, la que decide desde cuándo el inmueble —y la deuda que garantiza— aparece en el histórico; para una tasación posterior usa propose_property_valuation_anchor. " +
+        "Prepara una propuesta para CORREGIR la fecha de adquisición y el valor en la fecha de compra de UN inmueble que el usuario declara. No añade una tasación: MUEVE el ancla de adquisición, la que decide desde cuándo el inmueble —y la deuda que garantiza— aparece en el histórico; para una tasación posterior usa propose_property_valuation_anchor. " +
         "acquisitionValueMinor va en CÉNTIMOS enteros (150.253,03 € → 15025303): la app rechaza un importe con decimales en vez de redondearlo, y acquisitionDate (YYYY-MM-DD) no puede ser futura. La curva de valor la recalcula la app.",
       inputSchema: PROPERTY_ACQUISITION_PROPOSAL_SCHEMA,
-      // Whitelisted single fact (#1248): a date and a price are verified at a glance
+      // Whitelisted single fact (#1248): a date and a value are verified at a glance
       // in the preview — the ALLOWED side of the frontier, named as such in #1437's
       // own open question — so the lane may be born from unvalidated evidence,
       // capped at one proposal per turn.

@@ -8,7 +8,7 @@ import { jsonSchema } from "ai";
  * these two are one — even though their provenance is opposite, which is the whole
  * distinction between them. The valuation anchor points at a document worthline
  * already extracted, so its figures are not the model's. The acquisition's are: a
- * date and a price the person says out loud («lo compré en mayo de 2004 por
+ * date and a value the person says out loud («lo compré en mayo de 2004 por
  * 150.253 €»), which is the single fact the unvalidated-evidence frontier admits
  * (#1248) precisely because the preview shows it back for a human to check.
  *

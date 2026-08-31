@@ -77,7 +77,9 @@ describe("acquisitionRewriteSentence", () => {
 
   test("an unchanged acquisition says so instead of counting", () => {
     const unchanged = preview({ dateChanged: false, valueChanged: false });
-    expect(acquisitionRewriteSentence(unchanged)).toContain("no cambia nada");
+    expect(acquisitionRewriteSentence(unchanged)).toBe(
+      "La fecha y el valor son los que ya están guardados: guardar no cambia nada.",
+    );
   });
 
   test("no history yet is said, not hidden", () => {
