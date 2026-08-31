@@ -1,6 +1,6 @@
 import Big from "big.js";
 
-import { isDateKeyShaped } from "./dates";
+import { isRealCalendarDay } from "./dates";
 import type { DecimalString } from "./decimal";
 import {
   type GlobalExposureProfileIdentity,
@@ -357,17 +357,12 @@ function normalizeAsOfDate(value: string | null | undefined): string | null {
   if (normalized === null) {
     return null;
   }
-  if (!isDateKeyShaped(normalized) || !isRealCalendarDay(normalized)) {
+  if (!isRealCalendarDay(normalized)) {
     throw new Error(
       "Exposure profile asOfDate must be a real calendar day in YYYY-MM-DD format.",
     );
   }
   return normalized;
-}
-
-function isRealCalendarDay(dateKey: string): boolean {
-  const parsed = new Date(`${dateKey}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === dateKey;
 }
 
 function normalizeSources(value: string | null | undefined): string | null {

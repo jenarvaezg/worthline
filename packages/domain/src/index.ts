@@ -330,6 +330,7 @@ export {
   daysBetween,
   formatDateKeyEs,
   isDateKeyShaped,
+  isRealCalendarDay,
   MS_PER_DAY,
 } from "./dates";
 export type { AccruedInterestAtDate } from "./debt-accrual";

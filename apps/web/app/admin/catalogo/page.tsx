@@ -41,6 +41,7 @@ export default async function AdminCatalogPage({
 
   const initialState = parseCatalogParams({
     filtro: first(params.filtro),
+    orden: first(params.orden),
     q: first(params.q),
     perfil: first(params.perfil),
   });

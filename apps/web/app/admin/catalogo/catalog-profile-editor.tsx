@@ -424,8 +424,10 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
         </label>
         <p className="catalogHint">
           La fecha de corte es la de <strong>los datos</strong>, no la de hoy: es lo que
-          permite envejecer un vector y ordenar la próxima revisión. Sin declarar es una
-          respuesta honesta; una fecha inventada, no.
+          permite envejecer un vector y ordenar la próxima revisión. Si la fuente solo da
+          el mes («ficha de abril de 2024»), pon el <strong>último día de ese mes</strong>
+          — es la convención que ya usan los factsheets. Dejarla sin declarar es una
+          respuesta honesta; adelantarla, no.
         </p>
       </fieldset>
 

@@ -57,14 +57,32 @@ Three consequences are deliberate:
   `ensureGlobalExposureProfileStub` keeps writing rows with all three null.
 - **The cut-off date never comes from the clock.** It is declared data, so
   re-running the pass with the same proposal re-writes the same day and the seed
-  stays idempotent on it.
+  stays idempotent on it. The corollary is a trap worth naming: `updateGlobal
+  ExposureProfile` is an ATOMIC FULL REPLACE, as it always has been, so **any
+  writer must resend the provenance or it blanks it** — including the catalog-pass
+  `seed.ts`, whose entries already carry `confidence` and `sources` and now have
+  columns to land in.
+- **An unreadable cut-off counts as stale, not as fresh.** The column is plain
+  TEXT written by an out-of-repo pass, so the triage lens treats a day that does
+  not exist the same as an absent one: it lands where a human is asked to look.
+  The list prints such a value verbatim rather than prettifying it into a date it
+  is not.
 
 The admin list gains the two triage lenses this makes possible, beside the
-existing «por categorizar»: **confianza baja** (`baja` or undeclared, worst
-first) and **corte antiguo** (older than twelve months, or undeclared, oldest
-first). An undeclared cut-off counts as aged on purpose — a vector with no date
-cannot be shown to be fresh. Staleness is measured against a `today` the page
-passes in, so the triage module stays pure and clock-free (ADR 0036 §7).
+existing «por categorizar»: **baja o sin declarar** and **corte antiguo o sin
+fecha** (older than twelve months). Each lens folds the undeclared rows in — they
+answer the same operational question, «¿me puedo fiar de esta cifra?» — and each
+one SAYS SO in its label and counter, so a counter never asserts «de confianza
+baja» about a row that merely lacks a declaration. An undeclared cut-off counts
+as aged on purpose: a vector with no date cannot be shown to be fresh.
+
+**Which rows and in what order are two separate questions.** The lens filters;
+the four orders (identity, declared coverage, confidence, cut-off antiquity) are
+chosen independently and apply to «todos» as well, so the register can be read
+by confidence or by antiquity **without dropping a single row** — the column
+header is the control, and the choice is mirrored in the URL as `orden`.
+Staleness is measured against a `today` the page passes in, so the triage module
+stays pure and clock-free (ADR 0036 §7).
 
 ## Amendment (#1453): the key trusts only what an ISIN is
 

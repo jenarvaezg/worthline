@@ -181,13 +181,21 @@ describe("AdminCatalogPage", () => {
       // A cut-off date is read out loud, and the verified one is not marked.
       expect(html).toContain("30/04/2024");
       expect(html).toContain("31/07/2026");
-      // Both triage lenses are reachable from the filter.
-      expect(html).toContain("Confianza baja");
-      expect(html).toContain("Corte antiguo");
-      // Counted over the FULL set: «baja» + «sin declarar» are both weak, and a
-      // 28-month-old cut-off and an absent one are both stale.
-      expect(html).toContain("2 de confianza baja");
-      expect(html).toContain("2 con corte antiguo");
+      // Both triage lenses are reachable from the filter, and each one SAYS that
+      // it folds the undeclared rows in — never asserting «de confianza baja»
+      // about a row that merely lacks a declaration.
+      expect(html).toContain("Baja o sin declarar");
+      expect(html).toContain("Corte antiguo o sin fecha");
+      expect(html).toContain("2 de confianza baja o sin declarar");
+      expect(html).toContain("2 con corte de más de 12 meses o sin fecha");
+      // The gold mark is for a DECLARED problem; an absence reads muted.
+      expect(html).toContain(
+        '<span class="catalogAviso" title="Confianza baja: el vector lee el mandato del fondo, no su cartera">baja</span>',
+      );
+      expect(html).toContain('<span class="catalogAvisoNone">sin declarar</span>');
+      // And the two columns can order the register on their own.
+      expect(html).toContain("Ordenar por confianza");
+      expect(html).toContain("Ordenar por antigüedad del corte");
     } finally {
       vi.useRealTimers();
     }
@@ -210,6 +218,24 @@ describe("AdminCatalogPage", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("a deep-linked order reads the whole set, dropping nothing (#1508)", async () => {
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([UNCOVERED, COVERED, SECTORED]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage({ orden: "confianza" }));
+
+    // Ordering is not filtering: the verified profile is still on the list…
+    expect(html).toContain("US9229087690");
+    // …and the least-trustworthy row comes first (baja → sin declarar → alta).
+    const order = ["IE00B4L5Y983", "yahoo · VWCE.DE", "US9229087690"].map((identity) =>
+      html.indexOf(identity),
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // The active order is announced, not just arrowed.
+    expect(html).toContain('aria-sort="ascending"');
   });
 
   test("the edit panel carries the stored provenance into its own fieldset (#1508)", async () => {

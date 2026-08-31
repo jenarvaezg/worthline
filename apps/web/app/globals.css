@@ -4992,6 +4992,29 @@ code {
   padding: 5px 8px;
 }
 
+/* A sortable header is the header itself, not a control bolted beside it: it
+   inherits the column label's type and only gains weight when it is the active
+   order (#1508). */
+.catalogSortButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.catalogSortButton:hover {
+  color: var(--ink);
+}
+
+.catalogSortButton.isActive {
+  color: var(--ink);
+  font-weight: 750;
+}
+
 .catalogTable .catalogNum {
   text-align: right;
   font-family: var(--font-numeric);

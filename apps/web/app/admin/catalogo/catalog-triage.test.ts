@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   asOfAgeMonths,
   asOfIsStale,
+  asOfSortKey,
   asOfText,
+  CATALOG_FILTER_OPTIONS,
+  CATALOG_LENSES,
   catalogSearchString,
   confidenceIsWeak,
-  confidenceLabel,
-  countNeedsCategorizing,
-  countStaleAsOf,
-  countWeakConfidence,
+  confidenceText,
+  countMatching,
   dimensionDeclared,
   dimensionRemainder,
   identityText,
@@ -143,7 +144,7 @@ describe("profileCoverage", () => {
   });
 });
 
-describe("countNeedsCategorizing", () => {
+describe("countMatching", () => {
   it("counts over the full set regardless of any filter", () => {
     const profiles = [
       profile({ identity: { kind: "isin", isin: "IE00B4L5Y983" } }),
@@ -156,7 +157,7 @@ describe("countNeedsCategorizing", () => {
         },
       }),
     ];
-    expect(countNeedsCategorizing(profiles)).toBe(1);
+    expect(countMatching(profiles, "por-categorizar", TODAY)).toBe(1);
   });
 });
 
@@ -205,7 +206,11 @@ describe("visibleProfiles", () => {
   const all = [halfCovered, fullyCovered, uncovered];
 
   it("in 'todos' shows every profile sorted by identity text", () => {
-    const result = visibleProfiles(all, { filter: "todos", query: "" }, TODAY);
+    const result = visibleProfiles(
+      all,
+      { filter: "todos", query: "", sort: null },
+      TODAY,
+    );
     expect(result.map((p) => identityText(p.identity))).toEqual([
       "IE00B4L5Y983",
       "US9229087690",
@@ -214,19 +219,23 @@ describe("visibleProfiles", () => {
   });
 
   it("in 'por-categorizar' keeps only under-declared, least-covered first", () => {
-    const result = visibleProfiles(all, { filter: "por-categorizar", query: "" }, TODAY);
+    const result = visibleProfiles(
+      all,
+      { filter: "por-categorizar", query: "", sort: null },
+      TODAY,
+    );
     expect(result).toEqual([uncovered, halfCovered]);
     expect(result).not.toContain(fullyCovered);
   });
 
   it("filters by search across identity and display name, case-insensitive", () => {
     expect(
-      visibleProfiles(all, { filter: "todos", query: "s&p" }, TODAY).map(
+      visibleProfiles(all, { filter: "todos", query: "s&p", sort: null }, TODAY).map(
         (p) => p.displayName,
       ),
     ).toEqual(["S&P 500"]);
     expect(
-      visibleProfiles(all, { filter: "todos", query: "US922" }, TODAY).map(
+      visibleProfiles(all, { filter: "todos", query: "US922", sort: null }, TODAY).map(
         (p) => p.displayName,
       ),
     ).toEqual(["Total Market"]);
@@ -235,13 +244,14 @@ describe("visibleProfiles", () => {
 
 describe("URL round-trip", () => {
   it("serializes only non-default view state", () => {
-    expect(catalogSearchString({ filter: "todos", query: "", selectedKey: null })).toBe(
-      "",
-    );
+    expect(
+      catalogSearchString({ filter: "todos", query: "", sort: null, selectedKey: null }),
+    ).toBe("");
     expect(
       catalogSearchString({
         filter: "por-categorizar",
         query: "voo",
+        sort: null,
         selectedKey: "p:yahoo:VOO",
       }),
     ).toBe("?filtro=por-categorizar&q=voo&perfil=p%3Ayahoo%3AVOO");
@@ -251,18 +261,24 @@ describe("URL round-trip", () => {
     expect(parseCatalogParams({})).toEqual({
       filter: "todos",
       query: "",
+      sort: null,
       selectedKey: null,
     });
     expect(
       parseCatalogParams({ filtro: "por-categorizar", q: "voo", perfil: "p:yahoo:VOO" }),
-    ).toEqual({ filter: "por-categorizar", query: "voo", selectedKey: "p:yahoo:VOO" });
+    ).toEqual({
+      filter: "por-categorizar",
+      query: "voo",
+      sort: null,
+      selectedKey: "p:yahoo:VOO",
+    });
   });
 
   it("round-trips the provenance filters and ignores an unknown one (#1508)", () => {
     for (const filter of ["confianza-baja", "corte-antiguo"] as const) {
-      expect(catalogSearchString({ filter, query: "", selectedKey: null })).toBe(
-        `?filtro=${filter}`,
-      );
+      expect(
+        catalogSearchString({ filter, query: "", sort: null, selectedKey: null }),
+      ).toBe(`?filtro=${filter}`);
       expect(parseCatalogParams({ filtro: filter }).filter).toBe(filter);
     }
     expect(parseCatalogParams({ filtro: "confianza-altísima" }).filter).toBe("todos");
@@ -298,8 +314,8 @@ describe("provenance triage (#1508)", () => {
   const all = [verified, mandate, rotten, undeclared];
 
   it("reads an undeclared confidence as «sin declarar», never as a level", () => {
-    expect(confidenceLabel(undeclared.confidence)).toBe("sin declarar");
-    expect(confidenceLabel(mandate.confidence)).toBe("baja");
+    expect(confidenceText(undeclared)).toBe("sin declarar");
+    expect(confidenceText(mandate)).toBe("baja");
     expect(confidenceIsWeak(undeclared)).toBe(true);
     expect(confidenceIsWeak(mandate)).toBe(true);
     expect(confidenceIsWeak(rotten)).toBe(false);
@@ -329,17 +345,32 @@ describe("provenance triage (#1508)", () => {
     expect(asOfText(undeclared)).toBe("sin declarar");
   });
 
+  it("treats an unreadable cut-off as stale, never as fresh (untyped TEXT column)", () => {
+    // The column is plain TEXT written by an out-of-repo pass. A day that does
+    // not exist, or something that is not a date at all, must land in the lens
+    // that asks a human to look — not silently read as zero months old.
+    for (const asOfDate of ["2024-02-30", "abril de 2024", ""]) {
+      const corrupt = profile({ asOfDate });
+      expect(asOfSortKey(corrupt), `sort key for "${asOfDate}"`).toBeNull();
+      expect(asOfIsStale(corrupt, TODAY), `staleness of "${asOfDate}"`).toBe(true);
+    }
+    // …and it is never prettified into a date it is not.
+    expect(asOfText(profile({ asOfDate: "abril de 2024" }))).toBe("abril de 2024");
+  });
+
   it("in 'confianza-baja' keeps only weak provenance, «baja» ahead of undeclared", () => {
     expect(
-      visibleProfiles(all, { filter: "confianza-baja", query: "" }, TODAY).map(
-        (p) => p.displayName,
-      ),
+      visibleProfiles(
+        all,
+        { filter: "confianza-baja", query: "", sort: null },
+        TODAY,
+      ).map((p) => p.displayName),
     ).toEqual(["Palm Harbour Global Value", "S&P 500"]);
   });
 
   it("in 'corte-antiguo' keeps only stale cut-offs, undeclared first then oldest", () => {
     expect(
-      visibleProfiles(all, { filter: "corte-antiguo", query: "" }, TODAY).map(
+      visibleProfiles(all, { filter: "corte-antiguo", query: "", sort: null }, TODAY).map(
         (p) => p.displayName,
       ),
     ).toEqual(["S&P 500", "MyInvestor Indexado Global, PP"]);
@@ -347,16 +378,103 @@ describe("provenance triage (#1508)", () => {
 
   it("the provenance filters still honour the search box", () => {
     expect(
-      visibleProfiles(all, { filter: "corte-antiguo", query: "myinvestor" }, TODAY).map(
-        (p) => p.displayName,
-      ),
+      visibleProfiles(
+        all,
+        { filter: "corte-antiguo", query: "myinvestor", sort: null },
+        TODAY,
+      ).map((p) => p.displayName),
     ).toEqual(["MyInvestor Indexado Global, PP"]);
   });
 
   it("counts weak confidence and stale cut-offs over the full set", () => {
-    expect(countWeakConfidence(all)).toBe(2);
-    expect(countStaleAsOf(all, TODAY)).toBe(2);
-    expect(countWeakConfidence([verified])).toBe(0);
-    expect(countStaleAsOf([verified], TODAY)).toBe(0);
+    expect(countMatching(all, "confianza-baja", TODAY)).toBe(2);
+    expect(countMatching(all, "corte-antiguo", TODAY)).toBe(2);
+    expect(countMatching(all, "todos", TODAY)).toBe(4);
+    expect(countMatching([verified], "confianza-baja", TODAY)).toBe(0);
+    expect(countMatching([verified], "corte-antiguo", TODAY)).toBe(0);
+  });
+
+  it("says «o sin declarar» wherever a lens folds the undeclared rows in", () => {
+    // The counter must not assert «de confianza baja» about a row that merely
+    // lacks a declaration — the lens groups them, the wording keeps them apart.
+    expect(CATALOG_LENSES["confianza-baja"].countLabel(2)).toBe(
+      "2 de confianza baja o sin declarar",
+    );
+    expect(CATALOG_LENSES["corte-antiguo"].countLabel(2)).toBe(
+      `2 con corte de más de ${STALE_AS_OF_MONTHS} meses o sin fecha`,
+    );
+    expect(CATALOG_FILTER_OPTIONS.map((option) => option.label)).toEqual([
+      "Todos",
+      "Por categorizar",
+      "Baja o sin declarar",
+      "Corte antiguo o sin fecha",
+    ]);
+  });
+});
+
+describe("ordering is separable from filtering (#1508)", () => {
+  const verified = profile({
+    identity: { kind: "isin", isin: "IE00B4L5Y983" },
+    displayName: "Pacific ex Japan",
+    confidence: "alta",
+    asOfDate: "2026-07-31",
+  });
+  const mandate = profile({
+    identity: { kind: "isin", isin: "US9229087690" },
+    displayName: "Palm Harbour",
+    confidence: "baja",
+    asOfDate: "2026-08-01",
+  });
+  const rotten = profile({
+    identity: { kind: "provider", priceProvider: "finect", providerSymbol: "N5394" },
+    displayName: "MyInvestor PP",
+    confidence: "media",
+    asOfDate: "2024-04-30",
+  });
+  const all = [verified, mandate, rotten];
+
+  it("orders the WHOLE set by confidence without dropping a row", () => {
+    expect(
+      visibleProfiles(all, { filter: "todos", query: "", sort: "confianza" }, TODAY).map(
+        (p) => p.displayName,
+      ),
+    ).toEqual(["Palm Harbour", "MyInvestor PP", "Pacific ex Japan"]);
+  });
+
+  it("orders the WHOLE set by cut-off antiquity without dropping a row", () => {
+    expect(
+      visibleProfiles(all, { filter: "todos", query: "", sort: "corte" }, TODAY).map(
+        (p) => p.displayName,
+      ),
+    ).toEqual(["MyInvestor PP", "Pacific ex Japan", "Palm Harbour"]);
+  });
+
+  it("an explicit order wins inside a lens too, keeping the lens's rows", () => {
+    const rows = visibleProfiles(
+      all,
+      { filter: "confianza-baja", query: "", sort: "identidad" },
+      TODAY,
+    );
+    expect(rows.map((p) => p.displayName)).toEqual(["Palm Harbour"]);
+  });
+
+  it("with no explicit order each lens reads in its own worst-first order", () => {
+    expect(CATALOG_LENSES.todos.defaultSort).toBe("identidad");
+    expect(CATALOG_LENSES["por-categorizar"].defaultSort).toBe("cobertura");
+    expect(CATALOG_LENSES["confianza-baja"].defaultSort).toBe("confianza");
+    expect(CATALOG_LENSES["corte-antiguo"].defaultSort).toBe("corte");
+  });
+
+  it("round-trips the order in the URL and ignores an unknown one", () => {
+    expect(
+      catalogSearchString({
+        filter: "todos",
+        query: "",
+        sort: "corte",
+        selectedKey: null,
+      }),
+    ).toBe("?orden=corte");
+    expect(parseCatalogParams({ orden: "confianza" }).sort).toBe("confianza");
+    expect(parseCatalogParams({ orden: "por-lo-que-sea" }).sort).toBeNull();
   });
 });
