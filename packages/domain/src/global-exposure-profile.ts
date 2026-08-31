@@ -1,5 +1,6 @@
 import Big from "big.js";
 
+import { isRealCalendarDay } from "./dates";
 import type { DecimalString } from "./decimal";
 import {
   type GlobalExposureProfileIdentity,
@@ -58,6 +59,29 @@ export interface GlobalExposureProfileBreakdowns {
   sector?: Partial<Record<GlobalExposureSectorBucket, DecimalString>>;
 }
 
+/**
+ * How much a vector is worth believing (#1508), with the same three levels the
+ * catalog pass already uses in its workshop:
+ *
+ * - `alta` — index factsheet or trivially-composed product; verifiable to the decimal.
+ * - `media` — issuer/distributor breakdown with a translated taxonomy, or an
+ *   "other" bucket split by hand.
+ * - `baja` — no published breakdown: the vector reads the fund's MANDATE, not
+ *   its portfolio.
+ *
+ * A row with no declared confidence is `null` — «sin declarar», which is the
+ * truth about every row written before this seam existed. It is never silently
+ * promoted to a level.
+ */
+export type GlobalExposureProfileConfidence = "alta" | "media" | "baja";
+
+/** The three levels, worst-first — the order a triage register wants. */
+export const GLOBAL_EXPOSURE_PROFILE_CONFIDENCES = [
+  "baja",
+  "media",
+  "alta",
+] as const satisfies readonly GlobalExposureProfileConfidence[];
+
 export interface GlobalExposureProfile {
   identity: GlobalExposureProfileIdentity;
   displayName: string | null;
@@ -65,6 +89,15 @@ export interface GlobalExposureProfile {
   ter: DecimalString | null;
   trackedIndex: string | null;
   hedgedToCurrency: CurrencyCode | null;
+  /** How much the vector is worth believing, or `null` when undeclared (#1508). */
+  confidence: GlobalExposureProfileConfidence | null;
+  /**
+   * Cut-off day of the DATA (`YYYY-MM-DD`), never the day it was written —
+   * that is what lets a vector age. `null` when undeclared (#1508).
+   */
+  asOfDate: string | null;
+  /** Short free text naming where the vector came from (#1508). */
+  sources: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +108,9 @@ export interface GlobalExposureProfileContentInput {
   ter?: DecimalString | null;
   trackedIndex?: string | null;
   hedgedToCurrency?: string | null;
+  confidence?: string | null;
+  asOfDate?: string | null;
+  sources?: string | null;
 }
 
 export interface CreateGlobalExposureProfileInput
@@ -86,6 +122,8 @@ export interface UpdateGlobalExposureProfileInput
   extends GlobalExposureProfileContentInput {}
 
 const ISO_4217_PATTERN = /^[A-Z]{3}$/;
+/** `sources` is a short label («factsheet MSCI 31/07/2026»), not a bibliography. */
+const MAX_SOURCES_LENGTH = 300;
 const GEOGRAPHY_BUCKETS = new Set<string>([
   ...EXPOSURE_GEOGRAPHY_BUCKETS,
   GEOGRAPHY_NOT_APPLICABLE_KEY,
@@ -93,21 +131,32 @@ const GEOGRAPHY_BUCKETS = new Set<string>([
 const ASSET_CLASS_BUCKETS = new Set<string>(GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS);
 const SECTOR_BUCKETS = new Set<string>(EXPOSURE_SECTOR_BUCKETS);
 
-export function validateGlobalExposureProfileContent(
-  input: GlobalExposureProfileContentInput,
-): {
+export interface ValidatedGlobalExposureProfileContent {
   displayName: string | null;
   breakdowns: GlobalExposureProfileBreakdowns;
   ter: DecimalString | null;
   trackedIndex: string | null;
   hedgedToCurrency: CurrencyCode | null;
-} {
+  confidence: GlobalExposureProfileConfidence | null;
+  asOfDate: string | null;
+  sources: string | null;
+}
+
+export function validateGlobalExposureProfileContent(
+  input: GlobalExposureProfileContentInput,
+): ValidatedGlobalExposureProfileContent {
   const displayName = normalizeOptionalText(input.displayName);
   const trackedIndex = normalizeOptionalText(input.trackedIndex);
   const hedgedToCurrency = normalizeCurrency(input.hedgedToCurrency);
   const ter = normalizeTer(input.ter);
   const breakdowns = normalizeBreakdowns(input.breakdowns ?? {});
+  const confidence = normalizeConfidence(input.confidence);
+  const asOfDate = normalizeAsOfDate(input.asOfDate);
+  const sources = normalizeSources(input.sources);
 
+  // Provenance deliberately does NOT count as content: «confianza baja, a fecha
+  // de abril de 2024» describes a vector, so there has to be a vector. A row
+  // whose only content is its own provenance says nothing about a security.
   if (
     displayName === null &&
     trackedIndex === null &&
@@ -119,9 +168,12 @@ export function validateGlobalExposureProfileContent(
   }
 
   return {
+    asOfDate,
     breakdowns,
+    confidence,
     displayName,
     hedgedToCurrency,
+    sources,
     ter,
     trackedIndex,
   };
@@ -129,13 +181,8 @@ export function validateGlobalExposureProfileContent(
 
 export function createValidatedGlobalExposureProfileInput(
   input: CreateGlobalExposureProfileInput,
-): {
+): ValidatedGlobalExposureProfileContent & {
   identity: GlobalExposureProfileIdentity;
-  displayName: string | null;
-  breakdowns: GlobalExposureProfileBreakdowns;
-  ter: DecimalString | null;
-  trackedIndex: string | null;
-  hedgedToCurrency: CurrencyCode | null;
 } {
   return {
     identity: resolveGlobalExposureProfileIdentity(input.identity),
@@ -284,6 +331,51 @@ function normalizeCurrency(value: string | null | undefined): CurrencyCode | nul
     throw new Error("Exposure profile hedgedToCurrency must be ISO-4217 uppercase.");
   }
   return normalized as CurrencyCode;
+}
+
+function normalizeConfidence(
+  value: string | null | undefined,
+): GlobalExposureProfileConfidence | null {
+  const normalized = trimToNull(value)?.toLowerCase() ?? null;
+  if (normalized === null) {
+    return null;
+  }
+  if (!(GLOBAL_EXPOSURE_PROFILE_CONFIDENCES as readonly string[]).includes(normalized)) {
+    throw new Error("Exposure profile confidence must be alta, media or baja.");
+  }
+  return normalized as GlobalExposureProfileConfidence;
+}
+
+/**
+ * The cut-off day of the data, validated as a real calendar day — a shape check
+ * alone would let `2026-02-30` through and an ordering by antiquity would then
+ * sort on a day that does not exist. Clock-free on purpose: a future cut-off is
+ * the admin's problem to see, not this function's to guess (ADR 0039).
+ */
+function normalizeAsOfDate(value: string | null | undefined): string | null {
+  const normalized = trimToNull(value);
+  if (normalized === null) {
+    return null;
+  }
+  if (!isRealCalendarDay(normalized)) {
+    throw new Error(
+      "Exposure profile asOfDate must be a real calendar day in YYYY-MM-DD format.",
+    );
+  }
+  return normalized;
+}
+
+function normalizeSources(value: string | null | undefined): string | null {
+  const normalized = trimToNull(value);
+  if (normalized === null) {
+    return null;
+  }
+  if (normalized.length > MAX_SOURCES_LENGTH) {
+    throw new Error(
+      `Exposure profile sources must be ${MAX_SOURCES_LENGTH} characters or fewer.`,
+    );
+  }
+  return normalized;
 }
 
 function normalizeOptionalText(value: string | null | undefined): string | null {

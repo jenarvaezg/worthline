@@ -14,6 +14,9 @@ const sampleProfile: GlobalExposureProfile = {
   ter: "0.0022",
   trackedIndex: "FTSE All-World",
   hedgedToCurrency: null,
+  confidence: "media",
+  asOfDate: "2023-12-31",
+  sources: "justETF",
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
 };

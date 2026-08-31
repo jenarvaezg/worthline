@@ -81,6 +81,9 @@ describe("global exposure profile content validation (#940)", () => {
       ter: "0.0022",
       trackedIndex: null,
       hedgedToCurrency: null,
+      confidence: null,
+      asOfDate: null,
+      sources: null,
     });
   });
 
@@ -231,6 +234,85 @@ describe("global exposure profile content validation (#940)", () => {
       ter: null,
       hedgedToCurrency: null,
       breakdowns: { assetClass: { equity: "1" } },
+      confidence: null,
+      asOfDate: null,
+      sources: null,
+    });
+  });
+});
+
+describe("global exposure profile provenance (#1508)", () => {
+  test("normalizes confidence, cut-off date and sources", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        breakdowns: { assetClass: { equity: "1" } },
+        confidence: " ALTA ",
+        asOfDate: " 2026-07-31 ",
+        sources: "  factsheet MSCI 31/07/2026  ",
+      }),
+    ).toMatchObject({
+      confidence: "alta",
+      asOfDate: "2026-07-31",
+      sources: "factsheet MSCI 31/07/2026",
+    });
+  });
+
+  test("an undeclared provenance is null, never an invented value", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        breakdowns: { assetClass: { equity: "1" } },
+        confidence: "",
+        asOfDate: " ",
+        sources: "",
+      }),
+    ).toMatchObject({ confidence: null, asOfDate: null, sources: null });
+  });
+
+  test("rejects a confidence outside the three declared levels", () => {
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: { assetClass: { equity: "1" } },
+        confidence: "muy alta",
+      }),
+    ).toThrow(/confidence must be alta, media or baja/);
+  });
+
+  test("rejects a cut-off date that is not a calendar day", () => {
+    for (const asOfDate of ["31/07/2026", "2026-7-31", "2026-13-01", "2026-02-30"]) {
+      expect(() =>
+        validateGlobalExposureProfileContent({
+          breakdowns: { assetClass: { equity: "1" } },
+          asOfDate,
+        }),
+      ).toThrow(/YYYY-MM-DD/);
+    }
+  });
+
+  test("provenance alone is not content: a profile that only declares it is empty", () => {
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: {},
+        confidence: "baja",
+        asOfDate: "2024-04-30",
+        sources: "ficha mensual de la gestora",
+      }),
+    ).toThrow(/completely empty/);
+  });
+
+  test("createValidatedGlobalExposureProfileInput carries provenance through", () => {
+    expect(
+      createValidatedGlobalExposureProfileInput({
+        identity: { isin: VWRL_ISIN },
+        breakdowns: { assetClass: { equity: "1" } },
+        confidence: "media",
+        asOfDate: "2026-06-30",
+        sources: "quefondos",
+      }),
+    ).toMatchObject({
+      identity: { kind: "isin", isin: VWRL_ISIN },
+      confidence: "media",
+      asOfDate: "2026-06-30",
+      sources: "quefondos",
     });
   });
 });

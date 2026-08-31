@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 7;
+export const CP_SCHEMA_VERSION = 8;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -225,5 +225,37 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       }
     }
     await writeControlPlaneSchemaVersion(client, 7);
+  }
+
+  if (version < 8) {
+    // Catalog provenance (#1508, ADR 0058 amendment): what a vector is worth
+    // believing (`confidence`), the cut-off day of the DATA (`as_of_date`) and
+    // where it came from (`sources`). Until now the catalog stored WHAT each
+    // vector says and nothing about its trustworthiness, so a factsheet read to
+    // the decimal and a two-year-old mandate reading were indistinguishable.
+    //
+    // All three are nullable and there is NO backfill: a pre-#1508 row reads as
+    // «sin declarar», which is the truth about it. Fresh installs already get
+    // the columns from EXPOSURE_PROFILE_SCHEMA's CREATE TABLE, in this same
+    // order, so both paths converge; the ALTERs are for existing control planes
+    // and tolerate the duplicate-column race the same way the other steps do.
+    for (const column of ["confidence", "as_of_date", "sources"]) {
+      try {
+        await client.execute(
+          `ALTER TABLE global_exposure_profiles ADD COLUMN ${column} TEXT`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Fresh SCHEMA already has the column; synthetic version-only fixtures
+        // in ladder tests may lack the table entirely.
+        if (
+          !new RegExp(`duplicate column name:\\s*${column}`, "i").test(message) &&
+          !/no such table:\s*global_exposure_profiles/i.test(message)
+        ) {
+          throw err;
+        }
+      }
+    }
+    await writeControlPlaneSchemaVersion(client, 8);
   }
 }

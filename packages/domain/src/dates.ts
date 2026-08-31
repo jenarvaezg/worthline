@@ -35,6 +35,20 @@ export function isDateKeyShaped(value: string): boolean {
 }
 
 /**
+ * Whether a string is a real calendar day: the `YYYY-MM-DD` shape AND a day that
+ * exists. The shape check alone accepts `2026-02-30`, which `Date` silently
+ * rolls forward to March 1st — so anything that later orders or subtracts on the
+ * stored key would be working with a day nobody meant.
+ */
+export function isRealCalendarDay(value: string): boolean {
+  if (!isDateKeyShaped(value)) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
  * A calendar day as the app reads it out loud: `2026-08-21` → `21/08/2026`.
  * Anything that is not a date key is returned verbatim — a label is never the
  * place to throw.
