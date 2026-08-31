@@ -193,6 +193,7 @@ import {
   allocationMonthKeys,
   formatAllocationMonthLabel,
 } from "./contribution-allocation-view";
+import { formatDay } from "./format-day";
 import { ObjetivosContent } from "./page";
 
 beforeEach(() => {
@@ -786,6 +787,11 @@ describe("ObjetivosPage passive-income lens (#658)", () => {
 
 describe("ObjetivosPage rent-derived real return (#1448)", () => {
   const TODAY = new Date().toISOString().slice(0, 10);
+  /** Yesterday relative to the page's own clock, and how the panel prints it. */
+  const YESTERDAY = new Date(Date.parse(`${TODAY}T00:00:00Z`) - 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const YESTERDAY_LABEL = formatDay(YESTERDAY);
 
   /** A rented flat plus the cash rung, so the housing weight is not 100 %. */
   function withRentedFlat(
@@ -882,7 +888,7 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     expect(html).not.toContain("fireMixTable");
   });
 
-  test("an ended rent does not feed the rate, and the row says so", async () => {
+  test("an ended rent says since when, and names the action that revives it", async () => {
     calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
       assets: [
         {
@@ -908,10 +914,7 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
         expensesMinor: 25_000,
         cadence: "monthly",
         startISO: "2020-01-01",
-        // Ended yesterday relative to the page's own clock.
-        endISO: new Date(Date.parse(`${TODAY}T00:00:00Z`) - 86_400_000)
-          .toISOString()
-          .slice(0, 10),
+        endISO: YESTERDAY,
         exclusions: [],
       },
     ]);
@@ -921,7 +924,11 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
 
     const html = await renderedHtml();
 
-    expect(html).toContain("no está vigente hoy");
+    // #1511: the merged reason («no está vigente hoy») said neither since when nor
+    // what to do about it. The rendered row now says both.
+    expect(html).toContain(`terminó el ${YESTERDAY_LABEL}`);
+    expect(html).toContain("Reactivar");
+    expect(html).not.toContain("no está vigente hoy");
     expect(assumptionsFold(html)).toContain("<strong>3,0 %</strong>");
   });
 });

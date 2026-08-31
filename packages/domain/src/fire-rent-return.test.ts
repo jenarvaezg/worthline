@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import type { RentRealReturns, RentScheduleWindow } from "./fire-rent-return";
 import {
   annualizedMinor,
   deriveRentRealReturns,
@@ -51,6 +52,17 @@ function schedule(
     startISO: "2024-01-01",
     ...over,
   };
+}
+
+/**
+ * The window off the first notice, narrowed through the reason that owns it — the
+ * union deliberately makes `scheduleWindow` unreachable on any other reason. Null
+ * says "that notice was not about the calendar", which is itself a failure worth
+ * seeing when a test expects dates.
+ */
+function firstNoticeWindow(result: RentRealReturns): RentScheduleWindow | null {
+  const notice = result.notices[0];
+  return notice?.reason === "no_live_schedule" ? notice.scheduleWindow : null;
 }
 
 describe("annualizedMinor", () => {
@@ -167,8 +179,15 @@ describe("deriveRentRealReturns", () => {
     });
 
     expect(result.byAssetId.size).toBe(0);
+    // Exact shape on purpose: the window belongs to `no_live_schedule` alone, so no
+    // stray date field travels with a reason that is not about the calendar.
     expect(result.notices).toEqual([
-      { assetId: "piso", assetName: "piso", grossRate: 0.06, reason: "missing_expenses" },
+      {
+        assetId: "piso",
+        assetName: "piso",
+        grossRate: 0.06,
+        reason: "missing_expenses",
+      },
     ]);
   });
 
@@ -205,8 +224,96 @@ describe("deriveRentRealReturns", () => {
 
     expect(result.byAssetId.size).toBe(0);
     expect(result.notices).toEqual([
-      { assetId: "piso", assetName: "piso", grossRate: null, reason: "no_live_schedule" },
+      {
+        assetId: "piso",
+        assetName: "piso",
+        grossRate: null,
+        reason: "no_live_schedule",
+        scheduleWindow: { endedOnISO: "2026-07-31", startsOnISO: null },
+      },
     ]);
+  });
+
+  it("a rent that has not started yet reports its start, not an ending", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          expensesMinor: 10_000,
+          startISO: "2027-01-01",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(firstNoticeWindow(result)).toEqual({
+      endedOnISO: null,
+      startsOnISO: "2027-01-01",
+    });
+  });
+
+  it("an ended rent and a future one report both dates", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", {
+          amountMinor: 50_000,
+          endISO: "2026-07-31",
+          expensesMinor: 10_000,
+        }),
+        schedule("s2", "piso", {
+          amountMinor: 60_000,
+          expensesMinor: 10_000,
+          startISO: "2026-10-01",
+        }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(firstNoticeWindow(result)).toEqual({
+      endedOnISO: "2026-07-31",
+      startsOnISO: "2026-10-01",
+    });
+  });
+
+  it("keeps the most recent ending and the nearest start, not the first it sees", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("s1", "piso", { endISO: "2024-12-31", startISO: "2024-01-01" }),
+        schedule("s2", "piso", { endISO: "2026-06-30", startISO: "2025-01-01" }),
+        schedule("s3", "piso", { startISO: "2028-01-01" }),
+        schedule("s4", "piso", { startISO: "2026-12-01" }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(firstNoticeWindow(result)).toEqual({
+      endedOnISO: "2026-06-30",
+      startsOnISO: "2026-12-01",
+    });
+  });
+
+  it("a future rent's own end date is never read as an ending already passed", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 10_000_000)],
+      baseCurrency: EUR,
+      // Contradictory declaration (it ends before it starts): what matters is that
+      // the window never claims the rent ended, because it never ran.
+      schedules: [
+        schedule("s1", "piso", { endISO: "2026-01-01", startISO: "2027-01-01" }),
+      ],
+      todayISO: TODAY,
+    });
+
+    expect(firstNoticeWindow(result)).toEqual({
+      endedOnISO: null,
+      startsOnISO: "2027-01-01",
+    });
   });
 
   it("a rent that ends next month still counts today", () => {
