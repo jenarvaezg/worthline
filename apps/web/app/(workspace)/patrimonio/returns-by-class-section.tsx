@@ -4,7 +4,7 @@ import {
   twrUnavailableTitle,
 } from "@web/_components/returns-format";
 import type { AssetClassReturnsViewResult, TwrReason } from "@worthline/domain";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { ATTRIBUTED_ONLY_NOTICE, formatMoneyMinorPrivacy } from "@worthline/domain";
 
 import { assetClassLabel, formatExposureWeight } from "./exposure-view";
 
@@ -26,6 +26,14 @@ import { assetClassLabel, formatExposureWeight } from "./exposure-view";
  * balance board — because the footer announces the split is made with TODAY's
  * weights, and a class with no value today takes no part in it. Folded, never
  * dropped: its episode was real and stays one click away.
+ *
+ * And a class that owns no product of its own (`attributedOnly`, #1458) does not
+ * print a rate at all: «Efectivo +10,4%» was the mixed pension plans' return
+ * wearing the cash sleeve's name, and a reader had no reason to doubt it under a
+ * subtitle that promised measurement. Its value and weight stay — those are a
+ * split of euros, which the attribution does know — and the three measures read
+ * as em dashes that say why, with the word «atribuida» beside the label and the
+ * full sentence in the footer, because a phone has no hover.
  */
 /** The hover text behind a missing TWR: the reason, never just its absence. */
 function twrWhy(reason: TwrReason | null): string {
@@ -42,30 +50,44 @@ function ClassRow({
   weight: string;
   privacyMode: boolean;
 }) {
+  // A borrowed class's em dashes all say the SAME thing, and it is not the TWR
+  // reason: «no hay TWR» would describe a measurement that failed, when what
+  // happened is that there was never a figure of this class's to measure.
+  const borrowedWhy = entry.attributedOnly ? ATTRIBUTED_ONLY_NOTICE : null;
+  const borrowedTitle = borrowedWhy === null ? {} : { title: borrowedWhy };
   return (
     <li className="returnsClassRow">
       <div className="returnsClassHead">
-        <span className="returnsClassLabel">{assetClassLabel(entry.key)}</span>
+        <span className="returnsClassLabel">
+          {assetClassLabel(entry.key)}
+          {borrowedWhy === null ? null : (
+            <span className="returnsClassAttributed" title={borrowedWhy}>
+              atribuida
+            </span>
+          )}
+        </span>
         <b>{formatMoneyMinorPrivacy(entry.value, privacyMode)}</b>
         <span className="returnsClassShare">{formatExposureWeight(weight)}</span>
       </div>
       <dl className="returnsClassMeasures">
         <div>
           <dt>Ganancia</dt>
-          <dd className={signClass(entry.view.totalReturnRatio)}>
+          <dd className={signClass(entry.view.totalReturnRatio)} {...borrowedTitle}>
             {formatMeasurePct(entry.view.totalReturnRatio)}
           </dd>
         </div>
         <div>
           <dt>IRR</dt>
-          <dd>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
+          <dd {...borrowedTitle}>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
         </div>
         <div>
           <dt>TWR</dt>
           <dd
-            {...(entry.view.twr?.rate == null
-              ? { title: twrWhy(entry.view.twr?.reason ?? null) }
-              : {})}
+            {...(borrowedWhy !== null
+              ? borrowedTitle
+              : entry.view.twr?.rate == null
+                ? { title: twrWhy(entry.view.twr?.reason ?? null) }
+                : {})}
           >
             {formatMeasurePct(entry.view.twr?.rate ?? null)}
           </dd>
@@ -97,7 +119,7 @@ export default function ReturnsByClassSection({
     >
       <div className="panelHeader">
         <h2>Rentabilidad por clase</h2>
-        <span>Cómo rinde cada clase de activo</span>
+        <span>Reparto del resultado entre las clases del perfil</span>
       </div>
 
       {live.length === 0 ? (
@@ -146,6 +168,12 @@ export default function ReturnsByClassSection({
         Reparto con los pesos actuales del perfil de exposición (no históricos). No
         incluye dividendos ni cupones.
       </p>
+
+      {returns.classes.some((entry) => entry.attributedOnly) ? (
+        <p className="returnsByClassCaveat">
+          <b>Atribuida</b> — {ATTRIBUTED_ONLY_NOTICE}
+        </p>
+      ) : null}
     </section>
   );
 }

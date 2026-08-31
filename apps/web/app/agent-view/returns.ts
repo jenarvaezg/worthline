@@ -271,17 +271,40 @@ function buildAssetClassReturnsBlock(input: {
 }
 
 function toAssetClassReturns(entry: AssetClassReturns): AgentViewAssetClassReturns {
+  // A class with no product of its own gets no rate here either (#1458). Telling
+  // the reader in prose to «quote the value, never the rates» while handing it
+  // +10,4% is guarding by model choice, which is exactly what ADR 0067 forbids:
+  // the euros the assistant must not repeat never reach it. The engine still
+  // holds them for whoever wants the mixed products' blended figure.
+  const simple = simpleGainToReturn(entry.simpleGain, entry.value.currency);
   return {
     // Present only when true, like every other state flag on the agent view: an
-    // absent `closed` reads as a live class, never as an unknown one.
+    // absent `closed` reads as a live class, never as an unknown one. The same
+    // for `attributedOnly` — its absence means the class has products of its
+    // own, not that nobody checked.
+    ...(entry.attributedOnly ? { attributedOnly: true as const } : {}),
     ...(entry.closed ? { closed: true as const } : {}),
     key: entry.key,
-    moneyWeighted: toMoneyWeighted(entry.irr),
-    simple: simpleGainToReturn(entry.simpleGain, entry.value.currency),
-    timeWeighted: toTimeWeighted(entry.twr),
+    moneyWeighted: entry.attributedOnly
+      ? { rate: null, reason: null }
+      : toMoneyWeighted(entry.irr),
+    simple: entry.attributedOnly
+      ? { ...simple, cagr: null, totalReturnRatio: null }
+      : simple,
+    timeWeighted: entry.attributedOnly ? BLANK_TIME_WEIGHTED : toTimeWeighted(entry.twr),
     value: moneyOf(entry.value.amountMinor, entry.value.currency),
   };
 }
+
+/** The empty time-weighted block a borrowed class carries (#1458). */
+const BLANK_TIME_WEIGHTED: AgentViewTimeWeightedReturn = {
+  annualized: false,
+  annualizedRate: null,
+  endDate: null,
+  rate: null,
+  reason: null,
+  startDate: null,
+};
 
 /** A domain `SimpleGain` as the agent view prints it — decimals as strings. */
 function simpleGainToReturn(

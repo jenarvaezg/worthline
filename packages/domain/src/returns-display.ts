@@ -407,6 +407,18 @@ export function portfolioReturnsView(
 export const CLASS_ATTRIBUTION_CAVEAT =
   "Reparto por clase con los pesos actuales del perfil de exposición (no históricos).";
 
+/**
+ * Why a class shows value and weight but no return (#1458): every euro it holds
+ * is a sleeve inside a mixed product, so the three measures would be that
+ * product's result wearing this class's name — the reader's «¿qué sentido tiene
+ * que el efectivo rinda un 10%?» has no answer because the figure was never the
+ * cash's. There are no per-sleeve return series inside a mixed fund and there
+ * will not be, so this is not a gap to close: the class holds nothing of its own
+ * to measure, and the honest figure is the blank one.
+ */
+export const ATTRIBUTED_ONLY_NOTICE =
+  "Ni un euro de esta clase está en un producto suyo: todo su valor es una fracción de productos mixtos, así que la rentabilidad sería la de esos productos, no la de la clase.";
+
 /** One asset class's display model plus the market value attributed to it. */
 export interface AssetClassReturnsView {
   key: string;
@@ -414,6 +426,15 @@ export interface AssetClassReturnsView {
   view: HoldingReturnsView;
   /** No value attributed today: the class is history, not present weight (#1456). */
   closed: boolean;
+  /**
+   * Every euro of this class is a sleeve of a mixed product (#1458), so `view`
+   * carries no rate: the ratio, CAGR, IRR and TWR are null and
+   * {@link ATTRIBUTED_ONLY_NOTICE} says why. The attributed `value` survives —
+   * splitting today's euros by today's weight is what the attribution genuinely
+   * knows. How much of the class IS its own is on the engine's `measuredValue`;
+   * no surface prints it, so it is not repeated here.
+   */
+  attributedOnly: boolean;
 }
 
 /** The per-asset-class returns display model: one entry per class + coverage. */
@@ -421,6 +442,27 @@ export interface AssetClassReturnsViewResult {
   classes: AssetClassReturnsView[];
   coverage: ExposureCoverage;
 }
+
+/**
+ * The rates a class with nothing of its own does not get to print (#1458). This
+ * is a SELECTION, the job of this layer — the engine still emits every measure,
+ * so a caller that wants the mixed products' blended figure can still read it
+ * off `returnsByAssetClass`. What dies here is the surface's ability to print a
+ * rate under the class's name.
+ *
+ * `totalGain` survives only because its type is not nullable, NOT because it is
+ * any more defensible: a gain in euros is value minus a cost that is the mixed
+ * product's own history scaled by today's weight, so it is borrowed exactly like
+ * the percentage. No surface may print it for an `attributedOnly` class —
+ * /patrimonio prints only percentages here — and the flag, not this constant, is
+ * what a new surface has to read before quoting anything but `value`.
+ */
+const withheldMeasures = {
+  cagr: null,
+  irr: null,
+  totalReturnRatio: null,
+  twr: null,
+} as const;
 
 /**
  * Per-asset-class returns for the dashboard (#552, ADR 0040 fast-follow): folds
@@ -472,10 +514,19 @@ export function returnsByAssetClassView(
         entry.payoutsIncluded,
       );
       return {
+        attributedOnly: entry.attributedOnly,
         closed: entry.closed,
         key: entry.key,
         value: entry.value,
-        view: { ...view, caveats: [...view.caveats, CLASS_ATTRIBUTION_CAVEAT] },
+        view: {
+          ...view,
+          ...(entry.attributedOnly ? withheldMeasures : {}),
+          caveats: [
+            ...view.caveats,
+            CLASS_ATTRIBUTION_CAVEAT,
+            ...(entry.attributedOnly ? [ATTRIBUTED_ONLY_NOTICE] : []),
+          ],
+        },
       };
     }),
     coverage: result.coverage,

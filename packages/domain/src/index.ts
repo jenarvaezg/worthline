@@ -1041,6 +1041,7 @@ export type {
 } from "./returns-display";
 export {
   APPRECIATING_CAVEAT,
+  ATTRIBUTED_ONLY_NOTICE,
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
