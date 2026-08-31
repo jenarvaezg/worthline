@@ -122,8 +122,13 @@ export async function readGoldenAttachmentTurn(
  * answered then (#1376). Deliberately the emptiest pair that still makes a
  * conversation: neither names a holding, a figure or a direction, so everything the
  * question grades is decided in the turn under test and not handed over in history.
+ *
+ * «El archivo» and not «el justificante» since #1516: two document kinds travel this
+ * lane now, and naming the receipt would tell a model carrying a broker's ledger what
+ * kind of paper it is holding — a nudge towards the single-operation lane, handed over
+ * in the history rather than read off the document.
  */
-const DOCUMENT_UPLOAD_TURN = "Te subo el justificante.";
+const DOCUMENT_UPLOAD_TURN = "Te subo el archivo.";
 const DOCUMENT_UPLOAD_REPLY = "Lo he leído.";
 
 /**

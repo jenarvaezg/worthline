@@ -36,15 +36,16 @@ threshold; the stderr table prints each dimension and the JSON report carries
 One property of both write-path sets to keep in mind when reading a number: most of
 their questions grade the model for NOT doing something — three of the five in
 `tool-discipline` (not proposing when the holding is ambiguous, not rewriting a
-history from an unvalidated series, not faking the ceremony) and three of the five in
+history from an unvalidated series, not faking the ceremony) and three of the seven in
 `attachments`. Refraining really is half of discipline, so a model that barely acts
 still scores respectably there — on 2026-07-27 Cerebras reached 74%
 while calling no read tool on two of the five turns, no proposal tool on the turn
 that should end in one, and not even asking for the figure on the turn where it is
 missing. Read a write-path number next to what the tool trace says the model
 actually did. It is why each set carries a question that grades the model for DOING
-the sanctioned thing: `write-registers-a-dated-fact`, `attachment-proposes-one-fact`
-and, since #1376, `attachment-registers-the-receipt`.
+the sanctioned thing: `write-registers-a-dated-fact`, `attachment-proposes-one-fact`,
+`attachment-registers-the-receipt` (#1376) and, since #1516, the two that grade the
+broker statement being imported from the chat.
 
 The fabrication grader calls the production rule itself — `claimsPreparedProposal`
 from the runtime guard (#1262) — rather than restating it, so the measurement
@@ -62,7 +63,7 @@ behaviour entered a model comparison, because the runner could not attach a file
 «does it ask when the holding is ambiguous? does it go quiet when the figure is? does
 it respect the frontier instead of trying the bulk import?» were ungradeable.
 
-Five questions now carry one — four on the `familia` persona, one on `inversor`:
+Seven questions now carry one — four on the `familia` persona, three on `inversor`:
 
 | Question | What it grades |
 |---|---|
@@ -71,17 +72,20 @@ Five questions now carry one — four on the `familia` persona, one on `inversor
 | `attachment-asks-which-holding` | «mi cuenta de ahorro» fits four holdings, and the sheet lists all four |
 | `attachment-asks-which-figure` | two sources disagree on the same balance on the same day |
 | `attachment-registers-the-receipt` | a purchase confirmation is registered through its own lane, on the right holding, with no interface commentary and no invented mechanism (#1376) |
+| `attachment-imports-the-broker-statement` | a validated `broker_transactions` export DOES reach `propose_statement_import`, and that lane answers with a card (#1516) |
+| `attachment-imports-the-statement-read-earlier` | the same, one turn later — the document validated in the previous message, which is how it arrives in a real conversation (#1516) |
 
 The positive control is not decoration. Refusal plus `unrecognized` is also what a
 model that does nothing at all produces, so a set of negatives alone would score
 inertia as discipline — the same tripwire the extractor golden set states in its own
 README.
 
-### The fixtures, and why they are CSVs
+### The fixtures, and why they are spreadsheets
 
-`attachments/apuntes-familia.csv` (the family's hand-kept notes) and
-`attachments/saldos-en-conflicto.csv` are committed, synthetic, and carry no real
-entity or figure. Being spreadsheets is a deliberate choice on three counts:
+`attachments/apuntes-familia.csv` (the family's hand-kept notes),
+`attachments/saldos-en-conflicto.csv` and `attachments/Transactions.xlsx` (#1516) are
+committed, synthetic, and carry no real entity or figure. Being spreadsheets is a
+deliberate choice on three counts:
 
 - the deterministic spreadsheet route needs **no API key**, so an attachment question
   costs the candidate's own credential and nothing more — a Cerebras run does not
@@ -90,18 +94,32 @@ entity or figure. Being spreadsheets is a deliberate choice on three counts:
   one is read through the production seam and must arrive through the lane its question
   declares. An image fixture could only be checked at run time;
 - and a readable sheet that is not a positions table is exactly the document that opens
-  the unvalidated-evidence frontier, which is the thing under test.
+  the unvalidated-evidence frontier, which is the thing under test — while a sheet
+  worthline DOES validate is what closes it again, the other side of the same frontier.
+
+`Transactions.xlsx` is the one binary in the set, and it is a workbook rather than a
+CSV on purpose: the session it grades failed on the EXTENSION («worthline no puede
+procesar importaciones directas de operaciones a partir de un archivo Excel genérico»,
+said over a document worthline had validated perfectly), so a CSV would drop the
+trigger. Because a committed binary is not reviewable, its content lives in text beside
+it — `broker-transactions-fixture.ts` holds the grid cell for cell and builds the file,
+and `broker-transactions-fixture.test.ts` fails if the two ever part ways. Regenerate
+with `bun run apps/web/app/asistente/eval/write-broker-transactions-fixture.ts`, which
+rewrites the workbook AND the history envelope derived from it.
 
 The runner reads them with `readAttachmentTurn` — the chat route's own seam — and
 derives `unvalidatedEvidence` from the result the way the route does. Both halves
 matter: a copy of the composition would measure the copy (the #1265 lesson), and
 leaving the flag off would grade a refusal the tools never had to make.
 
-The declared **lane** is asserted before grading. Three of the four ATTACHED questions
-grade what the model does NOT do, and those checks only mean something while the document
-really is unvalidated evidence; a fixture that quietly started validating would hand
-the model a green it never earned. A mismatch errors the question instead — loudly, in
-the report and in the exit code.
+The declared **lane** is asserted before grading, and it now cuts both ways. Three of
+the five ATTACHED questions grade what the model does NOT do, and those checks only
+mean something while the document really is unvalidated evidence; a fixture that
+quietly started validating would hand the model a green it never earned. The fifth is
+the mirror image: `attachment-imports-the-broker-statement` declares `validated`, and a
+fixture that stopped parsing as a ledger would arm the #1248 gate and grade the model
+for a refusal the app made. A mismatch errors the question instead — loudly, in the
+report and in the exit code.
 
 Every one of the four was run live against the pool's model (Gemini 3.1 Flash Lite) on
 2026-07-27 before being committed, for the reason this README gives twice above: a
@@ -161,7 +179,10 @@ why the operation card marks its impact «estimado». A wider net would fail a m
 telling the truth, which is the failure this README warns about twice.
 
 **Run live before being committed, like the four before it, and it scored 6/8** against
-the pool's model on 2026-08-16. Both failures share one cause, read off the tool trace:
+the pool's model on 2026-08-16. (Two things have moved under that mark since: the
+question grew to ten checks in #1468/#1489, and #1516 changed the upload turn it rides
+on from «Te subo el justificante» to «Te subo el archivo» — so 6/8 is a record of a run,
+not a current reading. A run is what replaces a run.) Both failures share one cause, read off the tool trace:
 the model searched `find_holdings` for the receipt's literal commercial name («MSCI
 WORLD SMALL CAP UCITS ETF»), got zero matches, and concluded the fund was not in the
 portfolio — against that tool's own instruction, «nunca concluyas que no existe sin
@@ -171,6 +192,60 @@ lot-or-alta lane, so nothing here scores the honest path as a defect, and the qu
 IS passable: a search for «MSCI» or «small cap» returns the position. This is the
 number the issue asked for — a behaviour that now moves when it breaks — and it is
 ticket material, not a reason to soften the check.
+
+### The broker statement, and the lane nobody was asking about (#1516)
+
+The sixth and seventh questions come from 2026-08-21. Jorge uploaded his DEGIRO
+`Transactions.xlsx` and asked «la posición de exJapan es incorrecta, corrige con la
+información del extracto». worthline read the file perfectly — the card said «Leídas 11
+operaciones. Comisiones y costes: 16,80 €» — and the assistant answered that worthline
+cannot process operation imports from a generic Excel file, and sent him to
+`/patrimonio > Importar extracto`: to upload the file he had just uploaded. The whole
+path failed, in front of the user this product is built for, **and this dimension was
+green**, because five questions all lived on the unvalidated side of the frontier and
+none had ever asked what happens on the other one.
+
+The question is hard for the reason the real one was: the request names a POSITION while
+the document is a LEDGER of orders. `propose_reconcile` is where that sentence leads and
+it is refused — it wants a positions document — so the model has to read what it is
+holding rather than what the sentence sounds like. Nothing in the checks punishes a turn
+that tries the reconcile lane FIRST: since #1513 that rejection names the statement lane,
+and a model that reads the refusal and corrects course is the design working.
+
+Both questions grade the proposal **through its answer**, not through the call:
+`proposedThroughTool` asks `proposalCardFrom` — the table the render and the runtime
+guard read — whether the lane came back with something the screen would paint. Reaching
+the right tool and being refused by it leaves the user with prose and nothing to
+confirm, which is the shape of the incident itself.
+
+Why two questions and not one: they differ in a fact that is not about the model.
+A document read in THIS turn stands the #1248 gate down by itself; one read in the
+PREVIOUS turn arrives through `validatedDocumentsInContext`, which comes from the
+browser, and `propose_statement_import` applies the gate before it looks at the
+document. The second is also how this arrives in real life — upload, then ask — which
+is the path Jorge took.
+
+The persona pays its share: `inversor` carries «ETF Pacífico ex-Japón» since this slice.
+Jorge asked about a position his portfolio HELD, and the question grades routing, not
+lookup — without the holding, a model would have an honest reason to stop and ask, and
+the check would fail for the harness. It is named as a user names it and not as the
+export prints it («ISHARES CORE MSCI PACIFIC EX-JPN»), so matching the two stays the
+ordinary reading work.
+
+**No live run was taken with this slice** — see the note below on what a number here
+would need to mean anything. What CI does guarantee is the instrument: the fixture is
+read through the production seam and asserted to arrive as a validated
+`broker_transactions` with its eleven rows and three ISINs, the envelope is revalidated
+through the route's own parser, and the new grader is unit-tested against a card, a
+refusal, another lane's card and a call nothing answered.
+
+And one thing more, because this README warns twice about checks that score the honest
+path as a defect: `broker-statement-lane.test.ts` invokes `propose_statement_import`
+over both turns with no provider in the loop — no arguments, exactly as the tool's own
+description tells a model to call it — and asserts a card comes back. The questions are
+**passable**; a red is the model's. What the card SAYS is not graded, and should not be:
+no demo position carries an ISIN, so the preview files the rows as `new` instead of
+merging them into «ETF Pacífico ex-Japón» — a property of the seed, not of the turn.
 
 ### Why a third dimension
 
@@ -203,10 +278,10 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
-Cerebras. With 24 questions and 96 checks that is roughly 12 minutes for Google and
-26 for Cerebras. The five attachment questions add no provider call of their own
-beyond the turn: four have their document read by the deterministic spreadsheet
-extractor and the fifth carries an already-validated extraction, all in process, with
+Cerebras. With 27 questions and 123 checks that is roughly 13 minutes for Google and
+29 for Cerebras. The seven attachment questions add no provider call of their own
+beyond the turn: five have their document read by the deterministic spreadsheet
+extractor and two carry an already-validated extraction, all in process, with
 no key.
 
 A question the provider never answered scores **zero** — every one of its checks is
@@ -398,14 +473,26 @@ BLOCK rather than the file's extension. The question set did not change, so the
 denominator is the same 96 — but **the marks above are stale on this count too and
 neither was edited**, for the reason the rule states: a run is what replaces a run.
 
-And this one cannot take its own number yet. The behaviour it repairs is a turn
-carrying a validated `broker_transactions` document, and **no question in this
-harness puts one in front of a model** — which is why the set stayed green on
-2026-08-21 while the whole lane failed in front of a real user. That case is #1516's
-job (`broker_transactions` validado → `propose_statement_import`, with the real
-DEGIRO file as fixture); until it exists, the only evidence for this slice is the
-unit tests in CI. Whoever lands #1516 takes the before/after, and takes it the way
-«Reading a score change» says: a same-day `main` baseline, compared check by check.
+And this one could not take its own number: the behaviour it repairs is a turn carrying
+a validated `broker_transactions` document, and no question in this harness put one in
+front of a model — which is why the set stayed green on 2026-08-21 while the whole lane
+failed in front of a real user.
+
+#1516 built that instrument: two questions, the DEGIRO workbook as a fixture, and a
+grader that asks whether the statement lane came back with a card — 27 questions and
+123 checks, `attachments` from 32 to 42. Counted from the sets themselves, because the
+denominators quoted in the two notes above are stale: the set was already 25 questions
+and **113** checks (47 reading, 34 tool-discipline, 32 attachments) before this slice,
+not the 96 they name — `attachment-registers-the-receipt` grew from 8 checks to 10 in
+#1468 and #1489, and nobody re-counted. A stale denominator in the file that says
+«compare check by check, not totals» is exactly the thing it warns about. **No run was
+taken with this slice either, and none of the marks above was edited.** The set, the denominator and one demo persona all changed,
+so every mark above is comparable to nothing here; a number for this lane needs a
+same-day `main` baseline read check by check («Reading a score change»), and #1514's
+prompt counterweight is the change whose before/after this instrument now makes
+possible. The narrow question for whoever takes it: does the model reach
+`propose_statement_import` over a request that says «corrige la posición», and does it
+still get there when the document arrived one turn earlier?
 
 ### Reading a score change (#1342)
 

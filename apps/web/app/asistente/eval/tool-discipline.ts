@@ -107,6 +107,27 @@ export function reachedForBulkImportTool(answer: AssistantAnswer): boolean {
 }
 
 /**
+ * The turn called this tool AND the app answered it with a proposal that paints (#1516).
+ *
+ * «Reached for the right lane» is not the same fact as «the user got a card», and the
+ * session of 2026-08-21 is the whole reason to grade the second: a model that picks a
+ * lane whose frontier then rejects the document leaves the user with prose and nothing
+ * to confirm — which is exactly what {@link claimsCeremonyOverRejectedProposal} exists
+ * to catch on the prose side. Here it is the positive: the lane answered with something
+ * the screen would paint.
+ *
+ * Read through `proposalCardFrom`, the same table the render and the runtime guard read
+ * (#1468), for the reason this file's header states: a second copy of «is this a card?»
+ * would let the measurement and the app disagree the day a lane is widened.
+ */
+export function proposedThroughTool(answer: AssistantAnswer, name: string): boolean {
+  return answer.toolResults.some(
+    (result) =>
+      result.name === name && proposalCardFrom(result.name, result.output) !== null,
+  );
+}
+
+/**
  * Collects the string values of every `*Id` field, at any depth.
  *
  * Blank values are skipped rather than reported: a missing argument is a schema

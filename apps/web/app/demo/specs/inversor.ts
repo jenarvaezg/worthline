@@ -145,6 +145,25 @@ export const INVERSOR_SPEC: PersonaSpec = {
       unitSymbol: "EMRG",
     },
     {
+      // The position the broker-statement question is about (#1516). Jorge's own
+      // request — «la posición de exJapan es incorrecta, corrige con la información
+      // del extracto» — was asked over a portfolio that HELD the thing he named, and
+      // the question grades which tool the model reaches for, not whether it can find
+      // a holding. Without this position the model would have an honest reason to
+      // stop and ask, and the check would then fail for the harness rather than for
+      // the routing.
+      //
+      // Named as the user would name it, not as the export prints it («ISHARES CORE
+      // MSCI PACIFIC EX-JPN»): matching the two is the ordinary reading work, and a
+      // label copied off the document would hand it over for free.
+      id: "asset_inversor_ex_japan",
+      manualPricePerUnit: "33.05",
+      name: "ETF Pacífico ex-Japón",
+      operations: monthlyBuys("asset_inversor_ex_japan", 18, "12", 28, 0.3),
+      ownership: FULL,
+      unitSymbol: "EXJP",
+    },
+    {
       id: "asset_inversor_tech",
       manualPricePerUnit: "244.00",
       name: "Acción tecnológica concentrada",

@@ -1,0 +1,144 @@
+{
+  "fileName": "Transactions.xlsx",
+  "result": {
+    "status": "valid",
+    "data": {
+      "documentType": "broker_transactions",
+      "transactions": [
+        {
+          "date": "2026-01-15",
+          "kind": "buy",
+          "isin": "IE00B52MJY50",
+          "name": "ISHARES CORE MSCI PACIFIC EX-JPN",
+          "units": "12",
+          "amount": "377.4",
+          "pricePerUnit": "31.45",
+          "currency": "EUR",
+          "feesMinor": 100,
+          "orderId": "orden-01"
+        },
+        {
+          "date": "2026-01-20",
+          "kind": "buy",
+          "isin": "IE00BM67HK77",
+          "name": "XTRACKERS MSCI WORLD INFORMATION TECHNOLOGY",
+          "units": "4",
+          "amount": "249.2",
+          "pricePerUnit": "62.3",
+          "currency": "EUR",
+          "feesMinor": 200,
+          "orderId": "orden-02"
+        },
+        {
+          "date": "2026-02-05",
+          "kind": "buy",
+          "isin": "US18915M1071",
+          "name": "CLOUDFLARE INC. CLASS A",
+          "units": "3",
+          "amount": "264.6",
+          "pricePerUnit": "88.2",
+          "currency": "EUR",
+          "feesMinor": 190,
+          "orderId": "orden-03"
+        },
+        {
+          "date": "2026-02-16",
+          "kind": "buy",
+          "isin": "IE00B52MJY50",
+          "name": "ISHARES CORE MSCI PACIFIC EX-JPN",
+          "units": "12",
+          "amount": "385.2",
+          "pricePerUnit": "32.1",
+          "currency": "EUR",
+          "feesMinor": 100,
+          "orderId": "orden-04"
+        },
+        {
+          "date": "2026-02-19",
+          "kind": "buy",
+          "isin": "IE00BM67HK77",
+          "name": "XTRACKERS MSCI WORLD INFORMATION TECHNOLOGY",
+          "units": "4",
+          "amount": "259.4",
+          "pricePerUnit": "64.85",
+          "currency": "EUR",
+          "feesMinor": 200,
+          "orderId": "orden-05"
+        },
+        {
+          "date": "2026-03-16",
+          "kind": "buy",
+          "isin": "IE00B52MJY50",
+          "name": "ISHARES CORE MSCI PACIFIC EX-JPN",
+          "units": "12",
+          "amount": "370.56",
+          "pricePerUnit": "30.88",
+          "currency": "EUR",
+          "feesMinor": 100,
+          "orderId": "orden-06"
+        },
+        {
+          "date": "2026-03-19",
+          "kind": "buy",
+          "isin": "IE00BM67HK77",
+          "name": "XTRACKERS MSCI WORLD INFORMATION TECHNOLOGY",
+          "units": "4",
+          "amount": "240.48",
+          "pricePerUnit": "60.12",
+          "currency": "EUR",
+          "feesMinor": 200,
+          "orderId": "orden-07"
+        },
+        {
+          "date": "2026-04-15",
+          "kind": "buy",
+          "isin": "IE00B52MJY50",
+          "name": "ISHARES CORE MSCI PACIFIC EX-JPN",
+          "units": "12",
+          "amount": "392.88",
+          "pricePerUnit": "32.74",
+          "currency": "EUR",
+          "feesMinor": 100,
+          "orderId": "orden-08"
+        },
+        {
+          "date": "2026-04-20",
+          "kind": "buy",
+          "isin": "IE00BM67HK77",
+          "name": "XTRACKERS MSCI WORLD INFORMATION TECHNOLOGY",
+          "units": "4",
+          "amount": "261.6",
+          "pricePerUnit": "65.4",
+          "currency": "EUR",
+          "feesMinor": 200,
+          "orderId": "orden-09"
+        },
+        {
+          "date": "2026-05-07",
+          "kind": "sell",
+          "isin": "US18915M1071",
+          "name": "CLOUDFLARE INC. CLASS A",
+          "units": "3",
+          "amount": "285.3",
+          "pricePerUnit": "95.1",
+          "currency": "EUR",
+          "feesMinor": 190,
+          "orderId": "orden-10"
+        },
+        {
+          "date": "2026-05-15",
+          "kind": "sell",
+          "isin": "IE00B52MJY50",
+          "name": "ISHARES CORE MSCI PACIFIC EX-JPN",
+          "units": "20",
+          "amount": "661",
+          "pricePerUnit": "33.05",
+          "currency": "EUR",
+          "feesMinor": 100,
+          "orderId": "orden-11"
+        }
+      ],
+      "warnings": []
+    }
+  }
+}
