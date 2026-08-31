@@ -6,6 +6,7 @@
  * (S2) and the what-if (S4). Reconciliation / fulfillment storage lives in S2.
  */
 
+import { addMonthsToDate, daysInMonth } from "./dates";
 import { addUnits, multiplyToMinor, subtractUnits } from "./decimal";
 import { buyCashOutMinor } from "./investment-operation-money";
 import type { InvestmentOperation } from "./investment-types";
@@ -107,17 +108,6 @@ function toISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function daysInMonth(year: number, monthIdx: number): number {
-  return new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
-}
-
-function addMonths(date: Date, n: number): Date {
-  const day = date.getUTCDate();
-  const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + n, 1));
-  next.setUTCDate(Math.min(day, daysInMonth(next.getUTCFullYear(), next.getUTCMonth())));
-  return next;
-}
-
 function isoWeekday(date: Date): IsoWeekday {
   const day = date.getUTCDay();
   return (day === 0 ? 7 : day) as IsoWeekday;
@@ -138,7 +128,7 @@ function monthlyAnchor(startDate: string, dayOfMonth: number): Date {
   const clampedDay = Math.min(dayOfMonth, daysInMonth(year, month));
   let candidate = new Date(Date.UTC(year, month, clampedDay));
   if (toISO(candidate) < startDate) {
-    candidate = addMonths(candidate, 1);
+    candidate = addMonthsToDate(candidate, 1);
     const nextYear = candidate.getUTCFullYear();
     const nextMonth = candidate.getUTCMonth();
     candidate.setUTCDate(Math.min(dayOfMonth, daysInMonth(nextYear, nextMonth)));
@@ -167,7 +157,7 @@ function occurrenceAt(contribution: PlannedContribution, k: number): Date {
   }
   const start = parse(startDate);
   const step = CADENCE_STEP_MONTHS[cadence.kind];
-  return addMonths(start, step * k);
+  return addMonthsToDate(start, step * k);
 }
 
 export function contributionOccurrenceId(

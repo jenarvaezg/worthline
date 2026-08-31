@@ -1,3 +1,4 @@
+import Big from "big.js";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -11,6 +12,7 @@ import {
   scaleMinorByWeight,
   splitMinorByWeights,
   subtractUnits,
+  toMinorInt,
 } from "./decimal";
 import { allocateByBps } from "./money";
 
@@ -85,6 +87,33 @@ describe("exact .5 rounding boundary", () => {
     expect(proportionMinor(15, "1", "2")).toBe(8);
     // 1 * 1 / 2 = 0.5 → round half-up → 1
     expect(proportionMinor(1, "1", "2")).toBe(1);
+  });
+});
+
+describe("toMinorInt — el redondeo al céntimo del seam (#1693)", () => {
+  test("redondea medio arriba, alejándose del cero también en negativo", () => {
+    expect(toMinorInt(new Big("1.4"))).toBe(1);
+    expect(toMinorInt(new Big("1.5"))).toBe(2);
+    expect(toMinorInt(new Big("2.5"))).toBe(3); // half up, no half-even
+    expect(toMinorInt(new Big("-1.4"))).toBe(-1);
+    expect(toMinorInt(new Big("-1.5"))).toBe(-2);
+    expect(toMinorInt(new Big("-0.4"))).toBe(0);
+  });
+
+  test("un valor negativo se lee negativo: el redondeo no pone suelos", () => {
+    // El drift que #1693 unifica: la copia privada de amortization aplastaba
+    // TODO negativo a 0 antes de redondear, así que una cifra que no es un saldo
+    // —el principal de una cuota, un interés— salía 0 en vez de su signo. El
+    // suelo de un saldo lo pone la curva en Big, nunca el redondeo (ver
+    // `computeBoundaries`); esta función solo redondea.
+    expect(toMinorInt(new Big("-1234.56"))).toBe(-1235);
+    expect(toMinorInt(new Big("-0.5"))).toBe(-1);
+  });
+
+  test("un valor de precisión larga cae al céntimo entero, no a un float", () => {
+    // Los saldos de la curva de amortización llevan ~20 decimales por mes: el
+    // redondeo tiene que cruzar big.js, no `Math.round`.
+    expect(toMinorInt(new Big("19999999.999999999999999999999"))).toBe(20_000_000);
   });
 });
 

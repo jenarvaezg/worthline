@@ -12,6 +12,7 @@ import {
 import { daysBetween } from "./dates";
 import { type AccruedInterestAtDate, accruedInterestAtDate } from "./debt-accrual";
 import { type MonthlyDebtService, monthlyDebtServiceAtDate } from "./debt-service";
+import { toMinorInt } from "./decimal";
 import {
   cadenceOrDefault,
   interpolateOrStep,
@@ -93,11 +94,6 @@ export interface DebtBalanceAtDateInput {
    * market-priced fallbacks ignore it.
    */
   cadence?: ValuationCadence | null;
-}
-
-/** Round a Big minor-unit value to a whole integer minor unit, half up. */
-function toMinorInt(value: Big): number {
-  return Number(value.round(0, Big.roundHalfUp).toString());
 }
 
 /** Anchors sorted ascending by date (tie-broken by balance for determinism). */

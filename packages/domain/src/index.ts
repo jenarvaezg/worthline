@@ -15,6 +15,7 @@ export type {
 export {
   addMonths,
   amortizableBalanceAtDate,
+  amortizationPaymentDatesUpTo,
   amortizationPlanFromBalanceRebaseline,
   amortizationScheduleTrace,
   assertEventWithinTerm,
@@ -22,6 +23,7 @@ export {
   eventBoundaryDate,
   firstCuota,
   monthlyPaymentMinorFromRate,
+  rebaselineChainPaymentDatesUpTo,
   remainingMonthlyPayments,
   solveAnnualInterestRateFromPayment,
   suggestFirstPaymentDate,
@@ -334,9 +336,11 @@ export {
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export {
+  addMonthsToDate,
   asDateKey,
   asInstant,
   daysBetween,
+  daysInMonth,
   formatDateKeyEs,
   isDateKeyShaped,
   isRealCalendarDay,
@@ -702,14 +706,12 @@ export type {
 } from "./historical-snapshot";
 export {
   amortizableLiabilityStartDate,
-  amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   debtMissingFromAllGeneratedMessage,
   debtSnapshotMembership,
   globalHoldingValueAtDate,
   historicalCapturedAt,
   liabilityExistsAtHistoricalDate,
-  rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForConnectedValue,

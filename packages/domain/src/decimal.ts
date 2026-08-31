@@ -84,6 +84,31 @@ function formatDecimal(value: DecimalString, maximumFractionDigits: number): str
 }
 
 /**
+ * A minor-unit figure carried at full precision → the whole céntimo it is stored
+ * and shown at, rounded HALF UP (away from zero, so −0,5 reads −1).
+ *
+ * The seam's rounding rule for the engines that compute IN big.js — the
+ * amortization curve, the debt-balance and housing interpolations, the accrual —
+ * as {@link multiplyToMinor} is the rule for the decimal→minor boundary. It takes
+ * a `Big` rather than a `DecimalString` because its callers hold one mid-formula:
+ * spelling it as a string round-trip would ask them to serialize a ~9.600-digit
+ * tail just to round it.
+ *
+ * It was a private copy in four modules and one of them diverged (#1693): the
+ * amortization copy clamped every negative to 0 before rounding. That clamp is
+ * NOT the rule and is not reproduced here — a saldo's floor belongs to the curve
+ * that walks it (`computeBoundaries` / `applyCycleLumps` already floor the balance
+ * in Big, on the payoff month, where the fact lives), not to the rounding of every
+ * figure that happens to pass through the same module. Applied at the rounding it
+ * also silently floored five figures that are not balances (a cuota's interest,
+ * its principal, the payment), so a negative-amortization principal would have
+ * read 0 € instead of its sign.
+ */
+export function toMinorInt(value: Big): number {
+  return Number(value.round(0, Big.roundHalfUp).toString());
+}
+
+/**
  * Integer minor units back to a decimal string, for the seam's division and
  * comparison primitives — the inverse of {@link multiplyToMinor} at price "1".
  *
