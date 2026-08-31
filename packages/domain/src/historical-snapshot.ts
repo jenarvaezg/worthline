@@ -26,7 +26,6 @@ import type {
   EarlyRepayment,
   InterestRateRevision,
 } from "./amortization";
-import { addMonths, amortizationPlanFromBalanceRebaseline } from "./amortization";
 import type { LiquidityTier } from "./classification";
 import {
   isHousingAsset,
@@ -162,69 +161,6 @@ export function debtCurveValuationInput(
   }
 
   return null;
-}
-
-/**
- * The amortizable payment-boundary dates strictly before `targetDate`, ascending
- * (PRD #109, slice 9; two-date model ADR 0019, #188). Boundary 0 is the
- * disbursement (the debt appears at its initial capital — "la hipoteca empieza
- * con la vivienda"); boundary `m ≥ 1` is `firstPaymentDate + (m − 1) months` (the
- * first payment, then one per month, the last at term). This drives the "one
- * snapshot per past cuota" density of the amortizable ripple — the deliberate
- * exception to ADR 0012 recognised by PRD #109. Dates on or after `targetDate`
- * are excluded (the caller never generates for today/future, and a boundary equal
- * to the target is owned by the target).
- */
-export function amortizationPaymentDatesUpTo(
-  plan: AmortizationPlanInput,
-  targetDate: string,
-): string[] {
-  const dates: string[] = [];
-  for (let m = 0; m <= plan.termMonths; m += 1) {
-    const dateKey =
-      m === 0 ? plan.disbursementDate : addMonths(plan.firstPaymentDate, m - 1);
-    if (dateKey < targetDate) {
-      dates.push(dateKey);
-    } else if (m > 0) {
-      // Boundaries are ascending from m ≥ 1; once one reaches the target, stop.
-      // Boundary 0 (disbursement) can be later than boundary 1 only if the data
-      // is malformed, so the m === 0 case never early-breaks.
-      break;
-    }
-  }
-  return dates;
-}
-
-/**
- * The UNIQUE payment-boundary dates a CHAIN of balance re-baselines reaches
- * before `targetDate`, ascending, counting only checkpoints baselined on or
- * after `fromDateKey` (#1435).
- *
- * Each checkpoint's forward schedule runs to the contract end, so in a long
- * chain the schedules overlap almost entirely: a 42-checkpoint mortgage emits
- * ~5.700 dates for the ~266 that exist. The ripple builds one whole-portfolio
- * snapshot per date, so emitting a date twice means building it twice — the cost
- * was quadratic in the length of the series, and the series length is exactly
- * what a reconstruction import makes grow. Deduplicating here keeps it linear,
- * and keeps the two call sites (the debt ripple and the mixed-import ripple)
- * deriving the same set the same way.
- */
-export function rebaselineChainPaymentDatesUpTo(
-  rebaselines: readonly BalanceRebaselineInput[],
-  fromDateKey: string,
-  targetDate: string,
-): string[] {
-  const dates = new Set<string>();
-  for (const fact of rebaselines) {
-    if (fact.baselineDate < fromDateKey) continue;
-    for (const dateKey of amortizationPaymentDatesUpTo(
-      amortizationPlanFromBalanceRebaseline(fact),
-      targetDate,
-    )) {
-      dates.add(dateKey);
-    }
-  }
-  return [...dates].sort();
 }
 
 export interface BuildSnapshotAtDateInput {

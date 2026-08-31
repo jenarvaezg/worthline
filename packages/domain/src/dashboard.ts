@@ -202,7 +202,12 @@ export interface DashboardState {
   selectedView: NetWorthFraming;
 }
 
-export function prepareDashboardState(input: {
+/**
+ * Everything the dashboard state is derived FROM (#1693). Named rather than inline
+ * so each deriver below can declare the slice it reads — a `Pick<...>` of this — and
+ * be exercised on its own instead of only through the whole composition.
+ */
+export interface PrepareDashboardStateInput {
   persistence: LocalPersistenceStatus;
   workspace: Workspace | null;
   assets: ManualAsset[];
@@ -270,148 +275,278 @@ export function prepareDashboardState(input: {
    * /objetivos throws these away (#1537). Default true for the dashboard.
    */
   includeNetWorthSurfaces?: boolean;
-}): DashboardState {
-  const { workspace, assets, liabilities, selectedScope, persistence } = input;
-  const today = input.today;
-  const includeFireProjection = input.includeFireProjection !== false;
-  const includeNetWorthSurfaces = input.includeNetWorthSurfaces !== false;
+}
 
-  const summary =
-    includeNetWorthSurfaces && workspace && selectedScope
-      ? calculateNetWorth({
-          assets,
-          ...(input.fx ? { fx: input.fx } : {}),
-          liabilities,
-          scopeId: selectedScope.id,
-          workspace,
-        })
-      : undefined;
+/**
+ * The scope's FIRE configuration, or null when there is no scope selected or the
+ * scope has none. Every FIRE-shaped deriver below takes it as a parameter instead
+ * of reading `fireConfig` again: "¿está FIRE configurado?" is one lookup, and the
+ * glance, the careos and the engine must not be able to disagree about it.
+ */
+export function resolveFireScopeConfig(
+  input: Pick<PrepareDashboardStateInput, "fireConfig" | "selectedScope">,
+): FireScopeConfig | null {
+  return input.selectedScope ? (input.fireConfig[input.selectedScope.id] ?? null) : null;
+}
 
-  const presentation = summary ? presentNetWorth(summary, input.selectedView) : undefined;
+/** The net-worth family of surfaces — everything `includeNetWorthSurfaces` gates. */
+export interface DashboardNetWorthSurfaces {
+  summary: NetWorthSummary | undefined;
+  presentation: NetWorthPresentation | undefined;
+  pyramid: LiquidityTierBreakdown[];
+  deltas: SnapshotDeltas | undefined;
+  onboarding: OnboardingStep[];
+}
 
-  const fireScopeConfig: FireScopeConfig | null = selectedScope
-    ? (input.fireConfig[selectedScope.id] ?? null)
-    : null;
+/**
+ * The figures that answer «¿cuánto tengo?»: the scope's net worth, its framing,
+ * the liquidity pyramid, the delta against the previous snapshot and the first-run
+ * checklist.
+ *
+ * All five are gated together by `includeNetWorthSurfaces` because they share one
+ * consumer, not one premise: /objetivos throws every one of them away (#1537).
+ * Within the family the premises differ — four need a workspace with a selected
+ * scope, the delta only needs two snapshots — and each answers undefined/empty
+ * rather than zero when its own premise is missing: a scope nobody selected has no
+ * net worth, which is not the same as a net worth of zero.
+ */
+export function deriveNetWorthSurfaces(
+  input: Pick<
+    PrepareDashboardStateInput,
+    | "assets"
+    | "fx"
+    | "includeNetWorthSurfaces"
+    | "liabilities"
+    | "selectedScope"
+    | "selectedView"
+    | "snapshots"
+    | "workspace"
+  > & {
+    /** Whether the scope has FIRE configured — the checklist's third step. */
+    hasFireConfig: boolean;
+  },
+): DashboardNetWorthSurfaces {
+  const { assets, liabilities, selectedScope, workspace } = input;
+  if (input.includeNetWorthSurfaces === false) {
+    return {
+      deltas: undefined,
+      onboarding: [],
+      presentation: undefined,
+      pyramid: [],
+      summary: undefined,
+    };
+  }
 
-  const fireReservedMinor =
-    fireScopeConfig && workspace && selectedScope
-      ? (() => {
-          const memberIds = new Set(resolveScopeMemberIds(workspace, selectedScope.id));
-          const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-          return totalGoalReservationMinor(
-            (input.goals ?? []).map((goal) => ({
-              targetAmountMinor: goal.targetAmountMinor,
-              deadline: goal.deadline,
-              assignedValueMinor: assignedHoldingsValueMinor(
-                goal.assetIds,
-                assetById,
-                memberIds,
-                (asset) => isFireEligibleAsset(asset, fireScopeConfig),
-              ),
-            })),
-            today,
-            fireReservationHorizon(fireScopeConfig, today),
-          );
-        })()
-      : 0;
+  // The delta rides with this family but NOT with its premise: it compares two
+  // snapshots to each other, so it needs neither a workspace nor a selected scope
+  // to be readable.
+  const latestSnapshot = input.snapshots.at(-1);
+  const deltas = latestSnapshot
+    ? calculateSnapshotDeltas(input.snapshots, latestSnapshot.id)
+    : undefined;
 
-  // Una sola puerta al motor para los dos lados de la declaración del inmovilizado
-  // (#1473): el contrafactual entra por aquí con la MISMA reserva, el mismo reloj y
-  // las mismas rentas, así que el lado que la isla previsualiza es exactamente el que
-  // dejará el guardado.
+  if (!workspace || !selectedScope) {
+    return {
+      deltas,
+      onboarding: onboardingFor(input),
+      presentation: undefined,
+      pyramid: [],
+      summary: undefined,
+    };
+  }
+
+  const summary = calculateNetWorth({
+    assets,
+    ...(input.fx ? { fx: input.fx } : {}),
+    liabilities,
+    scopeId: selectedScope.id,
+    workspace,
+  });
+
+  return {
+    deltas,
+    onboarding: onboardingFor(input),
+    presentation: presentNetWorth(summary, input.selectedView),
+    pyramid: buildLiquidityBreakdown({
+      assets,
+      ...(input.fx ? { fx: input.fx } : {}),
+      liabilities,
+      scopeId: selectedScope.id,
+      workspace,
+    }),
+    summary,
+  };
+}
+
+function onboardingFor(
+  input: Pick<
+    PrepareDashboardStateInput,
+    "assets" | "liabilities" | "snapshots" | "workspace"
+  > & { hasFireConfig: boolean },
+): OnboardingStep[] {
+  return deriveOnboardingProgress({
+    activeMemberCount: activeMembersOf(input.workspace).length,
+    hasFireConfig: input.hasFireConfig,
+    holdingCount: input.assets.length + input.liabilities.length,
+    snapshotCount: input.snapshots.length,
+  });
+}
+
+/** Members that still count: a disabled one is history, not a participant. */
+function activeMembersOf(workspace: Workspace | null): Member[] {
+  return workspace?.members.filter((member) => !member.disabledAt) ?? [];
+}
+
+/** The FIRE engine's readings for the scope, all off the same context. */
+export interface DashboardFireSurfaces {
+  fireResult: DashboardState["fireResult"];
+  fireResultImmobilizedFlipped: DashboardState["fireResultImmobilizedFlipped"];
+  fireProjection: FireProjection | null;
+}
+
+/**
+ * The FIRE readings: the scope's result, the immobilized counterfactual the
+ * preview island needs (#1473), and the chart projection.
+ *
+ * One door into `calculateFireForScope` for both sides of the immobilized
+ * declaration: the counterfactual goes through the SAME goal reservation, the same
+ * clock and the same rents, so what the island previews is exactly what saving
+ * will leave. The reservation horizon and a schedule's validity are measured on
+ * `today` and nothing else (#1448, #1528) — a second clock here would put a second
+ * date in front of the same screen.
+ */
+export function deriveFireSurfaces(
+  input: Pick<
+    PrepareDashboardStateInput,
+    | "assets"
+    | "goals"
+    | "includeFireImmobilizedCounterfactual"
+    | "includeFireProjection"
+    | "liabilities"
+    | "payoutSchedules"
+    | "selectedScope"
+    | "today"
+    | "workspace"
+  >,
+  fireScopeConfig: FireScopeConfig | null,
+): DashboardFireSurfaces {
+  const { assets, liabilities, selectedScope, today, workspace } = input;
+  if (!fireScopeConfig || !workspace || !selectedScope) {
+    return {
+      fireProjection: null,
+      fireResult: null,
+      fireResultImmobilizedFlipped: null,
+    };
+  }
+
+  const memberIds = new Set(resolveScopeMemberIds(workspace, selectedScope.id));
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const fireReservedMinor = totalGoalReservationMinor(
+    (input.goals ?? []).map((goal) => ({
+      targetAmountMinor: goal.targetAmountMinor,
+      deadline: goal.deadline,
+      assignedValueMinor: assignedHoldingsValueMinor(
+        goal.assetIds,
+        assetById,
+        memberIds,
+        (asset) => isFireEligibleAsset(asset, fireScopeConfig),
+      ),
+    })),
+    today,
+    fireReservationHorizon(fireScopeConfig, today),
+  );
+
   const fireForConfig = (config: FireScopeConfig) =>
-    workspace && selectedScope
-      ? calculateFireForScope(
-          config,
-          assets,
-          liabilities,
-          workspace,
-          selectedScope.id,
-          fireReservedMinor,
-          // Same "today" as the reservation horizon above: a schedule's validity
-          // must not be measured on a second clock (#1448) — and the declared
-          // availability dates resolve against that same day (#1528), whether or not
-          // this scope happens to have payout schedules.
-          input.payoutSchedules
-            ? {
-                rents: { schedules: input.payoutSchedules, todayISO: today },
-                todayISO: today,
-              }
-            : { todayISO: today },
-        )
-      : null;
+    calculateFireForScope(
+      config,
+      assets,
+      liabilities,
+      workspace,
+      selectedScope.id,
+      fireReservedMinor,
+      input.payoutSchedules
+        ? {
+            rents: { schedules: input.payoutSchedules, todayISO: today },
+            todayISO: today,
+          }
+        : { todayISO: today },
+    );
 
-  const fireResult = fireScopeConfig ? fireForConfig(fireScopeConfig) : null;
+  const fireResult = fireForConfig(fireScopeConfig);
 
-  const fireResultImmobilizedFlipped =
-    fireScopeConfig && input.includeFireImmobilizedCounterfactual
+  return {
+    // FIRE projection (#427): scenarios from the reservation-adjusted eligible
+    // total and the configured monthly savings capacity. The resolved rate, FIRE
+    // number and age ride in the context (#1026), so coast + projection + levels
+    // agree by construction — no rate to thread by hand, no fallback. The savings
+    // capacity is the declared scalar and nothing else (#1416, ADR 0074): the
+    // contribution plan used to override it here, substituting one destination's
+    // planned addition for the user's declared total.
+    fireProjection:
+      input.includeFireProjection === false
+        ? null
+        : projectFireFromContext(fireResult.context, {
+            monthlyContributionMinor: monthlySavingsCapacityForFire(
+              fireResult.context.config,
+            ),
+          }),
+    fireResult,
+    fireResultImmobilizedFlipped: input.includeFireImmobilizedCounterfactual
       ? fireForConfig({
           ...fireScopeConfig,
           immobilizedCountsAsFireCapital: !fireCountsImmobilizedCapital(fireScopeConfig),
         })
-      : null;
-
-  // FIRE projection (#427): scenarios from the reservation-adjusted eligible
-  // total and the configured monthly savings capacity. The resolved rate, FIRE
-  // number and age ride in the context (#1026), so coast + projection + levels
-  // agree by construction — no rate to thread by hand, no fallback. The savings
-  // capacity is the declared scalar and nothing else (#1416, ADR 0074): the
-  // contribution plan used to override it here, substituting one destination's
-  // planned addition for the user's declared total.
-  const fireProjection =
-    includeFireProjection && fireResult
-      ? projectFireFromContext(fireResult.context, {
-          monthlyContributionMinor: monthlySavingsCapacityForFire(
-            fireResult.context.config,
-          ),
-        })
-      : null;
-
-  const selectedMemberIds =
-    workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
-
-  const pyramid =
-    includeNetWorthSurfaces && workspace && selectedScope
-      ? buildLiquidityBreakdown({
-          assets,
-          ...(input.fx ? { fx: input.fx } : {}),
-          liabilities,
-          scopeId: selectedScope.id,
-          workspace,
-        })
-      : [];
-
-  const latestSnapshot = input.snapshots.at(-1);
-  const deltas =
-    includeNetWorthSurfaces && latestSnapshot
-      ? calculateSnapshotDeltas(input.snapshots, latestSnapshot.id)
-      : undefined;
-
-  const dashboard: DashboardShell = {
-    productName: "worthline",
-    baseCurrency: "EUR",
-    generatedAt: persistence.checkedAt,
-    persistence,
+      : null,
   };
+}
 
-  const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
-  const investmentAssets = assets.filter((asset) => asset.type === "investment");
-  const onboarding = includeNetWorthSurfaces
-    ? deriveOnboardingProgress({
-        activeMemberCount: activeMembers.length,
-        holdingCount: assets.length + liabilities.length,
-        hasFireConfig: fireScopeConfig !== null,
-        snapshotCount: input.snapshots.length,
-      })
-    : [];
+/** The two declared-vs-measured careos of the scope. */
+export interface DashboardCoherences {
+  savingsCoherence: SavingsCoherence | null;
+  debtServiceCoherence: SpendingDebtServiceCoherence | null;
+}
 
-  // Declared-vs-measured savings (#1449): the same reading the health engine
-  // alerts on, over the same scope-owned holdings — so the badge on screen and
-  // the alert above it can never disagree about what the ledger measures.
-  const savingsCoherence: SavingsCoherence | null =
-    fireScopeConfig && workspace && selectedScope && input.investmentOperationsByAssetId
+/**
+ * What the user DECLARED against what the ledger already knows, twice over: the
+ * savings capacity against the measured flow (#1449) and the declared spending
+ * against the debt service the app can derive (#1520).
+ *
+ * Both read exactly the same holdings/liabilities the health engine alerts on, so
+ * the badge on screen and the warning above it can never cite different figures.
+ * Null — never zero — when the evidence was not handed in: a zero would read as
+ * «no debes nada» where the truth is «no lo hemos mirado».
+ */
+export function deriveCoherences(
+  input: Pick<
+    PrepareDashboardStateInput,
+    | "assets"
+    | "debtServiceByLiabilityId"
+    | "investmentOperationsByAssetId"
+    | "liabilities"
+    | "selectedScope"
+    | "today"
+    | "workspace"
+  >,
+  fireScopeConfig: FireScopeConfig | null,
+): DashboardCoherences {
+  const { assets, liabilities, selectedScope, workspace } = input;
+  if (!fireScopeConfig || !workspace || !selectedScope) {
+    return { debtServiceCoherence: null, savingsCoherence: null };
+  }
+
+  return {
+    debtServiceCoherence: input.debtServiceByLiabilityId
+      ? scopeSpendingDebtService({
+          config: fireScopeConfig,
+          currency: workspace.baseCurrency,
+          debtServiceByLiabilityId: input.debtServiceByLiabilityId,
+          liabilities,
+          scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
+        })
+      : null,
+    savingsCoherence: input.investmentOperationsByAssetId
       ? scopeSavingsCoherence({
-          asOfDateKey: today,
+          asOfDateKey: input.today,
           config: fireScopeConfig,
           currency: workspace.baseCurrency,
           operationsByAssetId: input.investmentOperationsByAssetId,
@@ -422,76 +557,108 @@ export function prepareDashboardState(input: {
             workspace,
           }),
         })
-      : null;
+      : null,
+  };
+}
 
-  // El gasto declarado contra la cuota que la app ya sabe (#1520): el mismo careo
-  // que emite la señal de salud, sobre las mismas deudas del ámbito — así la glosa de
-  // las tarjetas y el aviso del inventario no pueden citar cuotas distintas.
-  const debtServiceCoherence: SpendingDebtServiceCoherence | null =
-    fireScopeConfig && workspace && selectedScope && input.debtServiceByLiabilityId
-      ? scopeSpendingDebtService({
-          config: fireScopeConfig,
-          currency: workspace.baseCurrency,
-          debtServiceByLiabilityId: input.debtServiceByLiabilityId,
-          liabilities,
-          scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
-        })
-      : null;
-
-  const fireGlance: FireGlance | null =
-    fireScopeConfig && fireResult
-      ? {
-          percentFunded: fireResult.percentFunded,
-          coastTickFraction:
-            fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0
-              ? Math.min(
-                  1,
-                  fireResult.coastFireRequired.amountMinor /
-                    fireResult.fireNumber.amountMinor,
-                )
-              : null,
-          achievement: fireAchievement({
-            ...(fireResult.isAlreadyAtCoastFire === undefined
-              ? {}
-              : { isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire }),
-            ...(savingsCoherence === null ? {} : { coherence: savingsCoherence }),
-            percentFunded: fireResult.percentFunded,
-          }),
-          yearsToFire:
-            fireProjection?.scenarios.find((s) => s.label === "base")?.yearsToFire ??
-            null,
-          goalsCount: (input.goals ?? []).length,
-          goalsReservedMinor: fireResult.reservedForGoals?.amountMinor ?? 0,
-        }
-      : null;
+/**
+ * The home glance card: the compact reading of the FIRE state, achievement veto
+ * included (#1449). Derives nothing new — it reads the result, the projection and
+ * the savings careo the derivers above produced, which is why the badge cannot say
+ * "FIRE alcanzado" on one screen and carry a caveat on the other.
+ */
+export function deriveFireGlance(
+  input: Pick<PrepareDashboardStateInput, "goals">,
+  surfaces: {
+    fireScopeConfig: FireScopeConfig | null;
+    fireResult: DashboardState["fireResult"];
+    fireProjection: FireProjection | null;
+    savingsCoherence: SavingsCoherence | null;
+  },
+): FireGlance | null {
+  const { fireProjection, fireResult, fireScopeConfig, savingsCoherence } = surfaces;
+  if (!fireScopeConfig || !fireResult) {
+    return null;
+  }
 
   return {
-    activeMembers,
+    achievement: fireAchievement({
+      ...(fireResult.isAlreadyAtCoastFire === undefined
+        ? {}
+        : { isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire }),
+      ...(savingsCoherence === null ? {} : { coherence: savingsCoherence }),
+      percentFunded: fireResult.percentFunded,
+    }),
+    coastTickFraction:
+      fireResult.coastFireRequired && fireResult.fireNumber.amountMinor > 0
+        ? Math.min(
+            1,
+            fireResult.coastFireRequired.amountMinor / fireResult.fireNumber.amountMinor,
+          )
+        : null,
+    goalsCount: (input.goals ?? []).length,
+    goalsReservedMinor: fireResult.reservedForGoals?.amountMinor ?? 0,
+    percentFunded: fireResult.percentFunded,
+    yearsToFire:
+      fireProjection?.scenarios.find((s) => s.label === "base")?.yearsToFire ?? null,
+  };
+}
+
+/**
+ * The dashboard state is a COMPOSITION of derivers, one per surface family
+ * (#1693): the net-worth surfaces, the FIRE engine readings, the two
+ * declared-vs-measured careos, and the home glance that reads off both. The
+ * families are parallel — the only genuine order is that each needs the scope's
+ * FIRE config and the glance needs the FIRE result plus the savings careo — so the
+ * body below is that order made visible, and nothing else.
+ *
+ * `calculateFireForScope` is NOT partitioned along with it: its coupling is
+ * genuinely sequential (reservation → context → projection), and it already lives
+ * behind one door inside `deriveFireSurfaces`.
+ */
+export function prepareDashboardState(input: PrepareDashboardStateInput): DashboardState {
+  const { workspace, assets, liabilities, selectedScope, persistence } = input;
+  const fireScopeConfig = resolveFireScopeConfig(input);
+  const netWorth = deriveNetWorthSurfaces({
+    ...input,
+    hasFireConfig: fireScopeConfig !== null,
+  });
+  const fire = deriveFireSurfaces(input, fireScopeConfig);
+  const coherences = deriveCoherences(input, fireScopeConfig);
+
+  return {
+    ...netWorth,
+    ...fire,
+    ...coherences,
+    activeMembers: activeMembersOf(workspace),
     assets,
-    dashboard,
-    debtServiceCoherence,
-    deltas,
-    fireGlance,
-    fireProjection,
-    fireResult,
-    fireResultImmobilizedFlipped,
+    dashboard: {
+      productName: "worthline",
+      baseCurrency: "EUR",
+      generatedAt: persistence.checkedAt,
+      persistence,
+    },
+    fireGlance: deriveFireGlance(input, {
+      fireProjection: fire.fireProjection,
+      fireResult: fire.fireResult,
+      fireScopeConfig,
+      savingsCoherence: coherences.savingsCoherence,
+    }),
     fireScopeConfig,
-    investmentAssets,
+    investmentAssets: assets.filter((asset) => asset.type === "investment"),
     liabilities,
-    onboarding,
     persistence,
     positions: input.positions,
-    presentation,
     priceCache: input.priceCache,
-    pyramid,
-    savingsCoherence,
     scopes: input.scopes,
-    selectedMemberIds,
+    selectedMemberIds:
+      workspace && selectedScope
+        ? resolveScopeMemberIds(workspace, selectedScope.id)
+        : [],
     selectedScope,
     selectedView: input.selectedView,
     snapshots: input.snapshots,
-    summary,
-    today,
+    today: input.today,
     workspace,
   };
 }
@@ -583,9 +750,7 @@ export interface ObjetivosState {
  * funded/reserved views using the existing `goalFundedRatioBps` /
  * `goalReservedMinor` helpers. No projection math is duplicated here.
  */
-export function prepareObjetivosState(
-  input: Parameters<typeof prepareDashboardState>[0],
-): ObjetivosState {
+export function prepareObjetivosState(input: PrepareDashboardStateInput): ObjetivosState {
   // El contrafactual del inmovilizado se pide aquí y no en la página (#1473): quien
   // sabe que esta pantalla previsualiza sus supuestos es esta puerta, no su llamador.
   const dash = prepareDashboardState({

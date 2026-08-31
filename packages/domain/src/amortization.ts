@@ -1,6 +1,6 @@
 import Big from "big.js";
-import { daysBetween } from "./dates";
-import type { DecimalString } from "./decimal";
+import { daysBetween, daysInMonth } from "./dates";
+import { type DecimalString, toMinorInt } from "./decimal";
 import {
   cadenceOrDefault,
   interpolateOrStep,
@@ -155,13 +155,6 @@ export interface AmortizableBalanceAtDateInput {
   cadence?: ValuationCadence | null;
 }
 
-/** Last calendar day of the given year/month (1-based month). */
-function lastDayOfMonth(year: number, month: number): number {
-  // Date.UTC(year, month, 0) is the last millisecond of the previous month, i.e.
-  // the last day of (year, month) when month is 1-based.
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
 /**
  * The YYYY-MM-DD that is `count` whole months after `dateKey` (same
  * day-of-month, clamped to the last valid day of the destination month). For
@@ -169,6 +162,12 @@ function lastDayOfMonth(year: number, month: number): number {
  * which JS would silently roll to 2020-03-02. Exported so the amortization form
  * can derive the first-payment date from a single input the same way the engine
  * does (ADR 0019, #188).
+ *
+ * CANONICAL for a date KEY: pure string arithmetic, no `Date` ever built, so a
+ * payment boundary never picks up a timezone. The `Date`-in/`Date`-out spelling
+ * of the same step is `addMonthsToDate` in `dates.ts`, used by the recurring-
+ * schedule steppers that walk occurrences as `Date`s (#1693) — both clamp
+ * identically, and `daysInMonth` below is the one month-length answer both read.
  */
 export function addMonths(dateKey: string, count: number): string {
   const year = Number(dateKey.slice(0, 4));
@@ -177,7 +176,8 @@ export function addMonths(dateKey: string, count: number): string {
   const zeroBased = month - 1 + count;
   const newYear = year + Math.floor(zeroBased / 12);
   const newMonth = (zeroBased % 12) + 1;
-  const clampedDay = Math.min(day, lastDayOfMonth(newYear, newMonth));
+  // `daysInMonth` takes the 0-based month of `Date`; `newMonth` here is 1-based.
+  const clampedDay = Math.min(day, daysInMonth(newYear, newMonth - 1));
   const mm = String(newMonth).padStart(2, "0");
   const dd = String(clampedDay).padStart(2, "0");
   return `${newYear}-${mm}-${dd}`;
@@ -516,12 +516,6 @@ interface BoundaryCurve {
   cycles: CycleSplit[];
 }
 
-/** Round a Big minor-unit value to a whole integer minor unit, half up. */
-function toMinorInt(value: Big): number {
-  const rounded = value.lt(0) ? new Big(0) : value.round(0, Big.roundHalfUp);
-  return Number(rounded.toString());
-}
-
 /**
  * Memo of computed boundary curves, keyed by the plan + revisions + early
  * repayments (everything `buildBoundaries` reads — `targetDate` is NOT a key,
@@ -772,6 +766,73 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): BoundaryCurve 
  */
 function boundaryDate(plan: AmortizationPlanInput, m: number): string {
   return m === 0 ? plan.disbursementDate : addMonths(plan.firstPaymentDate, m - 1);
+}
+
+/**
+ * The payment-boundary dates strictly before `targetDate`, ascending (PRD #109,
+ * slice 9; two-date model ADR 0019, #188). Boundary 0 is the disbursement (the
+ * debt appears at its initial capital — "la hipoteca empieza con la vivienda");
+ * boundary `m ≥ 1` is `firstPaymentDate + (m − 1) months` (the first payment, then
+ * one per month, the last at term). This drives the "one snapshot per past cuota"
+ * density of the amortizable ripple — the deliberate exception to ADR 0012
+ * recognised by PRD #109. Dates on or after `targetDate` are excluded (the caller
+ * never generates for today/future, and a boundary equal to the target is owned by
+ * the target).
+ *
+ * It lives here, next to {@link boundaryDate} whose dates these ARE, and not in
+ * the snapshot module that used to hold it (#1693): a fourth spelling of «la fecha
+ * del peldaño m» is a fourth thing that can disagree with the balance locator
+ * about which cuota a date belongs to.
+ */
+export function amortizationPaymentDatesUpTo(
+  plan: AmortizationPlanInput,
+  targetDate: string,
+): string[] {
+  const dates: string[] = [];
+  for (let m = 0; m <= plan.termMonths; m += 1) {
+    const dateKey = boundaryDate(plan, m);
+    if (dateKey < targetDate) {
+      dates.push(dateKey);
+    } else if (m > 0) {
+      // Boundaries are ascending from m ≥ 1; once one reaches the target, stop.
+      // Boundary 0 (disbursement) can be later than boundary 1 only if the data
+      // is malformed, so the m === 0 case never early-breaks.
+      break;
+    }
+  }
+  return dates;
+}
+
+/**
+ * The UNIQUE payment-boundary dates a CHAIN of balance re-baselines reaches
+ * before `targetDate`, ascending, counting only checkpoints baselined on or
+ * after `fromDateKey` (#1435).
+ *
+ * Each checkpoint's forward schedule runs to the contract end, so in a long
+ * chain the schedules overlap almost entirely: a 42-checkpoint mortgage emits
+ * ~5.700 dates for the ~266 that exist. The ripple builds one whole-portfolio
+ * snapshot per date, so emitting a date twice means building it twice — the cost
+ * was quadratic in the length of the series, and the series length is exactly
+ * what a reconstruction import makes grow. Deduplicating here keeps it linear,
+ * and keeps the two call sites (the debt ripple and the mixed-import ripple)
+ * deriving the same set the same way.
+ */
+export function rebaselineChainPaymentDatesUpTo(
+  rebaselines: readonly BalanceRebaselineInput[],
+  fromDateKey: string,
+  targetDate: string,
+): string[] {
+  const dates = new Set<string>();
+  for (const fact of rebaselines) {
+    if (fact.baselineDate < fromDateKey) continue;
+    for (const dateKey of amortizationPaymentDatesUpTo(
+      amortizationPlanFromBalanceRebaseline(fact),
+      targetDate,
+    )) {
+      dates.add(dateKey);
+    }
+  }
+  return [...dates].sort();
 }
 
 /**

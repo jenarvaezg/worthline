@@ -6,7 +6,7 @@ import {
   amortizationScheduleTrace,
 } from "./amortization";
 import { daysBetween } from "./dates";
-import type { DecimalString } from "./decimal";
+import { type DecimalString, toMinorInt } from "./decimal";
 
 /**
  * Interest accrued since the last cuota, so the app can name WHICH figure the
@@ -56,11 +56,6 @@ export interface AccruedInterestAtDate {
   cycleDays: number;
   /** Annual rate governing the running cycle, decimal string. */
   annualInterestRate: DecimalString;
-}
-
-/** Round a Big minor-unit value to a whole minor unit, half up (the shared rule). */
-function toMinorInt(value: Big): number {
-  return Number(value.round(0, Big.roundHalfUp).toString());
 }
 
 /**

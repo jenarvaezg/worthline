@@ -14,6 +14,8 @@
  * entered as one-off payouts — a schedule is a fixed amount only.
  */
 
+import { addMonthsToDate } from "./dates";
+
 export type PayoutCadence = "weekly" | "monthly" | "quarterly" | "annual";
 
 /**
@@ -153,18 +155,6 @@ function toISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function daysInMonth(year: number, monthIdx: number): number {
-  return new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
-}
-
-/** Add `n` months, clamping the day to the target month's length (Jan 31 → Feb 28). */
-function addMonths(date: Date, n: number): Date {
-  const day = date.getUTCDate();
-  const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + n, 1));
-  next.setUTCDate(Math.min(day, daysInMonth(next.getUTCFullYear(), next.getUTCMonth())));
-  return next;
-}
-
 const CADENCE_STEP_MONTHS: Record<Exclude<PayoutCadence, "weekly">, number> = {
   monthly: 1,
   quarterly: 3,
@@ -178,7 +168,7 @@ const CADENCE_STEP_MONTHS: Record<Exclude<PayoutCadence, "weekly">, number> = {
  */
 function occurrenceAt(start: Date, cadence: PayoutCadence, k: number): Date {
   if (cadence === "weekly") return new Date(start.getTime() + 7 * 86_400_000 * k);
-  return addMonths(start, CADENCE_STEP_MONTHS[cadence] * k);
+  return addMonthsToDate(start, CADENCE_STEP_MONTHS[cadence] * k);
 }
 
 // ── derivation ───────────────────────────────────────────────────────────────
@@ -307,7 +297,7 @@ export function passiveIncomeTrailing(
   months = 12,
 ): PassiveIncomeWindow {
   const today = parse(todayISO);
-  const start = addMonths(today, -months);
+  const start = addMonthsToDate(today, -months);
   const inWindow = rows.filter((r) => {
     const t = parse(r.dateISO).getTime();
     return t > start.getTime() && t <= today.getTime();

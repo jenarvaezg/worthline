@@ -1,6 +1,6 @@
 import Big from "big.js";
 import { daysBetween } from "./dates";
-import type { DecimalString } from "./decimal";
+import { type DecimalString, toMinorInt } from "./decimal";
 import {
   cadenceOrDefault,
   sampleDateForCadence,
@@ -143,11 +143,6 @@ function buildBaseCurve(
       totalMinor: total,
     };
   });
-}
-
-/** Round a Big minor-unit value to a whole integer minor unit, half up. */
-function toMinorInt(value: Big): number {
-  return Number(value.round(0, Big.roundHalfUp).toString());
 }
 
 /**
