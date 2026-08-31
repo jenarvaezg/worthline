@@ -106,8 +106,9 @@ export interface FirePanelProps {
   retirementProfile: FireRetirementProfile | null;
   savingsCoherence: SavingsCoherence | null;
   /**
-   * El gasto declarado contra las cuotas vigentes (#1520). La tarjeta de gasto
-   * sostenible nombra con esto el supuesto bajo el que habla; no mueve ninguna cifra.
+   * El gasto declarado contra las cuotas vigentes (#1520), ya recalculado con la
+   * declaración que el borrador dice. La tarjeta de gasto sostenible nombra con esto el
+   * supuesto bajo el que habla; no mueve ninguna cifra.
    */
   debtServiceCoherence: SpendingDebtServiceCoherence | null;
   /** El ámbito y la URL que los botones del ofrecimiento necesitan para escribir. */
@@ -246,13 +247,14 @@ export function FirePanel({
   // El titular solo se troca si hay una respuesta con la que trocarlo: sin tasa de
   // retirada no hay gasto sostenible, y un encabezado que promete «cuánto puedes
   // gastar» sobre una tarjeta ausente es peor que no cambiar nada.
-  // El supuesto bajo el que habla el gasto sostenible (#1520). Calla mientras hay
-  // supuestos sin guardar, como el ofrecimiento de arriba: la glosa juzga lo
-  // DECLARADO, y a media edición todavía no hay declaración nueva que juzgar.
-  const debtServiceNote =
-    debtServiceCoherence && !previewing
-      ? spendingDebtServiceSustainableNote(debtServiceCoherence, currency, privacyMode)
-      : null;
+  // El supuesto bajo el que habla el gasto sostenible (#1520). NO calla al previsualizar,
+  // al contrario que el ofrecimiento de arriba: aquel ESCRIBE al pulsarlo y por eso se
+  // esconde a media edición, mientras que esto es una glosa de la cifra de al lado, y el
+  // careo que recibe ya viene recalculado con lo tecleado. Esconderla mientras se edita
+  // era el «lo toco y desaparece» que #1473 vino a matar.
+  const debtServiceNote = debtServiceCoherence
+    ? spendingDebtServiceSustainableNote(debtServiceCoherence, currency, privacyMode)
+    : null;
   const heading = firePanelHeading({ ordinary: sustainableCopy !== null, previewing });
   const coastProgress = fireResult
     ? coastProgressPercent(

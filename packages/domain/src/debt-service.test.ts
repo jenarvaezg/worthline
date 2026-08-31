@@ -23,7 +23,6 @@ describe("monthlyDebtServiceAtDate: la cuota vigente (#1520)", () => {
     expect(service).not.toBeNull();
     expect(service!.paymentMinor).toBe(1_066_19);
     expect(service!.nextPaymentDate).toBe("2026-05-01");
-    expect(service!.finalPaymentDate).toBe("2027-01-01");
   });
 
   test("en el tramo previo a la primera cuota ya pesa: la cuota está contratada", () => {

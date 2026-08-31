@@ -46,10 +46,12 @@ import {
   fireRetirementReadout,
   monthlySavingsCapacityForFire,
   previewFireWithAssumptions,
+  previewSpendingDebtService,
   projectFireFromContext,
 } from "@worthline/domain";
 import { useState } from "react";
 import {
+  draftSpendingIncludesDebtService,
   type FireAssumptionDraft,
   fireAssumptionOverrides,
   isFireAssumptionDraftDirty,
@@ -142,6 +144,17 @@ export function FireCockpit(props: FireCockpitProps) {
     previewing && result
       ? fireRetirementReadout({ levels: levelRail, result })
       : { profile: props.retirementProfile, spending: props.sustainableSpending };
+  // El supuesto del servicio de deuda (#1520): el `select` está en la cara visible, así
+  // que tocarlo mueve su glosa en el momento — por la MISMA puerta que el servidor, y
+  // sobre la misma medida de cuotas, porque previsualizar no puede inventar una cuota
+  // distinta de la que se guardará.
+  const debtServiceCoherence =
+    props.debtServiceCoherence === null
+      ? null
+      : previewSpendingDebtService(
+          props.debtServiceCoherence,
+          draftSpendingIncludesDebtService(draft),
+        );
   // La tasa que imprime la fila de lectura del formulario es la del lado que se está
   // viendo (#1473): desmarcar el inmovilizado la re-pondera, y el panel de supuestos no
   // puede seguir citando la que salía con el ladrillo dentro.
@@ -173,7 +186,7 @@ export function FireCockpit(props: FireCockpitProps) {
         coastTickFraction={coastTick}
         currency={props.currency}
         currentUrl={props.currentUrl}
-        debtServiceCoherence={props.debtServiceCoherence}
+        debtServiceCoherence={debtServiceCoherence}
         fireLevelRail={levelRail}
         fireProjection={projection}
         fireResult={result}

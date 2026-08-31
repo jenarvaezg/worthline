@@ -26,15 +26,12 @@ import {
 export interface MonthlyDebtService {
   /** La cuota del próximo pago, en unidades menores enteras. */
   paymentMinor: number;
-  /** La fecha de esa cuota (YYYY-MM-DD). */
-  nextPaymentDate: string;
   /**
-   * La última cuota del plan (YYYY-MM-DD): cuándo esta deuda deja de pesar. No se
-   * usa para proyectar nada — worthline no tiene motor de flujos (ADR 0081) — pero
-   * una cifra que dice «para siempre» sin saber su vencimiento es la trampa que la
-   * opción de restarla habría creado.
+   * La fecha de esa cuota (YYYY-MM-DD). Va con el importe porque es lo que lo hace
+   * interpretable: «la cuota vigente» es una convención (la del ciclo que cierra
+   * después de hoy) y sin la fecha no se puede comprobar cuál se devolvió.
    */
-  finalPaymentDate: string;
+  nextPaymentDate: string;
 }
 
 /**
@@ -60,14 +57,9 @@ export function monthlyDebtServiceAtDate(
 
   const trace = amortizationScheduleTrace(input);
   const next = trace.periods.find((period) => period.date > targetDate);
-  const last = trace.periods.at(-1);
-  if (next === undefined || last === undefined) {
+  if (next === undefined) {
     return null;
   }
 
-  return {
-    finalPaymentDate: last.date,
-    nextPaymentDate: next.date,
-    paymentMinor: next.paymentMinor,
-  };
+  return { nextPaymentDate: next.date, paymentMinor: next.paymentMinor };
 }

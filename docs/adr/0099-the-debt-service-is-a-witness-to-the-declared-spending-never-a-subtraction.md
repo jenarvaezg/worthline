@@ -53,6 +53,14 @@ figure changes.**
    invent a habit out of two declarations. Absent from the map means "unknown", which
    is not 0.
 
+   **An incomplete sum is not a measurement either.** A cuota denominated in another
+   currency is dropped (summing dollars as euros is #1401), and one dropped cuota
+   silences the whole reading — glosses and signal alike — exactly as ADR 0075 silences
+   a mixed-currency savings window. A partial sum could fall under the materiality
+   threshold and stay quiet for the wrong reason, or quote an understated cuota in a
+   gloss. Same for a scope with no positive declared spending: there is nothing to
+   cross the cuota against.
+
 4. **The witness has the shape ADR 0075 gave the measured savings.** The scope's live
    cuotas — weighted by ownership with the same rule that nets those debts' balances
    against FIRE capital — are crossed against the declaration and emit a signal in two
@@ -76,7 +84,16 @@ figure changes.**
    the capital in its rung. Subtracting the cuota from the capital as well would be the
    double count the netting already avoids.
 
-7. **A gloss exists only where the cuota exists.** With no live debt service both cards
+7. **The declaration lives on the visible face and responds live.** It sits under
+   «Gasto mensual», not folded into the fine print, because it is the answer the signal
+   asks for. That puts it under #1473's rule for the visible face — what you can see
+   responds when you touch it — so it travels in the assumptions draft and the
+   sustainable-spending gloss re-words as the select changes, through
+   `previewSpendingDebtService`: the same door, over the same measured cuotas, so the
+   preview cannot promise a figure the save would not write. It is the one draft field
+   that is NOT an engine override, which is the point: it moves words, never figures.
+
+8. **A gloss exists only where the cuota exists.** With no live debt service both cards
    are silent: naming an assumption about a debt nobody has is noise, not honesty. The
    wording lives in the domain (`spendingDebtServiceCoverageNote`,
    `spendingDebtServiceSustainableNote`) so the two cards cannot drift into two
@@ -101,6 +118,10 @@ figure changes.**
   materiality threshold is what keeps it a question worth interrupting for.
 - **Making the declaration a checkbox (rejected).** A checkbox has two states, and here
   the third is the one that matters — see §1.
+- **Folding the select into «Supuestos finos», beside `retirementPlan` (rejected).** The
+  precedent fits — a declaration that changes words and not figures — but the fine print
+  is collapsed, and this is the field the health signal sends the user to fix. A door
+  behind a fold is a door most people never open.
 
 ## Consequences
 
@@ -118,9 +139,14 @@ figure changes.**
   two health consumers pay for the reads, and they go through one helper
   (`readMonthlyDebtServiceByLiabilityId`) so a glossed cuota and an alerted cuota are
   the same figure.
-- A regression test pins that all three declaration states produce a byte-identical
-  sustainable spending, and the page test pins the coverage percentage unchanged. If one
-  of them ever moves, the subtraction came in through the back door.
+- Regression tests pin both €/month figures against the three declaration states, and
+  both on the RENDERED card, not on the engine compared with itself: the subtraction of
+  option 3 would land in the view, where an engine-only assertion would not see it.
+- `scopeSpendingDebtService` is the only door for a scope's reading — the health signal
+  and the screen's glosses go through it, so they cannot measure different debts or
+  apply different thresholds to the same scope. `monthlyDebtServiceAtDate` is
+  deliberately NOT exported: it would bypass the guard that knows a model with no cuadro
+  has no cuota.
 - Not covered: whether the agent view's FIRE context should carry the declaration (an
   agent can still read the coverage without knowing what it means), and the maturity
   dates that option 3 would need.

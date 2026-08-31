@@ -31,7 +31,10 @@ import {
 } from "@worthline/domain";
 
 import { readAmortizableStartByLiabilityId } from "./data-quality-amortizable-start";
-import { readMonthlyDebtServiceByLiabilityId } from "./debt-service-reads";
+import {
+  readDebtModelByLiabilityId,
+  readMonthlyDebtServiceByLiabilityId,
+} from "./debt-service-reads";
 
 export interface DashboardDataQualityInput {
   /** The agent-view read store — the seam for the few extra reads (#654). */
@@ -79,8 +82,7 @@ export async function collectDashboardDataQualitySignals(
   }));
 
   // El modelo de deuda se lee UNA vez por deuda y se reparte en dos lecturas (#1520):
-  // el testigo del gasto mira todas —el modelo se declara por deuda y no por tipo, así
-  // que un préstamo al consumo con cuadro paga cuota igual que una hipoteca— y la
+  // el testigo del gasto mira todas —el modelo se declara por deuda y no por tipo— y la
   // señal de histórico sigue mirando solo las hipotecas, que es su regla. Dos pasadas
   // de la misma consulta doblarían el I/O del GET del home (#783) para nada.
   const mortgageIds = new Set(
@@ -93,7 +95,7 @@ export async function collectDashboardDataQualitySignals(
     sourceFreshnessEntries,
     syncAttemptEntries,
     positionEntries,
-    debtModelEntries,
+    debtModelByLiability,
     manualValueHistoryByAssetId,
     assetCreatedAtById,
     trashedHoldings,
@@ -121,12 +123,7 @@ export async function collectDashboardDataQualitySignals(
           [source.id, await agentView.readSourcePositions(source.id)] as const,
       ),
     ),
-    Promise.all(
-      input.liabilities.map(
-        async (liability) =>
-          [liability.id, await agentView.readDebtModel(liability.id)] as const,
-      ),
-    ),
+    readDebtModelByLiabilityId(agentView, input.liabilities),
     agentView.readManualValueHistory(input.assets.map((asset) => asset.id)),
     agentView.readAssetCreatedAtById(),
     agentView.readTrashedHoldings(),
@@ -146,19 +143,21 @@ export async function collectDashboardDataQualitySignals(
     sourceFreshnessEntries,
   );
   const positionsBySourceId = new Map(positionEntries);
-  const debtModelByAnyLiabilityId = new Map<string, DebtModel | null>(debtModelEntries);
-  const debtModelByLiabilityId = new Map<string, DebtModel | null>(
-    debtModelEntries.filter(([id]) => mortgageIds.has(id)),
+  // El nombre del campo que el motor recibe (`debtModelByLiabilityId`) es más ancho que
+  // lo que su familia mira: la señal de histórico (#1438) solo habla de hipotecas, así
+  // que se le pasa ese subconjunto y no el mapa entero.
+  const debtModelByMortgageId = new Map<string, DebtModel | null>(
+    [...debtModelByLiability].filter(([id]) => mortgageIds.has(id)),
   );
   const amortizableStartByLiabilityId = await readAmortizableStartByLiabilityId(
     agentView,
-    debtModelByLiabilityId,
+    debtModelByMortgageId,
   );
   // La cuota vigente de cada deuda con cuadro (#1520), para cruzarla contra el gasto
   // declarado. Solo lee de las amortizables, que en esta cartera son una o dos.
   const debtServiceByLiabilityId = await readMonthlyDebtServiceByLiabilityId(
     agentView,
-    debtModelByAnyLiabilityId,
+    debtModelByLiability,
     input.asOfDateKey,
   );
 
@@ -178,7 +177,7 @@ export async function collectDashboardDataQualitySignals(
     assets: input.assets,
     amortizableStartByLiabilityId,
     connectedSources,
-    debtModelByLiabilityId,
+    debtModelByLiabilityId: debtModelByMortgageId,
     debtServiceByLiabilityId,
     fireConfigByScopeId: input.fireConfigByScopeId,
     // Los valores de los miembros salen de los MISMOS holdings valorados por

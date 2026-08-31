@@ -4,6 +4,7 @@ import type { FireScopeConfig } from "./fire";
 import {
   assessSpendingDebtService,
   describeSpendingDebtServiceGap,
+  previewSpendingDebtService,
   scopeMonthlyDebtService,
   spendingDebtServiceCoverageNote,
   spendingDebtServiceDeclaration,
@@ -183,6 +184,45 @@ describe("assessSpendingDebtService: el careo (#1520)", () => {
     expect(coherence.ratio).toBeCloseTo(0.02, 3);
   });
 
+  test("con una cuota en otra divisa no hay medida: silencio, no un umbral falseado", () => {
+    // La regla de ADR 0075 para la ventana con divisas mezcladas: parte del dinero
+    // falta de la suma, así que una suma incompleta podría caer bajo el umbral y
+    // callar por la razón equivocada — o citar una cuota infravalorada en la glosa.
+    const coherence = assessSpendingDebtService({
+      config: config(),
+      debtService: scopeMonthlyDebtService({
+        currency: "EUR",
+        debtServiceByLiabilityId: new Map([
+          ["liab_1", 883_66],
+          ["liab_usd", 400_00],
+        ]),
+        liabilities: [liability(), liability({ currency: "USD", id: "liab_usd" })],
+        scopeMemberIds: new Set(["m1"]),
+      }),
+    });
+
+    expect(coherence.state).toBe("no_measurement");
+    expect(describeSpendingDebtServiceGap(coherence, "EUR")).toBeNull();
+    expect(spendingDebtServiceCoverageNote(coherence, "EUR")).toBeNull();
+    expect(spendingDebtServiceSustainableNote(coherence, "EUR")).toBeNull();
+  });
+
+  test("sin gasto declarado positivo no hay nada contra lo que cruzar la cuota", () => {
+    // El formulario exige un gasto > 0, pero un import o una semilla no: declarar
+    // «lo incluye» con 0 € de gasto no puede emitir un aviso de imposibilidad sobre
+    // una cifra que en realidad no existe.
+    const coherence = assessSpendingDebtService({
+      config: config({
+        monthlySpendingIncludesDebtService: true,
+        monthlySpendingMinor: 0,
+      }),
+      debtService: debtServiceOf(883_66),
+    });
+
+    expect(coherence.state).toBe("no_measurement");
+    expect(coherence.ratio).toBeNull();
+  });
+
   test("declarar que NO lo incluye es una respuesta completa: no se vuelve a preguntar", () => {
     const coherence = assessSpendingDebtService({
       config: config({ monthlySpendingIncludesDebtService: false }),
@@ -190,6 +230,32 @@ describe("assessSpendingDebtService: el careo (#1520)", () => {
     });
 
     expect(coherence.state).toBe("aligned");
+  });
+});
+
+describe("previewSpendingDebtService: la isla previsualiza el select (#1520)", () => {
+  const saved = assessSpendingDebtService({
+    config: config({ monthlySpendingIncludesDebtService: false }),
+    debtService: scopeMonthlyDebtService({
+      currency: "EUR",
+      debtServiceByLiabilityId: new Map([["liab_1", 883_66]]),
+      liabilities: [liability()],
+      scopeMemberIds: new Set(["m1"]),
+    }),
+  });
+
+  test("cambiar la declaración cambia el careo sin volver a medir", () => {
+    const previewed = previewSpendingDebtService(saved, undefined);
+
+    expect(previewed.declaration).toBe("undeclared");
+    expect(previewed.state).toBe("undeclared");
+    // La MISMA medida: previsualizar no puede inventar una cuota distinta.
+    expect(previewed.debtService).toEqual(saved.debtService);
+    expect(previewed.debtServiceMonthlyMinor).toBe(saved.debtServiceMonthlyMinor);
+  });
+
+  test("volver a lo guardado devuelve exactamente lo guardado", () => {
+    expect(previewSpendingDebtService(saved, false)).toEqual(saved);
   });
 });
 

@@ -1628,6 +1628,64 @@ describe("ObjetivosPage el supuesto del servicio de deuda (#1520)", () => {
     expect(html).toContain("50,0 %");
   });
 
+  /** La tarjeta del gasto sostenible, cuando la hay. */
+  function sustainableCard(html: string): string {
+    const opened = html.slice(html.indexOf('<section aria-label="Gasto sostenible"'));
+    return opened.slice(0, opened.indexOf("</section>"));
+  }
+
+  /** Jorge declarado como jubilación ordinaria: es cuando la tarjeta se pinta. */
+  function declaringOrdinary(includesDebtService?: boolean) {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        currentAge: 63,
+        expectedRealReturn: 0.035,
+        monthlySavingsCapacityMinor: 0,
+        monthlySpendingMinor: 200_000,
+        retirementPlan: "ordinary",
+        safeWithdrawalRate: 0.035,
+        targetRetirementAge: 67,
+        ...(includesDebtService === undefined
+          ? {}
+          : { monthlySpendingIncludesDebtService: includesDebtService }),
+      },
+    });
+  }
+
+  test("el gasto sostenible sigue diciendo el MISMO €/mes en los tres estados", async () => {
+    // La otra mitad de «ninguna cifra en €/mes cambia de valor por este PR»: se mide
+    // sobre el HTML de la tarjeta, no comparando el motor consigo mismo — la resta de
+    // la opción 3 caería en la vista, y una aserción sobre el motor no la vería.
+    withAmortizableDebt();
+    declaringOrdinary();
+    const undeclared = sustainableCard(await renderedHtml());
+
+    withAmortizableDebt();
+    declaringOrdinary(true);
+    const included = sustainableCard(await renderedHtml());
+
+    withAmortizableDebt();
+    declaringOrdinary(false);
+    const excluded = sustainableCard(await renderedHtml());
+
+    // 50.000 € vendibles × 3,5 % ÷ 12 = 146 €/mes, con cuota y sin ella. Si la resta
+    // de la opción 3 entrara, esta cifra bajaría a 146 − 555 = negativa.
+    // El espacio antes del € es el duro que mete Intl: `\s` lo cubre.
+    expect(undeclared).toMatch(/146\s€\/mes/);
+    expect(undeclared).toMatch(/1750\s€\/año/);
+    for (const card of [included, excluded]) {
+      // La cifra grande y las dos filas son idénticas; solo cambia la glosa.
+      expect(card.replace(/De esta cifra salen[^<]*/g, "")).toBe(
+        undeclared.replace(/De esta cifra salen[^<]*/g, ""),
+      );
+    }
+    // Y la glosa está, en los tres, diciendo que la cuota NO se ha restado.
+    for (const card of [undeclared, included, excluded]) {
+      expect(card).toContain("no se han restado");
+      expect(card).toContain("554,60");
+    }
+  });
+
   test("el formulario ofrece los tres estados y precarga el guardado", async () => {
     declaring(true);
 

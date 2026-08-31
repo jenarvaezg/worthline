@@ -14,9 +14,8 @@ import {
 } from "./data-quality-collector";
 import type { FireScopeConfig } from "./fire";
 import {
-  assessSpendingDebtService,
   describeSpendingDebtServiceGap,
-  scopeMonthlyDebtService,
+  scopeSpendingDebtService,
 } from "./spending-debt-service";
 import type { Liability, Workspace } from "./workspace-types";
 
@@ -63,16 +62,14 @@ export const collectSpendingDebtServiceSignals: DataQualityCollector<
     return [];
   }
 
-  const coherence = assessSpendingDebtService({
+  const coherence = scopeSpendingDebtService({
     config,
-    debtService: scopeMonthlyDebtService({
-      currency: input.workspace.baseCurrency,
-      debtServiceByLiabilityId: input.debtServiceByLiabilityId,
-      liabilities: input.liabilities,
-      // Los miembros que el facade ya resolvió: dos familias no pueden discrepar
-      // sobre quién es el ámbito.
-      scopeMemberIds: input.scopeMemberIds,
-    }),
+    currency: input.workspace.baseCurrency,
+    debtServiceByLiabilityId: input.debtServiceByLiabilityId,
+    liabilities: input.liabilities,
+    // Los miembros que el facade ya resolvió: dos familias no pueden discrepar sobre
+    // quién es el ámbito.
+    scopeMemberIds: input.scopeMemberIds,
   });
 
   if (coherence.state !== "impossible" && coherence.state !== "undeclared") {
@@ -89,7 +86,8 @@ export const collectSpendingDebtServiceSignals: DataQualityCollector<
       category: "spending_coherence",
       code: SPENDING_VS_DEBT_SERVICE_CODE,
       fixable: true,
-      label: describeSpendingDebtServiceGap(coherence, input.workspace.baseCurrency),
+      label:
+        describeSpendingDebtServiceGap(coherence, input.workspace.baseCurrency) ?? "",
       naturalKey: signalNaturalKey(
         "spending_coherence",
         SPENDING_VS_DEBT_SERVICE_CODE,

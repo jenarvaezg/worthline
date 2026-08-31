@@ -347,8 +347,10 @@ export {
   effectiveAmortizationPlan,
   storedBalanceGovernsDebtFigure,
 } from "./debt-balance";
+// `monthlyDebtServiceAtDate` NO se exporta a propósito (#1520): rodea el guard de
+// `debtServiceAtDate`, que es lo único que sabe que un modelo sin cuadro no tiene
+// cuota. El tipo sí, porque es lo que esa puerta devuelve.
 export type { MonthlyDebtService } from "./debt-service";
-export { monthlyDebtServiceAtDate } from "./debt-service";
 export type { DecimalString, WeightedDestination } from "./decimal";
 export {
   addUnits,
@@ -1149,6 +1151,7 @@ export {
 export type {
   ScopeDebtService,
   ScopeMonthlyDebtServiceInput,
+  ScopeSpendingDebtServiceInput,
   SpendingDebtServiceCoherence,
   SpendingDebtServiceDeclaration,
   SpendingDebtServiceState,
@@ -1156,8 +1159,10 @@ export type {
 export {
   assessSpendingDebtService,
   describeSpendingDebtServiceGap,
+  previewSpendingDebtService,
   SPENDING_DEBT_SERVICE_MATERIAL_RATIO,
   scopeMonthlyDebtService,
+  scopeSpendingDebtService,
   spendingDebtServiceCoverageNote,
   spendingDebtServiceDeclaration,
   spendingDebtServiceSustainableNote,

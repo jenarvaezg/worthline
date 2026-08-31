@@ -25,6 +25,30 @@ type DebtServiceReads = Pick<
 >;
 
 /**
+ * El modelo declarado de cada deuda, keyed by liability id. Una consulta indexada por
+ * deuda, en una sola tanda, y en UN sitio: las tres superficies que necesitan la cuota
+ * (#1520) hacían este mismo bucle, y una cuarta copia es la forma de que dos de ellas
+ * midan sobre conjuntos de deudas distintos.
+ *
+ * El modelo se declara **por deuda**, no por tipo: un préstamo al consumo amortizable
+ * paga cuota igual que una hipoteca, así que aquí se pregunta por todas y quien solo
+ * quiera las hipotecas (la señal de histórico, #1438) filtra el resultado.
+ */
+export async function readDebtModelByLiabilityId(
+  reads: Pick<AgentViewReadStore, "readDebtModel">,
+  liabilities: readonly { id: string }[],
+): Promise<Map<string, DebtModel | null>> {
+  return new Map(
+    await Promise.all(
+      liabilities.map(
+        async (liability) =>
+          [liability.id, await reads.readDebtModel(liability.id)] as const,
+      ),
+    ),
+  );
+}
+
+/**
  * Keyed by liability id, in minor units, at the liability's **100 %** — la
  * participación del ámbito la aplica `scopeMonthlyDebtService`, que es quien sabe qué
  * ámbito se está pintando. Una deuda sin cuota vigente (sin plan, ya vencida, o de un

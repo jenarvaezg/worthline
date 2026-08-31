@@ -1,5 +1,8 @@
 import { ChipChoice } from "@web/chip-choice";
-import { readMonthlyDebtServiceByLiabilityId } from "@web/debt-service-reads";
+import {
+  readDebtModelByLiabilityId,
+  readMonthlyDebtServiceByLiabilityId,
+} from "@web/debt-service-reads";
 import { holdingPublicIdIndex } from "@web/holding-route";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
@@ -230,14 +233,7 @@ export async function ObjetivosContent({
   // cartera real, una o dos.
   const debtServiceByLiabilityId = await readMonthlyDebtServiceByLiabilityId(
     store.agentView,
-    new Map(
-      await Promise.all(
-        liabilities.map(
-          async (liability) =>
-            [liability.id, await store.agentView.readDebtModel(liability.id)] as const,
-        ),
-      ),
-    ),
+    await readDebtModelByLiabilityId(store.agentView, liabilities),
     today,
   );
 
@@ -325,6 +321,8 @@ export async function ObjetivosContent({
     monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
     monthlySpending: savedFieldValues.monthlySpending ?? "",
     safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
+    // Lo guardado, para que tocar el `select` cuente como cambio sin guardar (#1520).
+    spendingIncludesDebtService: savedFieldValues.spendingIncludesDebtService,
     targetRetirementAge: savedFieldValues.targetRetirementAge ?? "",
   };
 

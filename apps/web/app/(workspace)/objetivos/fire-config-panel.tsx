@@ -140,14 +140,17 @@ export function FireConfigPanel({
 
               Un `select` de tres opciones y no una casilla: «sin declarar» es un
               estado real, y una casilla lo confundiría con «no incluye» — que es lo que
-              la app venía suponiendo sin decirlo. No es un campo controlado como los
-              cuatro de al lado porque no mueve ninguna cifra: no hay nada que
-              previsualizar. */}
+              la app venía suponiendo sin decirlo.
+
+              Controlado como los campos de arriba (#1473): no mueve ninguna cifra, pero
+              sí mueve la glosa del gasto sostenible, y un campo en la cara visible que
+              no responde al tocarlo se lee como que la app lo ignora. */}
           <label>
             ¿Ese gasto incluye tus cuotas de deuda?
             <select
-              defaultValue={values.spendingIncludesDebtService}
               name="monthlySpendingIncludesDebtService"
+              onChange={editField("spendingIncludesDebtService")}
+              value={draft.spendingIncludesDebtService}
             >
               <option value="">Sin declarar</option>
               <option value="yes">Sí, la hipoteca y los préstamos van dentro</option>

@@ -131,6 +131,14 @@ export const SPENDING_DEBT_SERVICE_MATERIAL_RATIO = 0.25;
 export type SpendingDebtServiceState =
   /** El ámbito no tiene ninguna cuota vigente: no hay supuesto que nombrar. */
   | "no_debt_service"
+  /**
+   * Hay servicio de deuda, pero la medida no vale para hablar de él: alguna cuota
+   * está en otra divisa (parte del dinero falta de la suma, #1401/ADR 0072) o no hay
+   * gasto declarado positivo contra el que cruzarla. La misma regla que ADR 0075 dio
+   * a la ventana con divisas mezcladas: sin medida no hay glosa **ni aviso**, porque
+   * una suma incompleta puede caer bajo el umbral y callar por la razón equivocada.
+   */
+  | "no_measurement"
   /** Declaración y cuota conviven sin contradicción, o la cuota es inmaterial. */
   | "aligned"
   /**
@@ -158,9 +166,44 @@ export function assessSpendingDebtService(input: {
   config: FireScopeConfig;
   debtService: ScopeDebtService;
 }): SpendingDebtServiceCoherence {
-  const { config, debtService } = input;
-  const declaration = spendingDebtServiceDeclaration(config);
-  const declaredSpendingMinor = config.monthlySpendingMinor;
+  return assess({
+    debtService: input.debtService,
+    declaration: spendingDebtServiceDeclaration(input.config),
+    declaredSpendingMinor: input.config.monthlySpendingMinor,
+  });
+}
+
+/**
+ * El mismo careo con otra declaración, sobre la MISMA medida (#1520). Lo pide la isla
+ * de supuestos: el `select` está en la cara visible, así que tocarlo tiene que mover su
+ * glosa en el momento (ADR 0078, enmienda #1473) — y la única forma de que la
+ * previsualización y el guardado no discrepen es que las dos salgan de aquí.
+ *
+ * El gasto declarado que usa es el GUARDADO, no el tecleado: ninguna de las dos glosas
+ * lo cita, y lo único que decide es el umbral de materialidad, que no se pinta.
+ */
+export function previewSpendingDebtService(
+  coherence: SpendingDebtServiceCoherence,
+  declaredIncludesDebtService: boolean | undefined,
+): SpendingDebtServiceCoherence {
+  return assess({
+    debtService: coherence.debtService,
+    declaration:
+      declaredIncludesDebtService === undefined
+        ? "undeclared"
+        : declaredIncludesDebtService
+          ? "included"
+          : "excluded",
+    declaredSpendingMinor: coherence.declaredSpendingMinor,
+  });
+}
+
+function assess(input: {
+  declaration: SpendingDebtServiceDeclaration;
+  declaredSpendingMinor: number;
+  debtService: ScopeDebtService;
+}): SpendingDebtServiceCoherence {
+  const { debtService, declaration, declaredSpendingMinor } = input;
   const debtServiceMonthlyMinor = debtService.monthlyMinor;
   const ratio =
     declaredSpendingMinor > 0 ? debtServiceMonthlyMinor / declaredSpendingMinor : null;
@@ -172,6 +215,13 @@ export function assessSpendingDebtService(input: {
     declaredSpendingMinor,
     ratio,
   };
+
+  // Sin cuota conocida NI descartada no hay supuesto que nombrar. Con alguna cuota
+  // descartada por divisa la hay, pero la suma está incompleta; y sin gasto declarado
+  // positivo no hay con qué cruzarla (el formulario lo exige, un import no).
+  if (debtService.skippedForeignCount > 0 || declaredSpendingMinor <= 0) {
+    return { ...base, state: "no_measurement" };
+  }
 
   if (debtServiceMonthlyMinor <= 0) {
     return { ...base, state: "no_debt_service" };
@@ -196,20 +246,41 @@ export function assessSpendingDebtService(input: {
   return { ...base, state: "aligned" };
 }
 
+export interface ScopeSpendingDebtServiceInput extends ScopeMonthlyDebtServiceInput {
+  /** La config FIRE del ámbito; la declaración se lee por su única puerta. */
+  config: FireScopeConfig;
+}
+
+/**
+ * La lectura de ámbito: medir las cuotas del ámbito y cruzarlas contra su gasto
+ * declarado, de una vez (#1520). **La única puerta** — la usan la señal de salud (#654)
+ * y la pantalla que pinta las dos glosas, así que no pueden acabar midiendo deudas
+ * distintas ni aplicando umbrales distintos al mismo ámbito. Es la misma forma que
+ * `scopeSavingsCoherence` le dio al testigo del ahorro.
+ */
+export function scopeSpendingDebtService(
+  input: ScopeSpendingDebtServiceInput,
+): SpendingDebtServiceCoherence {
+  return assessSpendingDebtService({
+    config: input.config,
+    debtService: scopeMonthlyDebtService(input),
+  });
+}
+
 /**
  * La frase que enuncia el desajuste (#1520) — la comparte el inventario de salud
  * (#654) con cualquier superficie que quiera repetirla, así que las palabras no pueden
  * divergir entre donde se levanta la duda y donde se pintan las cifras que pone en
  * duda (misma regla que `describeSavingsDivergence`).
  *
- * Cadena vacía en los estados sin noticia: no hay frase que decir, y devolver una
- * invitaría a pintarla.
+ * `null` en los estados sin noticia, como sus dos hermanas de abajo: no hay frase que
+ * decir, y una cadena vacía se pinta como un párrafo en blanco.
  */
 export function describeSpendingDebtServiceGap(
   coherence: SpendingDebtServiceCoherence,
   currency: CurrencyCode,
   privacyMode = false,
-): string {
+): string | null {
   const spending = amountOf(coherence.declaredSpendingMinor, currency, privacyMode);
   const cuota = amountOf(coherence.debtServiceMonthlyMinor, currency, privacyMode);
 
@@ -228,7 +299,7 @@ export function describeSpendingDebtServiceGap(
         `admiten dos lecturas distintas.`
       );
     default:
-      return "";
+      return null;
   }
 }
 
@@ -271,7 +342,7 @@ export function spendingDebtServiceCoverageNote(
   currency: CurrencyCode,
   privacyMode = false,
 ): string | null {
-  if (coherence.state === "no_debt_service") {
+  if (coherence.state === "no_debt_service" || coherence.state === "no_measurement") {
     return null;
   }
 
@@ -298,7 +369,7 @@ export function spendingDebtServiceSustainableNote(
   currency: CurrencyCode,
   privacyMode = false,
 ): string | null {
-  if (coherence.state === "no_debt_service") {
+  if (coherence.state === "no_debt_service" || coherence.state === "no_measurement") {
     return null;
   }
 

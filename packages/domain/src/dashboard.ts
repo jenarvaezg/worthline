@@ -47,10 +47,7 @@ import { scopeOwnedHoldingIds } from "./scope-holdings";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
 import { calculateSnapshotDeltas } from "./snapshot-types";
 import type { SpendingDebtServiceCoherence } from "./spending-debt-service";
-import {
-  assessSpendingDebtService,
-  scopeMonthlyDebtService,
-} from "./spending-debt-service";
+import { scopeSpendingDebtService } from "./spending-debt-service";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 
 export type { LocalPersistenceStatus };
@@ -427,14 +424,12 @@ export function prepareDashboardState(input: {
   // las tarjetas y el aviso del inventario no pueden citar cuotas distintas.
   const debtServiceCoherence: SpendingDebtServiceCoherence | null =
     fireScopeConfig && workspace && selectedScope && input.debtServiceByLiabilityId
-      ? assessSpendingDebtService({
+      ? scopeSpendingDebtService({
           config: fireScopeConfig,
-          debtService: scopeMonthlyDebtService({
-            currency: workspace.baseCurrency,
-            debtServiceByLiabilityId: input.debtServiceByLiabilityId,
-            liabilities,
-            scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
-          }),
+          currency: workspace.baseCurrency,
+          debtServiceByLiabilityId: input.debtServiceByLiabilityId,
+          liabilities,
+          scopeMemberIds: new Set(resolveScopeMemberIds(workspace, selectedScope.id)),
         })
       : null;
 

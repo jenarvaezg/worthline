@@ -26,6 +26,15 @@ export interface FireAssumptionDraft {
    * aplicar — siempre dice sí o no, y el motor elige lado con eso.
    */
   countImmobilized: boolean;
+  /**
+   * ¿El gasto declarado incluye el servicio de deuda? (#1520.) `""` = sin declarar.
+   *
+   * Está en el borrador aunque **no sea un override del motor**: no mueve ninguna
+   * cifra, pero sí mueve la glosa de la tarjeta de gasto sostenible, y está en la cara
+   * visible del formulario. La regla de #1473 es que lo que se ve responde al tocarlo;
+   * un `select` ahí que no moviera nada se leería como que la app lo ignora.
+   */
+  spendingIncludesDebtService: string;
 }
 
 /**
@@ -37,6 +46,19 @@ export type FireAssumptionTextField = Exclude<
   keyof FireAssumptionDraft,
   "countImmobilized"
 >;
+
+/**
+ * La declaración del servicio de deuda que el borrador dice, en el tri-estado que el
+ * dominio entiende (#1520). Un valor que no reconocemos se lee como «sin declarar», la
+ * misma lectura que hace el parser del guardado — así la previsualización y lo que se
+ * escribe no pueden discrepar.
+ */
+export function draftSpendingIncludesDebtService(
+  draft: FireAssumptionDraft,
+): boolean | undefined {
+  const declared = draft.spendingIncludesDebtService;
+  return declared === "yes" ? true : declared === "no" ? false : undefined;
+}
 
 /** Un número es-ES (coma o punto) o null si el texto no lo dice. */
 function parseNumber(raw: string): number | null {
@@ -94,6 +116,7 @@ export function isFireAssumptionDraftDirty(
     draft.monthlySpending !== saved.monthlySpending ||
     draft.safeWithdrawalRate !== saved.safeWithdrawalRate ||
     draft.monthlySavingsCapacity !== saved.monthlySavingsCapacity ||
-    draft.targetRetirementAge !== saved.targetRetirementAge
+    draft.targetRetirementAge !== saved.targetRetirementAge ||
+    draft.spendingIncludesDebtService !== saved.spendingIncludesDebtService
   );
 }
