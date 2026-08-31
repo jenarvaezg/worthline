@@ -451,6 +451,20 @@ const assetSchema = z.object({
    * en capital disponible desde el primer año sin que nadie lo haya dicho.
    */
   availableFrom: nonEmptyString.optional(),
+  /**
+   * Los lotes de aportación declarados (#1676), por la misma razón que la fecha de
+   * arriba y con más motivo: son varias declaraciones del dueño que nada puede volver
+   * a derivar —la antigüedad que las genera vive en otra entidad (#1518)— y perderlas
+   * en un restore devolvería el plan a ser un bloque sin que nadie lo haya dicho.
+   */
+  contributionLots: z
+    .array(
+      z.object({
+        availableFrom: nonEmptyString,
+        amountMinor: z.number().int().positive(),
+      }),
+    )
+    .optional(),
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248);
    *  absent for a hand-maintained holding. Carried so a multi-rung source's link
    *  round-trips (the source row in `connectedSources` names only the primary asset). */

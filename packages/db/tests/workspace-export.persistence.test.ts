@@ -1144,3 +1144,55 @@ describe("la fecha de disponibilidad declarada sobrevive el export/import (#1528
     restored.close();
   });
 });
+
+describe("la escalera de lotes sobrevive el export/import (#1676)", () => {
+  test("viaja verbatim por la puerta real; sin lotes, se omite y vuelve vac\u00eda", async () => {
+    const source = await createInMemoryStore();
+    await source.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Jorge" }],
+      mode: "individual",
+    });
+    for (const id of ["pp_escalera", "pp_bloque"]) {
+      await source.assets.createManualAsset({
+        currency: "EUR",
+        currentValueMinor: 1_055_658,
+        id,
+        liquidityTier: "term-locked",
+        name: id,
+        ownership: [{ memberId: "m1", shareBps: 10_000 }],
+        type: "manual",
+      });
+    }
+    await source.assets.replaceContributionLots("pp_escalera", [
+      { amountMinor: 400_000, availableFrom: "2024-03-01" },
+      { amountMinor: 600_000, availableFrom: "2031-05-01" },
+    ]);
+
+    const doc = await source.workspace.exportWorkspace();
+    expect(doc.assets.find((a) => a.id === "pp_escalera")?.contributionLots).toEqual([
+      { amountMinor: 400_000, availableFrom: "2024-03-01" },
+      { amountMinor: 600_000, availableFrom: "2031-05-01" },
+    ]);
+    // Sin escalera no se serializa un campo: la ausencia ES el estado.
+    expect(doc.assets.find((a) => a.id === "pp_bloque")?.contributionLots).toBe(
+      undefined,
+    );
+
+    // Por la puerta de verdad: un campo que el contrato no conozca tumbar\u00eda el
+    // documento entero, y con \u00e9l todas las copias de seguridad (#1602).
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(parsed.value);
+
+    expect(await restored.assets.readContributionLots("pp_escalera")).toEqual([
+      expect.objectContaining({ amountMinor: 400_000, availableFrom: "2024-03-01" }),
+      expect.objectContaining({ amountMinor: 600_000, availableFrom: "2031-05-01" }),
+    ]);
+    expect(await restored.assets.readContributionLots("pp_bloque")).toEqual([]);
+
+    source.close();
+    restored.close();
+  });
+});

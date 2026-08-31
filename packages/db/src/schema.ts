@@ -1027,6 +1027,36 @@ export const contributionAllowanceHoldings = sqliteTable(
   (table) => [primaryKey({ columns: [table.allowanceId, table.assetId] })],
 );
 
+/**
+ * Los lotes de aportación de un holding a plazo (#1676, fase 2 de #1528): el plan de
+ * pensiones que es una escalera y no un bloque.
+ *
+ * Un lote es un HECHO DECLARADO del mismo rango que un anchor de valoración. No toca
+ * unidades y no toca coste — el coste sigue siendo medio, nunca FIFO, y cualquier
+ * lectura que intente reconstruir FIFO desde aquí inventa descuadres. Lo que se guarda
+ * es una fecha y un importe; lo disponible a un día se DERIVA en lectura y no se
+ * persiste jamás (ADR 0074, ADR 0100).
+ *
+ * `amount_minor` es del holding entero, como el valor del que cuelga: quien mida un
+ * ámbito lo reparte por la misma propiedad con la que reparte ese valor.
+ */
+export const contributionLots = sqliteTable(
+  "contribution_lots",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    /** Desde cuándo este tramo se puede tocar (`YYYY-MM-DD`), tal y como se declaró. */
+    availableFrom: text("available_from").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    index("contribution_lots_asset_idx").on(table.assetId, table.availableFrom),
+  ],
+);
+
 /** Intermediate financial goals (PRD #421, #424). */
 export const goals = sqliteTable("goals", {
   id: text("id").primaryKey(),

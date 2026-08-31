@@ -29,7 +29,13 @@ import {
 } from "./agent-view-public-ids";
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
-import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
+import {
+  assetOwnerships,
+  assets,
+  assetValuations,
+  contributionLots,
+  investmentAssets,
+} from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
 import { checkAssetTrashGate } from "./trash-gate";
 import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
@@ -289,6 +295,39 @@ export interface AssetStore {
   setAvailableFrom: (assetId: string, availableFrom: string | null) => Promise<void>;
   /** Leer la fecha de disponibilidad declarada de un holding, o null (#1528). */
   readAvailableFrom: (assetId: string) => Promise<string | null>;
+  /**
+   * Reemplazar los lotes de aportación de un holding a plazo (#1676). La lista
+   * ENTERA, nunca un `push`: la escalera de un plan es una declaración completa, y
+   * mezclar altas sueltas con un borrado por id dejaría estados intermedios en los
+   * que el holding dice tener menos capital fechado del que su dueño cree.
+   *
+   * Rechaza igual que `setAvailableFrom` —solo el escalón `term-locked`— y con la
+   * misma regla de fecha real, porque este seam también está exportado. Un importe
+   * que no sea un entero positivo se rechaza: un lote de cero no es una declaración
+   * y uno negativo no es nada.
+   *
+   * No escribe ningún hecho fechado y no ripplea: lo único que lee los lotes es el
+   * reparto del gasto sostenible, que se recalcula en cada lectura.
+   */
+  replaceContributionLots: (
+    assetId: string,
+    lots: readonly { availableFrom: string; amountMinor: number }[],
+  ) => Promise<void>;
+  /**
+   * Añadir un lote a la escalera existente, leyendo y reescribiendo dentro de UNA
+   * transacción (#1676). Existe para que la Server Action no tenga que hacer el
+   * read-modify-write por su cuenta, donde dos pestañas se pisarían.
+   */
+  addContributionLot: (
+    assetId: string,
+    lot: { availableFrom: string; amountMinor: number },
+  ) => Promise<void>;
+  /** Quitar un lote por su id, con la misma atomicidad que el alta (#1676). */
+  removeContributionLot: (assetId: string, lotId: string) => Promise<void>;
+  /** Leer los lotes de aportación de un holding, de antes a después (#1676). */
+  readContributionLots: (
+    assetId: string,
+  ) => Promise<{ id: string; availableFrom: string; amountMinor: number }[]>;
   /** Set (or clear, with null) an asset's valuation cadence (ADR 0031). */
   setValuationCadence: (
     assetId: string,
@@ -343,6 +382,11 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     setAvailableFrom: (assetId, availableFrom) =>
       setAvailableFrom(ctx, assetId, availableFrom),
     readAvailableFrom: (assetId) => readAvailableFrom(ctx, assetId),
+    replaceContributionLots: (assetId, lots) =>
+      replaceContributionLots(ctx, assetId, lots),
+    addContributionLot: (assetId, lot) => addContributionLot(ctx, assetId, lot),
+    removeContributionLot: (assetId, lotId) => removeContributionLot(ctx, assetId, lotId),
+    readContributionLots: (assetId) => readContributionLots(ctx, assetId),
     setValuationCadence: (assetId, cadence) => setValuationCadence(ctx, assetId, cadence),
     readValuationCadence: (assetId) => readValuationCadence(ctx, assetId),
     valueHousingAtDate: (assetId, targetDate, today) =>
@@ -715,6 +759,143 @@ async function readAvailableFrom(
     .get();
 
   return row?.availableFrom ?? null;
+}
+
+/**
+ * La escalera de un holding a plazo, escrita entera (#1676).
+ *
+ * Borrar y volver a insertar, y no un diff: la lista que llega ES la declaración, así
+ * que el estado final no puede depender de qué había antes. Un `id` nuevo por fila en
+ * cada escritura es deliberado — un lote no es una entidad que el usuario siga entre
+ * ediciones, es una línea de una declaración que se reemplaza de una pieza.
+ */
+async function replaceContributionLots(
+  ctx: StoreContext,
+  assetId: string,
+  lots: readonly { availableFrom: string; amountMinor: number }[],
+): Promise<void> {
+  const row = await ctx.db
+    .select({ liquidityTier: assets.liquidityTier })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  if (!row) {
+    throw new Error(`Asset "${assetId}" not found.`);
+  }
+
+  // La misma puerta que `setAvailableFrom`: el peldaño es el dueño de la pregunta.
+  if (row.liquidityTier !== "term-locked") {
+    throw new Error("Only a term-locked holding can declare contribution lots.");
+  }
+
+  for (const lot of lots) {
+    // `isRealCalendarDay` y no solo el patrón, por lo mismo que la fecha única: el
+    // 30 de febrero pasa la forma y `Date` lo desplaza en silencio.
+    if (!isRealCalendarDay(lot.availableFrom)) {
+      throw new Error(
+        `Contribution lot date must be a real YYYY-MM-DD day, got "${lot.availableFrom}".`,
+      );
+    }
+    if (!Number.isSafeInteger(lot.amountMinor) || lot.amountMinor <= 0) {
+      throw new Error(
+        `Contribution lot amount must be a positive integer of minor units, got "${lot.amountMinor}".`,
+      );
+    }
+  }
+
+  // Borrado e inserción en UNA transacción: la escalera se reemplaza de una pieza, y
+  // sin esto un insert que falle dejaría al holding sin ningún lote — un plan entero
+  // leyéndose como capital sin fechar por un error a mitad de escritura.
+  await ctx.transaction(async () => {
+    await ctx.db
+      .delete(contributionLots)
+      .where(eq(contributionLots.assetId, assetId))
+      .run();
+
+    if (lots.length > 0) {
+      await ctx.db
+        .insert(contributionLots)
+        .values(
+          lots.map((lot) => ({
+            amountMinor: lot.amountMinor,
+            assetId,
+            availableFrom: lot.availableFrom,
+            id: ctx.newId(),
+          })),
+        )
+        .run();
+    }
+
+    await ctx.writeAuditEntry("replace_contribution_lots", "asset", assetId, {
+      lots: lots.length,
+    });
+  });
+}
+
+/**
+ * Añadir un lote a la escalera, leyendo y reescribiendo DENTRO de una transacción
+ * (#1676). El read-modify-write no puede vivir en la Server Action: dos pestañas
+ * declarando lotes a la vez leerían la misma escalera y la segunda escritura borraría
+ * el lote de la primera sin que nadie se entere.
+ */
+async function addContributionLot(
+  ctx: StoreContext,
+  assetId: string,
+  lot: { availableFrom: string; amountMinor: number },
+): Promise<void> {
+  await ctx.transaction(async () => {
+    const existing = await readContributionLots(ctx, assetId);
+    await replaceContributionLots(ctx, assetId, [
+      ...existing.map((row) => ({
+        amountMinor: row.amountMinor,
+        availableFrom: row.availableFrom,
+      })),
+      lot,
+    ]);
+  });
+}
+
+/**
+ * Quitar un lote de la escalera por su id, con la misma atomicidad que el alta. Un id
+ * que ya no está no es un error: la escalera ya no lo tiene, que es lo que se pedía.
+ */
+async function removeContributionLot(
+  ctx: StoreContext,
+  assetId: string,
+  lotId: string,
+): Promise<void> {
+  await ctx.transaction(async () => {
+    const existing = await readContributionLots(ctx, assetId);
+    const remaining = existing.filter((row) => row.id !== lotId);
+    if (remaining.length === existing.length) {
+      return;
+    }
+    await replaceContributionLots(
+      ctx,
+      assetId,
+      remaining.map((row) => ({
+        amountMinor: row.amountMinor,
+        availableFrom: row.availableFrom,
+      })),
+    );
+  });
+}
+
+async function readContributionLots(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<{ id: string; availableFrom: string; amountMinor: number }[]> {
+  return ctx.db
+    .select({
+      amountMinor: contributionLots.amountMinor,
+      availableFrom: contributionLots.availableFrom,
+      id: contributionLots.id,
+    })
+    .from(contributionLots)
+    .where(eq(contributionLots.assetId, assetId))
+    .orderBy(contributionLots.availableFrom)
+    .all();
 }
 
 async function setValuationCadence(

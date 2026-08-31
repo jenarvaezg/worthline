@@ -6018,14 +6018,67 @@ td.rowActions > * {
 /* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico» y que el
    plegable, no dentro de ellos, así que comparte su ritmo y su encabezado en vez de
    repetir una receta equivalente al lado (design-system §7). */
+/* `.holdingLots` (#1676) entra en el mismo grupo y no en una regla equivalente al
+   lado: la escalera de lotes es la superficie de disponibilidad con más resolución, y
+   dos recetas idénticas se separan en cuanto una de las dos se toca. */
 .editBasic,
 .editAdvanced,
-.holdingAvailability {
+.holdingAvailability,
+.holdingLots {
   margin-top: 18px;
 }
 
+.lotList {
+  border-left: 1px solid var(--hairline);
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 0 0 12px;
+}
+
+.lotRow {
+  align-items: baseline;
+  display: grid;
+  font-size: 0.82rem;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.lotRow strong {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* «Quitar» es un control de TEXTO, no un botón de papel (design-system §4): la misma
+   receta que `.assistantRowAside button`, escrita aquí porque aquella vive anidada
+   bajo `.assistantProposal` y no se puede citar desde fuera de ese bloque. */
+.lotRow button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-height: 0;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.lotRow button:hover:not(:disabled) {
+  color: var(--blue);
+}
+
+.lotDate {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editBasic h3,
-.holdingAvailability h3 {
+.holdingAvailability h3,
+.holdingLots h3 {
   color: var(--ink);
   font-size: 1rem;
   font-weight: 650;
@@ -6033,7 +6086,8 @@ td.rowActions > * {
 }
 
 .editAdvanced,
-.holdingAvailability {
+.holdingAvailability,
+.holdingLots {
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }

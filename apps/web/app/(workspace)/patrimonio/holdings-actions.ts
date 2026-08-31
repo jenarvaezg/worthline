@@ -7,6 +7,7 @@ import {
   errorRedirectUrl,
   mapDomainViolation,
   parseAvailableFromStrict,
+  parseContributionLot,
   parseEntityId,
   parseOwnership,
   preserveFields,
@@ -509,6 +510,107 @@ export async function editAssetAction(
  * historia. Lo \u00fanico que lo lee es el reparto del gasto sostenible de agotamiento,
  * que se recalcula entero en cada lectura.
  */
+/**
+ * Añadir un lote a la escalera de un holding a plazo (#1676).
+ *
+ * Lee la escalera actual y la reescribe entera con el lote nuevo dentro: el seam
+ * reemplaza de una pieza porque una escalera ES una declaración completa, y una acción
+ * incremental encima de él es lo que hace usable declararla con el extracto delante.
+ *
+ * `datedFact: false` por lo mismo que la fecha única: no escribe ningún hecho fechado y
+ * no re-deriva historia — lo único que lee los lotes es el reparto del gasto
+ * sostenible, que se recalcula entero en cada lectura.
+ */
+export async function addContributionLotAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<{ availableFrom: string; amountMinor: number }, undefined>({
+    datedFact: false,
+    missingId: "Identificador de activo no encontrado.",
+    parse: ({ formData }) => {
+      const parsed = parseContributionLot(formData);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(baseUrl(formData), {
+            formId: "contributionLot",
+            message: parsed.error,
+            values: preserveFields(formData, ["lotAvailableFrom", "lotAmount"]),
+          }),
+        };
+      }
+      return {
+        ok: true,
+        value: { amountMinor: parsed.amountMinor, availableFrom: parsed.availableFrom },
+      };
+    },
+    run: async (store, { id, parsed }) => {
+      const asset = await findAsset(store, id);
+      if (!asset) {
+        return { ok: false, error: "No se encontr\u00f3 el activo." };
+      }
+      // El mismo rechazo que el seam, en las palabras del usuario.
+      if (asset.liquidityTier !== "term-locked") {
+        return {
+          ok: false,
+          error:
+            "Solo un holding en el escal\u00f3n \u00abA plazo\u00bb puede declarar lotes de aportaci\u00f3n.",
+        };
+      }
+      // El read-modify-write vive en el seam, dentro de una transacción: hacerlo aquí
+      // dejaría que dos pestañas leyeran la misma escalera y una perdiera su lote.
+      await store.assets.addContributionLot(id, {
+        amountMinor: parsed.amountMinor,
+        availableFrom: parsed.availableFrom,
+      });
+      return { ok: true, value: undefined };
+    },
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "contributionLot", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "contribution_lot_saved"),
+  })(formData, ..._testArgs);
+}
+
+/**
+ * Quitar un lote de la escalera (#1676). Se identifica por el id que la lectura acaba
+ * de dar: los ids se regeneran en cada escritura —un lote es una línea de una
+ * declaración, no una entidad que nadie siga entre ediciones— así que este id vale para
+ * la pantalla que lo está enseñando y para nada más.
+ */
+export async function removeContributionLotAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<{ lotId: string }, undefined>({
+    datedFact: false,
+    missingId: "Identificador de activo no encontrado.",
+    parse: ({ formData }) => {
+      const lotId = String(formData.get("lotId") ?? "").trim();
+      if (!lotId) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(baseUrl(formData), {
+            formId: "contributionLot",
+            message: "No se encontr\u00f3 el lote que quieres quitar.",
+          }),
+        };
+      }
+      return { ok: true, value: { lotId } };
+    },
+    run: async (store, { id, parsed }) => {
+      // Un id que ya no está es una pantalla vieja, no un error del usuario: la
+      // escalera ya no lo tiene, que es justo lo que él pedía. El seam lo trata así y
+      // hace el read-modify-write dentro de una transacción.
+      await store.assets.removeContributionLot(id, parsed.lotId);
+      return { ok: true, value: undefined };
+    },
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "contributionLot", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "contribution_lot_removed"),
+  })(formData, ..._testArgs);
+}
+
 export async function setHoldingAvailableFromAction(
   formData: FormData,
   ..._testArgs: unknown[]

@@ -114,6 +114,47 @@ FIRE number, the perpetual half and every figure of today stay exactly as they w
   and it is orthogonal to this one. This ADR says *how much* is available and *from
   when*; that one says which side the rest sits on.
 
+## Amendment (#1676): phase 2 — the ladder, and where the redemption window lives
+
+Phase 1 asked «from when?» once. A pension plan in progress is usually two things at once,
+so `contribution_lots(asset_id, available_from, amount_minor)` now lets a holding declare
+several tranches. Four decisions are worth recording, because each one had a tempting
+alternative.
+
+**A lot declares an availability date, not a contribution date.** The issue's shape left
+`contribution_date | liquidity_date` open. Storing the contribution date would force the
+engine to apply the ten-year window to derive anything, putting a legal rule inside the FIRE
+calculation — a rule that can change, over capital the owner never declared as blocked. The
+lot stores the day the money can be touched, exactly like phase 1's single date, and the
+engine stays ignorant of what a fiscal year is.
+
+**The window is an interface suggestion, never a derivation.** When a holding carries
+inherited seniority (#1518), the ficha PRE-FILLS the lot date with seniority + ten years and
+says where the figure comes from; the owner confirms or corrects it, and what is stored is
+his declaration. `PENSION_LIQUIDITY_WINDOW_YEARS` lives in the intake layer for that reason.
+This is what phase 1 warned against doing automatically, honoured: seniority still never
+becomes an availability date on its own.
+
+**When the value does not cover what was declared, the LOCK is served first.** A plan moves
+with the market while its contributions stand still, so the two sums almost never agree.
+So: `locked = min(Σ pending lots, value)`, then `available = min(Σ matured lots, what is
+left)`, and the remainder is the undeclared gap phase 1 already names. The order is the
+policy, not a detail — serving the available half first leaves a plan with 4.000 € matured,
+6.000 € pending and a value sunk to 3.000 € reading as 100 % liquid today, honouring the
+letter of the cap while promising exactly the locked money these modules exist not to
+promise. And a remainder no lot covers is never available capital: that would be the
+illusion #1447 exists to kill, one rung up.
+
+**When the lots exceed the value, the lock fills from the LATEST tranche backwards.** A plan
+worth less than its contributions does not say which of them lost the value, so among the
+possible readings we take the one that releases the money latest. Same conservative
+direction `resolveCapitalAvailability` trims in, and for the same reason.
+
+Two things phase 2 deliberately does NOT change: the engine still reads no clock of its own
+(the day arrives from the caller, and without one a holding with lots reads as an undeclared
+gap rather than as a lock), and `sideOfTier` remains #1523's decision — a lot says *when*,
+never *which column*.
+
 ## Status
 
-Accepted (#1528).
+Accepted (#1528); amended and extended by #1676.

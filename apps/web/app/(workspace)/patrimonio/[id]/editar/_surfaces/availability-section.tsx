@@ -36,6 +36,7 @@ export function AvailabilitySection({
   availableFrom,
   currentUrl,
   formError,
+  supersededByLots,
   today,
 }: {
   /** Internal storage id — hidden form plumbing, never a URL (#1318). */
@@ -45,6 +46,12 @@ export function AvailabilitySection({
   /** The holding's own public `wl_hld_…` URL, where the form returns. */
   currentUrl: string;
   formError: FormErrorContext | null;
+  /**
+   * Si el holding ha declarado lotes (#1676), que mandan sobre esta fecha. Se dice en
+   * voz alta: un campo que sigue guardando y ya no decide nada es peor que no estar,
+   * porque el dueño cree haber declarado algo que el motor no está leyendo.
+   */
+  supersededByLots: boolean;
   /** Hoy, como clave ISO. El MISMO reloj con el que el motor resuelve la fecha. */
   today: string;
 }) {
@@ -74,7 +81,13 @@ export function AvailabilitySection({
         <button type="submit">Guardar fecha</button>
       </form>
 
-      {availableFrom === null ? (
+      {supersededByLots ? (
+        <p className="infoNote">
+          Has declarado lotes de aportación más abajo, y mandan ellos: esta fecha se
+          guarda pero no está decidiendo nada. Quita todos los lotes para que vuelva a
+          mandar.
+        </p>
+      ) : availableFrom === null ? (
         <p className="infoNote">{AVAILABLE_FROM_UNDECLARED_NOTE}</p>
       ) : (
         <p className="availabilityReadout">

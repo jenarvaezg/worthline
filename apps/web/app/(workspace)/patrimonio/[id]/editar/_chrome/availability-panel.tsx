@@ -14,9 +14,12 @@
  * exactamente lo que #1607 vino a quitar.
  */
 
+import { suggestedLotAvailableFrom } from "@web/intake";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { AvailabilitySection } from "@web/patrimonio/[id]/editar/_surfaces/availability-section";
+import { ContributionLotsSection } from "@web/patrimonio/[id]/editar/_surfaces/contribution-lots-section";
 import type { ManualAsset } from "@worthline/domain";
+import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactNode } from "react";
 
 export async function loadAvailabilityPanel(
@@ -30,16 +33,50 @@ export async function loadAvailabilityPanel(
     return null;
   }
 
-  const { currentUrl, formError, id, store, today } = ficha;
+  const { currentUrl, formError, id, privacyMode, store, today } = ficha;
   const availableFrom = await store.assets.readAvailableFrom(id);
+  const lots = await store.assets.readContributionLots(id);
+
+  // La antigüedad heredada que #1518 declaró, si la hay: de ella sale la fecha que la
+  // ficha SUGIERE para un lote nuevo. Con varias movilizaciones se toma la más
+  // RECIENTE, que es la que libera más tarde: una sugerencia se confirma de un vistazo,
+  // así que equivocarse tiene que caer del lado que no promete liquidez antes de
+  // tiempo. Es la misma dirección conservadora que ADR 0100 fija para el reparto.
+  //
+  // Nunca de `executed_at`: esa es la fecha del trámite, y leerla como antigüedad
+  // diría «bloqueado hasta 2035» sobre dinero rescatable hoy (#1490, #1518).
+  const operations = await store.operations.readOperations(id);
+  const seniorityAt = operations
+    .map((operation) => operation.transferSeniorityAt)
+    .filter((date): date is string => typeof date === "string")
+    .sort()
+    .at(-1);
 
   return (
-    <AvailabilitySection
-      assetId={asset.id}
-      availableFrom={availableFrom}
-      currentUrl={currentUrl}
-      formError={formError}
-      today={today}
-    />
+    <>
+      <AvailabilitySection
+        assetId={asset.id}
+        availableFrom={availableFrom}
+        currentUrl={currentUrl}
+        formError={formError}
+        supersededByLots={lots.length > 0}
+        today={today}
+      />
+      <ContributionLotsSection
+        assetId={asset.id}
+        currentUrl={currentUrl}
+        formatMoney={(amountMinor) =>
+          formatMoneyMinorPrivacy(
+            { amountMinor, currency: asset.currentValue.currency },
+            privacyMode,
+          )
+        }
+        formError={formError}
+        holdingMinor={asset.currentValue.amountMinor}
+        lots={lots}
+        suggestedAvailableFrom={suggestedLotAvailableFrom(seniorityAt ?? null)}
+        today={today}
+      />
+    </>
   );
 }

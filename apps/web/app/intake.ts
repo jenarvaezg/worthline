@@ -47,6 +47,14 @@ export {
   parseAvailableFromStrict,
 } from "./intake/availability";
 export {
+  CONTRIBUTION_LOT_HELP,
+  CONTRIBUTION_LOT_PARTIAL_NOTE,
+  type ContributionLotResult,
+  PENSION_LIQUIDITY_WINDOW_YEARS,
+  parseContributionLot,
+  suggestedLotAvailableFrom,
+} from "./intake/contribution-lots";
+export {
   type DebtModelResult,
   parseAmortizationPlanStrict,
   parseBalanceAnchorStrict,
@@ -531,6 +539,8 @@ export function okMessage(key: string | undefined): string | null {
     // de hoy — solo cambia de qué año puede salir el dinero en el reparto que agota.
     available_from_cleared: "Fecha de disponibilidad borrada.",
     available_from_saved: "Fecha de disponibilidad guardada.",
+    contribution_lot_removed: "Lote quitado.",
+    contribution_lot_saved: "Lote de aportaci\u00f3n guardado.",
     // #1561: the alta went in exactly as any other — the acquisition-date
     // question rides beside it as its own aviso (see `resolveOkNotice`), never
     // dressed up as a confirmation.

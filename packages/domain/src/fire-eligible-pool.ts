@@ -13,6 +13,8 @@
  */
 
 import { tierOfAsset } from "./classification";
+import type { ContributionLot } from "./contribution-lots";
+import { resolveHoldingLots } from "./contribution-lots";
 import type { FireScopeConfig } from "./fire";
 import type { DeclaredAvailability } from "./fire-capital-availability";
 import type { RentRealReturns, RentReturnNotice } from "./fire-rent-return";
@@ -49,6 +51,13 @@ export interface AssembleFireEligiblePoolInput {
    * declaration actually took effect for this scope.
    */
   rentRealReturns?: RentRealReturns;
+  /**
+   * El día de lectura, cuando el llamador lo trae. Solo lo reclaman los lotes de
+   * aportación (#1676): decidir qué tramo ya venció es la única pregunta de este
+   * módulo que necesita un reloj. Sin él, un holding con lotes se declara entero como
+   * hueco — que es lo único cierto que se puede decir sin saber qué día es.
+   */
+  todayISO?: string;
 }
 
 export interface FireEligiblePool {
@@ -165,14 +174,21 @@ export function assembleFireEligiblePool(
       // en el escalón que la reclama: un holding que cambia de peldaño deja su fecha
       // inerte en vez de convertirla en un bloqueo que el peldaño no pide.
       if (ownedMinor > 0 && tier === "term-locked") {
-        if (asset.availableFrom) {
-          declaredAvailability.push({
-            amountMinor: ownedMinor,
-            availableFrom: asset.availableFrom,
-          });
-        } else {
-          undeclaredTermLockedMinor += ownedMinor;
-        }
+        // Los lotes (#1676) se declaran sobre el holding ENTERO, igual que el valor
+        // del que cuelgan, así que se reparten por la misma propiedad que acaba de
+        // repartir ese valor. Sin lotes esto devuelve exactamente la fase 1.
+        const resolved = resolveHoldingLots({
+          availableFrom: asset.availableFrom,
+          holdingMinor: ownedMinor,
+          lots: scaleLotsToOwned(
+            asset.contributionLots ?? [],
+            ownedMinor,
+            asset.currentValue.amountMinor,
+          ),
+          todayISO: input.todayISO,
+        });
+        declaredAvailability.push(...resolved.declared);
+        undeclaredTermLockedMinor += resolved.undeclaredMinor;
       }
       // An asset the scope owns nothing of weighs nothing, so neither its derived
       // rate nor a warning about it belongs to this scope (#1448).
@@ -242,4 +258,56 @@ export function assembleFireEligiblePool(
     assetRateOverrides,
     rentReturnNotices,
   };
+}
+
+/**
+ * Los lotes declarados sobre el holding entero, reducidos a lo que el ámbito posee.
+ *
+ * Por la MISMA fracción con la que ya se repartió el valor, y no por los bps de la
+ * propiedad: un holding puede valer 0 y sus lotes no, y volver a preguntarle a la
+ * propiedad abriría la puerta a que las dos cuentas discrepasen.
+ *
+ * Se escala sobre la suma ACUMULADA y no lote a lote, que es lo que garantiza que los
+ * importes escalados sumen exactamente lo mismo que el acumulado escalado. Redondear
+ * cada lote por su cuenta desvía céntimos, y aquí un céntimo no se pierde: reaparece
+ * en la pantalla como «capital a plazo sin fecha» de 0,01 €, que es una frase falsa
+ * sobre un descuadre de redondeo.
+ *
+ * Con el holding a cero no hay nada que repartir, y el llamador ya lo trata como tal.
+ */
+function scaleLotsToOwned(
+  lots: readonly ContributionLot[],
+  ownedMinor: number,
+  totalMinor: number,
+): ContributionLot[] {
+  if (totalMinor <= 0) {
+    return [];
+  }
+
+  const scaled: ContributionLot[] = [];
+  let cumulativeMinor = 0;
+  let cumulativeScaledMinor = 0;
+
+  for (const lot of lots) {
+    cumulativeMinor += lot.amountMinor;
+    const nextScaledMinor = scaleToOwned(cumulativeMinor, ownedMinor, totalMinor);
+    scaled.push({
+      amountMinor: nextScaledMinor - cumulativeScaledMinor,
+      availableFrom: lot.availableFrom,
+    });
+    cumulativeScaledMinor = nextScaledMinor;
+  }
+
+  return scaled;
+}
+
+function scaleToOwned(
+  amountMinor: number,
+  ownedMinor: number,
+  totalMinor: number,
+): number {
+  if (totalMinor <= 0) {
+    return 0;
+  }
+  return Math.round((amountMinor * ownedMinor) / totalMinor);
 }

@@ -23,7 +23,11 @@ function makeAsset(
   overrides: Partial<
     Pick<
       ManualAsset,
-      "availableFrom" | "isPrimaryResidence" | "liquidityTier" | "ownership"
+      | "availableFrom"
+      | "contributionLots"
+      | "isPrimaryResidence"
+      | "liquidityTier"
+      | "ownership"
     >
   > = {},
 ): ManualAsset {
@@ -40,6 +44,9 @@ function makeAsset(
     ],
     isPrimaryResidence: overrides.isPrimaryResidence ?? false,
     ...(overrides.availableFrom ? { availableFrom: overrides.availableFrom } : {}),
+    ...(overrides.contributionLots
+      ? { contributionLots: overrides.contributionLots }
+      : {}),
   };
 }
 
@@ -69,6 +76,7 @@ function assemble(
   assets: ManualAsset[],
   liabilities: Liability[] = [],
   excludedAssetIds: string[] = [],
+  todayISO?: string,
 ) {
   return assembleFireEligiblePool({
     config: { excludedAssetIds },
@@ -76,6 +84,7 @@ function assemble(
     liabilities,
     workspace,
     scopeId: HOUSEHOLD_SCOPE,
+    ...(todayISO === undefined ? {} : { todayISO }),
   });
 }
 
@@ -476,6 +485,99 @@ describe("assembleFireEligiblePool \u2014 la disponibilidad declarada (#1528)", 
       ],
       [],
       ["pp"],
+    );
+
+    expect(pool.declaredAvailability).toEqual([]);
+    expect(pool.undeclaredTermLockedMinor).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1676: el plan de pensiones que es una escalera. El pool es donde los lotes se
+// reparten por propiedad, que es lo único que la resolución de lotes no puede saber.
+// ---------------------------------------------------------------------------
+
+describe("assembleFireEligiblePool \u2014 los lotes de aportaci\u00f3n (#1676)", () => {
+  const TODAY = "2026-08-31";
+
+  it("escala cada lote por lo que el \u00e1mbito posee, como el valor del que cuelgan", () => {
+    const pool = assemble(
+      [
+        makeAsset("pp", 1_000_000, {
+          contributionLots: [
+            { amountMinor: 400_000, availableFrom: "2024-03-01" },
+            { amountMinor: 600_000, availableFrom: "2031-05-01" },
+          ],
+          liquidityTier: "term-locked",
+          ownership: [{ memberId: "alice", shareBps: 5000 }],
+        }),
+      ],
+      [],
+      [],
+      TODAY,
+    );
+
+    // El hogar posee la mitad: 2.000 \u20ac ya rescatables y 3.000 \u20ac bloqueados hasta 2031.
+    expect(pool.declaredAvailability).toEqual([
+      { amountMinor: 300_000, availableFrom: "2031-05-01" },
+    ]);
+    expect(pool.undeclaredTermLockedMinor).toBe(0);
+  });
+
+  it("lo que los lotes no explican sigue siendo un hueco con nombre", () => {
+    const pool = assemble(
+      [
+        makeAsset("pp", 1_055_658, {
+          contributionLots: [
+            { amountMinor: 400_000, availableFrom: "2024-03-01" },
+            { amountMinor: 200_000, availableFrom: "2031-05-01" },
+          ],
+          liquidityTier: "term-locked",
+          ownership: [{ memberId: "alice", shareBps: 10_000 }],
+        }),
+      ],
+      [],
+      [],
+      TODAY,
+    );
+
+    expect(pool.declaredAvailability).toEqual([
+      { amountMinor: 200_000, availableFrom: "2031-05-01" },
+    ]);
+    expect(pool.undeclaredTermLockedMinor).toBe(455_658);
+  });
+
+  it("sin lotes el pool se comporta exactamente como en la fase 1", () => {
+    const pool = assemble(
+      [
+        makeAsset("pp", 1_000_000, {
+          availableFrom: "2035-06-01",
+          liquidityTier: "term-locked",
+          ownership: [{ memberId: "alice", shareBps: 10_000 }],
+        }),
+      ],
+      [],
+      [],
+      TODAY,
+    );
+
+    expect(pool.declaredAvailability).toEqual([
+      { amountMinor: 1_000_000, availableFrom: "2035-06-01" },
+    ]);
+  });
+
+  it("un holding fuera del escal\u00f3n a plazo deja sus lotes inertes", () => {
+    const pool = assemble(
+      [
+        makeAsset("fondo", 1_000_000, {
+          contributionLots: [{ amountMinor: 1_000_000, availableFrom: "2031-05-01" }],
+          liquidityTier: "market",
+          ownership: [{ memberId: "alice", shareBps: 10_000 }],
+        }),
+      ],
+      [],
+      [],
+      TODAY,
     );
 
     expect(pool.declaredAvailability).toEqual([]);

@@ -1,3 +1,4 @@
+import type { ContributionLot } from "./contribution-lots";
 import type { DomainResult, DomainViolation } from "./domain-result";
 import type { Instrument } from "./instrument-catalog";
 import { defaultInstrumentForAssetType } from "./instrument-catalog";
@@ -139,6 +140,16 @@ export interface ManualAsset {
    * convertirla en un bloqueo que el peldaño no reclama.
    */
   availableFrom?: string;
+  /**
+   * Los lotes de aportación declarados (#1676, fase 2 de #1528): el plan de pensiones
+   * que es una escalera y no un bloque. Ausente o vacío = no hay escalera, y manda
+   * `availableFrom`.
+   *
+   * Importes del holding ENTERO, como el valor del que cuelgan: quien mida un ámbito
+   * los reparte por la misma propiedad que reparte el valor. Y solo los lee el escalón
+   * `term-locked`, igual que la fecha única.
+   */
+  contributionLots?: ContributionLot[];
 }
 
 export type LiabilityType = "mortgage" | "debt";
@@ -180,6 +191,8 @@ export interface CreateManualAssetInput {
   connectedSourceId?: string;
   /** Desde cuándo se puede tocar el holding (#1528, ADR 0100), cuando se ha declarado. */
   availableFrom?: string;
+  /** Los lotes de aportación declarados (#1676), cuando el holding es una escalera. */
+  contributionLots?: ContributionLot[];
 }
 
 export interface CreateLiabilityInput {
@@ -221,6 +234,9 @@ export function createManualAsset(
     ...(input.isin ? { isin: input.isin } : {}),
     ...(input.connectedSourceId ? { connectedSourceId: input.connectedSourceId } : {}),
     ...(input.availableFrom ? { availableFrom: input.availableFrom } : {}),
+    ...(input.contributionLots && input.contributionLots.length > 0
+      ? { contributionLots: input.contributionLots }
+      : {}),
   };
 }
 

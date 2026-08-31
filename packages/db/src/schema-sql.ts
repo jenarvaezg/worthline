@@ -537,5 +537,15 @@ CREATE TABLE \`managed_portfolio_holdings\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX \`managed_portfolio_holdings_asset_unique\` ON \`managed_portfolio_holdings\` (\`asset_id\`);
+CREATE UNIQUE INDEX \`managed_portfolio_holdings_asset_unique\` ON \`managed_portfolio_holdings\` (\`asset_id\`);--> statement-breakpoint
+CREATE TABLE \`contribution_lots\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`available_from\` text NOT NULL,
+	\`amount_minor\` integer NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`contribution_lots_asset_idx\` ON \`contribution_lots\` (\`asset_id\`,\`available_from\`);
 `;

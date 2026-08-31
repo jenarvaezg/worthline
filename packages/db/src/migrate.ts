@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 68;
+export const SCHEMA_VERSION = 69;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2068,6 +2068,38 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       }
     }
     await writeSchemaVersion(client, 68);
+  }
+
+  if (version < 69) {
+    // #1676 (fase 2 de #1528): `contribution_lots` — el plan de pensiones que es una
+    // ESCALERA y no un bloque. La fase 1 le puso una fecha al holding entero, que basta
+    // para «bloqueado hasta los 65» y se queda corta para un PP en curso: desde 2025 se
+    // rescatan las aportaciones con más de diez años, así que casi siempre hay un tramo
+    // ya disponible y otro que no.
+    //
+    // Tabla nueva y VACÍA, sin backfill, por la misma razón que v66 y v67 no rellenan
+    // nada: la fecha que el libro tiene no es la que hace falta. Las dos entradas de
+    // plan de pensiones de la cartera real son altas por movilización externa (#1518),
+    // y su fila lleva el día del trámite. La antigüedad heredada que v66 abrió sirve
+    // para SUGERIR la fecha en la ficha —donde el dueño la confirma— y nunca para
+    // escribir un lote a su espalda: ir de «desde cuándo cuenta la antigüedad» a «desde
+    // cuándo se puede tocar» exige la ventana normativa, que es una regla legal y no un
+    // hecho del libro.
+    //
+    // Sin lotes, cada holding se sigue comportando por su `available_from` y ninguna
+    // cifra de hoy se mueve.
+    await client.executeMultiple(
+      `CREATE TABLE IF NOT EXISTS contribution_lots (
+        id TEXT PRIMARY KEY NOT NULL,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        available_from TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS contribution_lots_asset_idx
+        ON contribution_lots(asset_id, available_from);`,
+    );
+    await writeSchemaVersion(client, 69);
   }
 
   return { ranV18Backfill, ranV33Backfill };

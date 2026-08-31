@@ -1,4 +1,5 @@
 import type { LiquidityTier } from "./classification";
+import type { ContributionLot } from "./contribution-lots";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation, PositionSummary } from "./investment-types";
@@ -49,6 +50,11 @@ export interface RawAssetRow {
    * de una fila del libro.
    */
   availableFrom?: string | null;
+  /**
+   * Los lotes de aportación declarados del holding (#1676), tal cual salen de su
+   * tabla. Ausente = no hay escalera, y manda `availableFrom`.
+   */
+  contributionLots?: ContributionLot[];
 }
 
 /** A raw investment-asset row with only the fields a position view needs. */
@@ -129,6 +135,9 @@ export function projectAssets(
       ...(isin ? { isin } : {}),
       ...(row.connectedSourceId ? { connectedSourceId: row.connectedSourceId } : {}),
       ...(row.availableFrom ? { availableFrom: row.availableFrom } : {}),
+      ...(row.contributionLots && row.contributionLots.length > 0
+        ? { contributionLots: row.contributionLots }
+        : {}),
     });
   });
 }

@@ -815,6 +815,20 @@ stored euro amount expires every year and nobody revalidates it (ADR 0074). Abse
 carries the date of the paperwork, not the seniority of the contributions behind it.
 _Avoid_: «lo disponible» as a stored figure; deriving the date from an operation row.
 
+**Contribution lot** (lote de aportación):
+One declared tranche of a **term-locked** holding — an amount and the day it becomes
+withdrawable (`contribution_lots`, #1676). A pension plan in progress is usually two things
+at once (contributions past the ten-year mark are redeemable, the rest is not), and a single
+**availability date** can only describe the more conservative half. Lots are a **liquidity**
+split and NEVER a tax one: they touch neither units nor cost, which stays average, not FIFO.
+What is available on a day is `min(Σ matured lots, the holding's value)` and everything else
+is locked; whatever the lots do not cover is term-locked capital with no date, not available
+capital. With no lots declared, the holding behaves by its **availability date** alone.
+The ten-year window that turns **inherited seniority** into a lot's date is an interface
+suggestion the owner confirms — it lives in the intake layer, never in the engine.
+_Avoid_: reading lots as a cost basis; deriving lots from the ledger; storing a euro amount
+of «what is available today».
+
 **Liquidity breakdown**:
 The split of a scope's holdings across the rungs of the **liquidity ladder**, each rung
 shown as its share of **gross assets**. The **cash** and **market** rungs together are
