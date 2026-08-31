@@ -418,6 +418,13 @@ const assetSchema = z.object({
   annualAppreciationRate: nonEmptyString.optional(),
   /** Housing valuation anchors (market appraisals + improvements); ordered by date. */
   valuationAnchors: z.array(valuationAnchorSchema).optional(),
+  /**
+   * Desde cuándo el dueño declaró que se puede tocar el holding (#1528, ADR 0100);
+   * solo lo lleva el escalón `term-locked`. Viaja en el fichero porque es una
+   * DECLARACIÓN suya y nada la puede recrear: perderla en un restore la convertiría
+   * en capital disponible desde el primer año sin que nadie lo haya dicho.
+   */
+  availableFrom: nonEmptyString.optional(),
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248);
    *  absent for a hand-maintained holding. Carried so a multi-rung source's link
    *  round-trips (the source row in `connectedSources` names only the primary asset). */

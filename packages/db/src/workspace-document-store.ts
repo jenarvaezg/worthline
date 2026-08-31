@@ -225,6 +225,9 @@ async function importWorkspace(
         .insert(assets)
         .values({
           annualAppreciationRate: asset.annualAppreciationRate ?? null,
+          // Restaurada tal cual (#1528, ADR 0100): sin ella el holding volvería a
+          // «nadie lo ha dicho» y el reparto lo contaría disponible desde el año uno.
+          availableFrom: asset.availableFrom ?? null,
           // The connected-source back-link (ADR 0016/0021, #248), restored verbatim
           // — a plain column, no FK (the source's FK already points the other way).
           connectedSourceId: asset.connectedSourceId ?? null,
@@ -864,6 +867,9 @@ async function buildWorkspaceExport(
         ? { annualAppreciationRate: row.annualAppreciationRate }
         : {}),
       ...(anchors.length > 0 ? { valuationAnchors: anchors } : {}),
+      // La fecha de disponibilidad declarada (#1528, ADR 0100): una declaración del
+      // dueño, así que viaja verbatim — nada la puede volver a derivar en el destino.
+      ...(row.availableFrom ? { availableFrom: row.availableFrom } : {}),
       // The connected-source back-link (ADR 0016/0021, #248), so a multi-rung
       // source's per-rung assets round-trip their link (the source row names only
       // the primary asset).
