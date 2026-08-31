@@ -800,11 +800,14 @@ export type {
 } from "./instrument-correction";
 export {
   assignableInstruments,
+  assignableInstrumentsForHolding,
   instrumentPickerImpact,
   isAssignableInstrument,
+  isAssignableInstrumentForHolding,
   isAssignableInstrumentForShape,
   keepsKnownPartialOwnership,
   ownershipShortfallOnCorrection,
+  shapeOfHolding,
 } from "./instrument-correction";
 export type {
   InstrumentIdentityDeclaration,

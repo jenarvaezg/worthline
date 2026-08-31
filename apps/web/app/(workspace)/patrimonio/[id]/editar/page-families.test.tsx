@@ -53,6 +53,9 @@ const COINS = {
 };
 
 const CRYPTO = {
+  // The asset's OWN back-link (#248): a source materializes one asset per rung, so
+  // this is the routing fact — not the `asset_id` the source row names.
+  connectedSourceId: "source_binance",
   currency: "EUR",
   currentValue: { amountMinor: 2_800_00, currency: "EUR" },
   id: ASSET_ID,
@@ -393,8 +396,24 @@ describe("EditarPage — the coin-collection family (#1607)", () => {
     expect(calls.readSourcePositions).toHaveBeenCalledWith("source_numista");
     expect(calls.readOperations).not.toHaveBeenCalled();
     expect(calls.readPositions).not.toHaveBeenCalled();
-    // Not crypto, so the Binance back-link is never asked for.
+    // The back-link travels on the asset row; no separate lookup is issued.
     expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
+  });
+
+  test("a collection the v14 backfill filed as `other` still gets this ficha", async () => {
+    // The real row (#1691): live source, instrument `other`, so the derivation
+    // calls it `stored`. Routed by its instrument it landed on the hand-valued
+    // surface — no coin lens, and an instrument picker offering to relabel it.
+    calls.readAssets.mockResolvedValue([
+      { ...COINS, connectedSourceId: "source_numista", instrument: "other" },
+    ]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Sincronizar Numista");
+    expect(html).not.toContain("<h3>Operaciones</h3>");
+    // The identity is the source's, so nothing here offers to reclassify it.
+    expect(html).not.toContain('name="instrument"');
   });
 });
 
@@ -420,16 +439,17 @@ describe("EditarPage — the binance family (#1607)", () => {
     expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(tokens);
     expect(html).not.toContain("<h3>Operaciones</h3>");
     // The back-link is the asset's OWN `connected_source_id`, not the source's
-    // `asset_id` — a source materializes one asset per rung (#248), and this
-    // asset is not the one the source row names.
-    expect(calls.readSourceIdForAsset).toHaveBeenCalledWith(ASSET_ID);
+    // `asset_id` — a source materializes one asset per rung (#248), and this asset
+    // is not the one the source row names. It travels on the row the page already
+    // read, so the router needs no extra lookup for it (#1691).
+    expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
     expect(calls.readSourcePositions).toHaveBeenCalledWith("source_binance");
   });
 
   test("the SAME instrument with no source keeps its hand-written ledger", async () => {
     // The one bit that separates a mirrored holding from a manual crypto
-    // position, and the reason the routing question is a read (#248).
-    calls.readSourceIdForAsset.mockResolvedValue(null);
+    // position (#248).
+    calls.readAssets.mockResolvedValue([{ ...CRYPTO, connectedSourceId: null }]);
     calls.readOperations.mockResolvedValue([OPERATION]);
     calls.readPositions.mockResolvedValue([POSITION]);
 

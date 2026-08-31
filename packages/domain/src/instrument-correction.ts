@@ -76,6 +76,28 @@ export function instrumentShape(instrument: Instrument): InstrumentShape {
   return defaults.priceProvider ? "investment" : "connected";
 }
 
+/**
+ * The shape a HOLDING persists as — the row's answer, not its instrument's.
+ *
+ * A connected holding is `connected` whatever its instrument column says (#1691).
+ * Reading the shape off the stored instrument alone let a mislabelled row
+ * self-authorize: a coin collection the v14 backfill filed as `other` came out
+ * `manual`, so the ficha offered to move it among the hand-valued instruments —
+ * the one holding whose identity is not the user's to correct (ADR 0016/0021, ADR
+ * 0102) was
+ * the one holding the picker was willing to edit, and `coin_collection` was not
+ * even among the offers, so the only moves on the menu were wrong ones.
+ */
+export function shapeOfHolding(holding: {
+  instrument: Instrument;
+  connectedSourceId?: string | null;
+}): InstrumentShape {
+  if (holding.connectedSourceId != null) {
+    return "connected";
+  }
+  return instrumentShape(holding.instrument);
+}
+
 /** The shapes a holding can be corrected within. The other two offer no surface. */
 const CORRECTABLE_SHAPES: readonly InstrumentShape[] = ["manual", "investment"];
 
@@ -111,6 +133,27 @@ export function assignableInstrumentsForShape(
 /** Whether `next` is a correction the holding on `current` may actually take. */
 export function isAssignableInstrument(current: Instrument, next: Instrument): boolean {
   return assignableInstruments(current).includes(next);
+}
+
+/**
+ * The same list for a holding whose row is in hand — the form that knows about the
+ * connected source (#1691). Prefer it over {@link assignableInstruments} wherever
+ * the caller holds the asset: a connected holding offers nothing, whatever its
+ * instrument column happens to say.
+ */
+export function assignableInstrumentsForHolding(holding: {
+  instrument: Instrument;
+  connectedSourceId?: string | null;
+}): readonly Instrument[] {
+  return assignableInstrumentsForShape(shapeOfHolding(holding));
+}
+
+/** Whether `next` is a correction THIS holding may take (see above). */
+export function isAssignableInstrumentForHolding(
+  holding: { instrument: Instrument; connectedSourceId?: string | null },
+  next: Instrument,
+): boolean {
+  return assignableInstrumentsForHolding(holding).includes(next);
 }
 
 /** Whether `next` is a correction a holding of this shape may take. */

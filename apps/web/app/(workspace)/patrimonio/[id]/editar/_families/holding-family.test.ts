@@ -13,10 +13,25 @@ describe("holdingFamily (#1607)", () => {
     ).toBe("coin-collection");
   });
 
+  test("the SOURCE outranks a wrong instrument column (#1691)", () => {
+    // The row the v14 backfill left behind: a live Numista collection filed as
+    // `other`, which derives `stored`. Routed by its instrument it landed on the
+    // hand-valued ficha — no coin lens, and an instrument picker offering to
+    // relabel the one holding nobody may relabel.
+    expect(
+      holdingFamily({
+        connectedSourceAdapter: "numista",
+        instrument: "other",
+        kind: "asset",
+        method: "stored",
+      }),
+    ).toBe("coin-collection");
+  });
+
   test("a crypto holding with a Binance source routes to the mirrored-token family", () => {
     expect(
       holdingFamily({
-        hasBinanceSource: true,
+        connectedSourceAdapter: "binance",
         instrument: "crypto",
         kind: "asset",
         method: "derived",
@@ -28,7 +43,7 @@ describe("holdingFamily (#1607)", () => {
     // No source link: the same instrument, the opposite surface (#248).
     expect(
       holdingFamily({
-        hasBinanceSource: false,
+        connectedSourceAdapter: null,
         instrument: "crypto",
         kind: "asset",
         method: "derived",

@@ -430,6 +430,7 @@ async function assertStoredDestination(
   const row = await ctx.db
     .select({
       destinationHoldingId: plannedContributions.destinationHoldingId,
+      connectedSourceId: assets.connectedSourceId,
       instrument: assets.instrument,
       isPrimaryResidence: assets.isPrimaryResidence,
       type: assets.type,
@@ -445,6 +446,15 @@ async function assertStoredDestination(
   // that column is a leftover the app no longer writes, and a row that kept `stored`
   // on it walked straight through this door even when its instrument says `derived` —
   // which is what a connected coin collection (ADR 0016) is.
+  // And a CONNECTED holding is refused whatever its instrument says (#1691). The
+  // instrument is a column too, and the v14 backfill left mislabelled ones behind;
+  // a source-owned holding is never hand-valued (ADR 0016/0021), so the door that
+  // exists to admit only declared-value destinations must not depend on that column
+  // being right. `valuation-guard.ts` behind it would still refuse the write — but
+  // a guard that only holds because the next one does is not a guard.
+  if (row.connectedSourceId != null) {
+    throw new Error("Only stored-value destinations use balance reconciliation.");
+  }
   const method = valuationMethodOfAsset(classifiableAssetFromRow(row));
   if (method !== "stored") {
     throw new Error("Only stored-value destinations use balance reconciliation.");
