@@ -7,6 +7,7 @@ import {
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
+import { hardDeleteAssetTx } from "./asset-reads";
 import { createAssetStore } from "./asset-store";
 import { createAssistantProposalStore } from "./assistant-proposal-store";
 import {
@@ -31,6 +32,7 @@ import { createLiabilityBalanceReadStore } from "./liability-balance-reads";
 import { createBalanceRebaselineStore } from "./liability-balance-rebaseline-store";
 import { createEarlyRepaymentStore } from "./liability-early-repayment-store";
 import { createInterestRateRevisionStore } from "./liability-rate-revision-store";
+import { hardDeleteLiabilityTx } from "./liability-reads";
 import { createLiabilityRecordStore } from "./liability-store";
 import { openLibsqlClient } from "./libsql-client";
 import { createManagedPortfolioStore } from "./managed-portfolio-store";
@@ -43,12 +45,7 @@ import {
   gapFillHistoricalSnapshots,
 } from "./snapshot-orchestrator";
 import { createSnapshotStore } from "./snapshot-store";
-import {
-  createStoreContext,
-  hardDeleteAssetTx,
-  hardDeleteLiabilityTx,
-  type StoreContext,
-} from "./store-context";
+import { createStoreContext, type StoreContext } from "./store-context";
 import type {
   BatchTrashFailureReason,
   BatchTrashResult,

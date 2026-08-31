@@ -7,6 +7,7 @@ import {
   readInvestmentIdentity,
   readLiabilityIdentity,
 } from "@db/historical-snapshot-deps";
+import { readAllOperations } from "@db/operation-reads";
 import {
   readSnapshotHoldings,
   readSnapshots,
@@ -14,7 +15,7 @@ import {
   type SnapshotHoldingRecord,
   type SnapshotStore,
 } from "@db/snapshot-store";
-import { readAllOperations, type StoreContext } from "@db/store-context";
+import type { StoreContext } from "@db/store-context";
 import type {
   FrozenIdentityCapture,
   HousingValuationAnchor,

@@ -14,13 +14,14 @@ import {
   readFrozenIdentityCaptures,
   readInvestmentIdentity,
 } from "./historical-snapshot-deps";
+import { readAllOperations } from "./operation-reads";
 import {
   readSnapshotHoldings,
   readSnapshots,
   type SaveSnapshotInput,
   type SnapshotStore,
 } from "./snapshot-store";
-import { readAllOperations, type StoreContext } from "./store-context";
+import type { StoreContext } from "./store-context";
 
 /**
  * Historical-price backfill ripple (#380, ADR 0033). The explicit, auditable

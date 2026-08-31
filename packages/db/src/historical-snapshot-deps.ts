@@ -18,10 +18,16 @@ import {
   selectInvestmentPrice,
 } from "@worthline/domain";
 import { asc, eq } from "drizzle-orm";
-
+import { readAssets } from "./asset-reads";
 import { mapPositionRow } from "./connected-source-store";
 import { readDebtBalanceInputs, readHousingCurveInputs } from "./curve-valued-holdings";
+import { readLiabilities } from "./liability-reads";
 import { readManualValueHistory } from "./manual-value-history";
+import {
+  readAllOperations,
+  readAllPriceCache,
+  readInvestmentMeta,
+} from "./operation-reads";
 import {
   assetOwnerships,
   assets,
@@ -35,14 +41,7 @@ import {
   type SaveSnapshotInput,
   type SnapshotHoldingRecord,
 } from "./snapshot-store";
-import {
-  readAllOperations,
-  readAllPriceCache,
-  readAssets,
-  readInvestmentMeta,
-  readLiabilities,
-  type StoreDb,
-} from "./store-context";
+import type { StoreDb } from "./store-context";
 
 // ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────
 //
