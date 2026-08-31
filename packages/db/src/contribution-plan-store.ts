@@ -9,9 +9,9 @@ import type {
 import {
   assertContributionCadence,
   assertPlannedContributionInput,
-  defaultValuationMethodForAssetType,
   expandPlannedContribution,
   parsePlannedContributionAmount,
+  valuationMethodOfAsset,
 } from "@worthline/domain";
 import { and, asc, eq, sql } from "drizzle-orm";
 
@@ -429,8 +429,9 @@ async function assertStoredDestination(
   const row = await ctx.db
     .select({
       destinationHoldingId: plannedContributions.destinationHoldingId,
+      instrument: assets.instrument,
+      isPrimaryResidence: assets.isPrimaryResidence,
       type: assets.type,
-      valuationMethod: assets.valuationMethod,
     })
     .from(plannedContributions)
     .innerJoin(assets, eq(assets.id, plannedContributions.destinationHoldingId))
@@ -439,9 +440,16 @@ async function assertStoredDestination(
   if (!row || row.destinationHoldingId !== assetId) {
     throw new Error("Stored-value destination does not match the planned contribution.");
   }
-  if (
-    (row.valuationMethod ?? defaultValuationMethodForAssetType(row.type)) !== "stored"
-  ) {
+  // The method comes from the INSTRUMENT (#1680), never from `assets.valuation_method`:
+  // that column is a leftover the app no longer writes, and a row that kept `stored`
+  // on it walked straight through this door even when its instrument says `derived` —
+  // which is what a connected coin collection (ADR 0016) is.
+  const method = valuationMethodOfAsset({
+    instrument: row.instrument,
+    isPrimaryResidence: row.isPrimaryResidence === 1,
+    type: row.type,
+  });
+  if (method !== "stored") {
     throw new Error("Only stored-value destinations use balance reconciliation.");
   }
 }

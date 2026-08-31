@@ -8,27 +8,8 @@
  */
 import { describe, expect, test } from "vitest";
 import type { HoldingValuationInput } from "./holding-valuation";
-import {
-  defaultValuationMethodForAssetType,
-  defaultValuationMethodForDebtModel,
-  valueAt,
-} from "./holding-valuation";
+import { defaultValuationMethodForDebtModel, valueAt } from "./holding-valuation";
 import type { InvestmentOperation } from "./investment-types";
-
-describe("defaultValuationMethodForAssetType — backfill mapping (#148)", () => {
-  test("cash and manual assets are valued by hand (stored)", () => {
-    expect(defaultValuationMethodForAssetType("cash")).toBe("stored");
-    expect(defaultValuationMethodForAssetType("manual")).toBe("stored");
-  });
-
-  test("an investment is derived (units × price)", () => {
-    expect(defaultValuationMethodForAssetType("investment")).toBe("derived");
-  });
-
-  test("real estate appreciates (revaluation curve)", () => {
-    expect(defaultValuationMethodForAssetType("real_estate")).toBe("appreciating");
-  });
-});
 
 describe("defaultValuationMethodForDebtModel — backfill mapping (#148)", () => {
   test("an amortizable debt is amortized", () => {

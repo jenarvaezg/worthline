@@ -35,7 +35,6 @@ const KEY_EXPORTS = [
   "isLiquid",
   // holding-valuation
   "valueAt",
-  "defaultValuationMethodForAssetType",
   "defaultValuationMethodForDebtModel",
   "valuationMethodOfAsset",
   "valuationMethodOfLiability",
