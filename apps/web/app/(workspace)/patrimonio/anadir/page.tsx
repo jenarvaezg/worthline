@@ -586,6 +586,7 @@ function InvestmentGroupPane({
           // traspaso recorded weeks later would be a wrong figure presented as a
           // helpful one — and it is the figure that fixes the participaciones.
           defaultPrice={v("trPrice") ?? ""}
+          defaultSeniority={v("trSeniority") ?? ""}
           instrument={id}
           key={`tr-${captureKey}`}
           today={today}

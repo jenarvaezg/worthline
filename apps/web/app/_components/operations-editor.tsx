@@ -548,6 +548,12 @@ export default function OperationsEditor({
                       ...(op.transferCostMinor !== undefined
                         ? { transferCostMinor: op.transferCostMinor }
                         : {}),
+                      // The declared inherited seniority (#1518). Shown so it can be
+                      // CHECKED: nothing computes on it yet, and a year typed wrong
+                      // that nobody can see is one nobody can correct.
+                      ...(op.transferSeniorityAt !== undefined
+                        ? { transferSeniorityAt: op.transferSeniorityAt }
+                        : {}),
                     });
 
                     return (

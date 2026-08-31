@@ -12,12 +12,13 @@
  * plan — so the figures on screen are the figures that get stored and a refusal is
  * worded exactly as the submit would word it.
  *
- * The four fields say four different things and the island keeps them apart:
+ * The five fields say five different things and the island keeps them apart:
  * the importe is what ARRIVED, the VL is the destination's on that day (the two
  * together fix the participaciones), the date is when the capital landed (the ripple
- * rebuilds the history from there), and the cost is what those participaciones cost
+ * rebuilds the history from there), the cost is what those participaciones cost
  * in the OLD provider — left empty it is the importe itself, which books no latent
- * gain rather than inventing one.
+ * gain rather than inventing one — and the seniority is the day that capital started
+ * counting its age there (#1518), which no date in this book can stand in for.
  */
 
 import { useState } from "react";
@@ -29,6 +30,7 @@ export function ExternalTransferCapture({
   defaultCost,
   defaultDate,
   defaultPrice,
+  defaultSeniority,
   instrument,
   today,
 }: {
@@ -36,6 +38,7 @@ export function ExternalTransferCapture({
   defaultCost: string;
   defaultDate: string;
   defaultPrice: string;
+  defaultSeniority: string;
   instrument: string;
   today: string;
 }) {
@@ -45,14 +48,20 @@ export function ExternalTransferCapture({
   // lesson): a visible date is a date the user can disagree with.
   const [date, setDate] = useState(defaultDate === "" ? today : defaultDate);
   const [cost, setCost] = useState(defaultCost);
+  // Blank on purpose, unlike the landing date: «hoy» is a sensible guess for when
+  // capital arrived and a terrible one for how old it is. An empty field here reads
+  // as «no lo sé», which is exactly what the row then stores (#1518).
+  const [seniority, setSeniority] = useState(defaultSeniority);
 
-  const { costNote, costRefused, hint, refused } = externalTransferCaptureCopy({
-    amountRaw: amount,
-    costRaw: cost,
-    dateRaw: date,
-    priceRaw: price,
-    today,
-  });
+  const { costNote, costRefused, hint, refused, seniorityNote, seniorityRefused } =
+    externalTransferCaptureCopy({
+      amountRaw: amount,
+      costRaw: cost,
+      dateRaw: date,
+      priceRaw: price,
+      seniorityRaw: seniority,
+      today,
+    });
 
   return (
     <div className="invCapture">
@@ -118,6 +127,22 @@ export function ExternalTransferCapture({
         className={costRefused ? "invCostNote invUnitsRefused" : "invCostNote"}
       >
         {costNote}
+      </p>
+      <label className="simpleField">
+        <span>Antigüedad que traen (opcional)</span>
+        <input
+          max={date}
+          name={`trSeniority_${instrument}`}
+          onChange={(event) => setSeniority(event.target.value)}
+          type="date"
+          value={seniority}
+        />
+      </label>
+      <p
+        aria-live="polite"
+        className={seniorityRefused ? "invCostNote invUnitsRefused" : "invCostNote"}
+      >
+        {seniorityNote}
       </p>
     </div>
   );

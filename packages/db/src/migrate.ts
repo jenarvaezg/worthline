@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 65;
+export const SCHEMA_VERSION = 66;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1981,6 +1981,33 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 65);
+  }
+
+  if (version < 66) {
+    // #1518 (ADR 0083, decisión 7): `asset_operations.transfer_seniority_at` — the
+    // day the capital an EXTERNAL `transfer_in` brought over started counting its
+    // age at the old provider. Nullable, and NOTHING is backfilled — the same rule
+    // as v64 and v65, and here it is not caution but the whole point.
+    //
+    // The one derivation available is `executed_at`, and it is precisely the lie
+    // this column exists to stop: a movilización carries the seniority of the
+    // aportaciones that funded it, which sit in another institution's ledger. Jorge's
+    // two entries are dated dic-2025 and ene-2026 for capital aportado years
+    // earlier; backfilled from the row they would tell #1528 «bloqueado hasta 2035»
+    // about money that may be rescatable today. NULL reads as «nadie lo ha dicho»,
+    // which is true of every row written before this door existed.
+    try {
+      await client.execute(
+        "ALTER TABLE asset_operations ADD COLUMN transfer_seniority_at TEXT",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Tolerated exactly as in v59/v62/v64/v65: a fresh DB already has the column
+      // from schema-sql, and a migration test walks the ladder over a PARTIAL
+      // fixture that may never have created the table.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 66);
   }
 
   return { ranV18Backfill, ranV33Backfill };

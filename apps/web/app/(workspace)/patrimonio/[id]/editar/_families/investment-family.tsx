@@ -17,6 +17,7 @@ import { transferCounterpartByOperationId } from "@web/_components/transfer-coun
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
+import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
 import { SnapshotPriceCorrectionSection } from "@web/patrimonio/[id]/editar/_surfaces/snapshot-price-correction-section";
@@ -283,6 +284,22 @@ export async function loadInvestmentSurface(
             privacyMode={privacyMode}
             readOnly={isDemo}
             recordAction={action.recordTransfer}
+            today={today}
+          />
+        ) : null}
+
+        {/* «Traer de otra entidad» (#1518): the movilización that arrives at a
+            holding this book ALREADY keeps. Gated on the same manual ledger as
+            «Traspasar» — a connected holding's rows come from its provider — and
+            placed right after it, because the two are the same movement seen from
+            its two ends, one of which has no origin to name. */}
+        {hasManualLedger ? (
+          <ExternalEntrySection
+            currentUrl={currentUrl}
+            formError={formError}
+            holdingName={asset.name}
+            readOnly={isDemo}
+            recordAction={action.recordExternalEntry}
             today={today}
           />
         ) : null}

@@ -605,6 +605,11 @@ export function okMessage(key: string | undefined): string | null {
     // entry is not «creada» but «no la has comprado» — the difference the cupo and
     // the plusvalía both hang on.
     investment_transfer_in_added: "Inversión dada de alta por traspaso externo.",
+    // The SECOND movilización onto a holding that already exists (#1518). It names
+    // the door rather than saying «operación registrada», because what the user needs
+    // confirmed is the same thing the alta's message confirms: that this did not go
+    // in as a compra.
+    external_entry_recorded: "Entrada por traspaso desde otra entidad registrada.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
     valuation_cadence_saved: "Cadencia de valoración guardada.",
@@ -678,6 +683,12 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "Esa inversión no tiene participaciones en esa fecha, así que no hay nada que traspasar.";
     case "transfer_inherited_cost_negative":
       return "El coste de adquisición que traen esas participaciones no puede ser negativo.";
+    case "transfer_seniority_not_a_day":
+      return `El ${violation.seniorityAt} no es un día del calendario — escribe la antigüedad como 01/03/2014.`;
+    case "transfer_seniority_after_execution":
+      // Names both dates: the mistake is almost always a year typed wrong, and the
+      // correction is obvious once the two are side by side.
+      return `La antigüedad que traen esas participaciones (${readDateKey(violation.seniorityAt)}) es posterior al día en que entraron (${readDateKey(violation.executedAt)}). Una movilización hereda antigüedad de antes, nunca de después.`;
     case "transfer_currency_mismatch":
       return `Esa inversión está en ${violation.destination} y la de origen en ${violation.origin}: no puedo traspasar entre divisas distintas, porque el coste que viaja no tendría tipo de cambio.`;
     case "transfer_units_exceed_position":

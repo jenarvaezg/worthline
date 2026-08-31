@@ -9,7 +9,7 @@ import { formatUnits, planExternalTransferIn } from "@worthline/domain";
 import {
   euros,
   latentPnlReading,
-  readOpeningDate,
+  readDayEs,
   resolveOpeningDate,
 } from "./investment-units";
 
@@ -41,7 +41,7 @@ import {
  * with and the island shows while typing.
  */
 
-/** The pane's four fields, exactly as posted. */
+/** The pane's five fields, exactly as posted. */
 export interface ExternalTransferCaptureInput {
   /** The importe that ARRIVED, in euros as typed. */
   amountRaw: string;
@@ -51,6 +51,11 @@ export interface ExternalTransferCaptureInput {
   dateRaw: string;
   /** The destination's VL on that day. */
   priceRaw: string;
+  /**
+   * The day this capital started counting its age at the OLD provider (#1518).
+   * Blank = «no lo sé», which the book stores as nothing — never as the landing day.
+   */
+  seniorityRaw: string;
   today: string;
 }
 
@@ -62,6 +67,8 @@ export type ExternalTransferCaptureResult =
       executedAt: string;
       inheritedCostMinor: number;
       pricePerUnit: DecimalString;
+      /** The declared inherited seniority, or absent when nobody declared one. */
+      seniorityAt?: string;
       /** Derived by the gate's own plan — what the row will actually hold. */
       units: DecimalString;
     }
@@ -117,6 +124,12 @@ export function resolveExternalTransferCapture(
   // messages for «no me has dado un VL» would be two answers to one question.
   const pricePerUnit = normalizeNonNegativeDecimalString(input.priceRaw) ?? "0";
 
+  // Blank means «no lo sé», which is a state of its own — the plan then writes no
+  // seniority at all. Anything else is judged by the plan, never here (#1518): a date
+  // after the entry, or one that is not a calendar day, comes back in the gate's own
+  // words like every other refusal about a value.
+  const seniorityAt = input.seniorityRaw.trim();
+
   const plan = planExternalTransferIn({
     ...PREVIEW_IDS,
     amountMinor,
@@ -126,6 +139,7 @@ export function resolveExternalTransferCapture(
     ...(cost.inheritedCostMinor === undefined
       ? {}
       : { inheritedCostMinor: cost.inheritedCostMinor }),
+    ...(seniorityAt === "" ? {} : { seniorityAt }),
   });
 
   if (!plan.ok) {
@@ -149,6 +163,9 @@ export function resolveExternalTransferCapture(
     inheritedCostMinor: transferCostMinor,
     ok: true,
     pricePerUnit: plan.value.pricePerUnit,
+    ...(plan.value.transferSeniorityAt === undefined
+      ? {}
+      : { seniorityAt: plan.value.transferSeniorityAt }),
     units: plan.value.units,
   };
 }
@@ -189,6 +206,15 @@ export interface ExternalTransferCaptureCopy {
   costNote: string;
   /** True when `costNote` is a refusal. */
   costRefused: boolean;
+  /**
+   * What the seniority field says, always: what a declared date MEANS for this
+   * capital, what leaving it empty costs, or the refusal the submit would answer
+   * with. Its own reading, like the cost's, so a date that does not fit cannot blank
+   * the participaciones above it (#1518).
+   */
+  seniorityNote: string;
+  /** True when `seniorityNote` is a refusal. */
+  seniorityRefused: boolean;
 }
 
 /**
@@ -203,40 +229,104 @@ export function externalTransferCaptureCopy(
   input: ExternalTransferCaptureInput,
 ): ExternalTransferCaptureCopy {
   const date = resolveOpeningDate(input.dateRaw, input.today);
-  const backdatedTo =
-    date.ok && date.date !== input.today ? readOpeningDate(date.date) : null;
+  const backdatedTo = date.ok && date.date !== input.today ? readDayEs(date.date) : null;
 
   // The figures WITHOUT the cost: the participaciones and the default the cost note
   // has to name are facts of the importe and the VL alone, so an unreadable cost
   // still leaves both readable.
-  const withoutCost = resolveExternalTransferCapture({ ...input, costRaw: "" });
-  const costNote = readCostNote(input, withoutCost);
+  const withoutCost = resolveExternalTransferCapture({
+    ...input,
+    costRaw: "",
+    seniorityRaw: "",
+  });
+  const notes = {
+    ...readCostNote(input, withoutCost),
+    ...readSeniorityNote(input, withoutCost),
+  };
 
   if (!date.ok) {
-    return { ...costNote, hint: date.error, refused: true };
+    return { ...notes, hint: date.error, refused: true };
   }
 
   if (input.amountRaw.trim() === "") {
     return {
-      ...costNote,
+      ...notes,
       hint: "Escribe el importe que entró para ver las participaciones.",
       refused: false,
     };
   }
 
   if (!withoutCost.ok) {
-    return { ...costNote, hint: withoutCost.error, refused: true };
+    return { ...notes, hint: withoutCost.error, refused: true };
   }
 
   const reading = `≈ ${formatUnits(withoutCost.units)} participaciones`;
 
   return {
-    ...costNote,
+    ...notes,
     hint:
       backdatedTo === null
         ? `${reading}.`
         : `${reading} al ${backdatedTo} — reconstruiremos el histórico desde ese día.`,
     refused: false,
+  };
+}
+
+type SeniorityNote = Pick<
+  ExternalTransferCaptureCopy,
+  "seniorityNote" | "seniorityRefused"
+>;
+
+/**
+ * What the seniority field says (#1518).
+ *
+ * Empty is an ANSWER and the note says what it costs, rather than shrugging: a plan
+ * de pensiones is rescatable by the age of its aportaciones, and this row's date is
+ * the day the money moved, not the day it was earned. Nothing reads the field yet
+ * (#1528 does), so the note promises no figure — only that the book will remember.
+ *
+ * The refusal comes from the plan, judged over the capture WITHOUT the cost, so an
+ * unreadable importe leaves the two notes independent.
+ */
+const SENIORITY_PURPOSE =
+  "Desde cuándo cuenta la antigüedad de ese dinero, según la entidad anterior.";
+
+function readSeniorityNote(
+  input: ExternalTransferCaptureInput,
+  /** The capture WITHOUT the cost and without the seniority — the caller's own. */
+  withoutSeniority: ExternalTransferCaptureResult,
+): SeniorityNote {
+  if (input.seniorityRaw.trim() === "") {
+    return {
+      seniorityNote:
+        "Vacío: el libro no sabrá desde cuándo cuenta la antigüedad de ese dinero — y en un plan de pensiones es lo que decide qué parte se puede rescatar.",
+      seniorityRefused: false,
+    };
+  }
+
+  const declared = resolveExternalTransferCapture({ ...input, costRaw: "" });
+  if (!declared.ok) {
+    // A refusal belongs beside THIS field only when the seniority is what caused it —
+    // which `withoutSeniority` settles, never a match on the message text. An
+    // unreadable importe or a VL of zero is already said under the participaciones,
+    // and repeating it here would point the user at the wrong input.
+    return withoutSeniority.ok
+      ? { seniorityNote: declared.error, seniorityRefused: true }
+      : { seniorityNote: SENIORITY_PURPOSE, seniorityRefused: false };
+  }
+
+  // The field is not empty and the plan accepted it, so the date IS on the row. Its
+  // absence would be a bug upstream, not a shape this copy can describe — the same
+  // reasoning `resolveExternalTransferCapture` applies to the inherited cost.
+  if (declared.seniorityAt === undefined) {
+    throw new Error(
+      "resolveExternalTransferCapture accepted a seniority it did not return.",
+    );
+  }
+
+  return {
+    seniorityNote: `Antigüedad desde el ${readDayEs(declared.seniorityAt)}, no desde el día en que entró el dinero.`,
+    seniorityRefused: false,
   };
 }
 
