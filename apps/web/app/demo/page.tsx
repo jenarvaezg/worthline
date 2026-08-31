@@ -1,4 +1,5 @@
 import { isPersonaId, PERSONA_IDS, PERSONA_META } from "@web/demo/persona";
+import LegalLinks from "@web/legal/legal-links";
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
 
@@ -75,6 +76,9 @@ export default async function DemoLanding({
             );
           })}
         </ul>
+
+        {/* Superficie pública indexada: los textos legales cuelgan de aquí (#1172). */}
+        <LegalLinks />
       </div>
     </main>
   );

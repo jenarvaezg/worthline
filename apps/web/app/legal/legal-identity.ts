@@ -1,5 +1,5 @@
 /**
- * Identidad del prestador del servicio (#1172, PRD #1171 S1).
+ * Identidad del prestador del servicio (#1172, PRD #1171 S1; ADR 0103).
  *
  * El art. 10 de la LSSI-CE obliga a publicar nombre, NIF y un medio de contacto
  * «directo y efectivo» de forma permanente y gratuita. Este repositorio es

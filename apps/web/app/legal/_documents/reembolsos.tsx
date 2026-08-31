@@ -85,10 +85,16 @@ export default function ReembolsosDocument({ identity }: LegalDocumentProps) {
       <p>
         Si el servicio <strong>cesara</strong>, se avisará con al menos 30 días de
         antelación y la exportación de datos seguirá disponible. Quien tenga el plan{" "}
-        <strong>lifetime</strong> podrá pedir el reembolso íntegro o proporcional de su
-        compra, tal y como se recoge en los{" "}
+        <strong>lifetime</strong> podrá pedir el reembolso <strong>íntegro</strong> de su
+        compra —sin prorrateos—, tal y como se recoge en los{" "}
         <a href="/legal/terminos">términos de servicio</a>. El compromiso está escrito
         para que no dependa de la buena voluntad de nadie.
+      </p>
+
+      <p>
+        Si tienes una <strong>suscripción</strong> en ese momento: no se cobra ninguna
+        renovación más, conservas el acceso premium hasta el final del periodo ya pagado y
+        después la cuenta pasa al plan gratuito con todos tus datos intactos.
       </p>
 
       <h3>7. Reclamaciones</h3>

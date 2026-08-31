@@ -3897,7 +3897,9 @@ code {
   width: 100%;
 }
 
-.loginBrand h1 {
+/* La marca sobre una cubierta: el umbral (#909) y los textos legales (#1172). */
+.loginBrand h1,
+.legalBrand h1 {
   font-size: 1.1rem;
   font-weight: 850;
   letter-spacing: 0;
@@ -4020,12 +4022,8 @@ code {
   text-decoration: none;
 }
 
-.legalBrand h1 {
-  font-size: 1.1rem;
-  font-weight: 850;
-  letter-spacing: 0;
-  line-height: 1;
-}
+/* La marca de una cubierta se compone igual en el umbral y en los textos
+   legales: una sola receta para las dos (canon §7, no duplicar). */
 
 .legalSheet {
   border: 1px solid var(--line-soft);
@@ -4064,19 +4062,24 @@ code {
   color: var(--blue);
 }
 
-/* La entradilla del documento: la frase que resume el texto, abierta por el
-   filete del debe — misma gramática de aviso que .premiumNotice, sin tarjeta. */
+/* La entradilla del documento: la frase que lo resume, en cuerpo mayor y tinta
+   plena. Sin filete dorado: el oro significa aviso o debe (canon §6), y una
+   entradilla no avisa de nada — el aviso de este mismo documento usa la receta
+   .premiumNotice, y dos significados no pueden compartir marca. */
 .legalLede {
-  border-left: 2px solid var(--gold);
-  padding-left: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
-.legalNotice {
-  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
-  border-left: 2px solid var(--gold);
-  border-radius: var(--radius-sm);
+.legalSheet .legalLede {
   color: var(--ink);
-  padding: 0.75rem 1rem;
+}
+
+/* Un encargado declarado que todavía no recibe dato alguno. */
+.legalPending {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .legalIdentity {
@@ -4179,6 +4182,12 @@ code {
 
 .legalLinks a {
   color: inherit;
+}
+
+/* Suelto sobre una cubierta (la puerta de la demo) necesita su propio aire: no
+   hay franja que lo separe de lo de arriba. */
+.demoLanding .legalLinks {
+  margin-top: 28px;
 }
 
 .legalBar {

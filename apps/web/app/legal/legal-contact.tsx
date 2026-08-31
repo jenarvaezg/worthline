@@ -8,6 +8,11 @@ import type { LegalIdentity } from "./legal-identity";
  * hueco silencioso en el aviso legal es peor que un aviso feo: incumple el art.
  * 10 de la LSSI sin que nadie lo note, y el gate humano del slice existe justo
  * para que eso no llegue a producción.
+ *
+ * Qué se dice y a quién: al visitante, que faltan datos identificativos; al
+ * operador, **qué variable** rellenar — por el log del servidor, no por una
+ * página pública, que no es sitio para publicar los nombres de la configuración
+ * del despliegue.
  */
 
 /** «pendiente de configurar», el texto que el test de contenido persigue. */
@@ -25,17 +30,21 @@ export function ContactEmail({ identity }: { identity: LegalIdentity }) {
 }
 
 /**
- * Aviso al operador —y a quien lea la página— de que faltan datos obligatorios,
- * nombrando la variable de entorno exacta que hay que rellenar.
+ * Aviso de que faltan datos obligatorios. El detalle accionable —los nombres de
+ * las variables— sale por el log del servidor en el mismo render.
  */
 export function PendingIdentityNotice({ identity }: { identity: LegalIdentity }) {
   if (identity.missing.length === 0) return null;
 
+  console.warn(
+    `[legal] aviso legal incompleto (#1172): faltan ${identity.missing.join(", ")}. ` +
+      "Sin ellas la página no cumple el artículo 10 de la Ley 34/2002.",
+  );
+
   return (
-    <p className="legalNotice">
-      Algunos datos identificativos del prestador están <strong>{PENDING_LABEL}</strong>{" "}
-      en este despliegue. Hasta que se configuren, esta página no cumple el artículo 10 de
-      la Ley 34/2002: {identity.missing.join(", ")}.
+    <p className="premiumNotice">
+      Los datos identificativos del prestador están <strong>{PENDING_LABEL}</strong> en
+      este despliegue. Escríbenos por el canal de contacto y los facilitamos.
     </p>
   );
 }

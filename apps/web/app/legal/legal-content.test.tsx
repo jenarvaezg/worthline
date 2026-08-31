@@ -73,7 +73,9 @@ describe("aviso legal · LSSI art. 10 (#1172)", () => {
     );
 
     expect(pending).toContain("pendiente de configurar");
-    expect(pending).toContain("WORTHLINE_LEGAL_OPERATOR_NAME");
+    // Al visitante se le dice que faltan datos; los nombres de las variables
+    // del despliegue van al log del servidor, no a una página pública.
+    expect(pending).not.toContain("WORTHLINE_LEGAL_");
   });
 });
 
@@ -100,6 +102,18 @@ describe("términos de servicio (#1172)", () => {
       "con al menos 30 días de antelación",
       "exportación",
       "reembolsará",
+      // #1132 cerró «reembolso ÍNTEGRO a quien lo pida»: el prorrateo del
+      // research quedó superado y rebajarlo aquí debilitaría la obligación.
+      "<strong>íntegra</strong>",
+    ]);
+    expect(html("terminos")).not.toContain("proporcional");
+  });
+
+  test("writes the subscriber wind-down too, not only the lifetime one (#1132)", () => {
+    expectAll("terminos", [
+      "no se cobra ninguna renovación más",
+      "hasta el final del periodo ya pagado",
+      "plan gratuito",
     ]);
   });
 
@@ -138,15 +152,24 @@ describe("política de privacidad · RGPD (#1172)", () => {
     ]);
   });
 
-  test("lists every processor that receives data today", () => {
+  test("lists every processor, and says which of them still receives nothing", () => {
     expectAll("privacidad", [
       "Vercel",
       "Turso",
+      // Quien autentica la web es Google (next-auth); WorkOS solo firma el
+      // OAuth del servidor MCP (ADR 0034). Declararlo al revés publicaba una
+      // cesión que no ocurre y callaba la que sí.
+      "Google (inicio de sesión)",
       "WorkOS",
+      "OAuth del servidor MCP",
       "Resend",
       "Sentry",
       "Google (Gemini API)",
       "Cerebras",
+      // Sentry y Resend son slices posteriores del PRD #1171: declarados, pero
+      // sin recibir aún ni un dato.
+      "aún no activo",
+      "no reciben ningún dato",
     ]);
   });
 
@@ -165,6 +188,9 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "contexto financiero",
       "no entrenan",
       "solo cuando escribes al asistente",
+      // La conversación es efímera: estado de cliente, nada persistido (#627).
+      // Prometer un borrado que no existe sería anunciar un derecho sin producto.
+      "<strong>no guarda</strong> la conversación",
     ]);
   });
 

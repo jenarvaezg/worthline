@@ -79,8 +79,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           hay dentro.
         </li>
         <li>
-          <strong>Errores técnicos</strong>: cuando algo falla, el informe del error, con
-          los datos personales filtrados antes de enviarse.
+          <strong>Errores técnicos</strong>: cuando el registro de errores esté activo
+          (ver la tabla del apartado 4), el informe del fallo, con los datos personales
+          filtrados antes de enviarse.
         </li>
       </ul>
 
@@ -135,7 +136,15 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           <tbody>
             {LEGAL_PROCESSORS.map((processor) => (
               <tr key={processor.name}>
-                <th scope="row">{processor.name}</th>
+                <th scope="row">
+                  {processor.name}
+                  {processor.active === false ? (
+                    <>
+                      {" "}
+                      <span className="legalPending">(aún no activo)</span>
+                    </>
+                  ) : null}
+                </th>
                 <td>{processor.purpose}</td>
                 <td>{processor.mechanism}</td>
               </tr>
@@ -143,6 +152,13 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           </tbody>
         </table>
       </div>
+
+      <p>
+        Los marcados <strong>«aún no activo»</strong> están declarados porque entrarán con
+        la función que los usa (el correo transaccional y el registro de errores);
+        mientras tanto <strong>no reciben ningún dato</strong>. Esta página se actualizará
+        el día que empiecen a recibirlo.
+      </p>
 
       <p>
         Además, <strong>{MERCHANT_OF_RECORD.name}</strong> trata los datos del pago como{" "}
@@ -179,8 +195,10 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
       <p>
         Los proveedores del asistente <strong>no entrenan</strong> sus modelos con lo que
         se les envía ni con lo que responden, según sus condiciones para uso por API.
-        worthline no conserva copia de esas conversaciones más allá de lo necesario para
-        mostrarte el hilo, y puedes borrarlas.
+        worthline <strong>no guarda</strong> la conversación: el hilo vive en tu navegador
+        mientras tienes el panel abierto y desaparece al cerrarlo. Lo que sí queda, si
+        confirmas una propuesta del asistente, es el apunte que se escribe en tu workspace
+        — como cualquier otro dato que registres tú.
       </p>
 
       <h3>7. Cuánto tiempo se conservan</h3>

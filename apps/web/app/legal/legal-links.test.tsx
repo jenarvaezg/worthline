@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import LandingContent from "@web/landing/landing-content";
 import WorkspaceLegalFooter from "@web/workspace-legal-footer";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -35,6 +37,19 @@ describe("legal links (#1172)", () => {
 
     for (const document of LEGAL_DOCUMENTS) {
       expect(html, document.slug).toContain(`href="${legalPath(document.slug)}"`);
+    }
+  });
+
+  test("every surface with its own shell mounts them too", () => {
+    // El pie del grupo `(workspace)` no llega a las pantallas que tienen shell
+    // propia — el umbral, la puerta de la demo (pública e indexada) y el
+    // onboarding — y la LSSI quiere los textos «permanentes» en todas.
+    const app = join(import.meta.dirname, "..");
+
+    for (const route of ["login/page.tsx", "demo/page.tsx", "empezar/page.tsx"]) {
+      const source = readFileSync(join(app, route), "utf8");
+
+      expect(source, `${route} no monta LegalLinks`).toContain("<LegalLinks />");
     }
   });
 });

@@ -51,9 +51,8 @@ export default function AvisoLegalDocument({ identity }: LegalDocumentProps) {
       </dl>
 
       <p>
-        El titular es una persona física que ejerce como profesional autónomo y no está
-        inscrita en el Registro Mercantil, por lo que no procede el dato de inscripción
-        que el artículo 10 pide «en su caso».
+        El artículo 10 pide los datos de inscripción en el Registro Mercantil «en su
+        caso»: el titular no está inscrito en él, así que ese dato no procede.
       </p>
 
       <h3>Actividad</h3>

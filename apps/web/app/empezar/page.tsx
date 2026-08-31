@@ -1,5 +1,6 @@
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { parseFormError } from "@web/intake";
+import LegalLinks from "@web/legal/legal-links";
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 import { initHogarAction, initSoloAction } from "./actions";
@@ -155,6 +156,11 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
 
         <ImportWorkspaceForm currentUrl="/empezar" showDataLossWarning={false} />
       </section>
+
+      {/* El onboarding tiene shell propia: sin esto se quedaría sin pie legal (#1172). */}
+      <div className="legalBar coverSurface">
+        <LegalLinks />
+      </div>
     </main>
   );
 }

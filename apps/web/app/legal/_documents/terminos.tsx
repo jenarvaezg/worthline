@@ -105,13 +105,21 @@ export default function TerminosDocument({ identity }: LegalDocumentProps) {
         </li>
         <li>
           a quien lo pida se le <strong>reembolsará</strong> la compra lifetime de forma
-          íntegra o proporcional según el tiempo transcurrido, sin discusiones.
+          <strong>íntegra</strong>, sin prorrateos y sin discusiones.
         </li>
       </ul>
 
       <p>
         Este compromiso es contractual, no una declaración de intenciones: forma parte de
         lo que compras al comprar el lifetime.
+      </p>
+
+      <p>
+        Y si en ese momento tienes una <strong>suscripción</strong>: no se cobra ninguna
+        renovación más, conservas el acceso premium hasta el final del periodo ya pagado y
+        después la cuenta pasa al plan gratuito <strong>con todos tus datos</strong>.
+        Nadie pierde datos por que el servicio cierre: la exportación y el código
+        publicado siguen ahí.
       </p>
 
       <h3>5. Servicio en beta y sin SLA</h3>
@@ -150,8 +158,8 @@ export default function TerminosDocument({ identity }: LegalDocumentProps) {
         de otras personas, saltarse los límites técnicos de la aplicación, automatizar un
         consumo desproporcionado de los recursos compartidos —en particular del asistente—
         ni revenderlo como servicio propio. Si un uso pone en riesgo el servicio para el
-        resto, puede suspenderse la cuenta, avisando y con derecho a exportar los datos y
-        a la parte no consumida de lo pagado.
+        resto, puede suspenderse la cuenta, avisando antes y dejando disponible la
+        exportación de tus datos.
       </p>
 
       <h3>8. Propiedad intelectual</h3>

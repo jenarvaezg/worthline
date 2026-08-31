@@ -413,6 +413,11 @@ describe("Libro mayor design-system guardian (#906)", () => {
       ["not-found.tsx", 'className="notFoundPage coverSurface"'],
       ["workspace-footer.tsx", 'className="persistenceBar coverSurface"'],
       ["empezar/page.tsx", 'className="coverSurface coverMasthead empezarMasthead"'],
+      // Los textos legales (#1172) son remate público, no trabajo: cubierta
+      // fuera, hoja luminosa para el cuerpo del documento.
+      ["legal/layout.tsx", 'className="legalPage coverSurface"'],
+      ["legal/legal-page.tsx", 'className="legalSheet coverSheet"'],
+      ["workspace-legal-footer.tsx", 'className="legalBar coverSurface"'],
     ];
 
     for (const [file, needle] of expectations) {
