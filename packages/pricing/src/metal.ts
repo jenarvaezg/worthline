@@ -37,6 +37,13 @@ export const YAHOO_METAL_SYMBOL: Record<MetalKind, string> = {
   palladium: "PA=F",
 };
 
+/** The stored `metal` of a position read back as a {@link MetalKind}: anything
+ *  outside the four priced metals (or null) has no melt candidate, so it narrows
+ *  to null instead of being cast blind at the boundary. */
+export function toMetalKind(value: string | null): MetalKind | null {
+  return value !== null && value in YAHOO_METAL_SYMBOL ? (value as MetalKind) : null;
+}
+
 const GRAMS_PER_TROY_OUNCE = 31.1034768;
 
 // Order matters only for readability — the patterns are mutually exclusive

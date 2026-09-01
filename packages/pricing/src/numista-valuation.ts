@@ -6,8 +6,9 @@
  * SAME two candidate values per coin — the melt value (composition × weight ×
  * metal spot) and Numista's per-grade numismatic estimate — and leave the
  * `max(metal, numismatic)` decision to the domain (`coinValuation`). Parsing,
- * request-cap dedup, the numismatic TTL gate, and the candidate-row construction
- * live in ONE place shared by both modes.
+ * request-cap dedup, the numismatic TTL gate, the stamp-only-on-an-answer rule
+ * (#1740), and the candidate-row construction live in ONE place shared by both
+ * modes.
  *
  * Every external read is injected, so this is a pure unit of work testable without
  * the network: the web layer wires the real readers (with the API key + token) and
@@ -22,7 +23,7 @@ import {
 } from "@pricing/coin-valuation";
 import type { PriceProvider } from "@pricing/index";
 import type { MetalKind } from "@pricing/metal";
-import { parseComposition, YAHOO_METAL_SYMBOL } from "@pricing/metal";
+import { parseComposition, toMetalKind, YAHOO_METAL_SYMBOL } from "@pricing/metal";
 import type {
   NumistaCollectedItem,
   NumistaPrices,
@@ -157,6 +158,42 @@ function numismaticPastTtl(
   return ageMs >= overrideTtlDays * 86400000;
 }
 
+/** The freshly-resolved numismatic estimate of one coin plus the stamp to persist. */
+interface NumismaticFetch {
+  /** The estimate just read, or null when the provider gave nothing back. */
+  prices: NumistaPrices | null;
+  /** `numismatic_fetched_at` to persist — advanced ONLY on an answer. */
+  fetchedAt: string | null;
+}
+
+/**
+ * The SINGLE stamping rule, shared by sync and revalue (#1740): fetch a coin's
+ * per-grade estimate and advance its fetched-at stamp **only when the provider
+ * answered**. A null answer — a Numista 5xx, the 8s abort, or simply no estimate
+ * for the issue — leaves the prior stamp exactly where it was, so the next pass
+ * retries instead of waiting out the 30-day TTL.
+ *
+ * Stamping a silence would be worse than losing the value: the stamp is what the
+ * app believes about WHEN the coin was last valued, so it would show a months-old
+ * figure as «valued today», with no warning anywhere. Both callers pass the prior
+ * stamp and, with `prices: null`, the coin-value module keeps the persisted figure
+ * verbatim — a failure never zeroes an amount.
+ */
+async function fetchNumismaticEstimate(
+  resolvePrices: (typeId: number, issueId: number) => Promise<NumistaPrices | null>,
+  args: {
+    typeId: number;
+    issueId: number;
+    priorFetchedAt: string | null;
+    nowIso: string;
+  },
+): Promise<NumismaticFetch> {
+  const priced = await resolvePrices(args.typeId, args.issueId);
+  return priced === null
+    ? { prices: null, fetchedAt: args.priorFetchedAt }
+    : { prices: priced, fetchedAt: args.nowIso };
+}
+
 /** The composition detail a coin valuation needs (shared by sync + revalue). */
 interface CoinDetail {
   metal: MetalKind | null;
@@ -233,6 +270,29 @@ export interface SyncedCoin {
   numismaticFetchedAt: string | null;
 }
 
+/**
+ * Read a persisted coin position back as the reuse input of the NEXT sync — the
+ * ONE mapping the web wiring and the tests share, so what a pass persists and
+ * what the following pass reuses can never drift apart (#1740). `metal` is
+ * narrowed at this boundary rather than cast: a stored value outside the known
+ * metals resolves to null (no melt candidate) instead of lying about its type.
+ */
+export function syncedCoinFromPosition(position: PositionDraft): SyncedCoin {
+  return {
+    externalId: position.externalId,
+    catalogueId: position.catalogueId,
+    issueId: position.issueId,
+    grade: position.grade,
+    quantity: position.quantity,
+    metal: toMetalKind(position.metal),
+    finenessMillis: position.finenessMillis,
+    weightGrams: position.weightGrams,
+    obverseThumbUrl: position.obverseThumbUrl,
+    numismaticValueMinor: position.numismaticValueMinor,
+    numismaticFetchedAt: position.numismaticFetchedAt,
+  };
+}
+
 /** The static, type-level detail a coin valuation needs — the part of a `getType`
  *  response we persist and never need to refetch (composition is fixed). */
 interface CoinTypeDetail {
@@ -294,15 +354,25 @@ export async function syncNumistaCollection(
     // and still within its TTL; otherwise (new/changed coin, or lapsed) fetch once.
     // Passing `prices: null` + the prior stamp/value makes the coin-value module
     // keep the persisted figure verbatim — byte-identical to the revalue path.
+    // The persisted estimate describes THIS line only while its issue, grade and
+    // quantity all match: a re-graded or re-counted coin has no prior figure to
+    // carry — neither to reuse, nor to fall back on when the provider goes quiet.
     const prior = priorByExternal.get(String(item.id));
-    const reusable =
+    const priorForLine =
       prior &&
       prior.issueId === base.issueId &&
       prior.grade === base.grade &&
-      prior.quantity === base.quantity &&
-      prior.numismaticFetchedAt !== null &&
-      !numismaticPastTtl(prior.numismaticFetchedAt, nowIso, options.numismaticTtlDays)
+      prior.quantity === base.quantity
         ? prior
+        : null;
+    const reusable =
+      priorForLine?.numismaticFetchedAt != null &&
+      !numismaticPastTtl(
+        priorForLine.numismaticFetchedAt,
+        nowIso,
+        options.numismaticTtlDays,
+      )
+        ? priorForLine
         : null;
 
     let prices: NumistaPrices | null = null;
@@ -312,8 +382,20 @@ export async function syncNumistaCollection(
       numismaticFetchedAt = reusable.numismaticFetchedAt;
       lastNumismaticValueMinor = reusable.numismaticValueMinor;
     } else if (base.issueId !== null && base.grade) {
-      prices = await cache.resolvePrices(typeId, base.issueId);
-      numismaticFetchedAt = nowIso;
+      // The prior stamp + figure ride along so a provider silence keeps BOTH
+      // untouched (#1740) — the same criterion the revalue below applies, from
+      // the same helper, so the two paths cannot drift apart again. A changed
+      // line carries neither: it has no estimate of its own yet, and inventing
+      // one from the old quantity/grade would read as fresh while being wrong.
+      lastNumismaticValueMinor = priorForLine?.numismaticValueMinor ?? null;
+      const fetched = await fetchNumismaticEstimate(cache.resolvePrices, {
+        issueId: base.issueId,
+        nowIso,
+        priorFetchedAt: priorForLine?.numismaticFetchedAt ?? null,
+        typeId,
+      });
+      prices = fetched.prices;
+      numismaticFetchedAt = fetched.fetchedAt;
     }
 
     // The shared candidate-row construction: the coin-value module owns both
@@ -396,12 +478,16 @@ export async function refreshCoinValuations(
       position.issueId !== null &&
       position.grade
     ) {
-      const priced = await cache.resolvePrices(position.typeId, position.issueId);
-      if (priced !== null) {
-        prices = priced;
-        numismaticFetchedAt = options.nowIso;
-      }
-      // priced === null → leave value + fetched-at untouched so it retries next pass.
+      // Shared with the sync (#1740): no answer → value + fetched-at untouched,
+      // so the next pass retries instead of waiting out the TTL.
+      const fetched = await fetchNumismaticEstimate(cache.resolvePrices, {
+        issueId: position.issueId,
+        nowIso: options.nowIso,
+        priorFetchedAt: position.numismaticFetchedAt,
+        typeId: position.typeId,
+      });
+      prices = fetched.prices;
+      numismaticFetchedAt = fetched.fetchedAt;
     }
 
     const candidates = candidateValues(

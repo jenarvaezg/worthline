@@ -309,7 +309,12 @@ export {
 export type { BenchmarkPricePoint } from "./ine-cpi";
 export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
-export { metalValueMinor, parseComposition, YAHOO_METAL_SYMBOL } from "./metal";
+export {
+  metalValueMinor,
+  parseComposition,
+  toMetalKind,
+  YAHOO_METAL_SYMBOL,
+} from "./metal";
 export type {
   CollectedItemDraft,
   NumistaCollectedItem,
@@ -334,11 +339,13 @@ export type {
   RevaluedPosition,
   RevalueOptions,
   RevaluePosition,
+  SyncedCoin,
 } from "./numista-valuation";
 export {
   fetchMetalSpotEur,
   NUMISMATIC_TTL_DAYS,
   refreshCoinValuations,
+  syncedCoinFromPosition,
   syncNumistaCollection,
 } from "./numista-valuation";
 export type { ConvertCapturedOperationsOptions } from "./operation-capture";
