@@ -166,12 +166,16 @@ export function HoldingRow({
 
       <div className="balanceRowAmount">
         {derived ? (
+          // #1729: el marcador era «≈», y a 0,7 rem, pegado a la cifra y en la
+          // misma columna donde un pasivo abre con «−», dejaba de leerse como
+          // «aproximado» para leerse como un signo menos: un activo calculado
+          // parecía una deuda. La palabra abreviada no admite esa lectura.
           <abbr
             className="balanceCalc"
             aria-label="Valor calculado"
             title={`Valor calculado (unidades × precio)${refreshHover ?? ""}`}
           >
-            ≈
+            calc.
           </abbr>
         ) : null}
         {isAsset

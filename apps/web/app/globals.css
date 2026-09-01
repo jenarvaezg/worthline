@@ -4343,13 +4343,31 @@ code {
   grid-template-columns: minmax(140px, 1fr) auto auto;
 }
 
+/* El <form> de identidad es UNA celda de esa rejilla, y sin layout propio sus
+   tres hijos caían en flujo: el input a ancho completo empujaba «ACTIVO» y
+   «Guardar» a la línea de abajo, donde el botón acababa impreso encima de la
+   etiqueta (#1729). La fila que el panel ya aparentaba, declarada. */
+.memberIdentity {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+/* `min-width: 0` porque un input es `min-width: auto` por defecto y se niega a
+   encoger por debajo de su tamaño intrínseco: sin esto la fila desborda el panel
+   en cuanto la columna se estrecha. */
+.memberIdentity input[name="name"] {
+  flex: 1;
+  min-width: 0;
+}
+
 .memberStatus {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.05em;
-  padding-top: 10px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* Member profile (PRD #421, #423): a full-width row beneath the name/actions,
@@ -4684,6 +4702,39 @@ code {
 .infoList .mono {
   font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
   font-size: 0.78rem;
+}
+
+/* Plegable de fontanería (#1729): lo que solo importa cuando algo va mal —la URL
+   de la base de datos, la clave interna del healthcheck y su valor en crudo— no
+   desaparece, se pliega. Registro de papel: una regla que lo abre y un resumen en
+   tinta, la misma receta que `.editAdvanced` en la ficha de holding. */
+.techDetails {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+/* Tras una lista de datos, la regla de cierre de la última fila ya es la regla que
+   abre el plegable: dos seguidas serían un filete doble, que en el canon significa
+   total (§4) y aquí no totaliza nada. */
+.infoList + .techDetails {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.techDetails > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Ya la abre la regla del propio plegable: la lista de dentro no repite otra. */
+.techDetails .infoList {
+  border-top: 0;
+  margin-top: 4px;
 }
 
 .overrideList {
@@ -5711,12 +5762,19 @@ code {
 /* A debt is a static figure, so it stays in ink (canon §6): the Pasivos column's
    debit rule identifies it, freeing red for movement (deltas / P&L) alone. */
 
-/* Discreet marker for a derived value (ADR 0006) — replaces a repeated text label. */
+/* Marcador de valor derivado (ADR 0006). Fue «≈» hasta #1729: dos trazos
+   horizontales a 0,7 rem, en la misma columna donde un pasivo abre con «−», se
+   leían como un menos y convertían un activo calculado en una deuda. La palabra
+   abreviada no se confunde con ningún signo; se queda en muted, en cursiva y por
+   debajo del cuerpo, para seguir siendo una anotación al margen de la cifra y no
+   otra cifra. */
 .balanceCalc {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--muted);
   cursor: help;
-  margin-right: 3px;
+  font-style: italic;
+  font-weight: 500;
+  margin-right: 4px;
   text-decoration: none;
 }
 
@@ -6357,6 +6415,18 @@ td.rowActions > * {
   color: var(--muted);
   font-style: italic;
   margin: 8px 0;
+}
+
+/* Un <a> sin regla hereda el azul del navegador, que no es ninguno de los tonos
+   del canon: en la nota de la plantilla de operaciones y en las entradillas de
+   admin el enlace salía en un azul eléctrico subrayado que rompía la paleta
+   (#1729). Estas cuatro prosas comparten receta en vez de redeclarar cada una la
+   misma línea, que es como se separan dos tratamientos que deberían ser uno. */
+.infoNote a,
+.demoLede a,
+.alertMeta a,
+.catalogUnavailableMsg a {
+  color: var(--blue);
 }
 
 .formActions {
@@ -8580,7 +8650,7 @@ td.rowActions > * {
   display: grid;
   font-size: 0.72rem;
   font-weight: 700;
-  grid-template-columns: 1fr 160px 140px 44px;
+  grid-template-columns: 1fr 160px 140px 120px;
   letter-spacing: 0.06em;
   padding: 10px 16px;
   text-transform: uppercase;
@@ -8601,7 +8671,7 @@ td.rowActions > * {
   align-items: center;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 1fr 160px 140px 44px;
+  grid-template-columns: 1fr 160px 140px 120px;
   list-style: none;
   padding: 10px 16px;
 }
@@ -8638,10 +8708,26 @@ td.rowActions > * {
   text-transform: uppercase;
 }
 
+/* La columna que cuenta cuántos holdings movieron el día (#1729). Tenía 44 px,
+   cabecera vacía y 0,75 rem en muted: una cifra que nadie sabía leer ni podía. La
+   columna ahora cabe su nombre, y la cifra sube a cuerpo de tabla y a tinta plena
+   —es un dato del día, no una marca decorativa—; el «▾» se queda en muted, que es
+   lo que sí es un adorno. */
 .historicoDrillCue {
-  color: var(--muted);
-  font-size: 0.75rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.historicoDrillHead .historicoDrillCue {
+  color: var(--muted);
+  font-size: inherit;
+}
+
+.historicoDrillCaret {
+  color: var(--muted);
+  margin-left: 5px;
 }
 
 .historicoBridge {

@@ -74,7 +74,7 @@ export function GoalsSection({
       {selectedScope ? (
         <>
           {goals.length === 0 ? (
-            <p className="muted">Aún no hay objetivos en este scope.</p>
+            <p className="muted">Aún no hay objetivos en este ámbito.</p>
           ) : null}
 
           <div className="goalList">

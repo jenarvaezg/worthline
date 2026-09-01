@@ -37,6 +37,24 @@ const BIRTH_MONTHS = [
   "Diciembre",
 ];
 
+/**
+ * El sello de la última comprobación, con el formato de fecha del resto del
+ * producto (#1729): «1 sept 2026, 14:00». Sin segundos: nadie decide nada con
+ * ellos. Es un instante, no un día declarado, así que se imprime con la hora que
+ * ya imprimía el `toLocaleString` al que sustituye — la del servidor que renderiza.
+ */
+const CHECKED_AT_FORMATTER = new Intl.DateTimeFormat("es-ES", {
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+function formatCheckedAt(iso: string): string {
+  return CHECKED_AT_FORMATTER.format(new Date(iso));
+}
+
 export default function AjustesPage({
   searchParams,
 }: {
@@ -83,6 +101,8 @@ export async function AjustesContent({
   // thing that still identifies it.
   const holdingNameById = new Map(allAssets.map((asset) => [asset.id, asset.name]));
 
+  const activeMemberCount = workspace.members.filter((m) => !m.disabledAt).length;
+
   return (
     <>
       {formError && !formError.formId ? (
@@ -102,7 +122,9 @@ export async function AjustesContent({
         <section className="ajustesPanel section" aria-label="Miembros">
           <div className="panelHeader">
             <h2>Miembros</h2>
-            <span>{workspace.members.filter((m) => !m.disabledAt).length} activos</span>
+            <span>
+              {activeMemberCount} {activeMemberCount === 1 ? "activo" : "activos"}
+            </span>
           </div>
 
           {formError?.formId === "newMember" ? (
@@ -114,7 +136,7 @@ export async function AjustesContent({
           <div className="memberGrid">
             {workspace.members.map((member) => (
               <div className="memberRow" key={member.id}>
-                <form action={updateMemberAction}>
+                <form action={updateMemberAction} className="memberIdentity">
                   <input name="currentUrl" type="hidden" value={currentUrl} />
                   <input name="id" type="hidden" value={member.id} />
                   <input
@@ -262,7 +284,7 @@ export async function AjustesContent({
             <dt>Miembros totales</dt>
             <dd>{workspace.members.length}</dd>
             <dt>Miembros activos</dt>
-            <dd>{workspace.members.filter((m) => !m.disabledAt).length}</dd>
+            <dd>{activeMemberCount}</dd>
           </dl>
         </section>
 
@@ -270,19 +292,16 @@ export async function AjustesContent({
         <section className="ajustesPanel section" aria-label="Persistencia">
           <div className="panelHeader">
             <h2>Persistencia</h2>
-            <span>Base de datos SQLite local</span>
+            <span>{persistence.displayPath}</span>
           </div>
+          {/* #1729: el panel abría con la URL cruda de la base de datos, la clave
+              interna del healthcheck y su valor —un ISO sin formatear— al mismo
+              nivel que el estado. Nada de eso le dice a nadie si sus datos están
+              a salvo, que es la única pregunta que este panel responde. Arriba se
+              quedan las dos filas que sí la contestan; el resto baja al plegable
+              técnico, disponible para quien lo busque y fuera de la vista del
+              resto. */}
           <dl className="infoList">
-            <dt>Ruta de la base de datos</dt>
-            <dd className="dbPath">{persistence.databasePath}</dd>
-            <dt>Ruta de visualización</dt>
-            <dd>{persistence.displayPath}</dd>
-            <dt>Último guardado</dt>
-            <dd>{new Date(persistence.checkedAt).toLocaleString("es-ES")}</dd>
-            <dt>Clave de healthcheck</dt>
-            <dd className="mono">{persistence.checkKey}</dd>
-            <dt>Valor verificado</dt>
-            <dd className="mono">{persistence.checkValue}</dd>
             <dt>Estado</dt>
             <dd>
               <span
@@ -291,7 +310,20 @@ export async function AjustesContent({
                 {persistence.status === "ok" ? "OK" : "Error"}
               </span>
             </dd>
+            <dt>Última comprobación</dt>
+            <dd>{formatCheckedAt(persistence.checkedAt)}</dd>
           </dl>
+          <details suppressHydrationWarning className="techDetails">
+            <summary>Detalles técnicos</summary>
+            <dl className="infoList">
+              <dt>Ruta de la base de datos</dt>
+              <dd className="dbPath">{persistence.databasePath}</dd>
+              <dt>Clave de healthcheck</dt>
+              <dd className="mono">{persistence.checkKey}</dd>
+              <dt>Valor verificado</dt>
+              <dd className="mono">{persistence.checkValue}</dd>
+            </dl>
+          </details>
           <p className="muted">
             Exportar descarga una copia completa del workspace en un archivo JSON:
             miembros, patrimonio, operaciones, snapshots y papelera incluidos.

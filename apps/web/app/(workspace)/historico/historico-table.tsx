@@ -205,7 +205,10 @@ export function HistoricoTable({
         <span>Fecha</span>
         <span className="numCol">Patrimonio neto</span>
         <span className="numCol">Δ vs anterior</span>
-        <span />
+        {/* #1729: esta cuarta columna llevaba cabecera vacía, así que su cifra
+            —cuántos holdings movieron el día— no decía de qué era cifra. Con
+            nombre se lee; el «▾» de la fila sigue diciendo que la fila abre. */}
+        <span className="historicoDrillCue">Movimientos</span>
       </div>
       {rows.map(({ snapshot, delta, movers, isMonthlyClose }) => {
         const currency = snapshot.totalNetWorth.currency;
@@ -238,8 +241,20 @@ export function HistoricoTable({
                 <span className={`numCol ${deltaSign ?? ""}`}>
                   {delta ? formatSigned(delta, privacyMode) : "—"}
                 </span>
-                <span className="historicoDrillCue" aria-hidden="true">
-                  {movers.length > 0 ? `${movers.length} ▾` : ""}
+                {/* La cifra ya no es decorativa: la columna tiene nombre, así que
+                    se lee con él. Solo el «▾» —que dice «esto abre», algo que el
+                    propio <summary> ya anuncia— se queda fuera del lector. */}
+                <span className="historicoDrillCue">
+                  {movers.length > 0 ? (
+                    <>
+                      {movers.length}
+                      <span aria-hidden="true" className="historicoDrillCaret">
+                        ▾
+                      </span>
+                    </>
+                  ) : (
+                    <span aria-hidden="true">—</span>
+                  )}
                 </span>
               </summary>
               <div className="historicoBridge">
