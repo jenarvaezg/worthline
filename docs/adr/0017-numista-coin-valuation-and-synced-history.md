@@ -139,6 +139,33 @@ refreshes, comfortably under the cap.
   never had: a months-old figure reading as valued today, with nothing to flag it.
   A coin whose line changed (issue, grade or quantity) carries nothing forward — it
   has no estimate of its own yet, and the old one would look fresh while being wrong.
+- **A pass that fails halfway keeps the coins it already paid for** (#1739). The
+  estimate is the capped call, so every coin a pass got through is money already
+  spent; coin 60 failing cannot invalidate coins 1–59. Two mechanisms, because a
+  pass dies in two ways:
+  - **With an exception** — the failure path persists what the pass resolved BEFORE
+    it marks the source stale, and only then leaves the prior fetched-at so the
+    retry comes back. Writing zero updates there — the original behaviour — was
+    self-perpetuating: the source was (rightly) left stale, which is the very
+    condition that triggers the next pass, so the retry re-bought the whole
+    collection and died at the same coin.
+  - **Without one** — a collection is ~80 SEQUENTIAL Numista calls, so the request
+    budget can run out and the process simply be gone, with nothing to catch. The
+    pass therefore banks a tranche every `REVALUE_CHECKPOINT_COINS` coins. This is
+    what makes the fix bite in production, where every injected read is total (a
+    Numista failure resolves to `null`, it does not throw) and the exception path is
+    nearly unreachable.
+
+    A tranche persists with a **null freshness**: the values land and the holding is
+    re-rolled, but the price-cache row is not stamped at all. The gate reads that
+    row's `fetchedAt` and ignores `freshnessState` (`selectStalePrices`), so any
+    stamp mid-pass would make an unfinished collection read as valued today — worst
+    on a never-valued source, the pass with every coin still to buy — and it would
+    also erase the previous failure's reason from the banner. Untouched, the source
+    stays due until the pass actually ends.
+
+  Measured on Jose's 78 priced coins: **440 `getPrices` calls on 2026-08-11 alone**,
+  ~5.6 passes over the same collection in one day, with not one stamp surviving.
 - The spot provider's coverage of platinum/palladium must be verified whenever it
   changes (`PL=F`/`PA=F` verified on Yahoo 2026-07-30); base-metal circulation
   coins lean on the numismatic estimate or the purchase-price fallback.

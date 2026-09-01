@@ -9,6 +9,7 @@ import {
   getPrices,
   isTokenValid,
   mintNumistaToken,
+  REVALUE_CHECKPOINT_COINS,
   refreshCoinValuations,
 } from "@worthline/pricing";
 import { parseNumistaToken, readApiKey } from "./numista-helpers";
@@ -50,7 +51,7 @@ export async function runNumistaCoinRefresh(
     readPositions: (sourceId) => store.connectedSources.readPositions(sourceId),
     persist: (sourceId, updates, freshness) =>
       store.connectedSources.revaluePositions(sourceId, updates, freshness),
-    revalue: async (sourceId, positions, now) => {
+    revalue: async (sourceId, positions, now, checkpoint) => {
       const source = await store.connectedSources.readSource(sourceId);
       const apiKey = source ? readApiKey(source.credentialsJson) : null;
       if (!source || !apiKey) {
@@ -74,7 +75,10 @@ export async function runNumistaCoinRefresh(
               .catch(() => null),
           spotPerOzEur: (metal) => fetchMetalSpotEur(metal, now),
         },
-        { nowIso: now },
+        {
+          checkpoint: { every: REVALUE_CHECKPOINT_COINS, persist: checkpoint },
+          nowIso: now,
+        },
       );
     },
   });

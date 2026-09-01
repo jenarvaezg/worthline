@@ -335,15 +335,18 @@ export {
 export type {
   NumistaSyncDeps,
   PositionDraft,
+  RevalueCheckpoint,
   RevalueDeps,
   RevaluedPosition,
   RevalueOptions,
+  RevaluePassOutcome,
   RevaluePosition,
   SyncedCoin,
 } from "./numista-valuation";
 export {
   fetchMetalSpotEur,
   NUMISMATIC_TTL_DAYS,
+  REVALUE_CHECKPOINT_COINS,
   refreshCoinValuations,
   syncedCoinFromPosition,
   syncNumistaCollection,

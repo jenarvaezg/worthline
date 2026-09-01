@@ -67,6 +67,9 @@ export interface RevalueOptions {
   nowIso: string;
   /** Override the numismatic refetch TTL (defaults to {@link NUMISMATIC_TTL_DAYS}). */
   numismaticTtlDays?: number;
+  /** Write the pass's work as it goes (#1739); omitted, the pass writes only at the
+   *  end and a death with no exception loses everything it paid for. */
+  checkpoint?: RevalueCheckpoint;
 }
 
 /**
@@ -97,6 +100,24 @@ export interface RevaluedPosition {
   metalValueMinor: number | null;
   numismaticValueMinor: number | null;
   numismaticFetchedAt: string | null;
+}
+
+/**
+ * What ONE revalue pass produced: the coins it resolved, and the failure that cut
+ * it short (null when it ran to completion).
+ *
+ * A pass never throws its work away (#1739). Every coin it got through has already
+ * been PAID FOR at Numista — the estimate is rate-capped (ADR 0017) — so the
+ * updates ride out alongside the error instead of dying with it, for the caller to
+ * persist before it marks the source stale. Losing them made the retry re-buy the
+ * whole collection and fail at the same coin: Jose's 78 priced coins cost 440
+ * `getPrices` calls in one day that way, and not one stamp survived.
+ */
+export interface RevaluePassOutcome {
+  /** The coins whose values/stamps changed, in the order the pass resolved them. */
+  updates: RevaluedPosition[];
+  /** What cut the pass short, or null when every position was visited. */
+  error: Error | null;
 }
 
 // ── Shared request-cap dedup + numismatic TTL gate ────────────────────────────
@@ -448,86 +469,146 @@ export async function syncNumistaCollection(
 
 // ── The decoupled revalue ─────────────────────────────────────────────────────
 
+/**
+ * How many resolved coins a pass writes at a time when a checkpoint is wired
+ * (#1739). Small enough that a pass killed mid-collection loses at most a handful
+ * of paid-for estimates; large enough that a 78-coin collection costs four extra
+ * writes, not seventy-eight.
+ */
+export const REVALUE_CHECKPOINT_COINS = 20;
+
+/**
+ * Persist-as-you-go for one pass (#1739). A pass over a real collection makes ~80
+ * sequential Numista calls, so it can die with no exception to catch — the request
+ * budget runs out, the process goes away — and everything it paid for dies with it.
+ * Writing every `every` coins bounds that loss to the tranche in flight.
+ *
+ * `persist` receives only the coins resolved since the previous write, and the
+ * final outcome still carries them all: re-applying a coin's own values is a no-op,
+ * so the caller never has to reconcile the tranches with the total.
+ */
+export interface RevalueCheckpoint {
+  /** Coins resolved between writes. */
+  every: number;
+  /** Write a tranche; the pass fails (keeping the rest) if this throws. */
+  persist: (updates: RevaluedPosition[]) => Promise<void>;
+}
+
+/**
+ * Revalue ONE stored coin: fetch what its candidates need, then let the coin-value
+ * module decide. Returns null when nothing about the coin changed — an unchanged
+ * coin is not worth a write.
+ */
+async function revalueOnePosition(
+  position: RevaluePosition,
+  cache: ReturnType<typeof createValuationCache>,
+  options: RevalueOptions,
+): Promise<RevaluedPosition | null> {
+  // ── Spot is fetched here (the I/O); the candidate math + decision live in the
+  //    coin-value module. An outage keeps the last-known metal figure (#240).
+  const spot = await cache.resolveSpot(position.metal);
+
+  // ── Numismatic: refetch only once the long TTL has lapsed (or never fetched);
+  //    the staleness clock is the module's. A successful fetch advances the
+  //    fetched-at stamp and supplies fresh prices to the module; otherwise we
+  //    keep the prior stamp and pass null prices so it keeps the last-known.
+  let prices: NumistaPrices | null = null;
+  let numismaticFetchedAt = position.numismaticFetchedAt;
+
+  if (
+    numismaticPastTtl(
+      position.numismaticFetchedAt,
+      options.nowIso,
+      options.numismaticTtlDays,
+    ) &&
+    position.issueId !== null &&
+    position.grade
+  ) {
+    // Shared with the sync (#1740): no answer → value + fetched-at untouched,
+    // so the next pass retries instead of waiting out the TTL.
+    const fetched = await fetchNumismaticEstimate(cache.resolvePrices, {
+      issueId: position.issueId,
+      nowIso: options.nowIso,
+      priorFetchedAt: position.numismaticFetchedAt,
+      typeId: position.typeId,
+    });
+    prices = fetched.prices;
+    numismaticFetchedAt = fetched.fetchedAt;
+  }
+
+  const candidates = candidateValues(
+    {
+      metal: position.metal,
+      finenessMillis: position.finenessMillis,
+      weightGrams: position.weightGrams,
+      quantity: position.quantity,
+      grade: position.grade,
+    },
+    {
+      spotPerOzEur: spot,
+      prices,
+      numismaticFetchedAt,
+      // The fallback rungs do not apply to the candidate refresh; the rollup owns
+      // the purchase/zero choice when both candidates are unresolved.
+      purchasePriceMinor: null,
+      lastMetalValueMinor: position.metalValueMinor,
+      lastNumismaticValueMinor: position.numismaticValueMinor,
+      nowIso: options.nowIso,
+    },
+  );
+
+  const unchanged =
+    candidates.metalValueMinor === position.metalValueMinor &&
+    candidates.numismaticValueMinor === position.numismaticValueMinor &&
+    numismaticFetchedAt === position.numismaticFetchedAt;
+
+  return unchanged
+    ? null
+    : {
+        id: position.id,
+        metalValueMinor: candidates.metalValueMinor,
+        numismaticValueMinor: candidates.numismaticValueMinor,
+        numismaticFetchedAt,
+      };
+}
+
 export async function refreshCoinValuations(
   positions: RevaluePosition[],
   deps: RevalueDeps,
   options: RevalueOptions,
-): Promise<RevaluedPosition[]> {
+): Promise<RevaluePassOutcome> {
   // Same per-metal + per-issue dedup the sync uses (ADR 0017 request-cap discipline).
   const cache = createValuationCache(deps);
+  const checkpoint = options.checkpoint;
 
   const results: RevaluedPosition[] = [];
-  for (const position of positions) {
-    // ── Spot is fetched here (the I/O); the candidate math + decision live in the
-    //    coin-value module. An outage keeps the last-known metal figure (#240).
-    const spot = await cache.resolveSpot(position.metal);
+  let sinceWrite: RevaluedPosition[] = [];
+  try {
+    for (const position of positions) {
+      const update = await revalueOnePosition(position, cache, options);
+      if (update === null) {
+        continue;
+      }
+      results.push(update);
+      sinceWrite.push(update);
 
-    // ── Numismatic: refetch only once the long TTL has lapsed (or never fetched);
-    //    the staleness clock is the module's. A successful fetch advances the
-    //    fetched-at stamp and supplies fresh prices to the module; otherwise we
-    //    keep the prior stamp and pass null prices so it keeps the last-known.
-    let prices: NumistaPrices | null = null;
-    let numismaticFetchedAt = position.numismaticFetchedAt;
-
-    if (
-      numismaticPastTtl(
-        position.numismaticFetchedAt,
-        options.nowIso,
-        options.numismaticTtlDays,
-      ) &&
-      position.issueId !== null &&
-      position.grade
-    ) {
-      // Shared with the sync (#1740): no answer → value + fetched-at untouched,
-      // so the next pass retries instead of waiting out the TTL.
-      const fetched = await fetchNumismaticEstimate(cache.resolvePrices, {
-        issueId: position.issueId,
-        nowIso: options.nowIso,
-        priorFetchedAt: position.numismaticFetchedAt,
-        typeId: position.typeId,
-      });
-      prices = fetched.prices;
-      numismaticFetchedAt = fetched.fetchedAt;
+      if (checkpoint && sinceWrite.length >= checkpoint.every) {
+        await checkpoint.persist(sinceWrite);
+        sinceWrite = [];
+      }
     }
-
-    const candidates = candidateValues(
-      {
-        metal: position.metal,
-        finenessMillis: position.finenessMillis,
-        weightGrams: position.weightGrams,
-        quantity: position.quantity,
-        grade: position.grade,
-      },
-      {
-        spotPerOzEur: spot,
-        prices,
-        numismaticFetchedAt,
-        // The fallback rungs do not apply to the candidate refresh; the rollup owns
-        // the purchase/zero choice when both candidates are unresolved.
-        purchasePriceMinor: null,
-        lastMetalValueMinor: position.metalValueMinor,
-        lastNumismaticValueMinor: position.numismaticValueMinor,
-        nowIso: options.nowIso,
-      },
-    );
-
-    const metalChanged = candidates.metalValueMinor !== position.metalValueMinor;
-    const numismaticChanged =
-      candidates.numismaticValueMinor !== position.numismaticValueMinor;
-    const fetchedAtChanged = numismaticFetchedAt !== position.numismaticFetchedAt;
-    if (!metalChanged && !numismaticChanged && !fetchedAtChanged) {
-      continue;
-    }
-
-    results.push({
-      id: position.id,
-      metalValueMinor: candidates.metalValueMinor,
-      numismaticValueMinor: candidates.numismaticValueMinor,
-      numismaticFetchedAt,
-    });
+  } catch (err) {
+    // Something gave up mid-collection (an expired token, a network drop, a failed
+    // tranche write). The coins resolved so far are already bought and stamped:
+    // hand them back with the reason so the caller persists them and the retry only
+    // pays for the rest.
+    return {
+      error: err instanceof Error ? err : new Error(String(err)),
+      updates: results,
+    };
   }
 
-  return results;
+  return { error: null, updates: results };
 }
 
 // ── The metal spot resolver (Yahoo futures × ECB) ─────────────────────────────
