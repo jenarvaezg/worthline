@@ -79,7 +79,7 @@ describe("numista-valuation — sync + revalue share one module", () => {
       },
       { nowIso: NOW },
     );
-    const re = revalued[0]!;
+    const re = revalued.updates[0]!;
 
     // The shared candidate-row construction must produce the same numbers from the
     // same detail + spot + estimate, whichever mode resolved them.
@@ -196,7 +196,7 @@ describe("numista-valuation — the stamp advances only on an answer (#1740)", (
           { prices: vi.fn(prices), spotPerOzEur: vi.fn(async () => 28) },
           { nowIso: NOW },
         );
-        const position = revalued[0]!;
+        const position = revalued.updates[0]!;
         return {
           fetchedAt: position.numismaticFetchedAt,
           valueMinor: position.numismaticValueMinor,
