@@ -50,6 +50,10 @@ import {
   joinRefusalGaps,
   MAX_SCANNED_CHARS,
 } from "./typed-message-reading";
+import {
+  type OperationReceiptFigures,
+  operationReceiptFigures,
+} from "./typed-operation-receipt";
 
 /** One dated operation, as much of it as a message can state. */
 export interface TypedHoldingEvent {
@@ -234,6 +238,13 @@ export function parseTypedHoldingEvent(
 ): TypedHoldingEventReading {
   const scanned = text.slice(0, MAX_SCANNED_CHARS);
   const withoutIsin = isinIn(scanned);
+  // A PASTED confirmation is read by its labels FIRST (#1751), and it has to come before
+  // the prose reader rather than after it: what the prose reader says about a table is
+  // `ambiguous_amount` — a refusal, not a miss — so there would be no failure to fall
+  // through from. `null` means this text is not a table, and everything below is
+  // untouched.
+  const receipt = operationReceiptFigures(withoutIsin.rest);
+  if (receipt !== null) return receiptReading(receipt, withoutIsin, scanned, today);
   const dated = dateInMessage(withoutIsin.rest, today);
   const body = dated === null ? withoutIsin.rest : dated.rest;
 
@@ -285,6 +296,55 @@ export function parseTypedHoldingEvent(
       ...(quantities.declaredTotal === undefined
         ? {}
         : { declaredTotalUnits: quantities.declaredTotal }),
+    },
+    status: "read",
+  };
+}
+
+/**
+ * The reading a PASTED confirmation composes into (#1751).
+ *
+ * Deliberately the same {@link TypedHoldingEventReading} the prose reader returns, gaps
+ * included: a paste that is missing the participaciones is told the same sentence as a
+ * message that never wrote them, because it is the same thing missing. What it does NOT
+ * inherit is the two ambiguity gaps — a table has no competing figures to be ambiguous
+ * about, which is the whole reason this door exists.
+ *
+ * The ISIN, the currency and the direction are still read off the WHOLE message, by the
+ * same three readers as always: «SUSCRIPCION I.I.C.» is what tells a bank's paper apart
+ * from a reembolso, and it is prose wherever it sits.
+ */
+function receiptReading(
+  figures: OperationReceiptFigures,
+  withoutIsin: { isin?: string; rest: string },
+  scanned: string,
+  today: string,
+): TypedHoldingEventReading {
+  const { amount, fees, pricePerUnit, units } = figures;
+  // «Fecha Operación» wins; a paper that labels no date falls back to the day the
+  // message names, and silence is still never «hoy».
+  const executedAt = figures.executedAt ?? dateInMessage(withoutIsin.rest, today)?.day;
+
+  const missing: TypedHoldingEventGap[] = [];
+  // The same rule as the prose reader, for the same reason (ADR 0067, #1325): without a
+  // quantity the chain can only derive one from the two money figures together.
+  if (units === undefined && !(amount !== undefined && pricePerUnit !== undefined)) {
+    missing.push("units");
+  }
+  if (amount === undefined && pricePerUnit === undefined) missing.push("money");
+  if (executedAt === undefined || executedAt === null) missing.push("date");
+  if (missing.length > 0) return { missing, status: "incomplete" };
+
+  return {
+    event: {
+      currency: currencyIn(scanned),
+      direction: directionIn(scanned),
+      executedAt: executedAt as string,
+      ...(units === undefined ? {} : { units }),
+      ...(amount === undefined ? {} : { amount }),
+      ...(pricePerUnit === undefined ? {} : { pricePerUnit }),
+      ...(fees === undefined ? {} : { fees }),
+      ...(withoutIsin.isin === undefined ? {} : { isin: withoutIsin.isin }),
     },
     status: "read",
   };

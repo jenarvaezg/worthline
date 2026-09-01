@@ -44,7 +44,8 @@ import {
   fabricatedCeremonyGuard,
   messagesWithFabricatedCeremony,
 } from "./fabricated-ceremony";
-import { rendersProposalCard } from "./proposal-card-presence";
+import { proposalCardInPart, rendersProposalCard } from "./proposal-card-presence";
+import { userFacingRefusal } from "./proposal-refusal";
 import { isProposalToolName, toolPartName } from "./tool-parts";
 
 /**
@@ -224,8 +225,51 @@ export const fabricatedProposalIn: (message: UIMessage) => FabricatedProposalKin
  * was never asked» and «it was asked and nothing came back», and not between the two
  * ways nothing came back — on screen those are the same empty space.
  */
-export function fabricatedProposalNote(kind: FabricatedProposalKind): string {
-  return kind === "no-call" ? FABRICATED_PROPOSAL_NOTE : NO_PROPOSAL_RETURNED_NOTE;
+export function fabricatedProposalNote(
+  kind: FabricatedProposalKind,
+  refusal?: string | null,
+): string {
+  if (kind === "no-call") return FABRICATED_PROPOSAL_NOTE;
+  return refusal ? refusedProposalNote(refusal) : NO_PROPOSAL_RETURNED_NOTE;
+}
+
+/**
+ * The refusal a lane of THIS turn wrote for the user, or `null` when it wrote none.
+ *
+ * Only parts that painted NO card are read, which is the same question the guard asks
+ * and off the same table: a turn that got its card has nothing to explain. The FIRST
+ * user-facing sentence wins — a turn that asks two lanes and gets two refusals is rare,
+ * and a note that recites both is a note nobody finishes reading.
+ *
+ * Lives here, next to the note it feeds, and not in `proposal-refusal.ts`: that module
+ * is imported by the lanes themselves, and pointing it back at the render's parser table
+ * would tie every tool to the panel.
+ */
+export function userFacingRefusalIn(message: UIMessage): string | null {
+  for (const part of message.parts) {
+    if (!isProposalToolName(toolPartName(part))) continue;
+    if (proposalCardInPart(part) !== null) continue;
+    const refusal = userFacingRefusal((part as { output?: unknown }).output);
+    if (refusal !== null) return refusal;
+  }
+  return null;
+}
+
+/**
+ * The note when worthline's «no» was written for the user, quoted verbatim (#1752).
+ *
+ * Quoted and ATTRIBUTED, never paraphrased and never spoken in the assistant's voice:
+ * the sentence is the app's, and the whole point of this note is that the prose above it
+ * cannot be trusted on this one subject. Everything the sibling note asserts stays —
+ * this message carries no proposal, and «confirmo» applies nothing — because those are
+ * still the two facts the user needs.
+ */
+function refusedProposalNote(refusal: string): string {
+  return (
+    "Este mensaje no lleva ninguna propuesta: el asistente pidió una a worthline y " +
+    `worthline no la ha preparado. Dice: «${refusal}» Un cambio solo se aplica desde la ` +
+    "tarjeta de su propuesta, con su botón: escribir «confirmo» en el chat no aplica nada."
+  );
 }
 
 /**

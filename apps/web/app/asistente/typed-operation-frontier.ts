@@ -72,6 +72,7 @@ export function resolveTypedOperationEvent(
   if (reading === undefined || reading.status === "absent") {
     return {
       error: {
+        audience: "model",
         error: "operation_document_required",
         message: OPERATION_DOCUMENT_REQUIRED_MESSAGE,
       },
@@ -81,6 +82,9 @@ export function resolveTypedOperationEvent(
   if (reading.status === "incomplete") {
     return {
       error: {
+        // THE one the user has to read (#1752): «no he visto la fecha. Dime el día».
+        // It is written to them, in the second person, and it names what to type.
+        audience: "user",
         error: "operation_fact_incomplete_in_message",
         message: typedHoldingEventGapMessage(reading.missing),
       },
@@ -92,7 +96,13 @@ export function resolveTypedOperationEvent(
   const conflict = typedDirectionConflict(event, claim.kind);
   if (conflict !== null) {
     return {
-      error: { error: "operation_kind_contradicts_message", message: conflict },
+      // «Tu mensaje dice una compra y yo iba a anotar una venta»: addressed to the
+      // person, and only they can settle it.
+      error: {
+        audience: "user",
+        error: "operation_kind_contradicts_message",
+        message: conflict,
+      },
       ok: false,
     };
   }
@@ -118,6 +128,8 @@ export function resolveTypedOperationEvent(
   if (mismatches.length > 0) {
     return {
       error: {
+        // «Pásame los datos tal cual los ha escrito»: at the model.
+        audience: "model",
         error: "operation_fact_not_in_message",
         message: operationFactNotInMessageMessage(mismatches),
       },
