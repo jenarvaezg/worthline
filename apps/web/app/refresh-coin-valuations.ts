@@ -127,8 +127,7 @@ export async function refreshStaleCoinValuations(
     // fell over BEFORE valuing anything — a missing credential, a token mint — so
     // `updates` stays empty and there is nothing left to keep. The happy-path write
     // stays inside the try: a failed write is a failed refresh too, and is reported
-    // as one below (which re-attempts it) instead of ending the whole pass over the
-    // remaining sources.
+    // as one below instead of escaping.
     let updates: RevaluedPosition[] = [];
     let failureMessage: string;
     try {
@@ -156,11 +155,19 @@ export async function refreshStaleCoinValuations(
     // mark the source stale — leaving the prior fetched-at so the next pass retries,
     // now starting from those stamps. The reason rides the banner via `errors`.
     errors.push(failureMessage);
-    await input.persist(source.sourceId, updates, {
-      ...stale,
-      staleReason:
-        "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
-    });
+    try {
+      await input.persist(source.sourceId, updates, {
+        ...stale,
+        staleReason:
+          "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
+      });
+    } catch (err) {
+      // The store itself is unwell (this is also the retry of a happy-path write
+      // that just failed). Report it and move to the next source: one broken
+      // source must not stop the others from refreshing, and this pass is awaited
+      // by the dashboard render.
+      errors.push(messageOf(err));
+    }
   }
 
   return { errors };

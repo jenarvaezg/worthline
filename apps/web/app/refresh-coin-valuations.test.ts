@@ -7,7 +7,10 @@
  * the source stale (it retries next pass) instead of throwing. Every effect is
  * injected, so the staleness gate and outage handling are tested without I/O.
  */
+import type { ValuationFreshness } from "@worthline/db";
 import type { AssetPrice, CoinPosition } from "@worthline/domain";
+import type { RevaluedPosition } from "@worthline/pricing";
+import { refreshCoinValuations } from "@worthline/pricing";
 import { describe, expect, it, vi } from "vitest";
 import type { CoinSourceRef } from "./refresh-coin-valuations";
 import { refreshStaleCoinValuations } from "./refresh-coin-valuations";
@@ -223,6 +226,37 @@ describe("refreshStaleCoinValuations", () => {
     expect(result.errors).toEqual(["write failed"]);
   });
 
+  it("reports a store that fails both writes instead of stopping the other sources", async () => {
+    const persist = vi.fn(() => {
+      throw new Error("store down");
+    });
+    const d = deps({
+      persist,
+      sources: [
+        {
+          sourceId: "src-1",
+          freshness: freshness({ fetchedAt: "2026-06-13T12:00:00.000Z" }),
+        },
+        {
+          sourceId: "src-2",
+          freshness: freshness({ fetchedAt: "2026-06-13T12:00:00.000Z" }),
+        },
+      ] satisfies CoinSourceRef[],
+    });
+
+    const result = await refreshStaleCoinValuations(d);
+
+    // Both sources were attempted (2 writes each: the fresh one, then the stale
+    // retry), and nothing escaped into the dashboard render that awaits this.
+    expect(persist).toHaveBeenCalledTimes(4);
+    expect(result.errors).toEqual([
+      "store down",
+      "store down",
+      "store down",
+      "store down",
+    ]);
+  });
+
   it("keeps last-known and marks stale when the pass throws before valuing anything", async () => {
     const twoDaysAgo = "2026-06-13T12:00:00.000Z";
     const d = deps({
@@ -249,5 +283,95 @@ describe("refreshStaleCoinValuations", () => {
       }),
     );
     expect(result.errors.length).toBe(1);
+  });
+});
+
+/**
+ * The two passes end to end (#1739), across the real seam: the store the failed
+ * pass wrote to is the store the NEXT pass reads from. The unit tests above stub
+ * `revalue`; this one runs the real `refreshCoinValuations` against an in-memory
+ * store, which is the only way to show that what a half-finished pass banked is
+ * what stops the retry from buying those coins again.
+ */
+describe("refreshStaleCoinValuations + refreshCoinValuations, two passes", () => {
+  const STALE_STAMP = "2026-05-01T12:00:00.000Z"; // 45 days before NOW → past the TTL
+  const TWO_DAYS_AGO = "2026-06-13T12:00:00.000Z";
+
+  function coinPrices() {
+    return { currency: "EUR", prices: [{ grade: "unc", price: 75.585 }] };
+  }
+
+  it("charges the second pass only for the coin the first never reached", async () => {
+    // Three coins past their numismatic TTL, each on its own issue → one call each.
+    const stored: CoinPosition[] = [1, 2, 3].map((n) => ({
+      ...position(),
+      id: `pos-${n}`,
+      issueId: 32720 + n,
+      metalValueMinor: 2797, // already at the fresh spot → only the estimate moves
+      numismaticFetchedAt: STALE_STAMP,
+      numismaticValueMinor: 1,
+    }));
+    let row: AssetPrice = freshness({ fetchedAt: TWO_DAYS_AGO });
+
+    // The store: apply each update by id, and stamp the freshness row.
+    const persist = (
+      _sourceId: string,
+      updates: RevaluedPosition[],
+      next: ValuationFreshness,
+    ): void => {
+      for (const update of updates) {
+        const coin = stored.find((candidate) => candidate.id === update.id);
+        if (coin) {
+          coin.metalValueMinor = update.metalValueMinor;
+          coin.numismaticValueMinor = update.numismaticValueMinor;
+          coin.numismaticFetchedAt = update.numismaticFetchedAt;
+        }
+      }
+      row = { ...row, fetchedAt: next.fetchedAt, freshnessState: next.freshnessState };
+    };
+
+    const pass = (prices: (typeId: number, issueId: number) => Promise<unknown>) =>
+      refreshStaleCoinValuations({
+        nowIso: NOW,
+        persist,
+        readPositions: () => stored.map((coin) => ({ ...coin })),
+        sources: [{ sourceId: "src-1", freshness: row }],
+        revalue: (_sourceId, positions, now, checkpoint) =>
+          refreshCoinValuations(
+            positions,
+            {
+              prices: prices as never,
+              spotPerOzEur: async () => 28,
+            },
+            { checkpoint: { every: 1, persist: checkpoint }, nowIso: now },
+          ),
+      });
+
+    // Pass 1: Numista answers the first two coins, then goes down.
+    const first = await pass(async (_typeId, issueId) => {
+      if (issueId === 32723) {
+        throw new Error("Numista 500");
+      }
+      return coinPrices();
+    });
+
+    expect(first.errors).toEqual(["Numista 500"]);
+    // What it paid for is IN THE STORE, and the source still reads due.
+    expect(stored.map((coin) => coin.numismaticFetchedAt)).toEqual([
+      NOW,
+      NOW,
+      STALE_STAMP,
+    ]);
+    expect(row).toMatchObject({ fetchedAt: TWO_DAYS_AGO, freshnessState: "stale" });
+
+    // Pass 2, immediately after, with Numista back.
+    const prices = vi.fn(async () => coinPrices());
+    const second = await pass(prices);
+
+    expect(second.errors).toEqual([]);
+    expect(prices).toHaveBeenCalledTimes(1); // ONE coin, not three
+    expect(prices).toHaveBeenCalledWith(1493, 32723);
+    expect(stored.every((coin) => coin.numismaticFetchedAt === NOW)).toBe(true);
+    expect(row).toMatchObject({ fetchedAt: NOW, freshnessState: "fresh" });
   });
 });
