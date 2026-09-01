@@ -6,13 +6,16 @@ import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
 
 afterEach(() => {
+  // A test that fakes the clock must not leak it into the next one, even when it
+  // fails mid-way.
+  vi.useRealTimers();
   if (ORIGINAL_DB_PATH === undefined) {
     delete process.env.WORTHLINE_DB_PATH;
   } else {
@@ -201,6 +204,13 @@ interface TraceBody {
 
 describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => {
   test("returns the amortization cuadro with the interest/principal split per cuota", async () => {
+    // The settlement figure is read mid-cycle on purpose: cuotas fall on the 1st,
+    // and ON a cuota date nothing has accrued yet by design (see
+    // `accruedInterestAtDate`), so a real clock made this red every 1st of the
+    // month. Only `Date` is faked — the store's timers stay real.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-15T12:00:00.000Z"));
+
     const store = await freshStore("worthline-agent-view-trace-");
     await seedLoan(store);
     store.close();
