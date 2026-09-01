@@ -13,6 +13,7 @@ import {
   buildOperationProposal,
   type OperationFactSource,
 } from "@web/asistente/operation-proposals";
+import { userRefusal } from "@web/asistente/proposal-refusal";
 import { resolveTypedOperationEvent } from "@web/asistente/typed-operation-frontier";
 import {
   PAYWALL_OPERATION_MESSAGE,
@@ -61,6 +62,8 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
             : null;
         if (kind === null) {
           return Promise.resolve({
+            // «No lo elijo yo»: the sentence argues with the caller, not with the person.
+            audience: "model",
             error: "operation_kind_required",
             message:
               "Falta decir si la operación es una compra, una venta o una aportación " +
@@ -71,6 +74,7 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
         const publicHoldingId = args.holdingId?.trim();
         if (!publicHoldingId) {
           return Promise.resolve({
+            audience: "model",
             error: "operation_holding_required",
             message:
               "Falta la posición en la que anotar la operación. Lee la cartera y pasa el " +
@@ -124,7 +128,12 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
             },
             input.asOf,
           );
-          return built.ok ? built.proposal : { error: built.error };
+          // The builder's refusals all ROUTE the person — «dala de alta», «revisa el
+          // justificante», «/ajustes/conexiones» — so they are the ones worth quoting on
+          // screen when the model decides to narrate something else instead (#1752).
+          return built.ok
+            ? built.proposal
+            : userRefusal("operation_not_written", built.error);
         });
       },
     }),

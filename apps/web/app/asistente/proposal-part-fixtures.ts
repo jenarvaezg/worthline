@@ -62,6 +62,26 @@ export function rejectedProposalPart(): Part {
   });
 }
 
+/**
+ * The call worthline refused with a sentence written FOR THE USER (#1752).
+ *
+ * Jose's refusal, verbatim: the paste of a bank confirmation whose figures the prose
+ * reader could not tell apart. It declares its audience, so the note may quote it.
+ */
+export function userRefusedProposalPart(): Part {
+  return toolPart("tool-propose_operation", {
+    output: {
+      audience: "user",
+      error: "operation_fact_incomplete_in_message",
+      message:
+        "Te anoto la operación sin justificante, pero no he visto la fecha. Dime el día " +
+        "(«hoy», «ayer» o 12/08/2026): no fecho yo una operación que no me has fechado.",
+    },
+    state: "output-available",
+    toolCallId: "call-6",
+  });
+}
+
 /** The alert call that really reached the control plane — the ONE success shape. */
 export function raisedAlertPart(): Part {
   return toolPart("tool-raise_maintainer_alert", {

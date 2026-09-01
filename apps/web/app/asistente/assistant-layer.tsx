@@ -30,6 +30,7 @@ import {
 import {
   fabricatedProposalNote,
   messagesWithFabricatedProposal,
+  userFacingRefusalIn,
 } from "./fabricated-proposal";
 import { labelsByPublicHoldingId } from "./holding-id-prose";
 import { ProposalAppliedContext } from "./onboarding-completion";
@@ -329,7 +330,9 @@ function ConversationParts({
                 className="assistantFakeProposal"
                 // Same entry, two sentences (#1468): «nunca la pidió» and «la pidió y
                 // worthline no devolvió tarjeta» leave the user with different moves.
-                text={fabricatedProposalNote(fabrication)}
+                // …and since #1752 a third: «la pidió, worthline dijo que no, y esto es
+                // lo que dijo», whenever that «no» was written for the user.
+                text={fabricatedProposalNote(fabrication, userFacingRefusalIn(message))}
               />
             )}
             {fabricatedAlerts.has(message.id) ? (
