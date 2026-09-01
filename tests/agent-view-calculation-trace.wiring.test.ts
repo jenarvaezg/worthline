@@ -6,13 +6,14 @@ import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
 
 afterEach(() => {
+  vi.useRealTimers();
   if (ORIGINAL_DB_PATH === undefined) {
     delete process.env.WORTHLINE_DB_PATH;
   } else {
@@ -201,6 +202,15 @@ interface TraceBody {
 
 describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => {
   test("returns the amortization cuadro with the interest/principal split per cuota", async () => {
+    // The settlement block below asserts a LIVE accrual cycle, and the loan's
+    // cuotas fall on the 1st. Read on the 1st of a month, the last payment IS the
+    // as-of date: zero days accrued, zero interest, and `lastPaymentDate < asOf`
+    // false. The test was therefore red every first of the month — it went red on
+    // 2026-09-01 with nothing to do with the change that found it. Pinning the
+    // clock mid-cycle is what the assertions always meant to describe.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-06-15T10:00:00.000Z"));
+
     const store = await freshStore("worthline-agent-view-trace-");
     await seedLoan(store);
     store.close();

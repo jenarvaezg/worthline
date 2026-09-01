@@ -700,7 +700,17 @@ async function syncSourcePositions(
     // 0016, #248), dispatched per kind (frozen coin vs live token): one asset
     // per occupied rung is updated/created, and a rung the source no longer
     // occupies is zeroed (kept for snapshots), never deleted.
-    await rerollSourceHoldings(ctx, source);
+    const valueMinor = await rerollSourceHoldings(ctx, source);
+
+    // A sync that got here spoke to the provider and rewrote the positions from
+    // what it answered, so the source IS fresh as of `syncedAt` — and says so on
+    // the same row the revalue stamps (#1755). Stamping it here is what lets the
+    // user clear a stale mark without waiting for the nightly revalue: before
+    // this, syncing refreshed every figure and left the warning standing.
+    await stampSourceFreshness(ctx, source, valueMinor, {
+      fetchedAt: syncedAt,
+      freshnessState: "fresh",
+    });
 
     await db
       .update(connectedSources)
@@ -712,6 +722,47 @@ async function syncSourcePositions(
   await ctx.writeAuditEntry("sync_source", "connected_source", sourceId, {
     positionCount: incoming.length,
   });
+}
+
+/**
+ * Upsert the source's single valuation-freshness row, sourced by the adapter
+ * ("numista" | "binance"): the staleness indicator every surface reads, and the
+ * entry the daily stale-price pass selects to trigger the next refresh. `price`
+ * carries the rolled-up value for parity with other cache rows.
+ *
+ * BOTH write paths stamp it, and that is the point (#1755). It used to live
+ * inside the revalue alone, so a SYNC — the button the user actually presses, and
+ * the cron's own sync phase — refreshed the figures and left this row untouched.
+ * A `stale` written by a failed revalue then had no way out: three separate
+ * warnings (the connections pill, the stale-price signal and the stale-sync
+ * signal) all read this one row, and syncing could not clear any of them. Jose's
+ * and Jorge's collections sat 21 days that way, both saying "Desactualizado" over
+ * figures that were refreshed the same morning.
+ */
+async function stampSourceFreshness(
+  ctx: StoreContext,
+  source: ConnectedSourceRow,
+  valueMinor: number,
+  freshness: ValuationFreshness,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    assetId: source.assetId,
+    currency: "EUR",
+    fetchedAt: freshness.fetchedAt,
+    freshnessState: freshness.freshnessState,
+    price: String(valueMinor),
+    source: source.adapter,
+    staleReason: freshness.staleReason ?? null,
+  };
+  await ctx.db
+    .insert(assetPriceCache)
+    .values({ ...row, updatedAt: now })
+    .onConflictDoUpdate({
+      target: assetPriceCache.assetId,
+      set: { ...row, updatedAt: now },
+    })
+    .run();
 }
 
 async function revalueSourcePositions(
@@ -744,29 +795,7 @@ async function revalueSourcePositions(
 
     const valueMinor = await rerollSourceHoldings(ctx, source);
 
-    // Upsert the holding's single valuation-freshness row, sourced by the
-    // adapter ("numista" | "binance"): the staleness indicator the detail
-    // surface reads, and the entry the daily stale-price pass selects to
-    // trigger the next refresh. `price` carries the rolled-up value for parity
-    // with other cache rows.
-    const now = new Date().toISOString();
-    const row = {
-      assetId: source.assetId,
-      currency: "EUR",
-      fetchedAt: freshness.fetchedAt,
-      freshnessState: freshness.freshnessState,
-      price: String(valueMinor),
-      source: source.adapter,
-      staleReason: freshness.staleReason ?? null,
-    };
-    await db
-      .insert(assetPriceCache)
-      .values({ ...row, updatedAt: now })
-      .onConflictDoUpdate({
-        target: assetPriceCache.assetId,
-        set: { ...row, updatedAt: now },
-      })
-      .run();
+    await stampSourceFreshness(ctx, source, valueMinor, freshness);
   });
 
   await ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {

@@ -300,8 +300,10 @@ describe("connected-source summaries in the financial context", () => {
 
     const binance = sources.find((s) => s.adapter === "binance")!;
     expect(binance.id).toMatch(/^wl_src_/);
-    // Binance synced but was never revalued → no freshness row yet.
-    expect(binance.freshness.status).toBe("unknown");
+    // Synced and never revalued is FRESH now (#1755): the sync spoke to the
+    // provider, so it stamps the freshness row too. This used to read `unknown`
+    // — a source that had just answered, reported as if nobody had asked.
+    expect(binance.freshness.status).toBe("fresh");
     expect(binance.freshness.lastSuccessfulSyncAt).toBe("2026-06-16T10:00:00.000Z");
   });
 

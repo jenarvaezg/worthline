@@ -569,6 +569,73 @@ describe("runDailyCapture — connected-source sync phase (#895)", () => {
     b.close();
   });
 
+  test("hands the degradations to the reporter — the consumer they never had (#1755)", async () => {
+    const store = await seededStore();
+    const reportSourceSyncFailures = vi.fn(async () => {});
+
+    await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      syncConnectedSources: async () => ({ errors: ["Numista: revisa la conexión."] }),
+      reportSourceSyncFailures,
+      now: NOW,
+    });
+
+    expect(reportSourceSyncFailures).toHaveBeenCalledWith([
+      { workspaceId: "ws", error: "Numista: revisa la conexión." },
+    ]);
+
+    store.close();
+  });
+
+  test("a clean pass never calls the reporter (#1755)", async () => {
+    const store = await seededStore();
+    const reportSourceSyncFailures = vi.fn(async () => {});
+
+    await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      syncConnectedSources: async () => ({ errors: [] }),
+      reportSourceSyncFailures,
+      now: NOW,
+    });
+
+    expect(reportSourceSyncFailures).not.toHaveBeenCalled();
+
+    store.close();
+  });
+
+  test("a reporter that throws never costs the pass its snapshot (#1755)", async () => {
+    const store = await seededStore();
+    const finalized = new Set<string>();
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      syncConnectedSources: async () => ({ errors: ["Numista: revisa la conexión."] }),
+      reportSourceSyncFailures: async () => {
+        throw new Error("control plane unreachable");
+      },
+      isRunFinalized: async (runKey) => finalized.has(runKey),
+      markRunFinalized: async (runKey) => {
+        finalized.add(runKey);
+      },
+      now: NOW,
+    });
+
+    // An already-degraded pass must not become a failed one because the alert
+    // could not be written.
+    expect(result.captured).toBe(1);
+    expect(result.failures).toEqual([]);
+    expect(result.sourceSyncFailures).toHaveLength(1);
+    expect(finalized.has(`${TODAY}:pm`)).toBe(true);
+
+    store.close();
+  });
+
   test("pauses connected-source sync for a workspace the gate denies, still capturing its snapshot (#1162)", async () => {
     const free = await seededStore();
     const premium = await seededStore();

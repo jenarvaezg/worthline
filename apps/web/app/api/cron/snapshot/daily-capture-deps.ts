@@ -1,4 +1,5 @@
 import { buildMissedCaptureAlerts } from "@web/admin/missed-capture-alert";
+import { buildSourceSyncAlerts } from "@web/admin/source-sync-alert";
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import { withControlPlaneStore } from "@web/control-plane-store";
@@ -119,6 +120,16 @@ export function buildDailyCaptureDeps(
         // One alert per missed pass, keyed so a re-detection accumulates an
         // occurrence instead of minting a duplicate (see the alert contract).
         for (const alert of buildMissedCaptureAlerts(report)) {
+          await controlPlane.raiseMaintainerAlert(alert);
+        }
+      }),
+    // The consumer `sourceSyncFailures` never had (#1755). One alert per degraded
+    // workspace, keyed so repeated nights accumulate occurrences on one incident
+    // instead of minting a new alert each time. The engine contains a throw here,
+    // so a control-plane hiccup costs the alert and nothing else.
+    reportSourceSyncFailures: (failures) =>
+      withCron(async (controlPlane) => {
+        for (const alert of buildSourceSyncAlerts(failures, now)) {
           await controlPlane.raiseMaintainerAlert(alert);
         }
       }),
