@@ -1,4 +1,5 @@
 import { auth, signIn } from "@web/auth";
+import LegalLinks from "@web/legal/legal-links";
 import { parseReturnTo } from "@web/return-to";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -79,6 +80,10 @@ export default async function LoginPage({
             ¿Solo mirando? <Link href="/demo">Probar la demo →</Link>
           </p>
         </div>
+
+        {/* El umbral también es superficie pública: los textos legales cuelgan
+            de aquí (#1172, LSSI art. 10). */}
+        <LegalLinks />
       </div>
     </main>
   );
