@@ -51,10 +51,6 @@ const CHECKED_AT_FORMATTER = new Intl.DateTimeFormat("es-ES", {
   year: "numeric",
 });
 
-function formatCheckedAt(iso: string): string {
-  return CHECKED_AT_FORMATTER.format(new Date(iso));
-}
-
 export default function AjustesPage({
   searchParams,
 }: {
@@ -141,6 +137,7 @@ export async function AjustesContent({
                   <input name="id" type="hidden" value={member.id} />
                   <input
                     aria-label={`Nombre de ${member.name}`}
+                    className="memberNameInput"
                     defaultValue={member.name}
                     disabled={Boolean(member.disabledAt)}
                     name="name"
@@ -311,7 +308,7 @@ export async function AjustesContent({
               </span>
             </dd>
             <dt>Última comprobación</dt>
-            <dd>{formatCheckedAt(persistence.checkedAt)}</dd>
+            <dd>{CHECKED_AT_FORMATTER.format(new Date(persistence.checkedAt))}</dd>
           </dl>
           <details suppressHydrationWarning className="techDetails">
             <summary>Detalles técnicos</summary>

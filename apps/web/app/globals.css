@@ -558,6 +558,24 @@ body {
   overflow-x: hidden;
 }
 
+/* Un <a> sin regla NO hereda el color de su padre: el UA le pone `-webkit-link`,
+   así que no decir nada es decir «azul de navegador», que no es ninguno de los
+   tonos del canon. Se colaba en la nota de la plantilla de operaciones, en las
+   entradillas de admin, en los saltos a «tus supuestos» de Objetivos, en el portal
+   de facturación de Premium y en la invitación a la demo del login (#1729).
+   Enumerar contenedores solo aplaza la reincidencia: el suelo va en el elemento.
+
+   `:where()` para que valga CERO en especificidad. Cada receta de enlace que ya
+   existe —`.legalSheet a`, `.topNav a`, `.balanceRowName a`, las pestañas…— sigue
+   ganando sin tocarla, y `.landing a` del módulo de la cubierta también. Esto no
+   repinta nada: solo alcanza a los enlaces que hoy no tienen a nadie que los pinte.
+   La cubierta no necesita excepción todavía —sus únicos enlaces sin receta viven
+   en una `.coverSheet`, que es papel—; el día que uno se pose sobre `--cover`,
+   ese es un color de interacción nuevo y se decide entonces, no aquí. */
+:where(a) {
+  color: var(--blue);
+}
+
 button,
 input,
 select,
@@ -4350,14 +4368,18 @@ code {
 .memberIdentity {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 /* `min-width: 0` porque un input es `min-width: auto` por defecto y se niega a
-   encoger por debajo de su tamaño intrínseco: sin esto la fila desborda el panel
-   en cuanto la columna se estrecha. */
-.memberIdentity input[name="name"] {
-  flex: 1;
+   encoger por debajo de su tamaño intrínseco. Pero encoger sin suelo cambia un
+   solapamiento por un campo de nombre de treinta píxeles en un teléfono estrecho,
+   así que la base es 160 px y la fila `wrap`: por debajo de eso el estado y el
+   botón bajan a una segunda línea —que es lo que el flujo hacía antes, solo que
+   ahora sin pisarse. */
+.memberNameInput {
+  flex: 1 1 160px;
   min-width: 0;
 }
 
@@ -4706,8 +4728,10 @@ code {
 
 /* Plegable de fontanería (#1729): lo que solo importa cuando algo va mal —la URL
    de la base de datos, la clave interna del healthcheck y su valor en crudo— no
-   desaparece, se pliega. Registro de papel: una regla que lo abre y un resumen en
-   tinta, la misma receta que `.editAdvanced` en la ficha de holding. */
+   desaparece, se pliega. Registro de papel: una regla que lo abre y un resumen que
+   lo nombra. No es `.editAdvanced`: aquel resumen es un encabezado de sección de
+   formulario (tinta, 1 rem, 650) y este es una etiqueta pequeña dentro de un panel
+   de ajustes, del mismo peso que los `dt` de la lista que pliega. */
 .techDetails {
   border-top: 1px solid var(--line);
   margin-top: 14px;
@@ -5765,15 +5789,15 @@ code {
 /* Marcador de valor derivado (ADR 0006). Fue «≈» hasta #1729: dos trazos
    horizontales a 0,7 rem, en la misma columna donde un pasivo abre con «−», se
    leían como un menos y convertían un activo calculado en una deuda. La palabra
-   abreviada no se confunde con ningún signo; se queda en muted, en cursiva y por
-   debajo del cuerpo, para seguir siendo una anotación al margen de la cifra y no
-   otra cifra. */
+   abreviada no se confunde con ningún signo; se queda en muted y por debajo del
+   cuerpo, para seguir siendo una anotación al margen de la cifra y no otra cifra.
+   Sin cursiva ni pesos intermedios: Source Sans 3 se auto-hospeda solo en 400 y
+   700 normales, así que a 0,68 rem cualquiera de las dos sale sintética. */
 .balanceCalc {
   font-size: 0.68rem;
   color: var(--muted);
   cursor: help;
-  font-style: italic;
-  font-weight: 500;
+  letter-spacing: 0.02em;
   margin-right: 4px;
   text-decoration: none;
 }
@@ -6415,18 +6439,6 @@ td.rowActions > * {
   color: var(--muted);
   font-style: italic;
   margin: 8px 0;
-}
-
-/* Un <a> sin regla hereda el azul del navegador, que no es ninguno de los tonos
-   del canon: en la nota de la plantilla de operaciones y en las entradillas de
-   admin el enlace salía en un azul eléctrico subrayado que rompía la paleta
-   (#1729). Estas cuatro prosas comparten receta en vez de redeclarar cada una la
-   misma línea, que es como se separan dos tratamientos que deberían ser uno. */
-.infoNote a,
-.demoLede a,
-.alertMeta a,
-.catalogUnavailableMsg a {
-  color: var(--blue);
 }
 
 .formActions {
@@ -8712,12 +8724,21 @@ td.rowActions > * {
    cabecera vacía y 0,75 rem en muted: una cifra que nadie sabía leer ni podía. La
    columna ahora cabe su nombre, y la cifra sube a cuerpo de tabla y a tinta plena
    —es un dato del día, no una marca decorativa—; el «▾» se queda en muted, que es
-   lo que sí es un adorno. */
+   lo que sí es un adorno.
+
+   Y se alinea a la izquierda como el resto: `.numCol` no pinta alineación (hoy
+   solo existe como gancho del peso del cierre de mes), así que las otras tres
+   columnas empiezan a la izquierda. A 44 px la alineación a la derecha no se
+   notaba; a 120 px habría dejado a «Movimientos» solo contra el margen.
+
+   Sin `--font-numeric`, que el canon (§3) sí pide para una columna de cifras:
+   ninguna de las otras tres de esta tabla lo lleva —`.numCol` no pinta nada hoy—,
+   y poner Iosevka en una sola columna es cambiar un desajuste por otro. La tabla
+   entera es otra conversación. */
 .historicoDrillCue {
   color: var(--ink);
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 .historicoDrillHead .historicoDrillCue {

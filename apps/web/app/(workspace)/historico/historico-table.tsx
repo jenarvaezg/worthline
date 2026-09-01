@@ -242,8 +242,9 @@ export function HistoricoTable({
                   {delta ? formatSigned(delta, privacyMode) : "—"}
                 </span>
                 {/* La cifra ya no es decorativa: la columna tiene nombre, así que
-                    se lee con él. Solo el «▾» —que dice «esto abre», algo que el
-                    propio <summary> ya anuncia— se queda fuera del lector. */}
+                    se lee con él —y el «—» del día sin movimientos se lee igual que
+                    el «—» del delta que tiene al lado. Solo el «▾» —que dice «esto
+                    abre», algo que el propio <summary> ya anuncia— sale del lector. */}
                 <span className="historicoDrillCue">
                   {movers.length > 0 ? (
                     <>
@@ -253,7 +254,7 @@ export function HistoricoTable({
                       </span>
                     </>
                   ) : (
-                    <span aria-hidden="true">—</span>
+                    "—"
                   )}
                 </span>
               </summary>
