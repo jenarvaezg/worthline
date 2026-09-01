@@ -282,7 +282,7 @@ export default function CatalogWorkbench({
                   onSort={toggleSort}
                   sort="identidad"
                 />
-                <th>Nombre</th>
+                <th className="catalogNameCol">Nombre</th>
                 <SortableHeader
                   activeSort={activeSort}
                   label="Aviso"

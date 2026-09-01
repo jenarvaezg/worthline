@@ -146,9 +146,12 @@ export function HoldingRow({
   return (
     <div className={`balanceRow${banded ? " band" : ""}`} id={publicId ?? undefined}>
       <div className="balanceRowName">
-        {/* #1732: el nombre se trunca en una línea y guarda el completo en el
-            `title`. Sin esto, un nombre largo de ETF partía a dos líneas y
-            apretaba la columna del importe, en escritorio y en móvil. */}
+        {/* #1732: el nombre se trunca en una línea. Sin esto, un nombre largo de
+            ETF partía a dos líneas y apretaba la columna del importe, en
+            escritorio y en móvil. Dónde queda el nombre entero depende de con qué
+            se lee: el `title` lo da en escritorio, el `aria-label` del menú de la
+            fila lo lee la tecnología asistiva, y en táctil —donde no hay hover—
+            lo da la ficha, que está a un toque porque el nombre ES su enlace. */}
         <div className="balanceRowTitle">
           {detailHref ? (
             <Link className="balanceRowLabel" href={detailHref} title={h.name}>

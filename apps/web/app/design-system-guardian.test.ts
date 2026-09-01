@@ -728,7 +728,7 @@ describe("Libro mayor design-system guardian (#906)", () => {
     expect(row).toContain('className="balanceRowLabel" href={detailHref} title={h.name}');
   });
 
-  test("the workspace reserves the assistant launcher's footprint on mobile (#1732)", () => {
+  test("every page container reserves the launcher's footprint on mobile (#1732)", () => {
     // El marcador de registro no se mueve (canon §5, vive en esa esquina): lo
     // que se reserva es el papel que tiene debajo, o se monta sobre la última
     // fila del tablero — su importe y su menú «⋯».
@@ -737,21 +737,47 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     const height = Number.parseInt(fab?.declarations.get("height") ?? "0", 10);
     const bottom = Number.parseInt(fab?.declarations.get("bottom") ?? "0", 10);
-
-    const mobile = rules.filter(
-      (rule) =>
-        rule.file === "globals.css" &&
-        ruleIncludesSelector(rule, ".workspace") &&
-        rule.declarations.has("padding"),
+    const root = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ":root",
     );
-    const reserved = mobile
-      .map((rule) => rule.declarations.get("padding")!.split(/\s+/))
-      .filter((parts) => parts.length === 3)
-      .map((parts) => Number.parseInt(parts[2]!, 10));
+    const clearance = Number.parseInt(
+      root?.declarations.get("--fab-clearance") ?? "0",
+      10,
+    );
 
-    expect(reserved.length).toBeGreaterThan(0);
-    for (const padding of reserved) {
-      expect(padding).toBeGreaterThanOrEqual(height + bottom);
+    // El hueco reservado cubre de verdad lo que el marcador ocupa.
+    expect(clearance).toBeGreaterThanOrEqual(height + bottom);
+
+    // Y lo reserva TODO contenedor de página donde el lanzador se monta, que es
+    // cualquiera con sesión abierta: `AssistantMount` solo lo calla para el
+    // visitante deslogueado, así que la única exención es la del login. Sin esta
+    // comprobación la lista se queda corta en silencio la próxima vez que nazca
+    // una superficie.
+    const reserving = new Set(
+      rules
+        .filter(
+          (rule) =>
+            rule.file === "globals.css" &&
+            (rule.declarations.get("padding-bottom") === "var(--fab-clearance)" ||
+              rule.declarations.get("padding")?.includes("var(--fab-clearance)")),
+        )
+        .flatMap((rule) => rule.selector.split(",").map((part) => part.trim())),
+    );
+
+    const loggedOutOnly = new Set([".loginPage"]);
+    const containers = new Set(
+      sourceFiles(/\.tsx$/).flatMap((file) =>
+        [...readFileSync(file, "utf8").matchAll(/<main className="([^"{]+)"/g)].map(
+          (match) => `.${match[1]!.trim().split(/\s+/)[0]}`,
+        ),
+      ),
+    );
+
+    for (const container of containers) {
+      if (loggedOutOnly.has(container)) continue;
+      expect(reserving.has(container), `${container} must reserve --fab-clearance`).toBe(
+        true,
+      );
     }
   });
 });

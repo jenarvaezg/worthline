@@ -20,7 +20,8 @@ describe("ImpersonationBand (#1732)", () => {
   test("on a product route it says whose book is on screen", () => {
     const markup = render("/patrimonio");
 
-    expect(markup).toContain("Viendo como ana@example.com");
+    // El email va en negrita: es la palabra sobre la que aterriza la mirada.
+    expect(markup).toContain("Viendo como <strong>ana@example.com</strong>");
     expect(markup).toContain("solo lectura");
   });
 

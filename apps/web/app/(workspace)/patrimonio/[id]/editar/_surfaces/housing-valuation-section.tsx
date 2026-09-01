@@ -92,7 +92,9 @@ export function HousingValuationSection({
         <p className="infoNote">
           Déjalo en blanco para no aplicar revalorización entre tasaciones.
         </p>
-        <button type="submit">Guardar tasa</button>
+        <button className="btnSecondary" type="submit">
+          Guardar tasa
+        </button>
       </form>
 
       <details suppressHydrationWarning className="anchorEdit">
@@ -116,7 +118,9 @@ export function HousingValuationSection({
             interpolado dibuja una línea suave de revalorización entre eventos en el
             histórico.
           </p>
-          <button type="submit">Guardar cadencia</button>
+          <button className="btnSecondary" type="submit">
+            Guardar cadencia
+          </button>
         </form>
       </details>
 

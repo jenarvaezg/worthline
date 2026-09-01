@@ -17,24 +17,25 @@ export function isAdminConsolePath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
 
+/**
+ * The band's sentence, split around the email so the band can keep printing WHOSE
+ * book this is in bold — the one word a glance has to land on. What the band IS
+ * — a session band labelled «Impersonación de administrador» — does not change
+ * with the route, so it is not a field here: only the sentence varies.
+ */
 export interface ImpersonationBandCopy {
-  /** The band's sentence, with `email` already placed. */
+  /** What precedes the email. */
   lead: string;
-  /** The word the band is labelled by, for assistive tech. */
-  ariaLabel: string;
+  /** What follows it. */
+  trail: string;
 }
 
-export function impersonationBandCopy(
-  pathname: string,
-  email: string,
-): ImpersonationBandCopy {
+export function impersonationBandCopy(pathname: string): ImpersonationBandCopy {
   return isAdminConsolePath(pathname)
     ? {
-        ariaLabel: "Impersonación de administrador",
-        lead: `Impersonación abierta sobre ${email}. Esta pantalla es tu consola de administración, no su espacio: lo que ves aquí es tuyo.`,
+        lead: "Impersonación abierta sobre ",
+        trail:
+          ". Esta pantalla es tu consola de administración, no su espacio: lo que ves aquí es tuyo.",
       }
-    : {
-        ariaLabel: "Impersonación de administrador",
-        lead: `Viendo como ${email} (solo lectura)`,
-      };
+    : { lead: "Viendo como ", trail: " (solo lectura)" };
 }

@@ -22,16 +22,20 @@ export function ImpersonationBand({
   email: string;
   stopAction: () => void | Promise<void>;
 }) {
-  const copy = impersonationBandCopy(usePathname() ?? "", email);
+  const { lead, trail } = impersonationBandCopy(usePathname() ?? "");
 
   return (
     <div
-      aria-label={copy.ariaLabel}
+      aria-label="Impersonación de administrador"
       className="sessionBand"
       data-tone="warning"
       role="note"
     >
-      <span>{copy.lead}</span>
+      <span>
+        {lead}
+        <strong>{email}</strong>
+        {trail}
+      </span>
       <form action={stopAction}>
         <button type="submit">Salir →</button>
       </form>

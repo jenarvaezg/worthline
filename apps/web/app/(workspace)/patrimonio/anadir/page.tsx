@@ -13,6 +13,7 @@ import {
   type AltaPaneContext,
 } from "@web/patrimonio/anadir/_families/alta-panes";
 import { loadInvestmentLivePrice } from "@web/patrimonio/anadir/_families/investment-pane";
+import { altaStepLabel, altaSteps } from "@web/patrimonio/anadir/alta-steps";
 import { OwnershipInputs } from "@web/patrimonio/anadir/ownership-inputs";
 import {
   firstNonEmptyParam,
@@ -72,10 +73,9 @@ export async function AnadirHoldingContent({
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
-  // Cuántos tramos tiene el alta (#1732): el reparto es el tercero solo cuando hay
-  // a quién repartir — con un único miembro `OwnershipInputs` no pinta fieldset,
-  // y anunciar «de 3» sería contar un paso que nadie va a ver.
-  const stepCount = activeMembers.length > 1 ? 3 : 2;
+  // Los tramos del alta y sus rótulos (#1732), derivados de la misma verdad de la
+  // que se deriva el formulario: cuántos miembros activos hay a los que repartir.
+  const [drawerStep, paneStep, ownershipStep] = altaSteps(activeMembers.length);
   const values = formError?.formId === "holding" ? formError.values : {};
 
   // The drawer (and the investment group) must survive a search/pick navigation,
@@ -173,7 +173,7 @@ export async function AnadirHoldingContent({
                   cuántas quedaban. Los rótulos numeran los tramos que el propio
                   formulario ya tenía; el total lo decide el reparto, que solo
                   existe cuando hay más de un miembro al que repartir. */}
-              <p className="altaStep">Paso 1 de {stepCount} · Elige el cajón</p>
+              <p className="altaStep">{altaStepLabel(drawerStep!)}</p>
               <div
                 className="simpleDrawerGrid"
                 role="group"
@@ -200,7 +200,10 @@ export async function AnadirHoldingContent({
                 ))}
               </div>
 
-              <p className="altaStep">Paso 2 de {stepCount} · Rellena lo justo</p>
+              {/* El rótulo del tramo 2 aparece cuando el tramo aparece: numerar
+                  algo que todavía dice «elige arriba» sería contar un paso que
+                  aún no existe. Mismo reveal que gobierna el reparto. */}
+              <p className="altaStep altaStepPanes">{altaStepLabel(paneStep!)}</p>
               <section className="simpleAddPanes" aria-live="polite">
                 <p {...DRAWER_EMPTY_PROPS}>
                   Elige arriba qué quieres apuntar y aquí aparecerá lo justo que hay que
@@ -215,7 +218,7 @@ export async function AnadirHoldingContent({
                 allowCustomSplit={selectedDrawer === "inmueble"}
                 members={activeMembers}
                 scopeMemberId={ownershipScopeMemberId}
-                stepLabel={`Paso ${stepCount} de ${stepCount} · Reparto`}
+                {...(ownershipStep ? { stepLabel: altaStepLabel(ownershipStep) } : {})}
                 values={values}
               />
             </form>
