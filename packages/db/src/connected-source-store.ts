@@ -123,11 +123,20 @@ export interface ConnectedSourceStore {
    * holding's value, and stamp the coin-collection's valuation-freshness row —
    * the decoupled valuation refresh (PRD #166, ADR 0017). Unlike `syncPositions`
    * this never adds/removes lines; it only updates what each coin is worth.
+   *
+   * `freshness: null` banks a MID-PASS tranche (#1739): the coin values land and
+   * the holding is re-rolled, but the freshness row is left exactly as it was. It
+   * has to be: the row's `fetchedAt` is what the staleness gate reads (it ignores
+   * `freshnessState` — see `selectStalePrices`), so stamping it with "now" halfway
+   * through would make an unfinished collection read as valued today. On a source
+   * that was never valued that is the most expensive case there is — the pass with
+   * every coin still to buy — and it would also erase the prior failure's reason
+   * from the banner. An untouched row keeps the source due until the pass ends.
    */
   revaluePositions(
     sourceId: string,
     updates: PositionValuationUpdate[],
-    freshness: ValuationFreshness,
+    freshness: ValuationFreshness | null,
   ): Promise<void>;
   /**
    * Freeze the source's projected holding(s) into plain hand-maintained holdings
@@ -769,7 +778,7 @@ async function revalueSourcePositions(
   ctx: StoreContext,
   sourceId: string,
   updates: PositionValuationUpdate[],
-  freshness: ValuationFreshness,
+  freshness: ValuationFreshness | null,
 ): Promise<void> {
   const { db } = ctx;
   await ctx.transaction(async () => {
@@ -795,11 +804,17 @@ async function revalueSourcePositions(
 
     const valueMinor = await rerollSourceHoldings(ctx, source);
 
-    await stampSourceFreshness(ctx, source, valueMinor, freshness);
+    // A mid-pass tranche leaves the freshness row alone (see the interface note).
+    if (freshness !== null) {
+      await stampSourceFreshness(ctx, source, valueMinor, freshness);
+    }
   });
 
   await ctx.writeAuditEntry("revalue_source", "connected_source", sourceId, {
     positionCount: updates.length,
+    // Tells a banked tranche apart from the write that ends a pass, so the trail
+    // still reads as "N coins revalued" and not five mystery entries (#1739).
+    ...(freshness === null ? { tranche: true } : {}),
   });
 }
 

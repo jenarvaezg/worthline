@@ -32,8 +32,11 @@ import type {
  * stale meant the next pass re-bought the whole collection and died at the same
  * coin — 440 `getPrices` calls in one day over 78 coins, with nothing to show.
  *
- * A tranche is written stale-with-the-prior-stamp on purpose: until the pass ends,
- * the source has not been revalued, so an interrupted pass must still read as due.
+ * A tranche deliberately does NOT stamp the freshness row (it persists with
+ * `null`): the gate reads that row's `fetchedAt` and ignores `freshnessState`, so
+ * stamping it mid-pass would make an unfinished collection read as valued today —
+ * worst of all on a source that was never valued, where the pass still has every
+ * coin to buy. Untouched, the source stays due until the pass actually ends.
  *
  * Pure orchestration: the store reads/writes and the Numista/Yahoo network are
  * injected, so the gate and outage paths are testable without I/O.
@@ -64,11 +67,12 @@ export interface RefreshCoinValuationsInput {
     nowIso: string,
     checkpoint: (updates: RevaluedPosition[]) => Promise<void>,
   ) => Promise<RevaluePassOutcome>;
-  /** Persist a revaluation outcome (candidate updates + freshness row). */
+  /** Persist a revaluation outcome (candidate updates + freshness row). A `null`
+   *  freshness banks a mid-pass tranche and leaves the row untouched (#1739). */
   persist: (
     sourceId: string,
     updates: RevaluedPosition[],
-    freshness: ValuationFreshness,
+    freshness: ValuationFreshness | null,
   ) => void | Promise<void>;
 }
 
@@ -113,14 +117,10 @@ export async function refreshStaleCoinValuations(
       .filter((position): position is CoinPosition => position.kind === "coin")
       .map(toRevaluePosition);
 
-    // Bank a tranche mid-pass: keep the coins already resolved, and keep the source
-    // reading stale (its prior stamp) — the pass is not done, so it is still due.
-    const stale = {
-      fetchedAt: source.freshness?.fetchedAt ?? input.nowIso,
-      freshnessState: "stale",
-    } as const;
+    // Bank a tranche mid-pass: keep the coins already resolved, and leave the
+    // freshness row untouched — the pass is not done, so the source is still due.
     const checkpoint = async (banked: RevaluedPosition[]): Promise<void> => {
-      await input.persist(source.sourceId, banked, stale);
+      await input.persist(source.sourceId, banked, null);
     };
 
     // What the pass resolved, and what stopped it (if anything). A throw means it
@@ -157,7 +157,9 @@ export async function refreshStaleCoinValuations(
     errors.push(failureMessage);
     try {
       await input.persist(source.sourceId, updates, {
-        ...stale,
+        // The prior stamp, so the source stays stale and the next pass retries.
+        fetchedAt: source.freshness?.fetchedAt ?? input.nowIso,
+        freshnessState: "stale",
         staleReason:
           "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
       });

@@ -151,12 +151,18 @@ refreshes, comfortably under the cap.
     collection and died at the same coin.
   - **Without one** — a collection is ~80 SEQUENTIAL Numista calls, so the request
     budget can run out and the process simply be gone, with nothing to catch. The
-    pass therefore banks a tranche every `REVALUE_CHECKPOINT_COINS` coins, written
-    stale-with-the-prior-stamp: until the pass ends the source has not been
-    revalued, so an interrupted pass must still read as due. This is what makes the
-    fix bite in production, where every injected read is total (a Numista failure
-    resolves to `null`, it does not throw) and the exception path is nearly
-    unreachable.
+    pass therefore banks a tranche every `REVALUE_CHECKPOINT_COINS` coins. This is
+    what makes the fix bite in production, where every injected read is total (a
+    Numista failure resolves to `null`, it does not throw) and the exception path is
+    nearly unreachable.
+
+    A tranche persists with a **null freshness**: the values land and the holding is
+    re-rolled, but the price-cache row is not stamped at all. The gate reads that
+    row's `fetchedAt` and ignores `freshnessState` (`selectStalePrices`), so any
+    stamp mid-pass would make an unfinished collection read as valued today — worst
+    on a never-valued source, the pass with every coin still to buy — and it would
+    also erase the previous failure's reason from the banner. Untouched, the source
+    stays due until the pass actually ends.
 
   Measured on Jose's 78 priced coins: **440 `getPrices` calls on 2026-08-11 alone**,
   ~5.6 passes over the same collection in one day, with not one stamp surviving.

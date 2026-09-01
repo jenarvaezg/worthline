@@ -9,6 +9,7 @@
  */
 import type { ValuationFreshness } from "@worthline/db";
 import type { AssetPrice, CoinPosition } from "@worthline/domain";
+import { isPriceStale } from "@worthline/domain";
 import type { RevaluedPosition } from "@worthline/pricing";
 import { refreshCoinValuations } from "@worthline/pricing";
 import { describe, expect, it, vi } from "vitest";
@@ -128,7 +129,7 @@ describe("refreshStaleCoinValuations", () => {
   it("hands the pass a checkpoint that banks coins while leaving the source due", async () => {
     // #1739: a pass can be killed with no exception to catch (~80 sequential Numista
     // calls), so what it resolved must already be written when that happens — and
-    // the source must still read stale, since the pass never finished.
+    // the source must still read due, since the pass never finished.
     const twoDaysAgo = "2026-06-13T12:00:00.000Z";
     const banked = {
       id: "pos-1",
@@ -155,10 +156,9 @@ describe("refreshStaleCoinValuations", () => {
 
     await refreshStaleCoinValuations(d);
 
-    expect(d.persist).toHaveBeenNthCalledWith(1, "src-1", [banked], {
-      fetchedAt: twoDaysAgo, // still due: the pass had not finished
-      freshnessState: "stale",
-    });
+    // The row is left ALONE mid-pass (null): the gate reads its `fetchedAt` and
+    // ignores `freshnessState`, so any stamp here would read as valued today.
+    expect(d.persist).toHaveBeenNthCalledWith(1, "src-1", [banked], null);
     // The final write is the fresh one, once the pass came back clean.
     expect(d.persist).toHaveBeenNthCalledWith(2, "src-1", [banked], {
       fetchedAt: NOW,
@@ -301,6 +301,72 @@ describe("refreshStaleCoinValuations + refreshCoinValuations, two passes", () =>
     return { currency: "EUR", prices: [{ grade: "unc", price: 75.585 }] };
   }
 
+  it("leaves a never-valued source still due while a tranche is banked", async () => {
+    // A freshly connected 78-coin collection has no freshness row at all, and that
+    // is the priciest pass there is: every coin still to buy. If a tranche stamped
+    // a row with "now", the gate (which reads `fetchedAt` only, ignoring
+    // `freshnessState`) would call the collection fresh with most coins unbought,
+    // and a death right there would park them for a whole day.
+    const stored: CoinPosition[] = [1, 2].map((n) => ({
+      ...position(),
+      id: `pos-${n}`,
+      issueId: 32720 + n,
+      metalValueMinor: 2797,
+      numismaticFetchedAt: null, // never fetched
+      numismaticValueMinor: null,
+    }));
+    let row: AssetPrice | null = null; // never valued
+    let checkedMidPass = false;
+
+    const persist = (
+      _sourceId: string,
+      updates: RevaluedPosition[],
+      next: ValuationFreshness | null,
+    ): void => {
+      for (const update of updates) {
+        const coin = stored.find((candidate) => candidate.id === update.id);
+        if (coin) {
+          coin.numismaticFetchedAt = update.numismaticFetchedAt;
+        }
+      }
+      if (next !== null) {
+        row = freshness({
+          fetchedAt: next.fetchedAt,
+          freshnessState: next.freshnessState,
+        });
+      }
+    };
+
+    const banked = {
+      id: "pos-1",
+      metalValueMinor: 2797,
+      numismaticValueMinor: 7558,
+      numismaticFetchedAt: NOW,
+    };
+
+    await refreshStaleCoinValuations({
+      nowIso: NOW,
+      persist,
+      readPositions: () => stored.map((coin) => ({ ...coin })),
+      sources: [{ sourceId: "src-1", freshness: row }],
+      revalue: async (_sourceId, _positions, _now, checkpoint) => {
+        await checkpoint([banked]);
+
+        // This is the instant the process goes away — nothing below it would run
+        // in that scenario, so the state HERE is what the next pass would find.
+        expect(stored[0]?.numismaticFetchedAt).toBe(NOW); // coin 1 is banked
+        expect(isPriceStale(row, NOW)).toBe(true); // and the source is still due
+        checkedMidPass = true;
+
+        return { error: null, updates: [banked] };
+      },
+    });
+
+    expect(checkedMidPass).toBe(true);
+    // Once the pass DID finish, the row is stamped fresh — as before.
+    expect(isPriceStale(row, NOW)).toBe(false);
+  });
+
   it("charges the second pass only for the coin the first never reached", async () => {
     // Three coins past their numismatic TTL, each on its own issue → one call each.
     const stored: CoinPosition[] = [1, 2, 3].map((n) => ({
@@ -317,7 +383,7 @@ describe("refreshStaleCoinValuations + refreshCoinValuations, two passes", () =>
     const persist = (
       _sourceId: string,
       updates: RevaluedPosition[],
-      next: ValuationFreshness,
+      next: ValuationFreshness | null,
     ): void => {
       for (const update of updates) {
         const coin = stored.find((candidate) => candidate.id === update.id);
@@ -327,7 +393,9 @@ describe("refreshStaleCoinValuations + refreshCoinValuations, two passes", () =>
           coin.numismaticFetchedAt = update.numismaticFetchedAt;
         }
       }
-      row = { ...row, fetchedAt: next.fetchedAt, freshnessState: next.freshnessState };
+      if (next !== null) {
+        row = { ...row, fetchedAt: next.fetchedAt, freshnessState: next.freshnessState };
+      }
     };
 
     const pass = (prices: (typeId: number, issueId: number) => Promise<unknown>) =>

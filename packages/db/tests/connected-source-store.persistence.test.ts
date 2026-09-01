@@ -472,6 +472,62 @@ describe("connected-source store — revaluePositions", () => {
     });
   });
 
+  test("a null freshness banks the values and leaves the freshness row untouched", async () => {
+    // #1739: a mid-pass tranche. The row's `fetchedAt` is what the staleness gate
+    // reads, so stamping it here would call an unfinished collection valued today.
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({
+          catalogueId: "1493",
+          numismaticValueMinor: 7558,
+          purchasePriceMinor: null,
+        }),
+      ],
+      "2026-06-15T12:00:00.000Z",
+    );
+    const eagle = asCoin((await store.connectedSources.readPositions(sourceId))[0]!);
+
+    // A first pass failed and left the row stale with its reason.
+    await store.connectedSources.revaluePositions(sourceId, [], {
+      fetchedAt: "2026-06-14T12:00:00.000Z",
+      freshnessState: "stale",
+      staleReason: "Numista no disponible",
+    });
+
+    // The next pass banks a tranche: values land, the row is left alone.
+    await store.connectedSources.revaluePositions(
+      sourceId,
+      [
+        {
+          id: eagle.id,
+          metalValueMinor: 3000,
+          numismaticValueMinor: 9000,
+          numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
+        },
+      ],
+      null,
+    );
+
+    const reread = asCoin((await store.connectedSources.readPositions(sourceId))[0]!);
+    expect(reread).toMatchObject({
+      metalValueMinor: 3000,
+      numismaticFetchedAt: "2026-07-15T12:00:00.000Z",
+    });
+    // The holding is still re-rolled off the banked values...
+    expect((await holding(store, assetId)).currentValue.amountMinor).toBe(9000);
+    // ...and the row keeps BOTH its prior stamp and the prior failure's reason.
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
+      fetchedAt: "2026-06-14T12:00:00.000Z",
+      freshnessState: "stale",
+      staleReason: "Numista no disponible",
+    });
+  });
+
   test("an outage freshness (stale + reason) keeps the last-known value", async () => {
     const store = await createInMemoryStore();
     await seed(store);
