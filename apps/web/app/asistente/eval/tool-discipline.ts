@@ -15,12 +15,13 @@
  * the server knows for certain, and it is why these checks say something the
  * reading set cannot.
  *
- * Three of them deliberately reuse the production frontiers instead of restating
+ * Four of them deliberately reuse the production frontiers instead of restating
  * them: {@link fakesProposalCeremony} calls the same rule the runtime guard uses
  * (#1262), {@link claimsCeremonyOverRejectedProposal} reads the same card table the
- * screen reads (#1468) and {@link reachedForBulkImportTool} reads the same table the
- * unvalidated-evidence boundary enumerates (#1248). A second copy would let the
- * measurement and the thing being measured drift apart in silence.
+ * screen reads (#1468), {@link refusalWrittenForTheUser} reads the same audience the
+ * panel reads before quoting a «no» (#1752) and {@link reachedForBulkImportTool} reads
+ * the same table the unvalidated-evidence boundary enumerates (#1248). A second copy
+ * would let the measurement and the thing being measured drift apart in silence.
  */
 
 import {
@@ -29,6 +30,7 @@ import {
 } from "@web/asistente/fabricated-maintainer-alert";
 import { claimsPreparedProposal } from "@web/asistente/fabricated-proposal";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
+import { userFacingRefusal } from "@web/asistente/proposal-refusal";
 import { isProposalToolName } from "@web/asistente/tool-parts";
 import { unvalidatedEvidenceClassFor } from "@web/asistente/unvalidated-evidence-gate";
 
@@ -63,6 +65,32 @@ export function claimsCeremonyOverRejectedProposal(answer: AssistantAnswer): boo
     !answered.some((result) => proposalCardFrom(result.name, result.output) !== null) &&
     claimsPreparedProposal(answer.text)
   );
+}
+
+/**
+ * The sentence a proposal lane of this turn wrote FOR THE PERSON, or `null` when no
+ * lane wrote one (#1753).
+ *
+ * Read through the production seams and not through a copy of them: `proposalCardFrom`
+ * decides whether the lane delivered anything (a lane that painted a card has nothing
+ * to explain), and `userFacingRefusal` decides whether its «no» was addressed to the
+ * user at all — the #1752 split. A refusal written AT THE MODEL is deliberately not
+ * returned: «pásame los datos tal cual los ha escrito» is an argument with the caller,
+ * and demanding it on screen would grade a turn for repeating something the person
+ * cannot act on.
+ *
+ * The FIRST such sentence wins, mirroring `userFacingRefusalIn`, the panel's own
+ * reader: a turn that gets two refusals is rare, and a note reciting both is a note
+ * nobody finishes.
+ */
+export function refusalWrittenForTheUser(answer: AssistantAnswer): string | null {
+  for (const result of answer.toolResults) {
+    if (!isProposalToolName(result.name)) continue;
+    if (proposalCardFrom(result.name, result.output) !== null) continue;
+    const refusal = userFacingRefusal(result.output);
+    if (refusal !== null) return refusal;
+  }
+  return null;
 }
 
 /**

@@ -67,6 +67,7 @@ async function askAssistant(
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf,
       typedBalanceSeries: turn.typedBalanceSeries,
+      typedHoldingEvent: turn.typedHoldingEvent,
       unvalidatedEvidence: turn.unvalidatedEvidence,
       validatedAttachments: turn.validatedAttachments,
       validatedDocuments: turn.validatedDocuments,

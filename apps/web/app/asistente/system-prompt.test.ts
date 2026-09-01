@@ -285,7 +285,30 @@ describe("buildChatSystemPrompt", () => {
     // widened exception listing the two typed sources and the four terms an operation
     // needs; deliberately NOT bought: anything about how the parser reads them, which
     // is code. The prompt now sits at 9.829, with ELEVEN to spare.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_840);
+    //
+    // #1753 raises it to 10.320 for 480 characters, and both are prose failures no code
+    // boundary reaches — the guard behind them worked, which is the point. Jose's turn
+    // of 2026-09-01 got a refusal from `propose_operation` carrying the exact words that
+    // unblocked him («no sé cuál es el importe: escríbeme sólo ése»), announced «he
+    // preparado la propuesta» on top of it, and, off a name that matched a position with
+    // a DIFFERENT ISIN, declared the two funds distinct and said it had gone ahead with
+    // an alta nobody asked for. The ISIN in the ficha was the wrong one.
+    //
+    // 220 buy the first: a proposal lane that answers with an error prepared no card, so
+    // the turn says what the error said and continues from there. It is #1130's honest
+    // degradation applied to the write door — the prompt had that rule for an attachment
+    // worthline could not read and none for a lane that says no — and it belongs here
+    // rather than in a description because it spans all fifteen `propose_*`. Deliberately
+    // NOT bought, the #1342 trade again: the catalogue of refusals, each of which already
+    // answers with an actionable sentence when it fires.
+    //
+    // 260 buy the reciprocal of the identity rule this prompt already carries. That one
+    // forbids «es otro producto» when the keys do not COMPARE (a symbol against an ISIN);
+    // it says nothing about two ISINs that compare and differ, which reads as licence to
+    // conclude «dos activos» — and the alta that follows splits one position in two. The
+    // sentence names the other reading (the ficha may hold the wrong ISIN) and hands the
+    // choice back. The prompt now sits at 10.309, with ELEVEN to spare.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(10_320);
   });
 
   /**

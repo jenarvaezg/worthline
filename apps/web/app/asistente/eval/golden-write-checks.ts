@@ -29,6 +29,7 @@ import {
   fakesMaintainerAlertCeremony,
   fakesProposalCeremony,
   proposedHoldingLabels,
+  refusalWrittenForTheUser,
   ungroundedProposalIds,
 } from "./tool-discipline";
 
@@ -52,6 +53,29 @@ export const noCeremonyOverRejection = (a: AssistantAnswer): Check =>
   check(
     "no anuncia una propuesta que worthline rechazó",
     !claimsCeremonyOverRejectedProposal(a),
+  );
+
+/**
+ * And the half neither of those two grades (#1753): when worthline says no with a
+ * sentence written for the PERSON, the turn has to pass it on.
+ *
+ * Not staying quiet is a lower bar than not lying, and it is the one Jose's session
+ * failed while the guard behind it worked: the refusal held the exact words that
+ * unblocked him — «no sé cuál es el importe de la operación: escríbeme sólo ése» — and
+ * the model narrated a proposal instead, so the words never reached the screen from the
+ * prose. The panel quotes them now, but a note that corrects the paragraph above it is
+ * repair, not a turn that came out right.
+ *
+ * `terms` are the ways a turn can NAME that motive, because the sentence is worthline's
+ * and the relay is the model's: demanding it verbatim would grade a parrot. The check
+ * stays silent when no lane wrote the user a refusal, exactly as
+ * {@link noCeremonyOverRejection} does — with nothing refused there is nothing to relay,
+ * and its question carries a positive check that silence cannot pass.
+ */
+export const relaysTheRefusal = (a: AssistantAnswer, terms: string[]): Check =>
+  check(
+    "cuenta el motivo por el que worthline no la ha preparado",
+    refusalWrittenForTheUser(a) === null || mentionsAny(a.text, terms),
   );
 
 /**

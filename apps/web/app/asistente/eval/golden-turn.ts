@@ -41,6 +41,10 @@ import {
   parseTypedBalanceSeries,
   type TypedBalanceSeriesReading,
 } from "@web/asistente/typed-balance-series";
+import {
+  type TypedHoldingEventReading,
+  typedHoldingEventInTurn,
+} from "@web/asistente/typed-holding-event";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 
@@ -286,6 +290,35 @@ export function typedBalanceSeriesFor(
     : NO_TYPED_BALANCE_SERIES;
 }
 
+/**
+ * The operation the question's own text dictates (#1466), through the route's parser.
+ *
+ * Ungated, exactly as `chat-turn-context` derives it: the typed door of
+ * `propose_operation` is not conditioned on any frontier — it opens whenever there is no
+ * validated `holding_event` to read instead — so gating it here would be the #1373
+ * mistake in a new place. Without it every dictated operation is refused with
+ * `operation_document_required`, and the harness grades its own hole as a model that
+ * cannot read a message (#1265, #1373, twice already).
+ *
+ * `question.question` is the turn's only user message, which is what the route's own
+ * `typedHoldingEventInTurn` would pick out of a real history.
+ */
+export function typedHoldingEventFor(
+  question: GoldenQuestion,
+  today: string,
+): TypedHoldingEventReading {
+  return typedHoldingEventInTurn(
+    [
+      {
+        id: question.id,
+        parts: [{ text: question.question, type: "text" }],
+        role: "user",
+      },
+    ],
+    today,
+  );
+}
+
 /** Everything a golden question needs from the filesystem, ready for `generateText`. */
 export interface GoldenTurn {
   messages: ModelMessage[];
@@ -293,6 +326,8 @@ export interface GoldenTurn {
   unvalidatedEvidence: boolean;
   /** What the question's own text holds, and so which debt lane reopens (#1418). */
   typedBalanceSeries: TypedBalanceSeriesReading;
+  /** The operation the question's own text dictates, if it dictates one (#1466). */
+  typedHoldingEvent: TypedHoldingEventReading;
   /** The rows a document lane may write from (#1373, #1376). */
   validatedDocuments: ExtractedDocument[];
   /** Same documents with file names, for `get_extracted_document` (#1492). */
@@ -329,6 +364,7 @@ export async function prepareGoldenTurn(
   return {
     messages: await buildTurnMessages(question, reading, candidate, history),
     typedBalanceSeries: typedBalanceSeriesFor(question, unvalidatedEvidence),
+    typedHoldingEvent: typedHoldingEventFor(question, today),
     unvalidatedEvidence,
     validatedDocuments: validatedDocumentsFor(reading, history),
     validatedAttachments: validatedAttachmentsFor(reading, history),

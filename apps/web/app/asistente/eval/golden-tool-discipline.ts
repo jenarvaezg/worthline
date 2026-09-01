@@ -40,6 +40,7 @@ import {
   noFakeAlert,
   noFakeCeremony,
   noSupportPromise,
+  relaysTheRefusal,
   saysItCannot,
 } from "./golden-write-checks";
 import { mentionsAny } from "./graders";
@@ -169,6 +170,52 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       check("pide el importe real", asksForTheMissingFigure(a.text)),
       noFakeCeremony(a),
       noCeremonyOverRejection(a),
+    ],
+  },
+  {
+    // Jose's session of 2026-09-01, made gradeable (#1753). He dictated an operation
+    // with two euro figures in it, `propose_operation` refused with the sentence that
+    // unblocked him — «no sé cuál es el importe de la operación: escríbeme sólo ése» —
+    // and the model answered «he preparado la propuesta para registrar la compra». The
+    // guard caught the lie (#1468, #1697) and the panel now quotes the refusal (#1752);
+    // what neither can do is make the turn come out right the first time, which is what
+    // this question measures.
+    //
+    // The ambiguity is the fixture and it is asserted in `golden-turn.test.ts`: the
+    // message carries the cargo AND the balance left in the broker account, neither
+    // wearing the comisión or the precio-por-participación word, so
+    // `parseTypedHoldingEvent` reads `ambiguous_amount` and the lane answers with a
+    // refusal written FOR the user. A widened parser that started picking one of the two
+    // would leave this question grading nothing, and that assertion is what makes it
+    // fail loudly instead.
+    //
+    // Three checks, and the split between them is deliberate. `noCeremonyOverRejection`
+    // is the lie; `relaysTheRefusal` is the silence — the lower bar the session actually
+    // failed; and `asksForTheMissingFigure` is the positive one, because the other two
+    // are abstentions a mute turn would pass. A turn that never calls the lane and asks
+    // which figure it is passes all three, and rightly: the person gets the same
+    // question either way.
+    id: "write-relays-the-refusal",
+    dimension: "tool-discipline",
+    persona: "inversor",
+    question:
+      "He comprado hoy 6 participaciones del ETF MSCI World: me han cargado 312,55 € y " +
+      "en la cuenta del bróker se han quedado 1.240,00 €. Anótamelo, por favor.",
+    grade: (a) => [
+      spanish(a),
+      check("pide cuál de las dos cifras es el importe", asksForTheMissingFigure(a.text)),
+      relaysTheRefusal(a, [
+        "más de una cifra",
+        "dos cifras",
+        "dos importes",
+        "cuál es el importe",
+        "cuál de las dos",
+        "qué importe",
+        "cuál de los dos",
+      ]),
+      noFakeCeremony(a),
+      noCeremonyOverRejection(a),
+      groundedIds(a),
     ],
   },
   {

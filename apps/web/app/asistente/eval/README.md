@@ -11,9 +11,10 @@ changes or reads the production model configuration.
   missing-fact behaviour, sources cited, Spanish by default.
 - **tool-discipline** (`golden-tool-discipline.ts`, #1265) — whether the turn
   called the tool it claimed to call, whether an id it wrote came out of a read,
-  whether it rewrote a debt's history from a series nobody validated, and whether
-  it asks instead of guessing when the holding or the figure is ambiguous. Graded
-  from the tool trace, not from prose.
+  whether it rewrote a debt's history from a series nobody validated, whether it
+  asks instead of guessing when the holding or the figure is ambiguous, and — since
+  #1753 — whether it passes on worthline's «no» when a lane refuses in words written
+  for the person. Graded from the tool trace, not from prose.
 
   Every question is checked against the system prompt before it is graded as a
   failure, because a plausible-looking check can score the HONEST path as a defect:
@@ -34,7 +35,7 @@ threshold; the stderr table prints each dimension and the JSON report carries
 `dimensions[]`.
 
 One property of both write-path sets to keep in mind when reading a number: most of
-their questions grade the model for NOT doing something — three of the five in
+their questions grade the model for NOT doing something — three of the seven in
 `tool-discipline` (not proposing when the holding is ambiguous, not rewriting a
 history from an unvalidated series, not faking the ceremony) and three of the seven in
 `attachments`. Refraining really is half of discipline, so a model that barely acts
@@ -278,8 +279,8 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
-Cerebras. With 27 questions and 123 checks that is roughly 13 minutes for Google and
-29 for Cerebras. The seven attachment questions add no provider call of their own
+Cerebras. With 28 questions and 129 checks that is roughly 14 minutes for Google and
+30 for Cerebras. The seven attachment questions add no provider call of their own
 beyond the turn: five have their document read by the deterministic spreadsheet
 extractor and two carry an already-validated extraction, all in process, with
 no key.
@@ -493,6 +494,28 @@ prompt counterweight is the change whose before/after this instrument now makes
 possible. The narrow question for whoever takes it: does the model reach
 `propose_statement_import` over a request that says «corrige la posición», and does it
 still get there when the document arrived one turn earlier?
+
+#1753 fires the re-run rule on the prompt count and adds one question — 28 questions and
+129 checks, `tool-discipline` from 34 to 40. Both halves come out of one turn of Jose's
+on 2026-09-01: `propose_operation` refused with the sentence that unblocked him («no sé
+cuál es el importe de la operación: escríbeme sólo ése»), the model answered «he preparado
+la propuesta», and, off a name that matched a position carrying a DIFFERENT ISIN, it
+declared the two funds distinct and announced an alta nobody asked for. The prompt gained
+two rules for that (honest degradation on the write door, and the reciprocal of the
+identity rule); `write-relays-the-refusal` is the question, and `relaysTheRefusal` the
+grader that says whether the refusal's motive reached the prose at all.
+
+That grader measures a bar BELOW the one `noCeremonyOverRejection` already held, which is
+the point: the lie was caught by a guard (#1468, #1697) and the panel now quotes the
+refusal (#1752), so what is left unmeasured is the silence — a turn that says nothing
+about why worthline said no, and hands the person a note to read instead of an answer.
+The harness also gained the seam that makes a dictated operation reachable at all
+(`typedHoldingEventFor`): the runner forwarded the typed BALANCE series and not the typed
+operation, so every dictated compra was refused with `operation_document_required` — the
+#1265/#1373 hole a third time, and the reason no question could grade this lane before.
+**No run was taken with this slice, and no mark above was edited.** The narrow question
+for whoever takes it: over a message with two euro figures in it, does the model relay the
+refusal or invent a card?
 
 ### Reading a score change (#1342)
 
