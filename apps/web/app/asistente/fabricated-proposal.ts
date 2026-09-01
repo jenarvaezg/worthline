@@ -39,14 +39,13 @@
 
 import type { UIMessage } from "ai";
 
+import { assertedInAnySentence, PAYMENT_CARD_READING } from "./claim-sentences";
 import {
-  assertsAny,
-  assistantProse,
-  PAYMENT_CARD_READING,
-  sentences,
-} from "./claim-sentences";
+  fabricatedCeremonyGuard,
+  messagesWithFabricatedCeremony,
+} from "./fabricated-ceremony";
 import { rendersProposalCard } from "./proposal-card-presence";
-import { isProposalToolPart, toolCallAnswered } from "./tool-parts";
+import { isProposalToolName, toolPartName } from "./tool-parts";
 
 /**
  * What the app says next to a faked ceremony.
@@ -169,13 +168,12 @@ const PROPOSAL_WORD = /\b(propuestas?|tarjetas?)\b/i;
  * those are what teach a user to ignore notes.
  */
 export function claimsPreparedProposal(text: string): boolean {
-  return sentences(text.replace(PAYMENT_CARD_READING, "medio de pago")).some((sentence) =>
-    assertsAny(
-      sentence,
+  return assertedInAnySentence(
+    text.replace(PAYMENT_CARD_READING, "medio de pago"),
+    (sentence) =>
       PROPOSAL_WORD.test(sentence)
         ? [...CLAIM_PATTERNS, ...SELF_CONTAINED_CLAIM_PATTERNS]
         : SELF_CONTAINED_CLAIM_PATTERNS,
-    ),
   );
 }
 
@@ -205,17 +203,19 @@ export type FabricatedProposalKind = "no-call" | "rejected" | "interrupted";
  * The card question is {@link rendersProposalCard}'s, off the render's own table: a
  * `propose_*` part whose output no parser recognises painted nothing, so it cannot
  * excuse the claim. Whether the lane was CALLED still matters, but only to choose
- * which sentence the user reads.
+ * which sentence the user reads — which is exactly the split
+ * {@link fabricatedCeremonyGuard} enforces since #1697, so the reading can no longer
+ * slide back to «a `propose_*` part was there».
  */
-export function fabricatedProposalIn(message: UIMessage): FabricatedProposalKind | null {
-  if (message.role !== "assistant") return null;
-  if (message.parts.some(rendersProposalCard)) return null;
-  const claimed = claimsPreparedProposal(assistantProse(message));
-  if (!claimed) return null;
-  const asked = message.parts.filter(isProposalToolPart);
-  if (asked.length === 0) return "no-call";
-  return asked.some(toolCallAnswered) ? "rejected" : "interrupted";
-}
+export const fabricatedProposalIn: (message: UIMessage) => FabricatedProposalKind | null =
+  fabricatedCeremonyGuard<FabricatedProposalKind>({
+    claims: claimsPreparedProposal,
+    delivers: rendersProposalCard,
+    interrupted: "interrupted",
+    lanes: (part) => isProposalToolName(toolPartName(part)),
+    never: "no-call",
+    rejected: "rejected",
+  });
 
 /**
  * What the app says next to a fabricated ceremony.
@@ -232,20 +232,12 @@ export function fabricatedProposalNote(kind: FabricatedProposalKind): string {
  * The assistant turns that claim a proposal nobody prepared, by id, each with the
  * kind of fabrication it committed.
  *
- * The in-flight message is left alone while the turn streams: prose can land
- * before the tool call within one turn, so judging it early would flash an
- * accusation and then withdraw it — worse than being one moment late. That rule
- * belongs to the screen only; the history the model gets back is never in flight.
+ * The streaming exemption — the in-flight message is left alone while it streams — is
+ * {@link messagesWithFabricatedCeremony}'s, shared with the alert guard since #1697.
  */
 export function messagesWithFabricatedProposal(
   messages: UIMessage[],
   streaming: boolean,
 ): ReadonlyMap<string, FabricatedProposalKind> {
-  const fabricated = new Map<string, FabricatedProposalKind>();
-  messages.forEach((message, index) => {
-    if (streaming && index === messages.length - 1) return;
-    const kind = fabricatedProposalIn(message);
-    if (kind !== null) fabricated.set(message.id, kind);
-  });
-  return fabricated;
+  return messagesWithFabricatedCeremony(messages, streaming, fabricatedProposalIn);
 }
