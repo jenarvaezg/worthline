@@ -1,4 +1,5 @@
 import { correctionProposalOutput } from "@web/asistente/proposal-part-fixtures";
+import { modelRefusal, userRefusal } from "@web/asistente/proposal-refusal";
 import { describe, expect, test } from "vitest";
 
 import type { AssistantAnswer } from "./graders";
@@ -10,6 +11,7 @@ import {
   proposedHoldingLabels,
   proposedThroughTool,
   reachedForBulkImportTool,
+  refusalWrittenForTheUser,
   ungroundedProposalIds,
 } from "./tool-discipline";
 
@@ -106,6 +108,86 @@ describe("claimsCeremonyOverRejectedProposal (#1468)", () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("refusalWrittenForTheUser (#1753)", () => {
+  const GAP = userRefusal(
+    "operation_fact_incomplete_in_message",
+    "Te anoto la operación sin justificante, pero en tu mensaje hay más de una cifra en " +
+      "euros y no sé cuál es el importe de la operación.",
+  );
+
+  test("hands back the sentence the lane wrote for the person", () => {
+    expect(
+      refusalWrittenForTheUser(
+        answer({ toolResults: [{ name: "propose_operation", output: GAP }] }),
+      ),
+    ).toBe(GAP.message);
+  });
+
+  test("ignores a refusal written at the model", () => {
+    // «Pásame los datos tal cual los ha escrito» is an argument with the caller, and
+    // relaying it on screen makes the app look like it is talking to someone else.
+    expect(
+      refusalWrittenForTheUser(
+        answer({
+          toolResults: [
+            {
+              name: "propose_operation",
+              output: modelRefusal(
+                "operation_fact_not_in_message",
+                "Esto no es lo que dice el mensaje del usuario.",
+              ),
+            },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("ignores a lane that answered with a card", () => {
+    expect(
+      refusalWrittenForTheUser(
+        answer({
+          toolResults: [
+            { name: "propose_correction", output: correctionProposalOutput() },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("ignores everything that is not a proposal lane", () => {
+    expect(
+      refusalWrittenForTheUser(
+        answer({
+          toolResults: [
+            { name: "get_financial_context", output: CONTEXT_OUTPUT },
+            {
+              name: "raise_maintainer_alert",
+              output: userRefusal("alert_refused", "No es una discrepancia numérica."),
+            },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("takes the first sentence when two lanes said no", () => {
+    expect(
+      refusalWrittenForTheUser(
+        answer({
+          toolResults: [
+            { name: "propose_operation", output: GAP },
+            {
+              name: "propose_holding",
+              output: userRefusal("holding_refused", "Esa posición ya existe."),
+            },
+          ],
+        }),
+      ),
+    ).toBe(GAP.message);
   });
 });
 

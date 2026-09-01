@@ -11,6 +11,7 @@ import {
 } from "./golden-attachments";
 import type { GoldenQuestion } from "./golden-question";
 import { READING_QUESTIONS } from "./golden-reading";
+import { TOOL_DISCIPLINE_QUESTIONS } from "./golden-tool-discipline";
 import {
   buildTurnMessages,
   documentHistoryMessages,
@@ -19,6 +20,7 @@ import {
   readGoldenAttachmentTurn,
   readGoldenValidatedDocument,
   typedBalanceSeriesFor,
+  typedHoldingEventFor,
   unvalidatedEvidenceFor,
   validatedDocumentsFor,
 } from "./golden-turn";
@@ -255,6 +257,53 @@ describe("typedBalanceSeriesFor (#1418)", () => {
         status: "absent",
       },
     );
+  });
+});
+
+describe("typedHoldingEventFor (#1466, #1753)", () => {
+  const question = (text: string): GoldenQuestion =>
+    ({ id: "q", question: text }) as GoldenQuestion;
+
+  it("hands the tools the operation the question dictates", () => {
+    // Ungated, unlike the balance series: the typed door opens whenever there is no
+    // validated `holding_event`, so a harness that withheld this would refuse every
+    // dictated operation with `operation_document_required` and grade its own hole.
+    expect(
+      typedHoldingEventFor(
+        question("He comprado hoy 6 participaciones del ETF MSCI World por 312,55 €."),
+        TODAY,
+      ),
+    ).toEqual({
+      event: {
+        amount: 312.55,
+        currency: "EUR",
+        direction: "in",
+        executedAt: TODAY,
+        units: "6",
+      },
+      status: "read",
+    });
+  });
+
+  it("stays absent for a question that dictates no operation", () => {
+    expect(typedHoldingEventFor(question("¿cuánto vale mi cartera?"), TODAY)).toEqual({
+      status: "absent",
+    });
+  });
+
+  it("keeps `write-relays-the-refusal` ambiguous, which is its whole point (#1753)", () => {
+    // The fixture assertion this question needs, in the shape `GoldenAttachment.lane`
+    // has for documents: what it grades — that the turn relays worthline's «no» — only
+    // means something while the lane really refuses. A parser that started picking one
+    // of the two euro figures would leave the question measuring nothing, silently.
+    const dictated = TOOL_DISCIPLINE_QUESTIONS.find(
+      (candidate) => candidate.id === "write-relays-the-refusal",
+    )!;
+
+    expect(typedHoldingEventFor(dictated, TODAY)).toEqual({
+      missing: ["ambiguous_amount"],
+      status: "incomplete",
+    });
   });
 });
 

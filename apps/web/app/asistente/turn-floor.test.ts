@@ -296,6 +296,23 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
  * untouched. Seventh PR in a row to say so.
+ *
+ * **NOT raised by #1753**, and the arithmetic is why: the slice buys no lane, no door
+ * and no schema — 488 characters of SYSTEM PROMPT and nothing else, for two prose
+ * failures of one turn of Jose's (a refusal narrated as a prepared proposal, and an ISIN
+ * that did not match resolved by announcing a duplicate alta), neither of which a
+ * frontier can close, because in both the code had already said no and the guard had
+ * already caught it. The floor it started from was 45.675, 525 under this ceiling, so
+ * the pair fits with 37 to spare and the number does not move. The per-tool ranking is
+ * byte-for-byte what it was: the tools were not touched at all.
+ *
+ * 37 is tight, and left tight on purpose the way #1563 left the other budget: the next
+ * rule that needs room raises the number and writes down why, and nothing here is a
+ * reason to trim an existing instruction to make space. The reasoning for each of the
+ * two sentences is in `system-prompt.test.ts`, next to the budget that DID move.
+ *
+ * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
+ * untouched. Eighth PR in a row to say so.
  */
 
 describe("measureTurnFloor", () => {
