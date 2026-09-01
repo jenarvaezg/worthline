@@ -558,6 +558,24 @@ body {
   overflow-x: hidden;
 }
 
+/* Un <a> sin regla NO hereda el color de su padre: el UA le pone `-webkit-link`,
+   así que no decir nada es decir «azul de navegador», que no es ninguno de los
+   tonos del canon. Se colaba en la nota de la plantilla de operaciones, en las
+   entradillas de admin, en los saltos a «tus supuestos» de Objetivos, en el portal
+   de facturación de Premium y en la invitación a la demo del login (#1729).
+   Enumerar contenedores solo aplaza la reincidencia: el suelo va en el elemento.
+
+   `:where()` para que valga CERO en especificidad. Cada receta de enlace que ya
+   existe —`.legalSheet a`, `.topNav a`, `.balanceRowName a`, las pestañas…— sigue
+   ganando sin tocarla, y `.landing a` del módulo de la cubierta también. Esto no
+   repinta nada: solo alcanza a los enlaces que hoy no tienen a nadie que los pinte.
+   La cubierta no necesita excepción todavía —sus únicos enlaces sin receta viven
+   en una `.coverSheet`, que es papel—; el día que uno se pose sobre `--cover`,
+   ese es un color de interacción nuevo y se decide entonces, no aquí. */
+:where(a) {
+  color: var(--blue);
+}
+
 button,
 input,
 select,
@@ -1551,11 +1569,35 @@ th:last-child {
 }
 
 .confirmDelete summary {
-  color: var(--red);
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 650;
   list-style: none;
+}
+
+/* El rojo es el registro de lo que no tiene vuelta —«Eliminar definitivamente»,
+   «Vaciar papelera», borrar un holding—. Un plegable que abre una acción
+   REVERSIBLE lo declara con `confirmReversible` y se queda fuera del rojo: el
+   color se lo pone entonces su propia receta de control, que es la que dice de
+   qué registro es (#1729). El `:not()` va aquí y no una clase extra en cada uno
+   de los quince plegables que sí son definitivos. */
+.confirmDelete:not(.confirmReversible) summary {
+  color: var(--red);
+}
+
+.confirmDelete:not(.confirmReversible) button {
+  background: var(--red);
+}
+
+/* El plegable reversible conserva la forma del irreversible —disparador callado,
+   confirmación con relleno—, solo cambia de registro: el relleno de la
+   confirmación es oro, no rojo. Si la confirmación se quedara en contorno como su
+   disparador, las dos piezas pesarían igual y la segunda no se leería como el
+   compromiso que es. */
+.confirmDelete.confirmReversible button {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--paper-strong);
 }
 
 .confirmDelete summary::-webkit-details-marker {
@@ -1563,7 +1605,6 @@ th:last-child {
 }
 
 .confirmDelete button {
-  background: var(--red);
   margin-top: 6px;
 }
 
@@ -4343,13 +4384,46 @@ code {
   grid-template-columns: minmax(140px, 1fr) auto auto;
 }
 
+/* El <form> de identidad es UNA celda de esa rejilla, y sin layout propio sus
+   tres hijos caían en flujo: el input a ancho completo empujaba «ACTIVO» y
+   «Guardar» a la línea de abajo, donde el botón acababa impreso encima de la
+   etiqueta (#1729). La fila que el panel ya aparentaba, declarada. */
+.memberIdentity {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* «ACTIVO» no es un control, y espaciado igual que sus dos vecinos se leía como
+   un tercer botón del grupo (#1729). El hueco decide la lectura: se queda con el
+   `gap` corto del nombre —es una propiedad suya— y el botón abre el suyo, para
+   que la fila se lea «nombre · estado — acciones» y no como una botonera de tres
+   piezas dispares. Un `margin-left: auto` no serviría: el input crece y se come
+   todo el hueco libre en escritorio, y al envolver dejaría el botón colgado en
+   mitad de la segunda línea. */
+.memberIdentity > button {
+  margin-left: 6px;
+}
+
+/* `min-width: 0` porque un input es `min-width: auto` por defecto y se niega a
+   encoger por debajo de su tamaño intrínseco. Pero encoger sin suelo cambia un
+   solapamiento por un campo de nombre de treinta píxeles en un teléfono estrecho,
+   así que la base es 160 px y la fila `wrap`: por debajo de eso el estado y el
+   botón bajan a una segunda línea —que es lo que el flujo hacía antes, solo que
+   ahora sin pisarse. */
+.memberNameInput {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
 .memberStatus {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.05em;
-  padding-top: 10px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* Member profile (PRD #421, #423): a full-width row beneath the name/actions,
@@ -4686,6 +4760,41 @@ code {
   font-size: 0.78rem;
 }
 
+/* Plegable de fontanería (#1729): lo que solo importa cuando algo va mal —la URL
+   de la base de datos, la clave interna del healthcheck y su valor en crudo— no
+   desaparece, se pliega. Registro de papel: una regla que lo abre y un resumen que
+   lo nombra. No es `.editAdvanced`: aquel resumen es un encabezado de sección de
+   formulario (tinta, 1 rem, 650) y este es una etiqueta pequeña dentro de un panel
+   de ajustes, del mismo peso que los `dt` de la lista que pliega. */
+.techDetails {
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+/* Tras una lista de datos, la regla de cierre de la última fila ya es la regla que
+   abre el plegable: dos seguidas serían un filete doble, que en el canon significa
+   total (§4) y aquí no totaliza nada. */
+.infoList + .techDetails {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.techDetails > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Ya la abre la regla del propio plegable: la lista de dentro no repite otra. */
+.techDetails .infoList {
+  border-top: 0;
+  margin-top: 4px;
+}
+
 .overrideList {
   display: grid;
   gap: 8px;
@@ -4727,8 +4836,11 @@ code {
     grid-template-columns: 1fr;
   }
 
+  /* Una columna: con dos, «Desactivar» se queda anclado arriba a la derecha
+     mientras «Guardar» baja de línea al envolver, y el par se parte. Apilados,
+     cada acción ocupa su renglón y el nombre recupera el ancho (#1729). */
   .ajustesPanel .memberRow {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
   }
 
   .overrideRow {
@@ -5711,12 +5823,19 @@ code {
 /* A debt is a static figure, so it stays in ink (canon §6): the Pasivos column's
    debit rule identifies it, freeing red for movement (deltas / P&L) alone. */
 
-/* Discreet marker for a derived value (ADR 0006) — replaces a repeated text label. */
+/* Marcador de valor derivado (ADR 0006). Fue «≈» hasta #1729: dos trazos
+   horizontales a 0,7 rem, en la misma columna donde un pasivo abre con «−», se
+   leían como un menos y convertían un activo calculado en una deuda. La palabra
+   abreviada no se confunde con ningún signo; se queda en muted y por debajo del
+   cuerpo, para seguir siendo una anotación al margen de la cifra y no otra cifra.
+   Sin cursiva ni pesos intermedios: Source Sans 3 se auto-hospeda solo en 400 y
+   700 normales, así que a 0,68 rem cualquiera de las dos sale sintética. */
 .balanceCalc {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--muted);
   cursor: help;
-  margin-right: 3px;
+  letter-spacing: 0.02em;
+  margin-right: 4px;
   text-decoration: none;
 }
 
@@ -8580,7 +8699,7 @@ td.rowActions > * {
   display: grid;
   font-size: 0.72rem;
   font-weight: 700;
-  grid-template-columns: 1fr 160px 140px 44px;
+  grid-template-columns: 1fr 160px 140px 120px;
   letter-spacing: 0.06em;
   padding: 10px 16px;
   text-transform: uppercase;
@@ -8601,7 +8720,7 @@ td.rowActions > * {
   align-items: center;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 1fr 160px 140px 44px;
+  grid-template-columns: 1fr 160px 140px 120px;
   list-style: none;
   padding: 10px 16px;
 }
@@ -8638,10 +8757,35 @@ td.rowActions > * {
   text-transform: uppercase;
 }
 
+/* La columna que cuenta cuántos holdings movieron el día (#1729). Tenía 44 px,
+   cabecera vacía y 0,75 rem en muted: una cifra que nadie sabía leer ni podía. La
+   columna ahora cabe su nombre, y la cifra sube a cuerpo de tabla y a tinta plena
+   —es un dato del día, no una marca decorativa—; el «▾» se queda en muted, que es
+   lo que sí es un adorno.
+
+   Y se alinea a la izquierda como el resto: `.numCol` no pinta alineación (hoy
+   solo existe como gancho del peso del cierre de mes), así que las otras tres
+   columnas empiezan a la izquierda. A 44 px la alineación a la derecha no se
+   notaba; a 120 px habría dejado a «Movimientos» solo contra el margen.
+
+   Sin `--font-numeric`, que el canon (§3) sí pide para una columna de cifras:
+   ninguna de las otras tres de esta tabla lo lleva —`.numCol` no pinta nada hoy—,
+   y poner Iosevka en una sola columna es cambiar un desajuste por otro. La tabla
+   entera es otra conversación. */
 .historicoDrillCue {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.historicoDrillHead .historicoDrillCue {
   color: var(--muted);
-  font-size: 0.75rem;
-  text-align: right;
+  font-size: inherit;
+}
+
+.historicoDrillCaret {
+  color: var(--muted);
+  margin-left: 5px;
 }
 
 .historicoBridge {

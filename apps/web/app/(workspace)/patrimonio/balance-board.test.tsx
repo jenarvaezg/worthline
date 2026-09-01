@@ -216,8 +216,11 @@ describe("BalanceBoard (#271)", () => {
 
   test("marks a derived value with a marker and shows a debt as negative", () => {
     const html = render();
-    // The ≈ marker (U+2248) + its label sit on the derived investment rows.
-    expect(html).toMatch(/≈/u);
+    // The «calc.» marker + its label sit on the derived investment rows. It is a
+    // word, not a glyph, on purpose (#1729): «≈» in this column read as the «−»
+    // the liability rows open with, so the marker must never be punctuation again.
+    expect(html).toContain("calc.");
+    expect(html).not.toMatch(/≈/u);
     expect(html).toContain("Valor calculado");
     // A liability renders with a leading minus (U+2212 or hyphen; Intl uses NBSP).
     expect(html).toMatch(/[−-]\s?120\.000/u);
