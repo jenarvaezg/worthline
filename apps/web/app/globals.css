@@ -1569,11 +1569,24 @@ th:last-child {
 }
 
 .confirmDelete summary {
-  color: var(--red);
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 650;
   list-style: none;
+}
+
+/* El rojo es el registro de lo que no tiene vuelta —«Eliminar definitivamente»,
+   «Vaciar papelera», borrar un holding—. Un plegable que abre una acción
+   REVERSIBLE lo declara con `confirmReversible` y se queda fuera del rojo: el
+   color se lo pone entonces su propia receta de control, que es la que dice de
+   qué registro es (#1729). El `:not()` va aquí y no una clase extra en cada uno
+   de los quince plegables que sí son definitivos. */
+.confirmDelete:not(.confirmReversible) summary {
+  color: var(--red);
+}
+
+.confirmDelete:not(.confirmReversible) button {
+  background: var(--red);
 }
 
 .confirmDelete summary::-webkit-details-marker {
@@ -1581,7 +1594,6 @@ th:last-child {
 }
 
 .confirmDelete button {
-  background: var(--red);
   margin-top: 6px;
 }
 
@@ -4369,7 +4381,16 @@ code {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* «ACTIVO» no es un control, y espaciado como sus dos vecinos se leía como un
+   tercer botón del grupo (#1729). Se queda pegado al nombre —es una propiedad
+   suya— y el botón se va al otro extremo de la celda, junto a «Desactivar», que
+   vive en la celda de al lado. Así la fila se lee nombre · estado — acciones, no
+   como una botonera de tres piezas dispares. */
+.memberIdentity > button {
+  margin-left: auto;
 }
 
 /* `min-width: 0` porque un input es `min-width: auto` por defecto y se niega a

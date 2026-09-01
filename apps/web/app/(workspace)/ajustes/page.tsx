@@ -149,16 +149,35 @@ export async function AjustesContent({
                   >
                     {member.disabledAt ? "Inactivo" : "Activo"}
                   </span>
-                  {!member.disabledAt ? <button type="submit">Guardar</button> : null}
+                  {/* #1729: los tres controles de la fila pesaban al revés. Renombrar
+                      —lo más inocuo que se puede hacer aquí— llevaba el relleno
+                      oscuro, que es el peso máximo de la página y el que ya se gasta
+                      «Guardar perfil» tres líneas más abajo; desactivar, que sí cambia
+                      el estado del miembro, era un texto. Los dos bajan al mismo
+                      control pequeño de contorno y se distinguen por color, no por
+                      peso: tinta lo neutro, oro el aviso. */}
+                  {!member.disabledAt ? (
+                    <button className="btnSmall" type="submit">
+                      Guardar
+                    </button>
+                  ) : null}
                 </form>
 
                 {!member.disabledAt ? (
                   <form action={disableMemberAction}>
                     <input name="currentUrl" type="hidden" value={currentUrl} />
                     <input name="id" type="hidden" value={member.id} />
-                    <details suppressHydrationWarning className="confirmDelete">
-                      <summary>Desactivar</summary>
-                      <button type="submit">Confirmar desactivación</button>
+                    {/* `confirmReversible`: desactivar tiene «Reactivar» en esta misma
+                        fila, así que es aviso y no peligro. El rojo se queda para
+                        «Eliminar definitivamente», que es lo que no tiene vuelta. */}
+                    <details
+                      suppressHydrationWarning
+                      className="confirmDelete confirmReversible"
+                    >
+                      <summary className="btnSmall btnWarning">Desactivar</summary>
+                      <button className="btnSmall btnWarning" type="submit">
+                        Confirmar desactivación
+                      </button>
                     </details>
                   </form>
                 ) : (
@@ -166,7 +185,9 @@ export async function AjustesContent({
                     <form action={reactivateMemberAction}>
                       <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={member.id} />
-                      <button type="submit">Reactivar</button>
+                      <button className="btnSmall" type="submit">
+                        Reactivar
+                      </button>
                     </form>
                     <form action={hardDeleteMemberAction}>
                       <input name="currentUrl" type="hidden" value={currentUrl} />
