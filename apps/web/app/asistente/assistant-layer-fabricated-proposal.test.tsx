@@ -33,7 +33,11 @@ vi.mock("next/navigation", () => ({
 
 import AssistantLayer from "./assistant-layer";
 import { FABRICATED_PROPOSAL_NOTE } from "./fabricated-proposal";
-import { proposalCardPart, rejectedProposalPart } from "./proposal-part-fixtures";
+import {
+  proposalCardPart,
+  rejectedProposalPart,
+  userRefusedProposalPart,
+} from "./proposal-part-fixtures";
 
 const FAKE_CEREMONY =
   "He preparado la propuesta de corrección para actualizar el saldo a 5.511,96 €.\n\n" +
@@ -92,6 +96,26 @@ describe("AssistantLayer · faked proposal ceremony (#1262, #1468, #1515)", () =
     // And it says which of the two things happened, without quoting the refusal.
     expect(html).toContain("no recibi");
     expect(html).not.toContain("operation_document_required");
+  });
+
+  test("quotes the refusal when worthline wrote it FOR the user (#1752)", () => {
+    // Jose's case: the refusal held the exact words that unblocked him and the note
+    // said «quizá de otra forma» instead. Now it says what worthline said.
+    chatMessages = [
+      assistantTurn([{ text: FAKE_CEREMONY, type: "text" }, userRefusedProposalPart()]),
+    ];
+
+    const html = renderToStaticMarkup(
+      <AssistantLayer onboardingSkipAction={vi.fn()} variant="onboarding" />,
+    );
+
+    expect(html).toContain("assistantFakeProposal");
+    expect(html).toContain("no he visto la fecha");
+    // Attributed to worthline, and the two facts of the sibling note still stand.
+    expect(html).toContain("worthline no la ha preparado");
+    expect(html).toContain("no aplica nada");
+    // And never the code, which means nothing to anyone reading the panel.
+    expect(html).not.toContain("operation_fact_incomplete_in_message");
   });
 
   test("drops the Confirmar chip on the turn that invented the ceremony (#1515)", () => {

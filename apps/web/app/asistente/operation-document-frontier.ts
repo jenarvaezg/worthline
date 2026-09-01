@@ -33,6 +33,7 @@ import type {
   ExtractedHoldingEventDocument,
 } from "./attachment-extraction-contract";
 import { formatDocumentMoney, formatDocumentUnits } from "./document-figures";
+import type { RefusalAudience } from "./proposal-refusal";
 
 /**
  * What the ledger records. An aportación is a `buy` (ADR 0006: units × price).
@@ -70,6 +71,11 @@ export type OperationDocumentResolution =
   | { ok: false; error: OperationFrontierError };
 
 export interface OperationFrontierError {
+  /**
+   * Who the sentence below was written for (#1752). Declared here, at the point each
+   * message is authored, and never guessed from its prose.
+   */
+  audience: RefusalAudience;
   error:
     | "operation_document_required"
     | "operation_fact_not_in_document"
@@ -277,6 +283,9 @@ export function resolveOperationEvent(
     return {
       ok: false,
       error: {
+        // At the model: it explains which two doors the LANE has, in the third person
+        // («que me la ESCRIBA en el chat»), so the model can route the person.
+        audience: "model",
         error: "operation_document_required",
         message: OPERATION_DOCUMENT_REQUIRED_MESSAGE,
       },
@@ -288,6 +297,8 @@ export function resolveOperationEvent(
     return {
       ok: false,
       error: {
+        // «y tú pasas 312,55 €»: written at the model, about the model.
+        audience: "model",
         error: "operation_fact_not_in_document",
         message: operationFactNotInDocumentMessage(mismatches),
       },
@@ -299,6 +310,9 @@ export function resolveOperationEvent(
     return {
       ok: false,
       error: {
+        // «Comprueba qué justificante estás leyendo»: the reader of the paper is the
+        // model, and the paper is in its context, not on the user's screen.
+        audience: "model",
         error: "operation_kind_contradicts_document",
         message:
           `El documento registra el apunte como ${direction === "in" ? "un ingreso" : "una retirada"} ` +

@@ -1119,13 +1119,15 @@ describe("createChatTools · propose_operation dictada (#1466)", () => {
       "He comprado hoy 6 participaciones de IE00B43VDT70 por 312,55€. En total tengo 30 participaciones",
     );
 
+    // Since #1752 a builder refusal answers `{ audience, error, message }`: the sentence
+    // is in `message` and `error` is its code.
     const result = (await tools["propose_operation"]?.execute?.(
       { holdingId: publicId, kind: "buy" },
       toolCallContext(),
-    )) as { error?: string };
+    )) as { message?: string };
 
-    expect(result.error).toContain("30");
-    expect(result.error).toContain("21");
+    expect(result.message).toContain("30");
+    expect(result.message).toContain("21");
     store.close();
   });
 
@@ -1173,11 +1175,11 @@ describe("createChatTools · propose_operation dictada (#1466)", () => {
     const result = (await tools["propose_operation"]?.execute?.(
       { holdingId: publicId, kind: "buy" },
       toolCallContext(),
-    )) as { error?: string };
+    )) as { message?: string };
 
     // The guard is the one #1374 already had: the typed door reuses it whole.
-    expect(result.error).toContain("ES0173516115");
-    expect(result.error).toContain("IE00B43VDT70");
+    expect(result.message).toContain("ES0173516115");
+    expect(result.message).toContain("IE00B43VDT70");
     store.close();
   });
 
