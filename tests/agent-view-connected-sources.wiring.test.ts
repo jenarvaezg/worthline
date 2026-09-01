@@ -112,7 +112,12 @@ const token = (
  * revalued (so its freshness reads as null). Both connect with secret
  * credentials, which must never leak through the agent view.
  */
-async function seedSources(): Promise<void> {
+/**
+ * `syncBinance: false` leaves the Binance source connected but never synced —
+ * the only state that still means "never valued" now that a sync stamps the
+ * freshness row too (#1755).
+ */
+async function seedSources({ syncBinance = true } = {}): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-sources-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
@@ -158,11 +163,13 @@ async function seedSources(): Promise<void> {
     label: "Binance",
     ownership: owner,
   });
-  await store.connectedSources.syncPositions(
-    binance.sourceId,
-    [token({ externalId: "BTC:spot", symbol: "BTC", unitPrice: "50000" })],
-    "2026-06-16T10:00:00.000Z",
-  );
+  if (syncBinance) {
+    await store.connectedSources.syncPositions(
+      binance.sourceId,
+      [token({ externalId: "BTC:spot", symbol: "BTC", unitPrice: "50000" })],
+      "2026-06-16T10:00:00.000Z",
+    );
+  }
   store.close();
 }
 
@@ -263,7 +270,9 @@ describe("GET /api/v1/agent-view/connected-sources/{sourceId}/freshness", () => 
   });
 
   test("returns freshness:null for a source that has never been valued", async () => {
-    await seedSources();
+    // Connected and never synced: nobody has spoken to the provider yet, so there
+    // is nothing to claim about freshness. A guess here would be a lie.
+    await seedSources({ syncBinance: false });
     const binanceId = await sourceIdByAdapter("binance");
 
     const { body, response } = await sourceFreshness(binanceId);
@@ -273,6 +282,23 @@ describe("GET /api/v1/agent-view/connected-sources/{sourceId}/freshness", () => 
       object: "source_freshness",
       source: binanceId,
       freshness: null,
+    });
+  });
+
+  test("a synced source reports fresh as of its sync, with no revalue (#1755)", async () => {
+    await seedSources();
+    const binanceId = await sourceIdByAdapter("binance");
+
+    const { body, response } = await sourceFreshness(binanceId);
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual({
+      object: "source_freshness",
+      source: binanceId,
+      freshness: {
+        freshnessState: "fresh",
+        fetchedAt: "2026-06-16T10:00:00.000Z",
+      },
     });
   });
 

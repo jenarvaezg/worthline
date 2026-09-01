@@ -254,6 +254,7 @@ export type {
   DailyCaptureFetchedPrice,
   DailyCaptureMissedPassReport,
   DailyCapturePricePair,
+  DailyCaptureSourceSyncFailure,
   DailyCaptureWorkspace,
   RunDailyCaptureDeps,
   RunDailyCaptureResult,

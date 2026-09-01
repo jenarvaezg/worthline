@@ -93,6 +93,22 @@ export interface RunDailyCaptureDeps {
    */
   reportMissedPasses?: (report: DailyCaptureMissedPassReport) => Promise<void>;
   /**
+   * Report the pass's connected-source sync degradations (#1755). Same contract as
+   * {@link reportMissedPasses}: pure observability, a throw here never costs the
+   * fleet its snapshot.
+   *
+   * Until this existed, `sourceSyncFailures` was collected and then read by NOBODY
+   * — the field said "surfaced for observability" and no surface consumed it. A
+   * nightly Numista revalue failed for 21 consecutive days across every workspace
+   * with a collection and left no trace anywhere: no `sync_run` (the revalue never
+   * opens one), no alert, nothing on screen but a `stale` mark with a generic
+   * sentence. Diagnosing it took a manual dig through production. This is the
+   * missing consumer.
+   */
+  reportSourceSyncFailures?: (
+    failures: readonly DailyCaptureSourceSyncFailure[],
+  ) => Promise<void>;
+  /**
    * Sync a workspace's connected sources before capture (#895): re-read Binance
    * balances and Numista/coin valuations so the snapshot freezes fresh figures.
    * Isolated per workspace here and per source inside the orchestration, which
@@ -323,6 +339,8 @@ export async function runDailyCapture(
 
   const benchmarkFailures = await runBenchmarkPhase(deps);
 
+  await reportSourceSyncPhase(deps, sourceSyncFailures);
+
   return {
     total: workspaces.length,
     captured,
@@ -332,6 +350,25 @@ export async function runDailyCapture(
     ...detection,
     dateKey,
   };
+}
+
+/**
+ * Hand the pass's source-sync degradations to the reporter, if one is wired
+ * (#1755). Contained exactly like missed-pass detection: a reporter that throws
+ * is swallowed, because a control plane that cannot record an alert must never
+ * turn an already-degraded pass into a failed one. Nothing to report → no call,
+ * so a clean night stays silent.
+ */
+async function reportSourceSyncPhase(
+  deps: RunDailyCaptureDeps,
+  failures: readonly DailyCaptureSourceSyncFailure[],
+): Promise<void> {
+  if (!deps.reportSourceSyncFailures || failures.length === 0) return;
+  try {
+    await deps.reportSourceSyncFailures(failures);
+  } catch {
+    // Observability only — never fails the run.
+  }
 }
 
 /**

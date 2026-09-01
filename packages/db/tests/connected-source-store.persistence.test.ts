@@ -325,6 +325,86 @@ describe("connected-source store — syncPositions", () => {
   });
 });
 
+describe("connected-source store — syncPositions stamps freshness (#1755)", () => {
+  test("a sync stamps the source fresh as of syncedAt, without any revalue", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 })],
+      "2026-09-01T07:18:46.229Z",
+    );
+
+    // The same row the revalue stamps — the one every freshness surface reads.
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
+      source: "numista",
+      freshnessState: "fresh",
+      fetchedAt: "2026-09-01T07:18:46.229Z",
+      price: "5000",
+    });
+  });
+
+  test("a sync clears a stale mark left by a failed revalue, reason included", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectNumista(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 })],
+      "2026-08-10T21:37:03.167Z",
+    );
+
+    // The outage path: a revalue that threw persists no updates and marks the
+    // source stale, keeping the prior fetched-at.
+    await store.connectedSources.revaluePositions(sourceId, [], {
+      fetchedAt: "2026-08-10T21:37:03.167Z",
+      freshnessState: "stale",
+      staleReason: "No se pudo actualizar la valoración de la colección Numista.",
+    });
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
+      freshnessState: "stale",
+    });
+
+    // Three weeks of failed nightly revalues later, the user presses Sync. That
+    // used to leave the mark standing forever: the sync path never wrote here.
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 6_000 })],
+      "2026-09-01T07:18:46.229Z",
+    );
+
+    const cache = await store.operations.readPriceCache(assetId);
+    expect(cache).toMatchObject({
+      freshnessState: "fresh",
+      fetchedAt: "2026-09-01T07:18:46.229Z",
+    });
+    // The reason goes with the state: a fresh row that still carried the outage
+    // sentence would keep explaining a failure that no longer holds.
+    expect(cache?.staleReason ?? null).toBeNull();
+  });
+
+  test("the same holds for a Binance source — the gap was never Numista's", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId, assetId } = await connectBinance(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [tk({})],
+      "2026-09-01T07:18:46.229Z",
+    );
+
+    expect(await store.operations.readPriceCache(assetId)).toMatchObject({
+      source: "binance",
+      freshnessState: "fresh",
+      fetchedAt: "2026-09-01T07:18:46.229Z",
+    });
+  });
+});
+
 describe("connected-source store — revaluePositions", () => {
   test("updates candidates in place, re-rolls the holding, stamps freshness", async () => {
     const store = await createInMemoryStore();
