@@ -16,8 +16,8 @@ import {
   getPrices,
   getTypeDetail,
   isTokenValid,
-  type MetalKind,
   mintNumistaToken,
+  syncedCoinFromPosition,
   syncNumistaCollection,
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
@@ -321,19 +321,10 @@ export async function syncNumistaAction(
       )
     )
       .filter((position): position is CoinPosition => position.kind === "coin")
-      .map((coin) => ({
-        externalId: coin.externalId,
-        catalogueId: coin.catalogueId,
-        issueId: coin.issueId,
-        grade: coin.grade,
-        quantity: coin.quantity,
-        metal: coin.metal as MetalKind | null,
-        finenessMillis: coin.finenessMillis,
-        weightGrams: coin.weightGrams,
-        obverseThumbUrl: coin.obverseThumbUrl,
-        numismaticValueMinor: coin.numismaticValueMinor,
-        numismaticFetchedAt: coin.numismaticFetchedAt,
-      }));
+      // The reuse input of this sync is what the LAST one persisted, read back
+      // through the pricing module's own bridge (#1740) — never a second hand-
+      // rolled mapping that could drift from it.
+      .map(syncedCoinFromPosition);
   } catch {
     redirect(
       errorRedirectUrl(returnUrl, {

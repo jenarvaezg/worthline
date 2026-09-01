@@ -10,7 +10,11 @@
 import type { NumistaCollectedItem } from "@pricing/numista";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncedCoin } from "./numista-valuation";
-import { fetchMetalSpotEur, syncNumistaCollection } from "./numista-valuation";
+import {
+  fetchMetalSpotEur,
+  syncedCoinFromPosition,
+  syncNumistaCollection,
+} from "./numista-valuation";
 
 const NOW = "2026-06-15T12:00:00.000Z";
 
@@ -253,6 +257,82 @@ describe("syncNumistaCollection — reuses persisted detail (ADR 0017 request-ca
 
     expect(d.typeDetail).not.toHaveBeenCalled(); // detail is still reused
     expect(d.prices).toHaveBeenCalledTimes(2); // both estimates refetched
+  });
+});
+
+describe("syncNumistaCollection — a silent provider never stamps (#1740)", () => {
+  it("leaves a never-stamped coin unstamped instead of claiming it was valued today", async () => {
+    const d = deps({ prices: vi.fn(async () => null) }); // Numista 5xx / timeout
+
+    const drafts = await syncNumistaCollection(d, NOW);
+
+    expect(drafts).toHaveLength(2);
+    expect(d.prices).toHaveBeenCalled(); // it was asked...
+    for (const draft of drafts) {
+      // ...and gave nothing back: no stamp, and no invented figure.
+      expect(draft.numismaticFetchedAt).toBeNull();
+      expect(draft.numismaticValueMinor).toBeNull();
+    }
+  });
+
+  it("retries on the next pass instead of waiting out the 30-day TTL", async () => {
+    const failed = await syncNumistaCollection(
+      deps({ prices: vi.fn(async () => null) }),
+      NOW,
+    );
+
+    // A minute later, starting from what the failed pass persisted: with no
+    // stamp, the TTL gate cannot hide the failure for a month.
+    const retry = deps();
+    const drafts = await syncNumistaCollection(
+      retry,
+      "2026-06-15T12:01:00.000Z",
+      failed.map(syncedCoinFromPosition),
+    );
+
+    expect(retry.prices).toHaveBeenCalledTimes(2); // both coins asked again
+    expect(drafts.find((x) => x.externalId === "1")).toMatchObject({
+      numismaticValueMinor: 7558,
+      numismaticFetchedAt: "2026-06-15T12:01:00.000Z",
+    });
+  });
+
+  it("carries nothing forward for a coin whose line changed under a silent provider", async () => {
+    // The stored estimate is 2 days old (well inside the TTL) but priced ONE
+    // coin; the collection now holds five. Carrying that figure over would show
+    // a fifth of the value wearing a fresh stamp — a state mark with no state
+    // behind it, which is the very bug this ticket is about.
+    const regraded: SyncedCoin[] = [
+      {
+        externalId: "1",
+        catalogueId: "1493",
+        issueId: 32723,
+        grade: "unc",
+        quantity: 1,
+        metal: "silver",
+        finenessMillis: 999,
+        weightGrams: 31.103,
+        obverseThumbUrl: null,
+        numismaticValueMinor: 7558,
+        numismaticFetchedAt: "2026-06-13T12:00:00.000Z",
+      },
+    ];
+    const grown = { ...SILVER_EAGLE, quantity: 5 };
+
+    const drafts = await syncNumistaCollection(
+      deps({
+        listItems: vi.fn(async () => [grown]),
+        prices: vi.fn(async () => null),
+      }),
+      NOW,
+      regraded,
+    );
+
+    expect(drafts[0]).toMatchObject({
+      quantity: 5,
+      numismaticValueMinor: null, // no figure invented from the old quantity
+      numismaticFetchedAt: null, // and nothing marked fresh
+    });
   });
 });
 

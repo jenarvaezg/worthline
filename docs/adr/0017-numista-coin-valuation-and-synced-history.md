@@ -131,6 +131,14 @@ refreshes, comfortably under the cap.
   is refetched only past its long TTL (`NUMISMATIC_TTL_DAYS`, gated per position).
   A Numista outage keeps the last-known value and marks that row stale (it retries
   next pass), surfaced as a "valoración desactualizada" note on the detail page.
+- **The numismatic fetched-at stamp advances only when Numista answered** (#1740)
+  — in the on-demand position sync exactly as in the daily pass, from one shared
+  rule in `numista-valuation`. A 5xx or a timed-out request leaves both the stored
+  estimate and its stamp untouched, so the next pass retries instead of waiting out
+  `NUMISMATIC_TTL_DAYS`. Stamping a silence would record freshness the collection
+  never had: a months-old figure reading as valued today, with nothing to flag it.
+  A coin whose line changed (issue, grade or quantity) carries nothing forward — it
+  has no estimate of its own yet, and the old one would look fresh while being wrong.
 - The spot provider's coverage of platinum/palladium must be verified whenever it
   changes (`PL=F`/`PA=F` verified on Yahoo 2026-07-30); base-metal circulation
   coins lean on the numismatic estimate or the purchase-price fallback.

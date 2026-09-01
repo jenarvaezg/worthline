@@ -6,9 +6,9 @@
  * given the same detail + spot. Also asserts request-budget dedup and TTL.
  */
 
-import type { NumistaCollectedItem } from "@pricing/numista";
+import type { NumistaCollectedItem, NumistaPrices } from "@pricing/numista";
 import { describe, expect, it, vi } from "vitest";
-import type { RevaluePosition } from "./numista-valuation";
+import type { RevaluePosition, SyncedCoin } from "./numista-valuation";
 import {
   NUMISMATIC_TTL_DAYS,
   refreshCoinValuations,
@@ -138,5 +138,91 @@ describe("numista-valuation — numismatic TTL preserved", () => {
     );
 
     expect(prices).not.toHaveBeenCalled();
+  });
+});
+
+describe("numista-valuation — the stamp advances only on an answer (#1740)", () => {
+  const STALE = "2026-05-01T12:00:00.000Z"; // 45 days before NOW → past the TTL
+
+  /** What an earlier pass persisted for this coin: valued, but with a lapsed
+   *  stamp, so both modes are due to ask Numista again. */
+  function persistedEagle(): SyncedCoin {
+    return {
+      externalId: "1",
+      catalogueId: "1493",
+      issueId: 32723,
+      grade: "unc",
+      quantity: 1,
+      metal: "silver",
+      finenessMillis: 999,
+      weightGrams: 31.103,
+      obverseThumbUrl: null,
+      numismaticValueMinor: 7558,
+      numismaticFetchedAt: STALE,
+    };
+  }
+
+  /** One pass over that coin, in the vocabulary both modes share: which
+   *  numismatic figure it ends up with, and under which stamp. */
+  type FetchPrices = () => Promise<NumistaPrices | null>;
+  interface PassOutcome {
+    fetchedAt: string | null;
+    valueMinor: number | null;
+  }
+
+  // The TWO paths that value the same coin. The stamping criterion is asserted
+  // over both from ONE table, so they cannot diverge again (#1740).
+  const MODES: { name: string; run: (prices: FetchPrices) => Promise<PassOutcome> }[] = [
+    {
+      name: "sync",
+      run: async (prices) => {
+        const drafts = await syncNumistaCollection(
+          { ...syncDeps(), prices: vi.fn(prices) },
+          NOW,
+          [persistedEagle()],
+        );
+        const draft = drafts[0]!;
+        return {
+          fetchedAt: draft.numismaticFetchedAt,
+          valueMinor: draft.numismaticValueMinor,
+        };
+      },
+    },
+    {
+      name: "revalue",
+      run: async (prices) => {
+        const revalued = await refreshCoinValuations(
+          [{ ...storedEagle(), numismaticFetchedAt: STALE, numismaticValueMinor: 7558 }],
+          { prices: vi.fn(prices), spotPerOzEur: vi.fn(async () => 28) },
+          { nowIso: NOW },
+        );
+        const position = revalued[0]!;
+        return {
+          fetchedAt: position.numismaticFetchedAt,
+          valueMinor: position.numismaticValueMinor,
+        };
+      },
+    },
+  ];
+
+  it.each(
+    MODES,
+  )("$name: a provider that does not answer stamps nothing and keeps the figure", async ({
+    run,
+  }) => {
+    // Numista 500s, or the abort signal cuts in: stamping this as "valued
+    // today" would fabricate freshness and hide the failure for 30 days.
+    expect(await run(async () => null)).toEqual({
+      fetchedAt: STALE,
+      valueMinor: 7558,
+    });
+  });
+
+  it.each(MODES)("$name: an answer does stamp, with the pass's clock", async ({
+    run,
+  }) => {
+    expect(
+      await run(async () => ({ currency: "EUR", prices: [{ grade: "unc", price: 80 }] })),
+    ).toEqual({ fetchedAt: NOW, valueMinor: 8000 });
   });
 });
