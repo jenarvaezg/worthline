@@ -451,8 +451,10 @@ describe("Libro mayor design-system guardian (#906)", () => {
       ["workspace-scope-bar.tsx", 'className="scopeTabs segmented"'],
       // Session bands (not cover, not cards): demo neutral, impersonation caution.
       ["demo/demo-banner.tsx", 'className="sessionBand"'],
-      ["admin/impersonation-banner.tsx", 'className="sessionBand"'],
-      ["admin/impersonation-banner.tsx", 'data-tone="warning"'],
+      // La banda de impersonación se pinta en su isla desde #1732 (lo que dice
+      // depende de la ruta que tiene debajo); el registro sigue siendo el mismo.
+      ["admin/impersonation-band.tsx", 'className="sessionBand"'],
+      ["admin/impersonation-band.tsx", 'data-tone="warning"'],
       // Runtime error boundary stays on paper with a system error band.
       ["error.tsx", 'className="errorBand"'],
     ];
@@ -651,5 +653,105 @@ describe("Libro mayor design-system guardian (#906)", () => {
     const admin = readFileSync(join(appDirectory, "admin/page.tsx"), "utf8");
     expect(admin).toContain('className="adminList section"');
     expect(admin).not.toContain("coverSurface");
+  });
+
+  test("prose keeps a reading measure and never goes uppercase (#1732)", () => {
+    // Un párrafo tendido sobre los 1180 px del shell pierde el renglón. El tope
+    // va en el elemento que lleva la prosa, no en la lista de páginas donde
+    // alguien la encontró larga (esa lista se queda corta cada vez).
+    expectRecipe("p.muted", { "max-width": "72ch" });
+    expectRecipe(".infoNote", { "max-width": "72ch" });
+
+    // `.contextLabel` es caja alta con tracking: un label pequeño real (canon
+    // §3). Vestir con él un PÁRRAFO convierte una explicación entera en un
+    // rótulo gritado — que es como «Cargar movimientos» y «Corregir precio de un
+    // día» describían mientras el resto del producto usaba cursiva normal.
+    const shouting = sourceFiles(/\.tsx$/)
+      .filter((file) =>
+        /<p[^>]*className=(?:"contextLabel"|\{[^}]*"contextLabel")/.test(
+          readFileSync(file, "utf8"),
+        ),
+      )
+      .map((file) => relative(appDirectory, file));
+
+    expect(shouting).toEqual([]);
+  });
+
+  test("a section's habitual action is the only one filled with ink (#1732)", () => {
+    // Canon §5: primario = tinta sobre hoja; secundario = transparente con
+    // --line-strong. El secundario faltaba como receta, así que TODO botón salía
+    // primario y la ficha de un activo apilaba ocho negros idénticos.
+    expectRecipe(".btnSecondary", {
+      background: "transparent",
+      "border-color": "var(--line-strong)",
+      color: "var(--ink)",
+    });
+    // El suelo global tiñe de tinta el `:disabled:hover`; un secundario apagado
+    // sigue siendo secundario.
+    expectRecipe(".btnSecondary:disabled:hover", { background: "transparent" });
+
+    // Y las utilidades de la ficha lo consumen: previsualizar no compite con
+    // confirmar, ni rellenar un campo con escribir el libro.
+    const surfaces = join(appDirectory, "(workspace)/patrimonio/[id]/editar/_surfaces");
+    for (const file of [
+      "statement-upload-section.tsx",
+      "price-backfill-section.tsx",
+      "snapshot-price-correction-section.tsx",
+    ]) {
+      expect(readFileSync(join(surfaces, file), "utf8"), file).toContain(
+        'className="btnSecondary"',
+      );
+    }
+  });
+
+  test("a long holding name truncates instead of crushing its amount (#1732)", () => {
+    // La receta ya existía para el nombre de una cartera y el de cada posición
+    // dentro de ella; lo que faltaba era la fila suelta, que es donde vive un
+    // «Vanguard Global Stock Index Fund EUR Acc».
+    for (const selector of [
+      ".balanceRowLabel",
+      ".balanceGroupMemberName",
+      ".catalogName",
+    ]) {
+      expectRecipe(selector, {
+        overflow: "hidden",
+        "text-overflow": "ellipsis",
+        "white-space": "nowrap",
+      });
+    }
+
+    // Truncar sin guardar el nombre completo lo pierde: el `title` es el tooltip.
+    const row = readFileSync(
+      join(appDirectory, "(workspace)/patrimonio/_board/holding-row.tsx"),
+      "utf8",
+    );
+    expect(row).toContain('className="balanceRowLabel" href={detailHref} title={h.name}');
+  });
+
+  test("the workspace reserves the assistant launcher's footprint on mobile (#1732)", () => {
+    // El marcador de registro no se mueve (canon §5, vive en esa esquina): lo
+    // que se reserva es el papel que tiene debajo, o se monta sobre la última
+    // fila del tablero — su importe y su menú «⋯».
+    const fab = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ".assistantFab",
+    );
+    const height = Number.parseInt(fab?.declarations.get("height") ?? "0", 10);
+    const bottom = Number.parseInt(fab?.declarations.get("bottom") ?? "0", 10);
+
+    const mobile = rules.filter(
+      (rule) =>
+        rule.file === "globals.css" &&
+        ruleIncludesSelector(rule, ".workspace") &&
+        rule.declarations.has("padding"),
+    );
+    const reserved = mobile
+      .map((rule) => rule.declarations.get("padding")!.split(/\s+/))
+      .filter((parts) => parts.length === 3)
+      .map((parts) => Number.parseInt(parts[2]!, 10));
+
+    expect(reserved.length).toBeGreaterThan(0);
+    for (const padding of reserved) {
+      expect(padding).toBeGreaterThanOrEqual(height + bottom);
+    }
   });
 });

@@ -72,6 +72,10 @@ export async function AnadirHoldingContent({
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
+  // Cuántos tramos tiene el alta (#1732): el reparto es el tercero solo cuando hay
+  // a quién repartir — con un único miembro `OwnershipInputs` no pinta fieldset,
+  // y anunciar «de 3» sería contar un paso que nadie va a ver.
+  const stepCount = activeMembers.length > 1 ? 3 : 2;
   const values = formError?.formId === "holding" ? formError.values : {};
 
   // The drawer (and the investment group) must survive a search/pick navigation,
@@ -144,9 +148,18 @@ export async function AnadirHoldingContent({
                   ? "¡Bienvenido! Empieza por tu primera cosa —una cuenta, una inversión, tu casa— y verás tu patrimonio tomar forma. Solo el nombre y el importe; el resto vive después en la ficha."
                   : "Elige el cajón, apunta el nombre y el importe. El resto vive después en la ficha."}
               </p>
-              <Link className="actionLink" href="/patrimonio/anadir/avanzado">
-                Modo avanzado
-              </Link>
+              {/* #1732: el enlace decía «Modo avanzado» y nada más, así que solo
+                  se entendía después de pulsarlo. La línea dice a qué lleva —y,
+                  con ella, que aquí no hace falta. */}
+              <div className="simpleIntroAdvanced">
+                <Link className="actionLink" href="/patrimonio/anadir/avanzado">
+                  Modo avanzado
+                </Link>
+                <small>
+                  Todos los instrumentos y campos técnicos —divisa, fechas, ISIN, reparto
+                  a medida— en una sola pantalla. Aquí no hacen falta.
+                </small>
+              </div>
             </div>
 
             {formError?.formId === "holding" ? (
@@ -156,6 +169,11 @@ export async function AnadirHoldingContent({
             ) : null}
 
             <form action={createHoldingAction} className="simpleAdd">
+              {/* #1732: el alta iba revelando secciones anidadas sin decir nunca
+                  cuántas quedaban. Los rótulos numeran los tramos que el propio
+                  formulario ya tenía; el total lo decide el reparto, que solo
+                  existe cuando hay más de un miembro al que repartir. */}
+              <p className="altaStep">Paso 1 de {stepCount} · Elige el cajón</p>
               <div
                 className="simpleDrawerGrid"
                 role="group"
@@ -182,6 +200,7 @@ export async function AnadirHoldingContent({
                 ))}
               </div>
 
+              <p className="altaStep">Paso 2 de {stepCount} · Rellena lo justo</p>
               <section className="simpleAddPanes" aria-live="polite">
                 <p {...DRAWER_EMPTY_PROPS}>
                   Elige arriba qué quieres apuntar y aquí aparecerá lo justo que hay que
@@ -196,6 +215,7 @@ export async function AnadirHoldingContent({
                 allowCustomSplit={selectedDrawer === "inmueble"}
                 members={activeMembers}
                 scopeMemberId={ownershipScopeMemberId}
+                stepLabel={`Paso ${stepCount} de ${stepCount} · Reparto`}
                 values={values}
               />
             </form>

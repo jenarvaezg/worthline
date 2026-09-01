@@ -330,7 +330,20 @@ export default function CatalogWorkbench({
                         {identityText(profile.identity)}
                       </button>
                     </td>
-                    <td>{profile.displayName ?? "—"}</td>
+                    {/* #1732: ocho columnas repartidas a partes iguales dejan al
+                        nombre ~90 px, y con el `overflow-wrap: anywhere` del suelo
+                        de tabla «Vanguard Global Stock Index Fund» caía en una
+                        columna de letras sueltas. Una línea, elipsis, y el nombre
+                        entero en el `title`. */}
+                    <td>
+                      {profile.displayName ? (
+                        <span className="catalogName" title={profile.displayName}>
+                          {profile.displayName}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                     <td>
                       {/* The SIZE of the gap is on the row, not only in `title`
                           (#1678): three tenths must not read like thirty points.

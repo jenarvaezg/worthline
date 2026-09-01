@@ -69,7 +69,7 @@ export function PriceBackfillSection({
   return (
     <section aria-label="Rellenar histórico de precios">
       <h3>Rellenar histórico de precios</h3>
-      <p className="contextLabel">
+      <p className="infoNote">
         Esta inversión tiene operaciones antiguas valoradas a coste porque no había
         cotización en esas fechas. Rellena el histórico con precios del proveedor para que
         el gráfico no dé un salto el día que entró el primer precio real.
@@ -78,7 +78,13 @@ export function PriceBackfillSection({
       <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
         <input name="currentUrl" type="hidden" value={currentUrl} />
 
-        <button disabled={isPreviewPending} name="intent" type="submit" value="preview">
+        <button
+          className="btnSecondary"
+          disabled={isPreviewPending}
+          name="intent"
+          type="submit"
+          value="preview"
+        >
           Ver cambios
         </button>
 
@@ -90,7 +96,7 @@ export function PriceBackfillSection({
         ) : null}
 
         {shown.status === "not_eligible" ? (
-          <p className="contextLabel">
+          <p className="infoNote">
             Esta inversión no admite relleno de histórico (sin símbolo de proveedor o sin
             histórico a coste).
           </p>
@@ -102,7 +108,7 @@ export function PriceBackfillSection({
               Fuente: <strong>{shown.source}</strong>
             </p>
             {shown.create + shown.update === 0 ? (
-              <p className="contextLabel">
+              <p className="infoNote">
                 No hay precios históricos que aplicar en el rango de esta inversión.
               </p>
             ) : (
@@ -118,7 +124,7 @@ export function PriceBackfillSection({
             )}
 
             {shown.gaps.length > 0 ? (
-              <p className="contextLabel">
+              <p className="infoNote">
                 La fuente no cubre {count(shown.gaps.length, "mes", "meses")} (
                 {shown.gaps.map(formatGap).join(", ")}). Esos meses se quedan sin precio —
                 no se inventa ninguno.

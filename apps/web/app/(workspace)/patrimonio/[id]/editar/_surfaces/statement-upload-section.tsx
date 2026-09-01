@@ -64,7 +64,7 @@ export function StatementUploadSection({
   return (
     <section aria-label="Cargar movimientos">
       <h3>Cargar movimientos</h3>
-      <p className="contextLabel">
+      <p className="infoNote">
         Sube la plantilla de Worthline (o un CSV con la misma forma) para crear las
         operaciones de esta inversión.
       </p>
@@ -93,7 +93,13 @@ export function StatementUploadSection({
           positivo).
         </p>
 
-        <button disabled={isPreviewPending} name="intent" type="submit" value="preview">
+        <button
+          className="btnSecondary"
+          disabled={isPreviewPending}
+          name="intent"
+          type="submit"
+          value="preview"
+        >
           Ver cambios
         </button>
 
@@ -134,7 +140,7 @@ export function StatementUploadSection({
             </ul>
 
             {shown.anomalies > 0 ? (
-              <p className="contextLabel">
+              <p className="infoNote">
                 Hay fechas con más de una operación: no se sobrescriben para no tocar la
                 fila equivocada. Revísalas a mano si hace falta.
               </p>
