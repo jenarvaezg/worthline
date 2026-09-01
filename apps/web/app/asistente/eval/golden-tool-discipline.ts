@@ -189,7 +189,8 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
     // would leave this question grading nothing, and that assertion is what makes it
     // fail loudly instead.
     //
-    // Three checks, and the split between them is deliberate. `noCeremonyOverRejection`
+    // Three of its six checks are this slice's, and the split between them is
+    // deliberate. `noCeremonyOverRejection`
     // is the lie; `relaysTheRefusal` is the silence — the lower bar the session actually
     // failed; and `asksForTheMissingFigure` is the positive one, because the other two
     // are abstentions a mute turn would pass. A turn that never calls the lane and asks

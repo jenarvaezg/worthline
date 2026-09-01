@@ -286,7 +286,7 @@ describe("buildChatSystemPrompt", () => {
     // needs; deliberately NOT bought: anything about how the parser reads them, which
     // is code. The prompt now sits at 9.829, with ELEVEN to spare.
     //
-    // #1753 raises it to 10.320 for 480 characters, and both are prose failures no code
+    // #1753 raises it to 10.330 for 488 characters, and both are prose failures no code
     // boundary reaches — the guard behind them worked, which is the point. Jose's turn
     // of 2026-09-01 got a refusal from `propose_operation` carrying the exact words that
     // unblocked him («no sé cuál es el importe: escríbeme sólo ése»), announced «he
@@ -302,13 +302,13 @@ describe("buildChatSystemPrompt", () => {
     // NOT bought, the #1342 trade again: the catalogue of refusals, each of which already
     // answers with an actionable sentence when it fires.
     //
-    // 260 buy the reciprocal of the identity rule this prompt already carries. That one
+    // 268 buy the reciprocal of the identity rule this prompt already carries. That one
     // forbids «es otro producto» when the keys do not COMPARE (a symbol against an ISIN);
     // it says nothing about two ISINs that compare and differ, which reads as licence to
     // conclude «dos activos» — and the alta that follows splits one position in two. The
     // sentence names the other reading (the ficha may hold the wrong ISIN) and hands the
-    // choice back. The prompt now sits at 10.309, with ELEVEN to spare.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(10_320);
+    // choice back. The prompt now sits at 10.317, with THIRTEEN to spare.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(10_330);
   });
 
   /**

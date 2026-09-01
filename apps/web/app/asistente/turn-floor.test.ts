@@ -297,21 +297,19 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
  * untouched. Seventh PR in a row to say so.
  *
- * **Raised to 46.700 on 2026-09-01 by #1753**, and this one buys no lane, no door and no
- * schema: 480 characters of SYSTEM PROMPT and nothing else. Two prose failures from one
- * turn of Jose's — a refusal narrated as a prepared proposal, and an ISIN that did not
- * match resolved by announcing a duplicate alta — neither of which a frontier can close,
- * because in both the code had already said no and the guard had already caught it. The
- * per-tool ranking is byte-for-byte what it was: the tools were not touched at all.
+ * **NOT raised by #1753**, and the arithmetic is why: the slice buys no lane, no door
+ * and no schema — 488 characters of SYSTEM PROMPT and nothing else, for two prose
+ * failures of one turn of Jose's (a refusal narrated as a prepared proposal, and an ISIN
+ * that did not match resolved by announcing a duplicate alta), neither of which a
+ * frontier can close, because in both the code had already said no and the guard had
+ * already caught it. The floor it started from was 45.675, 525 under this ceiling, so
+ * the pair fits with 37 to spare and the number does not move. The per-tool ranking is
+ * byte-for-byte what it was: the tools were not touched at all.
  *
- * The arithmetic: 220 for the honest-degradation rule on the write door (#1130's rule,
- * which the prompt had only for an unreadable attachment) and 260 for the reciprocal of
- * the identity rule (two ISINs that compare and differ are a question, not two products).
- * Both span every `propose_*`, so neither fits a description — #1342's seam, applied the
- * way #1514 applied it. The floor this PR started from was 45.675, 525 characters under
- * the old ceiling, so the second sentence alone would have fitted and the pair would not;
- * the new ceiling keeps ~1,2% of headroom, the same order as every raise since #1374. The
- * reasoning for each sentence is in `system-prompt.test.ts`, next to the other budget.
+ * 37 is tight, and left tight on purpose the way #1563 left the other budget: the next
+ * rule that needs room raises the number and writes down why, and nothing here is a
+ * reason to trim an existing instruction to make space. The reasoning for each of the
+ * two sentences is in `system-prompt.test.ts`, next to the budget that DID move.
  *
  * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
  * untouched. Eighth PR in a row to say so.
