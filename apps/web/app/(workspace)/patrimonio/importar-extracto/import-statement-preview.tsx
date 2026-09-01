@@ -447,7 +447,7 @@ export function ImportStatementPreview({
                         <td>{formatMoney(fund.amountMinor)}</td>
                         <td>
                           {choicePending ? (
-                            <p className="contextLabel">
+                            <p className="infoNote">
                               Elige la inversión para ver qué le pasa a la posición.
                             </p>
                           ) : (
@@ -535,7 +535,7 @@ export function ImportStatementPreview({
                 {pluralize(summary.executedRows, "operación", "operaciones")} ·{" "}
                 {formatMoney(summary.amountMinor)}
               </p>
-              <p className="contextLabel">
+              <p className="infoNote">
                 {pluralize(summary.matchedCount, "activo encaja", "activos encajan")} ·{" "}
                 {pluralize(summary.newCount, "activo nuevo", "activos nuevos")} ·{" "}
                 {pluralize(summary.excludedCount, "activo fuera", "activos fuera")}
@@ -564,7 +564,7 @@ export function ImportStatementPreview({
                   aviso pendiente MISSING_PROVIDER_SYMBOL.
                 </p>
               ) : null}
-              <p className="contextLabel">
+              <p className="infoNote">
                 Confirmar aplica los activos incluidos todo o nada: si algo falla, no se
                 escribe nada.
               </p>

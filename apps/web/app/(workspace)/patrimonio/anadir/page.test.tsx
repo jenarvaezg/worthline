@@ -203,3 +203,39 @@ describe("the alta's acquisition-date question on the success loop (#1561)", () 
     expect(html).not.toContain("addSuccessNotice");
   });
 });
+
+describe("orientación del alta (#1732)", () => {
+  test("numbers the wizard's stretches, counting only the ones this workspace shows", async () => {
+    // Un solo miembro: el reparto no se pinta, así que el alta tiene DOS tramos
+    // y anunciar «de 3» contaría un paso que nadie va a ver.
+    const html = await renderedHtml();
+
+    expect(html).toContain("Paso 1 de 2 · Elige el cajón");
+    expect(html).toContain("Paso 2 de 2 · Rellena lo justo");
+    expect(html).not.toContain("de 3");
+  });
+
+  test("with more than one member the reparto is the third stretch", async () => {
+    calls.readWorkspace.mockResolvedValueOnce({
+      baseCurrency: "EUR",
+      groups: [],
+      members: [
+        { id: "member_jose", name: "Jose" },
+        { id: "member_ana", name: "Ana" },
+      ],
+      mode: "household",
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Paso 1 de 3 · Elige el cajón");
+    expect(html).toContain("Paso 3 de 3 · Reparto");
+  });
+
+  test("«Modo avanzado» says what it leads to", async () => {
+    const html = await renderedHtml();
+
+    expect(html).toContain("Modo avanzado");
+    expect(html).toContain("Todos los instrumentos y campos técnicos");
+  });
+});

@@ -104,6 +104,25 @@ describe("AdminCatalogPage", () => {
     expect(html).toContain("1 por categorizar");
   });
 
+  test("a long profile name keeps its line and its full text (#1732)", async () => {
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([
+        {
+          ...UNCOVERED,
+          displayName: "Vanguard Global Stock Index Fund EUR Acc",
+        },
+      ]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage());
+
+    // Ocho columnas a partes iguales dejaban al nombre ~90 px, y el
+    // `overflow-wrap: anywhere` del suelo de tabla lo bajaba letra a letra.
+    expect(html).toContain(
+      '<span class="catalogName" title="Vanguard Global Stock Index Fund EUR Acc">',
+    );
+  });
+
   test("degrades explicitly when the catalog is not configured (never a blank table)", async () => {
     vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue({
       status: "unavailable",

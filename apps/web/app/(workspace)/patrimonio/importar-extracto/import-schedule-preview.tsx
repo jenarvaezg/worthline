@@ -200,7 +200,7 @@ export function ImportSchedulePreview({
         {shown.status === "ready" && plan ? (
           <div className="importPreview">
             {shown.preview.sheetName ? (
-              <p className="contextLabel">
+              <p className="infoNote">
                 Leído de la hoja «{shown.preview.sheetName}» para{" "}
                 {shown.preview.liabilityName}.
               </p>
@@ -304,14 +304,14 @@ export function ImportSchedulePreview({
               <p>{scheduleWriteSentence(plan)}</p>
               <p
                 className={
-                  scheduleVerdict(plan) === "verified" ? "contextLabel" : "warningBand"
+                  scheduleVerdict(plan) === "verified" ? "infoNote" : "warningBand"
                 }
                 role={scheduleVerdict(plan) === "verified" ? undefined : "alert"}
               >
                 {scheduleVerificationSentence(plan, formatMoney)}
               </p>
               {rebaselineNoticeSentence(plan) ? (
-                <p className="contextLabel">{rebaselineNoticeSentence(plan)}</p>
+                <p className="infoNote">{rebaselineNoticeSentence(plan)}</p>
               ) : null}
               {plan.summary.outsideTermCount > 0 ? (
                 <p className="warningBand" role="alert">
@@ -323,7 +323,7 @@ export function ImportSchedulePreview({
                   : el motor nunca las leería.
                 </p>
               ) : null}
-              <p className="contextLabel">
+              <p className="infoNote">
                 Confirmar escribe las revisiones y las amortizaciones todo o nada, sobre
                 el plan que ya tienes — sus condiciones no se tocan — y recalcula la
                 historia de la deuda de una vez.

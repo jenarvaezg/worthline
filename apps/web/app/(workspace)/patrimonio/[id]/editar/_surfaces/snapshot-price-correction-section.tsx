@@ -76,7 +76,7 @@ export function SnapshotPriceCorrectionSection({
   return (
     <section aria-label="Corregir precio de un día">
       <h3>Corregir precio de un día</h3>
-      <p className="contextLabel">
+      <p className="infoNote">
         Corrige el precio por unidad congelado en un snapshot concreto (por ejemplo, un
         día valorado a coste). Solo afecta a esa fecha — no reescribe el histórico mensual
         completo.
@@ -104,12 +104,18 @@ export function SnapshotPriceCorrectionSection({
         </label>
 
         {defaultUnitPrice ? (
-          <button onClick={fillDefaultPrice} type="button">
+          <button className="btnSecondary" onClick={fillDefaultPrice} type="button">
             Usar precio actual del proveedor
           </button>
         ) : null}
 
-        <button disabled={isPreviewPending} name="intent" type="submit" value="preview">
+        <button
+          className="btnSecondary"
+          disabled={isPreviewPending}
+          name="intent"
+          type="submit"
+          value="preview"
+        >
           Ver cambios
         </button>
 
@@ -121,7 +127,7 @@ export function SnapshotPriceCorrectionSection({
         ) : null}
 
         {shown.status === "not_eligible" ? (
-          <p className="contextLabel">
+          <p className="infoNote">
             Esta inversión no admite corrección (sin operaciones registradas).
           </p>
         ) : null}
@@ -139,9 +145,7 @@ export function SnapshotPriceCorrectionSection({
             </p>
 
             {shown.create + shown.update === 0 ? (
-              <p className="contextLabel">
-                No hay snapshots que actualizar para esa fecha.
-              </p>
+              <p className="infoNote">No hay snapshots que actualizar para esa fecha.</p>
             ) : (
               <>
                 <p>Esta corrección aplicará:</p>

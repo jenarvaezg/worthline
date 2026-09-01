@@ -18,12 +18,19 @@ export function OwnershipInputs({
   scopeMemberId,
   values,
   allowCustomSplit,
+  stepLabel,
 }: {
   members: Member[];
   scopeMemberId: string | undefined;
   values: Record<string, string>;
   /** Custom splits below 100% are only honoured for real estate (#737). */
   allowCustomSplit: boolean;
+  /**
+   * El rótulo de tramo del alta simple (#1732), p. ej. «Paso 3 de 3 · Reparto».
+   * Lo pone quien sabe cuántos tramos tiene su formulario; omitirlo deja la
+   * leyenda de siempre, que es lo que quiere el modo avanzado.
+   */
+  stepLabel?: string;
 }) {
   const scopeMember = members.find((m) => m.id === scopeMemberId) ?? members[0];
 
@@ -48,7 +55,7 @@ export function OwnershipInputs({
 
   return (
     <fieldset className="ownershipGrid simpleOwnership">
-      <legend>Reparto</legend>
+      <legend>{stepLabel ?? "Reparto"}</legend>
       <input name="scopeMemberId" type="hidden" value={scopeMember.id} />
       <label className="ownerPreset">
         <input

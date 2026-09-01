@@ -311,8 +311,21 @@ export function ContributionReconciliation({
         </div>
         <aside>
           <p className="memberProfileLabel">Progreso cerrado</p>
-          <strong>{projection.closed.length}</strong>
-          <span>cumplidas u omitidas en el periodo</span>
+          {/* #1732: un «0» a 1,5 rem en mono es el remate visual de la columna, y
+              con cero aportaciones cerradas ese cero era lo más grande de un panel
+              que no tenía nada que contar. Sin nada cerrado se dice con palabras;
+              la cifra vuelve en cuanto hay algo que contar. */}
+          {projection.closed.length === 0 ? (
+            <span>
+              Nada cerrado todavía en el periodo. Cada aportación que registres —o que
+              marques como omitida— se apunta aquí.
+            </span>
+          ) : (
+            <>
+              <strong>{projection.closed.length}</strong>
+              <span>cumplidas u omitidas en el periodo</span>
+            </>
+          )}
         </aside>
       </div>
 

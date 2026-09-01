@@ -12,6 +12,7 @@ import {
   formatMoneyMinorPrivacy,
   spendingDebtServiceCoverageNote,
 } from "@worthline/domain";
+import Link from "next/link";
 import { formatDay } from "./format-day";
 
 export function PassiveIncomePanel({
@@ -102,11 +103,19 @@ export function PassiveIncomePanel({
           ) : null}
         </>
       ) : (
-        <p className="objetivosPasivaEmpty">
-          Aún no has registrado cobros (dividendos, intereses o alquileres) en este
-          ámbito. Regístralos en la ficha de cada activo para ver cuánto de tu gasto ya
-          cubren.
-        </p>
+        // #1732: el vacío mandaba «a la ficha de cada activo» sin decir por dónde
+        // se llega a una. Ahora nombra el camino y lo abre.
+        <div className="objetivosPasivaEmpty">
+          <p>
+            Aún no has registrado cobros —dividendos, intereses o alquileres— en este
+            ámbito. Se apuntan en la sección «Cobros» de la ficha de cada activo que paga,
+            y en cuanto haya uno esta tarjeta dirá cuánto de tu gasto ya cubren tus
+            activos.
+          </p>
+          <Link className="actionLink" href="/patrimonio">
+            Ir a Patrimonio y elegir el activo →
+          </Link>
+        </div>
       )}
     </section>
   );

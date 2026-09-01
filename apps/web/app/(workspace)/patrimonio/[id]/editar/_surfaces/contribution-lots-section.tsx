@@ -120,7 +120,9 @@ export function ContributionLotsSection({
                   <input name="currentUrl" type="hidden" value={currentUrl} />
                   <input name="id" type="hidden" value={assetId} />
                   <input name="lotId" type="hidden" value={lot.id} />
-                  <button type="submit">Quitar</button>
+                  <button className="btnSmall" type="submit">
+                    Quitar
+                  </button>
                 </form>
               </li>
             ))}
@@ -175,7 +177,7 @@ export function ContributionLotsSection({
               <form action={applyProposedLotsAction}>
                 <input name="currentUrl" type="hidden" value={currentUrl} />
                 <input name="id" type="hidden" value={assetId} />
-                <button type="submit">
+                <button className="btnSecondary" type="submit">
                   {lots.length > 0
                     ? "Reemplazar mis lotes por esta escalera"
                     : "Usar esta escalera"}

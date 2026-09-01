@@ -51,6 +51,11 @@
   --radius: 6px;
   --radius-sm: 4px;
   --rule-heavy: 2px solid var(--ink);
+  /* El hueco que el lanzador del asistente ocupa en la esquina inferior (#1732):
+     su alto (48) + su separación del borde (20) + aire. Los contenedores de
+     página lo reservan en móvil; el guardián comprueba que ninguno se queda
+     fuera de la lista. */
+  --fab-clearance: 88px;
   --font-display: var(--font-bitter), "Rockwell", Georgia, serif;
   --font-body: var(--font-sans), "Avenir Next", "Segoe UI", sans-serif;
   --font-numeric: var(--font-mono), "Iosevka", ui-monospace, monospace;
@@ -623,6 +628,41 @@ button[aria-busy="true"] {
   cursor: progress;
 }
 
+/* Jerarquía de acción (#1732, canon §5: «primario = tinta sobre hoja; secundario
+   = transparente con --line-strong»).
+
+   El relleno de tinta es el peso de LA acción habitual de cada sección. La ficha
+   de un activo apilaba siete u ocho botones idénticos y todos gritaban lo mismo,
+   así que ninguno decía nada. Lo que baja aquí es lo que NO se viene a hacer:
+   previsualizar antes de confirmar (extracto, relleno de histórico, corrección
+   de un día), rellenar un campo con el precio del proveedor, guardar una tasa de
+   revalorización o una cadencia que se tocan una vez, adoptar una escalera de
+   lotes propuesta. Lo que se queda en tinta es el commit de cada sección —
+   registrar la operación, el traspaso, la tasación, el cobro, el lote— y el
+   «Confirmar» que cierra una previsualización, que nunca compite porque solo
+   existe después de ella.
+
+   Mismo tamaño y misma altura de toque que el primario: es un cambio de peso, no
+   de tamaño —degradar a `.btnSmall` (4 px de padding) los sacaría del cuerpo del
+   formulario y los convertiría en controles de fila. */
+.btnSecondary {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.btnSecondary:hover {
+  background: var(--ink);
+  color: var(--paper-strong);
+}
+
+/* El suelo global tiñe de tinta el hover deshabilitado; un secundario apagado
+   sigue siendo secundario. */
+.btnSecondary:disabled:hover {
+  background: transparent;
+  color: var(--ink);
+}
+
 /* ── Interactive state transitions (#638) ─────────────────────────────────
  * Hover/active rules elsewhere flip background/border/color (and `filter` on
  * .primaryAction); giving the base elements a shared ease makes those flips
@@ -641,6 +681,7 @@ button[aria-busy="true"] {
 .actionLinkMuted,
 .priceRefreshForm button,
 .refreshRow button,
+.btnSecondary,
 .btnSmall,
 .btnWarning,
 .deltaChip,
@@ -3251,8 +3292,16 @@ code {
 .objetivosPasivaNote,
 .objetivosPasivaEmpty {
   color: var(--muted);
+  display: grid;
   font-size: 0.82rem;
+  gap: 8px;
+  justify-items: start;
   margin: 12px 0 0;
+  max-width: 72ch;
+}
+
+.objetivosPasivaEmpty p {
+  margin: 0;
 }
 
 /* Cupo anual de aportación (#1427). Un contador de techo: llenar la barra no es
@@ -3741,8 +3790,28 @@ code {
 }
 
 @media (max-width: 640px) {
+  /* El pie del contenido lleva el hueco del lanzador del asistente (#1732): el
+     marcador de registro se monta sobre la ÚLTIMA fila del tablero —su importe y
+     su menú «⋯»— justo donde el pulgar termina de leer. En escritorio sobra
+     margen; en un teléfono no, así que el papel reserva por debajo lo que el
+     marcador ocupa en vez de mover el marcador, que es del canon (§5) y vive en
+     esa esquina.
+
+     La reserva es de TODO contenedor de página donde el lanzador se monta, que
+     es cualquiera con sesión abierta (`AssistantMount` solo lo calla para el
+     visitante deslogueado, y por eso `.loginPage` no está aquí). Enumerarlos es
+     inevitable —cada uno declara su propio `padding` y una regla de elemento
+     perdería— así que el guardián comprueba que ningún `<main>` del árbol se
+     quede fuera de esta lista. */
   .workspace {
-    padding: 12px;
+    padding: 12px 12px var(--fab-clearance);
+  }
+
+  .demoCover,
+  .demoLanding,
+  .legalPage,
+  .notFoundPage {
+    padding-bottom: var(--fab-clearance);
   }
 
   .tableScroll {
@@ -4831,6 +4900,19 @@ code {
   margin-top: 12px;
 }
 
+/* Medida de lectura (#1732). El shell mide 1180 px y una explicación tendida de
+   borde a borde pierde el renglón: el ojo vuelve a la izquierda y no encuentra
+   dónde seguir. La tipografía lo tiene medido desde antes de las pantallas —entre
+   65 y 75 caracteres por línea— así que el tope va en el ELEMENTO que lleva la
+   prosa, no en la lista de páginas donde alguien la encontró larga (Carteras e
+   Importar fueron las dos primeras; la regla aquí las cubre y no deja que la
+   siguiente reincida). Solo `p`: `.muted` también viste `span` de una línea
+   dentro de filas, donde un tope de medida no significa nada. La otra mitad de
+   esta decisión vive en `.infoNote`, con su receta. */
+p.muted {
+  max-width: 72ch;
+}
+
 @media (max-width: 900px) {
   .ajustesGrid {
     grid-template-columns: 1fr;
@@ -5104,7 +5186,15 @@ code {
   padding: 12px 16px;
 }
 
-.contextLabel {
+/* El registro de folio (canon §3): label pequeño real en caja alta con tracking,
+   el único uso que el canon autoriza para las mayúsculas. UNA receta, la
+   consuman quienes la consuman — los rótulos de tramo del alta (#1732) nacieron
+   como una copia byte a byte de esta y volvieron aquí. Lo que `.contextLabel`
+   NO puede vestir es un párrafo de prosa: eso convierte una explicación entera
+   en un rótulo gritado, y el guardián lo impide. */
+.contextLabel,
+.altaStep,
+.simpleOwnership legend {
   color: var(--muted);
   font-size: 0.8rem;
   text-transform: uppercase;
@@ -5347,6 +5437,31 @@ code {
 
 .catalogTable td {
   padding: 5px 8px;
+}
+
+/* El nombre del perfil, en un renglón (#1732). El suelo de tabla parte «donde
+   sea» para que un ISIN no desborde; en una tabla de ocho columnas repartidas a
+   partes iguales eso convierte un nombre de fondo en una columna de letras
+   sueltas. Aquí manda el renglón: una línea, elipsis, y el nombre completo en el
+   `title` (esto es admin interno, donde el puntero siempre existe). */
+.catalogName {
+  display: block;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Y que la columna valga para algo: repartidas a partes iguales, el nombre —lo
+   más largo de la fila— recibía lo mismo que «TER». Se le da el ancho que pide
+   quitándoselo a la que siempre mide lo mismo. Por su nombre y no por su
+   posición: insertar una columna reapuntaría un `nth-child` en silencio. */
+.catalogTable th.catalogNameCol {
+  width: 24%;
+}
+
+.catalogTable th.catalogNum {
+  width: 8%;
 }
 
 /* A sortable header is the header itself, not a control bolted beside it: it
@@ -5793,6 +5908,29 @@ code {
 
 .balanceRowName {
   min-width: 0;
+}
+
+/* El renglón del nombre (#1732): un ETF se llama «Vanguard Global Stock Index
+   Fund EUR Acc» y ese nombre partido a dos líneas empuja la fila hacia abajo y
+   aprieta la columna del importe. La receta de truncado ya era del canon —la
+   llevan el nombre de una cartera y el de cada posición dentro de ella—; lo que
+   faltaba era aplicarla a la fila suelta. El nombre completo no se pierde: viaja
+   en el `title` del enlace y en el `aria-label` de su menú. */
+.balanceRowTitle {
+  align-items: baseline;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.balanceRowLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.balanceRowTitle .warningBadge {
+  flex: none;
 }
 
 .balanceRowName a {
@@ -6476,6 +6614,9 @@ td.rowActions > * {
   color: var(--muted);
   font-style: italic;
   margin: 8px 0;
+  /* Medida de lectura (#1732): esta es LA clase de prosa de ayuda del producto,
+     así que el tope de renglón es suyo. Ver la nota junto a `p.muted`. */
+  max-width: 72ch;
 }
 
 .formActions {
@@ -7819,6 +7960,33 @@ td.rowActions > * {
 .simpleIntro .addHoldingLead {
   margin: 0;
 }
+
+/* La salida al modo avanzado, con lo que hay detrás (#1732): el enlace manda y
+   la línea explica, así que la línea va debajo y en cuerpo pequeño —marginalia,
+   no una segunda llamada. */
+.simpleIntroAdvanced {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: start;
+  max-width: 28rem;
+}
+
+.simpleIntroAdvanced small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Un rótulo de tramo (#1732) es el folio del canon con el espacio que pide estar
+   abriendo una sección del formulario; su tipografía viene de la receta compartida. */
+.altaStep {
+  font-weight: 650;
+  margin: 1.2rem 0 0;
+}
+
+.simpleAdd > .altaStep:first-child {
+  margin-top: 0;
+}
 .simpleDrawerGrid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -8142,7 +8310,8 @@ td.rowActions > * {
 .simpleHint {
   margin: 0;
 }
-.simpleAdd:not(:has(input[name="simpleDrawer"]:checked)) .simpleOwnership {
+.simpleAdd:not(:has(input[name="simpleDrawer"]:checked)) .simpleOwnership,
+.simpleAdd:not(:has(input[name="simpleDrawer"]:checked)) .altaStepPanes {
   display: none;
 }
 .simpleOwnership {
