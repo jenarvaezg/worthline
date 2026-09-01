@@ -1589,6 +1589,17 @@ th:last-child {
   background: var(--red);
 }
 
+/* El plegable reversible conserva la forma del irreversible —disparador callado,
+   confirmación con relleno—, solo cambia de registro: el relleno de la
+   confirmación es oro, no rojo. Si la confirmación se quedara en contorno como su
+   disparador, las dos piezas pesarían igual y la segunda no se leería como el
+   compromiso que es. */
+.confirmDelete.confirmReversible button {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--paper-strong);
+}
+
 .confirmDelete summary::-webkit-details-marker {
   display: none;
 }
@@ -4384,13 +4395,15 @@ code {
   gap: 8px;
 }
 
-/* «ACTIVO» no es un control, y espaciado como sus dos vecinos se leía como un
-   tercer botón del grupo (#1729). Se queda pegado al nombre —es una propiedad
-   suya— y el botón se va al otro extremo de la celda, junto a «Desactivar», que
-   vive en la celda de al lado. Así la fila se lee nombre · estado — acciones, no
-   como una botonera de tres piezas dispares. */
+/* «ACTIVO» no es un control, y espaciado igual que sus dos vecinos se leía como
+   un tercer botón del grupo (#1729). El hueco decide la lectura: se queda con el
+   `gap` corto del nombre —es una propiedad suya— y el botón abre el suyo, para
+   que la fila se lea «nombre · estado — acciones» y no como una botonera de tres
+   piezas dispares. Un `margin-left: auto` no serviría: el input crece y se come
+   todo el hueco libre en escritorio, y al envolver dejaría el botón colgado en
+   mitad de la segunda línea. */
 .memberIdentity > button {
-  margin-left: auto;
+  margin-left: 6px;
 }
 
 /* `min-width: 0` porque un input es `min-width: auto` por defecto y se niega a
@@ -4823,8 +4836,11 @@ code {
     grid-template-columns: 1fr;
   }
 
+  /* Una columna: con dos, «Desactivar» se queda anclado arriba a la derecha
+     mientras «Guardar» baja de línea al envolver, y el par se parte. Apilados,
+     cada acción ocupa su renglón y el nombre recupera el ancho (#1729). */
   .ajustesPanel .memberRow {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
   }
 
   .overrideRow {
