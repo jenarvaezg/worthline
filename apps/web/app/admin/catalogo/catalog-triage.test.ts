@@ -169,6 +169,10 @@ describe("countMatching", () => {
 });
 
 describe("identityText / profileKey", () => {
+  it("renders a DGS identity as its official code", () => {
+    expect(identityText({ kind: "dgs", code: "N5394" })).toBe("N5394");
+  });
+
   it("renders ISIN identities and provider·symbol identities", () => {
     expect(identityText({ kind: "isin", isin: "IE00B4L5Y983" })).toBe("IE00B4L5Y983");
     expect(
