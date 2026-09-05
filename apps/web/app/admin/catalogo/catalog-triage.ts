@@ -273,11 +273,16 @@ export function countMatching(
   );
 }
 
-/** Human-readable identity: the ISIN, or `provider · symbol`. */
+/** Human-readable identity: the ISIN, DGS code, or `provider · symbol`. */
 export function identityText(identity: GlobalExposureProfileIdentity): string {
-  return identity.kind === "isin"
-    ? identity.isin
-    : `${identity.priceProvider} · ${identity.providerSymbol}`;
+  switch (identity.kind) {
+    case "isin":
+      return identity.isin;
+    case "dgs":
+      return identity.code;
+    case "provider":
+      return `${identity.priceProvider} · ${identity.providerSymbol}`;
+  }
 }
 
 /** Stable key for selection/URL — the domain's canonical identity key. */

@@ -233,21 +233,25 @@ it is the product slug — a pension code (`N5394-Myinvestor…`) or an ISIN
 _Avoid_: ticker (too narrow — Finect codes are not tickers).
 
 **ISIN**:
-The International Securities Identification Number of an investment. Stored as
-reference metadata only — it does not participate in price fetching. The
-**provider symbol** is the sole lookup key. It is also the shared key of an
-**exposure profile**. It identifies the **instrument**, never the **holding**: the
-same fund at two brokers is two holdings carrying the same ISIN, so a match on it
-resolves *what* the row is and leaves *which holding* open (ADR 0055, amendment
-#1331). Reference metadata, but not optional in effect: an **investment** with a
-**provider symbol** and no ISIN is an **orphan** — no **statement** can route to it, no
-**exposure profile** is inherited, and nothing can decide that a broker's ISIN and its
-own symbol name the same security. That state is a **data-health** signal
-(`MISSING_INVESTMENT_ISIN`, #1489), never a blocked alta: a **pension plan** often has
-no ISIN at all. The column accepts only what an ISIN is: every interactive write
-validates the ISO 6166 check digit and refuses the rest (#1453) — a broker code in
-this column would make the **exposure profile** key diverge from where the row was
-registered.
+The International Securities Identification Number of an investment, with an ISO 6166
+check digit: it identifies the security, never a particular **holding**, and never
+fetches its price — that is the **provider symbol**'s job. A Spanish **pension plan**
+never has an ISIN; its **security id** is a **Código DGS**.
+
+**Código DGS**:
+The Spanish DGSFP registration code: `N` followed by four digits identifies a pension
+plan, while `F` identifies the pension fund, `G` its manager and `D` its depositary.
+The plan's **security id** is its `N####` code, printed on its paperwork, never the
+fund's `F####` code; UI label: "Código DGS".
+_Avoid_: ISIN del plan, código del fondo (identifies a different entity).
+
+**Security id**:
+An investment's identifier together with its kind — **ISIN** for a fund, ETF or share,
+or **Código DGS** for a Spanish pension plan — mutually exclusive, never both at once.
+It identifies the same security across **holdings**, independently of the **provider
+symbol** used to fetch prices; an imported, unrecognized value can be preserved without
+an assigned kind and does not count as identification.
+_Avoid_: provider symbol (a price lookup key), holding id (identifies one holding).
 
 **Exposure**:
 The composition of a scope's portfolio across axes — its largest **holdings**, its
@@ -260,10 +264,9 @@ over current holdings, not a figure: it re-describes the portfolio, never change
 The canonical description of what an **investment** actually holds underneath — its
 breakdown by geography (a fixed set of world regions), by underlying currency, and by
 asset class, plus the index it tracks, its TER, and whether its currency exposure is
-**hedged** to the base currency. Shared and keyed by its identity — a **valid ISIN**
-when present (ISO 6166-checked on both the registration and the lookup side, #1453),
-else its **provider symbol** (a pension plan often has no ISIN), so two **holdings**
-of the same security share one profile. It lives in the **control plane** as a global,
+**hedged** to the base currency. Shared and keyed by its **security id** — a valid
+**ISIN** or a plan's **Código DGS** — or by its **provider symbol** when unidentified,
+so two **holdings** of the same security share one profile. It lives in the **control plane** as a global,
 admin-curated catalog (ADR 0058): workspaces read it for **look-through** and never write
 it. Like an **instrument** it is a descriptive label and not a figure the math reads: it
 never touches **net worth**, **snapshots**, or **ripple recalculation**. Each breakdown
@@ -1379,7 +1382,7 @@ _Avoid_: imported history (implies verified), synced history.
 - **Coast FIRE** is a state of funding, not a level of life to fund, so it lives beside the progress bar whose tick draws it and never on the FIRE-levels rail (ADR 0079). Its age is the first year the projected trajectory crosses the coast requirement **with** the declared **savings capacity**; the age reached by leaving the capital alone is a different figure with its premise in its name (**FIRE age if contributions stop**). Every projected age prints in whole years.
 - A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.
-- An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
+- An **exposure profile** is global reference data in the **control plane** catalog, keyed by **security id** (or **provider symbol** when unidentified); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
 - A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**. A schedule's **declared expenses** feed only the **rent-derived real return**, and only when declared: no declaration, no derivation — the gross yield is never used (ADR 0076).
 - A **benchmark comparison** is a present-time lens (never a figure, ADR 0060) that reads a **benchmark series** cached monthly in a control-plane catalog. Globally it offers two real-terms, annualized lenses behind a toggle — **patrimonio real** (net worth deflated by CPI; includes contributions; ungated) and **rentabilidad real** (the invested sleeve's contribution-stripped **return** vs CPI; gated on returns) — and per **holding** it compares a fund's time-weighted **return** to the index it **tracks** (ADR 0039), never touching the net-worth math.

@@ -4,6 +4,8 @@ import {
   deriveExposureCatalogIdentity,
   exposureLookthroughKey,
   exposureProfileLookthroughMap,
+  globalExposureProfileIdentityKey,
+  resolveGlobalExposureProfileIdentity,
 } from "./exposure-identity";
 import type { GlobalExposureProfile } from "./global-exposure-profile";
 
@@ -11,6 +13,38 @@ import type { GlobalExposureProfile } from "./global-exposure-profile";
 const VWRL_ISIN = "IE00B3RBWM25";
 
 describe("exposureLookthroughKey", () => {
+  test("typed identity chooses exactly one namespace and never falls back from a malformed declaration", () => {
+    expect(
+      exposureLookthroughKey({
+        securityId: { kind: "isin", value: VWRL_ISIN },
+        providerSymbol: "VWCE",
+      }),
+    ).toBe(VWRL_ISIN);
+    expect(
+      exposureLookthroughKey({
+        securityId: { kind: "dgs", value: "n-5394" },
+        providerSymbol: "N5394-Myinvestor",
+      }),
+    ).toBe("dgs:N5394");
+    expect(
+      exposureLookthroughKey({
+        securityId: null,
+        isin: VWRL_ISIN,
+        providerSymbol: " VWCE ",
+      }),
+    ).toBe("VWCE");
+    expect(exposureLookthroughKey({ securityId: null, isin: VWRL_ISIN })).toBeNull();
+    for (const securityId of [
+      { kind: "isin", value: "N5394" },
+      { kind: "dgs", value: "" },
+      { kind: "dgs", value: "F2244" },
+    ] as const) {
+      expect(
+        exposureLookthroughKey({ securityId, isin: VWRL_ISIN, providerSymbol: "VWCE" }),
+      ).toBeNull();
+    }
+  });
+
   test("prefers the ISIN over the provider symbol", () => {
     expect(exposureLookthroughKey({ isin: "IE00B4L5Y983", providerSymbol: "VWCE" })).toBe(
       "IE00B4L5Y983",
@@ -78,6 +112,58 @@ describe("exposureLookthroughKey", () => {
 });
 
 describe("deriveExposureCatalogIdentity", () => {
+  test("a typed pension plan registers and resolves the same DGS profile, independent of its price slug", () => {
+    const source = {
+      instrument: "pension_plan",
+      securityId: { kind: "dgs", value: "n-5394" },
+      isin: VWRL_ISIN,
+      providerSymbol: "N5394-Myinvestor",
+    } as const;
+    const identity = deriveExposureCatalogIdentity(source);
+    expect(identity).toEqual({ kind: "dgs", code: "N5394" });
+    expect(resolveGlobalExposureProfileIdentity(source)).toEqual(identity);
+    expect(globalExposureProfileIdentityKey(identity!)).toBe("dgs:N5394");
+    const map = exposureProfileLookthroughMap([profile({ identity: identity! })]);
+    expect(map.has(exposureLookthroughKey(source)!)).toBe(true);
+    expect(map.has("N5394-Myinvestor")).toBe(false);
+  });
+
+  test("typed absence ignores legacy ISIN and a malformed typed declaration never registers by symbol", () => {
+    const source = {
+      instrument: "pension_plan",
+      isin: VWRL_ISIN,
+      providerSymbol: "plan",
+      priceProvider: "finect",
+    } as const;
+    const providerIdentity = {
+      kind: "provider",
+      priceProvider: "finect",
+      providerSymbol: "plan",
+    };
+    expect(deriveExposureCatalogIdentity({ ...source, securityId: null })).toEqual(
+      providerIdentity,
+    );
+    expect(resolveGlobalExposureProfileIdentity({ ...source, securityId: null })).toEqual(
+      providerIdentity,
+    );
+    for (const securityId of [
+      { kind: "dgs", value: "F2244" },
+      { kind: "dgs", value: "" },
+      { kind: "isin", value: "N5394" },
+    ] as const) {
+      expect(deriveExposureCatalogIdentity({ ...source, securityId })).toBeNull();
+      expect(() =>
+        resolveGlobalExposureProfileIdentity({ ...source, securityId }),
+      ).toThrow();
+    }
+    expect(
+      deriveExposureCatalogIdentity({
+        instrument: "crypto",
+        securityId: { kind: "dgs", value: "N5394" },
+      }),
+    ).toBeNull();
+  });
+
   test("a market fund with a valid ISIN → isin identity", () => {
     expect(
       deriveExposureCatalogIdentity({ instrument: "fund", isin: VWRL_ISIN }),

@@ -2,17 +2,25 @@ import type { ExposureProfile } from "./exposure-lookthrough";
 import type { GlobalExposureProfile } from "./global-exposure-profile";
 import { defaultsFor, type Instrument } from "./instrument-catalog";
 import { INVESTMENT_PRICE_PROVIDERS, type InvestmentPriceProvider } from "./prices";
+import {
+  classifySecurityId,
+  normalizedSecurityIdColumnValue,
+  type SecurityId,
+  validIsinOrNull,
+} from "./security-id";
+
+export { isValidIsin, validIsinOrNull } from "./security-id";
 
 /**
  * The identity of an exposure-catalog row (#940, #1097, ADR 0058): a security is
- * identified by its ISIN when it has one, otherwise by its price
- * provider + symbol. This module is the single home of that rule — the type, the
- * ISIN checksum, the key functions, the raw-input and holding derivations, and
- * the catalog→look-through adapter. The look-through and the global-catalog
- * modules depend on it rather than restating "ISIN else provider symbol".
+ * identified by its typed security id (ISIN or DGS), or its price provider +
+ * symbol when unidentified. Legacy callers retain validated ISIN/provider
+ * behavior until #1743/#1745. This module owns catalog and lookup keys;
+ * security-id owns identifier validation.
  */
 export type GlobalExposureProfileIdentity =
   | { kind: "isin"; isin: string }
+  | { kind: "dgs"; code: string }
   | {
       kind: "provider";
       priceProvider: InvestmentPriceProvider;
@@ -20,6 +28,8 @@ export type GlobalExposureProfileIdentity =
     };
 
 export interface RawGlobalExposureProfileIdentityInput {
+  /** Undefined reads legacy isin; null explicitly declares no security id. */
+  securityId?: SecurityId | null;
   isin?: string | null;
   priceProvider?: string | null;
   providerSymbol?: string | null;
@@ -27,7 +37,7 @@ export interface RawGlobalExposureProfileIdentityInput {
 
 /**
  * The instruments that carry a look-through exposure profile — the equity/fund
- * family keyed by `isin ?? providerSymbol`. The single source of truth for "is
+ * family keyed by security id or provider symbol. The single source of truth for "is
  * this a market holding with a catalog identity": both `resolveProfile`
  * (look-through) and {@link deriveExposureCatalogIdentity} (#1097) read it, so
  * the set that gets a profile lookup and the set that registers a catalog stub
@@ -36,7 +46,6 @@ export interface RawGlobalExposureProfileIdentityInput {
 export const INVESTMENT_PROFILE_INSTRUMENTS: ReadonlySet<Instrument> =
   new Set<Instrument>(["fund", "etf", "stock", "index", "pension_plan"]);
 
-const ISIN_PATTERN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 /** The provider vocabulary as a set, derived from the single list in `./prices`. */
 const PROVIDER_SET: ReadonlySet<InvestmentPriceProvider> = new Set(
   INVESTMENT_PRICE_PROVIDERS,
@@ -57,96 +66,70 @@ function isLookthroughProvider(value: string): value is InvestmentPriceProvider 
 }
 
 /**
- * The look-through key a holding resolves under and the catalog keys a profile
- * on: the ISIN when it IS one, else the provider symbol — never the
- * `p:provider:symbol` composite {@link globalExposureProfileIdentityKey} stores
- * internally. The single definition of the "ISIN else provider symbol" rule:
- * `resolveProfile` (holding side) and {@link exposureProfileLookthroughMap}
- * (catalog side) both read it, so the two sides can never key differently.
- *
- * The ISIN is validated with the SAME rule the registration identity applies
- * ({@link deriveExposureCatalogIdentity}), because the registration is what
- * decided where the row lives (#1453): a DGS code stored in the isin column
- * registered the row under the symbol, so reading under the raw column value
- * found nothing and the holding turned «sin clasificar» silently.
+ * Exactly one key per typed state: ISIN value, dgs:code, or provider symbol for
+ * explicit null. An invalid typed declaration yields null, never another key.
+ * Only callers omitting securityId use the legacy validated ISIN/provider rule
+ * (#1453). The catalog adapter shares this boundary with holding lookups.
  */
 export function exposureLookthroughKey(source: {
+  /** Undefined uses the legacy ISIN path; null explicitly selects the symbol. */
+  securityId?: SecurityId | null;
   isin?: string | null;
   providerSymbol?: string | null;
 }): string | null {
+  if (source.securityId !== undefined) {
+    if (source.securityId === null) return trimToNull(source.providerSymbol);
+    const securityId = normalizedDeclaredSecurityId(source.securityId);
+    if (!securityId) return null;
+    return securityId.kind === "isin" ? securityId.value : `dgs:${securityId.value}`;
+  }
   return validIsinOrNull(source.isin) ?? trimToNull(source.providerSymbol);
+}
+
+function normalizedDeclaredSecurityId(securityId: SecurityId): SecurityId | null {
+  const classified = classifySecurityId(securityId.value);
+  return classified?.kind === securityId.kind ? classified : null;
 }
 
 /**
  * The composite key the catalog persists a row under: the ISIN itself for an
- * ISIN identity, or a `p:provider:symbol` composite for a provider identity (so
+ * ISIN identity, `dgs:code` for DGS, or `p:provider:symbol` for a provider identity (so
  * the same symbol under two providers stays distinct). This is the storage key,
  * not the look-through key — see {@link exposureLookthroughKey}.
  */
 export function globalExposureProfileIdentityKey(
   identity: GlobalExposureProfileIdentity,
 ): string {
-  return identity.kind === "isin"
-    ? identity.isin
-    : `p:${identity.priceProvider}:${identity.providerSymbol}`;
-}
-
-/**
- * The ISIN an identity or key may trust: trimmed, upper-cased and checksum-valid
- * — or null. The one normalization both the registration identity and the
- * look-through key apply (#1453), so "what counts as an ISIN" can never diverge
- * between where a row is stored and where it is searched.
- */
-export function validIsinOrNull(value: string | null | undefined): string | null {
-  const normalized = (value ?? "").trim().toUpperCase();
-  return normalized && isValidIsin(normalized) ? normalized : null;
-}
-
-export function isValidIsin(value: string): boolean {
-  if (!ISIN_PATTERN.test(value)) {
-    return false;
+  switch (identity.kind) {
+    case "isin":
+      return identity.isin;
+    case "dgs":
+      return `dgs:${identity.code}`;
+    case "provider":
+      return `p:${identity.priceProvider}:${identity.providerSymbol}`;
   }
-
-  const expanded = [...value]
-    .map((character) => {
-      if (character >= "0" && character <= "9") {
-        return character;
-      }
-      return String(character.charCodeAt(0) - 55);
-    })
-    .join("");
-
-  let sum = 0;
-  let alternate = false;
-  for (let index = expanded.length - 1; index >= 0; index -= 1) {
-    let digit = Number(expanded[index]);
-    if (alternate) {
-      digit *= 2;
-      if (digit > 9) {
-        digit -= 9;
-      }
-    }
-    sum += digit;
-    alternate = !alternate;
-  }
-
-  return sum % 10 === 0;
 }
 
 /**
  * Parse an admin-supplied raw identity into the tagged {@link
- * GlobalExposureProfileIdentity}: a valid ISIN wins (normalized upper-case),
- * else a price provider + symbol pair. Throws when neither resolves.
+ * GlobalExposureProfileIdentity}. Typed declarations validate only their kind;
+ * explicit null selects provider + symbol. Legacy input keeps its valid-ISIN
+ * priority. Throws when the selected identity is invalid or absent.
  */
 export function resolveGlobalExposureProfileIdentity(
   input: RawGlobalExposureProfileIdentityInput,
 ): GlobalExposureProfileIdentity {
-  const trimmedIsin = trimToNull(input.isin);
-  if (trimmedIsin) {
-    const normalized = trimmedIsin.toUpperCase();
-    if (isValidIsin(normalized)) {
-      return { isin: normalized, kind: "isin" };
-    }
+  if (input.securityId != null) {
+    const value = normalizedSecurityIdColumnValue(
+      input.securityId.kind,
+      input.securityId.value,
+    );
+    if (!value) throw new Error("Introduce un identificador de valor.");
+    return securityIdCatalogIdentity({ kind: input.securityId.kind, value });
+  }
+  const isin = input.securityId === undefined ? validIsinOrNull(input.isin) : null;
+  if (isin) {
+    return { isin, kind: "isin" };
   }
 
   const priceProvider = trimToNull(input.priceProvider);
@@ -160,8 +143,16 @@ export function resolveGlobalExposureProfileIdentity(
   }
 
   throw new Error(
-    "Exposure profile identity requires a valid ISIN or priceProvider + providerSymbol.",
+    "Exposure profile identity requires a valid ISIN, DGS code or priceProvider + providerSymbol.",
   );
+}
+
+function securityIdCatalogIdentity(
+  securityId: SecurityId,
+): GlobalExposureProfileIdentity {
+  return securityId.kind === "isin"
+    ? { kind: "isin", isin: securityId.value }
+    : { kind: "dgs", code: securityId.value };
 }
 
 /**
@@ -172,12 +163,14 @@ export function resolveGlobalExposureProfileIdentity(
  * never registered.
  *
  * The identity mirrors the look-through key {@link exposureLookthroughKey}
- * (`isin ?? providerSymbol`) so the stub the admin later curates is the very row
+ * (one key per typed state) so the stub the admin later curates is the very row
  * the aggregation reads. Only the equity/fund family has one — cash, property,
  * crypto, coins and vehicles carry no GICS-catalog identity, so connected sources
  * (which yield only crypto/coins today) naturally register nothing.
  */
 export interface ExposureCatalogIdentitySource {
+  /** Undefined reads legacy isin; null explicitly declares no security id. */
+  securityId?: SecurityId | null;
   /**
    * The holding's instrument. When present it gates registration to the market
    * set (creation paths, where the instrument is known). Omit it only when the
@@ -206,8 +199,11 @@ export function deriveExposureCatalogIdentity(
     return null;
   }
 
-  // ISIN is the stronger identity — the look-through prefers it over the symbol.
-  const isin = validIsinOrNull(source.isin);
+  if (source.securityId != null) {
+    const securityId = normalizedDeclaredSecurityId(source.securityId);
+    return securityId ? securityIdCatalogIdentity(securityId) : null;
+  }
+  const isin = source.securityId === undefined ? validIsinOrNull(source.isin) : null;
   if (isin) {
     return { isin, kind: "isin" };
   }
@@ -247,8 +243,10 @@ export function exposureProfileLookthroughMap(
   for (const profile of profiles) {
     const key = exposureLookthroughKey(
       profile.identity.kind === "isin"
-        ? { isin: profile.identity.isin }
-        : { providerSymbol: profile.identity.providerSymbol },
+        ? { securityId: { kind: "isin", value: profile.identity.isin } }
+        : profile.identity.kind === "dgs"
+          ? { securityId: { kind: "dgs", value: profile.identity.code } }
+          : { securityId: null, providerSymbol: profile.identity.providerSymbol },
     );
     if (!key) {
       continue;

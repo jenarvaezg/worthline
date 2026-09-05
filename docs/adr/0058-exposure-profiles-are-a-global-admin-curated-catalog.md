@@ -1,5 +1,20 @@
 # Exposure profiles are a global admin-curated catalog
 
+> **Amended by #1742 (PRD #1741, decision #1667): typed security identity.**
+> A Spanish pension plan never has an ISIN; its identifier is the DGS `N####`
+> plan code. The domain catalog identity now has three arms: ISIN, DGS, and
+> provider + symbol. A DGS identity uses `dgs:N####` in both the catalog and
+> look-through; an ISIN uses its value. An explicitly unidentified holding uses
+> its provider symbol. Each state selects exactly one lookup key: a missing DGS
+> profile never falls back to the provider profile. This supersedes the
+> `isin ?? providerSymbol` rule below for typed inputs.
+>
+> #1742 supplies the pure domain contract. Legacy callers keep their validated
+> ISIN/provider behavior until workspace migration #1743, catalog migration
+> #1744 and typed exposure wiring #1745 adopt that contract. The two migrations
+> follow the catalog-first choreography in #1667; there is no reading fallback
+> to mask an incomplete conversion.
+
 An exposure profile describes what a security _holds underneath_ — its geography, underlying-currency and asset-class breakdowns, plus TER, tracked index and hedged flag — keyed by `isin ?? providerSymbol`. That composition is a property of the **security identity**, not of any one holder: two workspaces that both hold `IE00B4L5Y983` share the same MSCI World underneath. So the profile is **global reference data**, and asking every workspace to hand-enter (or agent-fill) the same breakdown was the wrong scope. ADR 0039 shipped it per-workspace as the pragmatic v1; this ADR moves it to where the data belongs.
 
 Exposure profiles become a **shared catalog in the control plane**, curated by the admin and **read-only to workspaces**. A workspace's look-through reads the global catalog to classify its holdings; it never writes profiles. This is the control plane's **first reference-data catalog** — until now it held only tenancy plumbing (workspace registry, grants, the daily-capture cron, the chat rate-limit counter). That step is justified because a profile is **non-figure metadata** (ADR 0039): it has no reconciliation invariant, is never read by net-worth / snapshot / ripple math, and its worst failure is a mislabeled geography that is visible and reversible in the look-through. The catalog is keyed by `isin ?? providerSymbol` and each row keeps its provenance stamp (`source`, `declaredAt`).

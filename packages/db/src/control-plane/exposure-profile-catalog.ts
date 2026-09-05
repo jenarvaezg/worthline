@@ -153,6 +153,9 @@ function identityColumns(identity: GlobalExposureProfileIdentity): {
       providerSymbol: null,
     };
   }
+  if (identity.kind === "dgs") {
+    throw new Error("DGS catalog persistence requires migration #1744.");
+  }
   return {
     identityKey: globalExposureProfileIdentityKey(identity),
     identityKind: "provider",

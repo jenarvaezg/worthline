@@ -149,8 +149,18 @@ async function main(): Promise<void> {
     );
 
     for (const [, stub] of toCreate.slice(0, 20)) {
-      const label =
-        stub.identity.kind === "isin" ? stub.identity.isin : stub.identity.providerSymbol;
+      let label: string;
+      switch (stub.identity.kind) {
+        case "isin":
+          label = stub.identity.isin;
+          break;
+        case "dgs":
+          label = stub.identity.code;
+          break;
+        case "provider":
+          label = stub.identity.providerSymbol;
+          break;
+      }
       console.log(`  + ${label}${stub.displayName ? `  (${stub.displayName})` : ""}`);
     }
     if (toCreate.length > 20) console.log(`  … and ${toCreate.length - 20} more`);
