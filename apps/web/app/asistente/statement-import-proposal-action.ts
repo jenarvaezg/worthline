@@ -18,6 +18,7 @@ import {
   buildStatementImportPlan,
   findStatementTypeConflict,
   isIsinShaped,
+  isinSecurityId,
   type ParsedStatementRow,
   resolveStatementImportBuckets,
 } from "@worthline/domain";
@@ -134,9 +135,7 @@ export async function confirmStatementImportProposalAction(
           asset: {
             currency: fund.creation.currency,
             id: fund.creation.assetId,
-            ...(isIsinShaped(fund.isin)
-              ? { securityId: { kind: "isin" as const, value: fund.isin } }
-              : {}),
+            ...(isIsinShaped(fund.isin) ? { securityId: isinSecurityId(fund.isin) } : {}),
             name: fund.creation.name,
             ownership: fund.creation.ownership,
             ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),

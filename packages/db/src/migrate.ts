@@ -54,8 +54,8 @@ function amortizationBoundaryDates(plan: {
  * The ISO 6166 check digit, duplicated here for the same reason
  * {@link addMonthsClamped} is: migrate.ts is a leaf with no `@worthline/domain`
  * dependency, and the v70 backfill has to tell an ISIN from a DGS code by shape.
- * `migrate-security-id.persistence.test.ts` pins this copy against the domain's
- * `classifySecurityId`, so the two can never drift apart in silence.
+ * `tests/security-id-migration.persistence.test.ts` pins this copy against the
+ * domain's `classifySecurityId`, so the two can never drift apart in silence.
  */
 function isValidIsinShape(value: string): boolean {
   if (!/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(value)) return false;

@@ -325,7 +325,8 @@ async function importWorkspace(
       // is total — it classifies by shape and keeps verbatim what it cannot name,
       // so a legacy `isin` field holding a DGS code lands typed, and garbage lands
       // with a null kind for data health to claim instead of failing the restore.
-      // This is the ONLY write in the codebase that may leave that kind null.
+      // Es la única escritura INTERACTIVA que puede dejar esa clase a null; el
+      // backfill de la v70 la deja igual para lo que no supo leer.
       if (asset.type === "investment") {
         const securityId = preservedSecurityId(
           asset.investment?.securityId ?? asset.investment?.isin,

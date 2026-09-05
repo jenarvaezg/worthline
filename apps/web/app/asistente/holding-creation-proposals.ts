@@ -31,6 +31,7 @@ import {
   formatDateKeyEs,
   formatMoneyMinor,
   type Instrument,
+  isinSecurityId,
   type MatchCandidateRow,
   type MatchPortfolioHolding,
   matchHoldings,
@@ -283,9 +284,7 @@ function buildPlan(
     instrument,
     name,
     ownership,
-    ...(parsedIsin.isin
-      ? { securityId: { kind: "isin" as const, value: parsedIsin.isin } }
-      : {}),
+    ...(parsedIsin.isin ? { securityId: isinSecurityId(parsedIsin.isin) } : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
   const resolved = resolveHoldingCreationOpening(

@@ -79,14 +79,14 @@ export async function projectMatcherPortfolio(
 
   const assetHoldings: MatchPortfolioHolding[] = assets.map((asset) => {
     const meta = metaById.get(asset.id);
+    // El matcher del asistente enruta por ISIN (#1747 abre su contrato al par).
+    const isin = storedIsinOrNull(meta?.securityId);
     return {
       holdingId: asset.id,
       name: asset.name,
       ...(isClosedPosition(asset, netUnitsByAssetId) ? { closed: true } : {}),
       ...(asset.instrument ? { instrument: asset.instrument } : {}),
-      ...(storedIsinOrNull(meta?.securityId)
-        ? { isin: storedIsinOrNull(meta?.securityId) as string }
-        : {}),
+      ...(isin ? { isin } : {}),
       ...((asset.providerSymbol ?? meta?.providerSymbol)
         ? { providerSymbol: asset.providerSymbol ?? meta?.providerSymbol ?? null }
         : {}),

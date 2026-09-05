@@ -19,6 +19,7 @@ import {
   isCaptureCurrency,
   isInstrument,
   isInvestmentPriceProvider,
+  isinSecurityId,
   isValidIsin,
 } from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
@@ -95,7 +96,7 @@ export function parseInvestmentAssetCommandStrict(
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { securityId: { kind: "isin", value: isin.isin } } : {}),
+      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
@@ -310,7 +311,7 @@ export function parseUpdateInvestmentCommand(
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { securityId: { kind: "isin", value: isin.isin } } : {}),
+      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },

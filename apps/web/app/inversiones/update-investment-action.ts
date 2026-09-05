@@ -120,8 +120,21 @@ export async function updateInvestmentAction(
     }
   }
 
+  // #1743: la ficha solo sabe enseñar un campo de identidad, y ese campo es el
+  // ISIN. Un envío sin ISIN declara «este holding no tiene ISIN» y NUNCA «este
+  // plan ya no tiene código DGS»: el código del plan no está en el formulario, así
+  // que el guardado no puede borrarlo. Sin esto, abrir y guardar la ficha de un
+  // plan tiraría el identificador que la v70 acababa de escribirle, y una vez
+  // #1744 re-clave el catálogo a `dgs:N####` el holding se quedaría «sin
+  // clasificar» sin que nada avisara. Cuando el campo sea por instrumento (#1746)
+  // esta línea sobra y se va.
+  const command =
+    parsed.command.securityId === undefined && existing?.securityId?.kind === "dgs"
+      ? { ...parsed.command, securityId: existing.securityId }
+      : parsed.command;
+
   await runActionWithStore(async (store) => {
-    await store.assets.updateInvestmentAsset(parsed.command);
+    await store.assets.updateInvestmentAsset(command);
     if (priceConfigChanged) {
       await store.operations.clearPriceCache(routeAssetId);
     }

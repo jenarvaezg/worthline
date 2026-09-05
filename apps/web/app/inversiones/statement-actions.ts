@@ -31,12 +31,17 @@ import {
   statementRowToCreateInput,
   statementRowToOverwrite,
 } from "@web/statement-operation-input";
-import type { ParsedStatement, StatementMergePlan } from "@worthline/domain";
+import type {
+  ParsedStatement,
+  StatementMergePlan,
+  StoredSecurityId,
+} from "@worthline/domain";
 import {
   isStatementBroker,
   parseStatement,
   planStatementMerge,
   resolvePerHoldingStatementIsinGuard,
+  SECURITY_ID_KIND_LABEL_INLINE,
   storedIsinOrNull,
 } from "@worthline/domain";
 import {
@@ -64,13 +69,25 @@ export type StatementPreviewState =
       sells: number;
     };
 
-/** The Spanish error shown when the file's ISIN does not match the asset's (S4). */
-function isinMismatchMessage(
+/**
+ * The Spanish error shown when the file's ISIN does not match the holding's
+ * identifier (S4). El archivo SIEMPRE trae ISINs —es un extracto de bróker— pero
+ * lo que la posición tiene registrado puede ser un código DGS (#1743), y entonces
+ * llamarlo «ISIN» sería exactamente el error de nomenclatura que originó #1741:
+ * un plan de pensiones no tiene ISIN. La frase nombra cada mitad por lo que es.
+ */
+function identifierMismatchMessage(
   fileIsin: string | string[] | null,
-  assetIsin: string,
+  holdingSecurityId: StoredSecurityId | undefined,
 ): string {
   const fileLabel = Array.isArray(fileIsin) ? fileIsin.join(", ") : (fileIsin ?? "—");
-  return `El ISIN del archivo (${fileLabel}) no coincide con el de esta inversión (${assetIsin}). No se ha cargado nada.`;
+  const kind = holdingSecurityId?.kind;
+  const holdingLabel = kind
+    ? `su ${SECURITY_ID_KIND_LABEL_INLINE[kind]} (${holdingSecurityId.value})`
+    : holdingSecurityId
+      ? `lo que tiene registrado (${holdingSecurityId.value})`
+      : "lo que tiene registrado";
+  return `El ISIN del archivo (${fileLabel}) no coincide con ${holdingLabel}. No se ha cargado nada.`;
 }
 
 /** Count the sells among the rows a plan will actually write (created + overwritten). */
@@ -154,7 +171,7 @@ export async function previewStatementAction(
     const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
     if (guard.status === "mismatch") {
       return {
-        message: isinMismatchMessage(guard.fileIsins, asset?.securityId?.value ?? ""),
+        message: identifierMismatchMessage(guard.fileIsins, asset?.securityId),
         status: "error",
       };
     }
@@ -233,7 +250,7 @@ export async function confirmStatementAction(
       const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
       if (guard.status === "mismatch") {
         return {
-          error: isinMismatchMessage(guard.fileIsins, asset?.securityId?.value ?? ""),
+          error: identifierMismatchMessage(guard.fileIsins, asset?.securityId),
           ok: false,
         };
       }
@@ -252,9 +269,7 @@ export async function confirmStatementAction(
       const catalog: ExposureCatalogStubCandidate = {
         displayName: asset?.name ?? null,
         isin:
-          guard.status === "backfill"
-            ? guard.isin
-            : (storedIsinOrNull(asset?.securityId) ?? null),
+          guard.status === "backfill" ? guard.isin : storedIsinOrNull(asset?.securityId),
         priceProvider: asset?.priceProvider ?? null,
         providerSymbol: asset?.providerSymbol ?? null,
       };

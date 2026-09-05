@@ -1132,10 +1132,12 @@ export type { SecurityId, SecurityIdKind, StoredSecurityId } from "./security-id
 export {
   classifySecurityId,
   declaredSecurityId,
+  isinSecurityId,
   normalizeDgsCode,
   normalizedSecurityIdColumnValue,
   preservedSecurityId,
   SECURITY_ID_KIND_LABEL,
+  SECURITY_ID_KIND_LABEL_INLINE,
   securityIdFieldForInstrument,
   storedIsinOrNull,
   storedSecurityIdFromColumns,

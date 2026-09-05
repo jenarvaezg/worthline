@@ -14,7 +14,11 @@ import type {
   CorrectionPlan,
   WorthlineStore,
 } from "@worthline/db";
-import { formatMoneyMinor, type ValuationCadence } from "@worthline/domain";
+import {
+  formatMoneyMinor,
+  isinSecurityId,
+  type ValuationCadence,
+} from "@worthline/domain";
 import {
   type ConnectedSourceProvenanceReads,
   connectedSourceValueRejection,
@@ -332,7 +336,7 @@ async function buildAssetCorrection(
           // pone aquí la puerta, y el validador por tipo la comprueba.
           ...(correction.isin === undefined
             ? {}
-            : { securityId: { kind: "isin" as const, value: correction.isin } }),
+            : { securityId: isinSecurityId(correction.isin) }),
           ...(correction.providerSymbol === undefined
             ? {}
             : { providerSymbol: correction.providerSymbol }),

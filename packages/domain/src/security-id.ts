@@ -55,10 +55,13 @@ export function declaredSecurityId(
 }
 
 /**
- * The import boundary of #1416, and the ONLY path that may write a null kind: a
- * restore preserves and never derives, so it classifies by shape and keeps
- * verbatim whatever it cannot name. It never throws — a restore must not fail on
- * legacy data — and blank input carries no identity at all.
+ * The import boundary of #1416: a restore preserves and never derives, so it
+ * classifies by shape and keeps verbatim whatever it cannot name. It never throws
+ * — a restore must not fail on legacy data — and blank input carries no identity.
+ *
+ * It is the only INTERACTIVE path that may leave the kind null; the v70 backfill
+ * leaves it null too, for the legacy values it could not read (#1743). What no
+ * path may do is write a null kind over a value it DID recognize.
  */
 export function preservedSecurityId(value: unknown): StoredSecurityId | undefined {
   const classified = classifySecurityId(value);
@@ -115,6 +118,21 @@ export const SECURITY_ID_KIND_LABEL: Record<SecurityIdKind, string> = {
   dgs: "Código DGS",
   isin: "ISIN",
 };
+
+/**
+ * La MISMA etiqueta en mitad de una frase («el código DGS», «el ISIN»). Vive
+ * aquí, al lado de la otra, porque son una sola decisión de vocabulario: dos
+ * mapas en dos módulos se separan en cuanto alguien renombra uno.
+ */
+export const SECURITY_ID_KIND_LABEL_INLINE: Record<SecurityIdKind, string> = {
+  dgs: "código DGS",
+  isin: "ISIN",
+};
+
+/** The typed pair a plain ISIN string declares — the commonest construction. */
+export function isinSecurityId(value: string): SecurityId {
+  return { kind: "isin", value };
+}
 
 /** The instrument selects both the input label and its write-validation kind. */
 export function securityIdFieldForInstrument(

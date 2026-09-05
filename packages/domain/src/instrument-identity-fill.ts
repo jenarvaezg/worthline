@@ -2,8 +2,8 @@ import {
   classifySecurityId,
   declaredSecurityId,
   normalizedSecurityIdColumnValue,
+  SECURITY_ID_KIND_LABEL_INLINE,
   type SecurityId,
-  type SecurityIdKind,
   type StoredSecurityId,
 } from "./security-id";
 
@@ -54,12 +54,6 @@ export type InstrumentIdentityFillResolution =
  * surface, not its route: a URL is app knowledge and the domain has none.
  */
 const OVERWRITE_SURFACE = "su ficha del patrimonio (abriendo la posición)";
-
-/** How the refusals name the identifier — the instrument decided the kind (#1742). */
-const IDENTIFIER_LABEL: Record<SecurityIdKind, string> = {
-  dgs: "código DGS",
-  isin: "ISIN",
-};
 
 /**
  * The canonical form of a declared identifier, or the refusal to say out loud.
@@ -174,7 +168,7 @@ export function resolveInstrumentIdentityFill(input: {
   const patch: InstrumentIdentityPatch = {};
 
   if (declaration !== null) {
-    const label = IDENTIFIER_LABEL[declaration.kind];
+    const label = SECURITY_ID_KIND_LABEL_INLINE[declaration.kind];
     // The shape check comes FIRST: a garbage declaration must be told apart from a
     // field that is already occupied, or the refusal names the wrong problem.
     const normalized = normalizedDeclaration(declaration);
@@ -194,7 +188,7 @@ export function resolveInstrumentIdentityFill(input: {
           current: currentSecurityId.value,
           declared: declaredSecurity.value,
           holdingName: target.name,
-          label: `el ${IDENTIFIER_LABEL[currentSecurityId.kind]}`,
+          label: `el ${SECURITY_ID_KIND_LABEL_INLINE[currentSecurityId.kind]}`,
         }),
       };
     }
