@@ -49,7 +49,7 @@ describe("buildReconcileProposal (#1108)", () => {
       currency: "EUR",
       id: "asset-amundi",
       instrument: "fund",
-      isin: AMUNDI,
+      securityId: { kind: "isin", value: AMUNDI },
       name: "Amundi MSCI World",
       ownership: [{ memberId: "m", shareBps: 10_000 }],
     });
@@ -120,7 +120,7 @@ describe("buildReconcileProposal (#1108)", () => {
       currency: "EUR",
       id: "asset-amundi",
       instrument: "fund",
-      isin: AMUNDI,
+      securityId: { kind: "isin", value: AMUNDI },
       name: "Amundi MSCI World",
       ownership: [{ memberId: "m", shareBps: 10_000 }],
     });
@@ -175,7 +175,7 @@ describe("buildReconcileProposal (#1108)", () => {
         currency: "EUR",
         id: "asset-closed",
         instrument: "fund",
-        isin: SHARED,
+        securityId: { kind: "isin", value: SHARED },
         name: "Vanguard U.S. 500 Stk Idx € H Acc",
         ownership: [{ memberId: "m", shareBps: 10_000 }],
       });
@@ -204,7 +204,7 @@ describe("buildReconcileProposal (#1108)", () => {
         currency: "EUR",
         id: "asset-live",
         instrument: "fund",
-        isin: SHARED,
+        securityId: { kind: "isin", value: SHARED },
         name: "Vanguard US Equity Index Fund EUR Hedged",
         ownership: [{ memberId: "m", shareBps: 10_000 }],
       });

@@ -20,7 +20,7 @@
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
-import { isValidIsin } from "@worthline/domain";
+import { isValidIsin, storedIsinOrNull } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -121,7 +121,7 @@ async function seedAccount(store: WorthlineStore): Promise<void> {
       store.assets.createInvestmentAsset({
         currency: "EUR",
         id: `matched_${i}`,
-        isin,
+        securityId: { kind: "isin", value: isin },
         liquidityTier: "market",
         name: `Fondo existente ${i + 1}`,
         ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -198,7 +198,7 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
     expect(metas).toHaveLength(20);
 
     for (const isin of ALL_ISINS) {
-      const meta = metas.find((m) => m.isin === isin);
+      const meta = metas.find((m) => storedIsinOrNull(m.securityId) === isin);
       expect(meta).toBeDefined();
       const ops = await store.operations.readOperations(meta!.id);
       expect(ops).toHaveLength(4);
@@ -230,7 +230,10 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
       await Promise.all(
         metasBefore.map(
           async (m) =>
-            [m.isin, (await store.operations.readOperations(m.id)).length] as const,
+            [
+              storedIsinOrNull(m.securityId),
+              (await store.operations.readOperations(m.id)).length,
+            ] as const,
         ),
       ),
     );
@@ -247,7 +250,10 @@ describe("account-sized statement import — full reconstruction (S3, #674)", ()
       await Promise.all(
         metasAfter.map(
           async (m) =>
-            [m.isin, (await store.operations.readOperations(m.id)).length] as const,
+            [
+              storedIsinOrNull(m.securityId),
+              (await store.operations.readOperations(m.id)).length,
+            ] as const,
         ),
       ),
     );

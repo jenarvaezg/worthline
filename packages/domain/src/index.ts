@@ -1128,12 +1128,19 @@ export type { ScopeOption, ScopeType } from "./scope";
 export { findScopeMemberIds, listScopeOptions, resolveScopeMemberIds } from "./scope";
 export type { ScopedHolding } from "./scope-allocation";
 export { allocateScopedHolding } from "./scope-allocation";
-export type { SecurityId, SecurityIdKind } from "./security-id";
+export type { SecurityId, SecurityIdKind, StoredSecurityId } from "./security-id";
 export {
   classifySecurityId,
+  declaredSecurityId,
+  isinSecurityId,
   normalizeDgsCode,
   normalizedSecurityIdColumnValue,
+  preservedSecurityId,
+  SECURITY_ID_KIND_LABEL,
+  SECURITY_ID_KIND_LABEL_INLINE,
   securityIdFieldForInstrument,
+  storedIsinOrNull,
+  storedSecurityIdFromColumns,
 } from "./security-id";
 export type {
   BuildSnapshotHoldingRowsInput,

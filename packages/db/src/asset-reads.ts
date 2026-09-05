@@ -11,6 +11,7 @@ import type {
   DecimalString,
   ManualAsset,
   RawAssetRow,
+  StoredSecurityId,
   Workspace,
 } from "@worthline/domain";
 import { projectAssets } from "@worthline/domain";
@@ -62,11 +63,11 @@ export async function buildAssetProjectionContext(
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
   const providerSymbolByAsset = new Map<string, string | undefined>();
-  const isinByAsset = new Map<string, string | undefined>();
+  const securityIdByAsset = new Map<string, StoredSecurityId | undefined>();
   for (const [assetId, meta] of metaByAsset) {
     manualPriceByAsset.set(assetId, meta.manualPricePerUnit);
     providerSymbolByAsset.set(assetId, meta.providerSymbol);
-    isinByAsset.set(assetId, meta.isin);
+    securityIdByAsset.set(assetId, meta.securityId);
   }
 
   const cachedPriceByAsset = new Map<string, DecimalString | undefined>();
@@ -76,11 +77,11 @@ export async function buildAssetProjectionContext(
 
   return {
     cachedPriceByAsset,
-    isinByAsset,
     manualPriceByAsset,
     operationsByAsset,
     ownershipByAsset,
     providerSymbolByAsset,
+    securityIdByAsset,
   };
 }
 

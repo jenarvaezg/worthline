@@ -479,7 +479,7 @@ describe("buildHoldingCreationProposal (#1105) · duplicate warning", () => {
       currency: "EUR",
       id: "existing",
       instrument: "fund",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       name: "Fondo existente",
       ownership: [{ memberId: "m", shareBps: 10_000 }],

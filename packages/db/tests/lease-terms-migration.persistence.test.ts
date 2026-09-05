@@ -79,7 +79,7 @@ describe("schema migration v68 (lease terms)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(69);
+    expect(SCHEMA_VERSION).toBe(70);
   });
 
   test("is idempotent over a DB that already carries the columns", async () => {

@@ -136,6 +136,59 @@ describe("updateInvestmentAction wiring", () => {
     expect(await store.operations.readPriceCache(INVESTMENT_ID)).toBeNull();
   });
 
+  // #1743: la v70 le escribe al plan su código DGS, y la ficha —que solo sabe
+  // enseñar un ISIN— no puede tirarlo por el hecho de guardar. Es la regresión que
+  // dejaría al holding «sin clasificar» en cuanto #1744 re-clave el catálogo.
+  test("guardar la ficha de un plan NO borra su código DGS", async () => {
+    await setupStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: INVESTMENT_ID,
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "MyInvestor Indexado S&P 500",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ isin: "", name: "MyInvestor Indexado S&P 500" }, "/inversiones"),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.securityId,
+    ).toEqual({ kind: "dgs", value: "N5394" });
+  });
+
+  test("un ISIN en blanco sí borra el ISIN que había", async () => {
+    await setupStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: INVESTMENT_ID,
+      liquidityTier: "market",
+      name: "Index Fund",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      securityId: { kind: "isin", value: "IE00B03HCZ61" },
+    });
+
+    await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ isin: "", name: "Index Fund" }, "/inversiones"),
+        store,
+      ),
+    );
+
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.securityId,
+    ).toBeUndefined();
+  });
+
   test("blank name: error redirect, asset unchanged", async () => {
     await setupStoreWithInvestment();
 

@@ -30,6 +30,8 @@ import {
   planStatementMerge,
   resolveStatementImportBuckets,
   type StatementBroker,
+  type StoredSecurityId,
+  storedIsinOrNull,
 } from "@worthline/domain";
 import { type SymbolCandidate, searchSymbols } from "@worthline/pricing";
 
@@ -265,7 +267,13 @@ function derivePositionImpact(
 
 export interface StatementImportPreviewReadPort {
   readInvestmentAssetsWithMeta: () => Promise<
-    Array<{ id: string; isin?: string; name: string; providerSymbol?: string }>
+    Array<{
+      id: string;
+      /** El par tipado (#1743); el extracto enruta por ISIN hasta #1748. */
+      securityId?: StoredSecurityId;
+      name: string;
+      providerSymbol?: string;
+    }>
   >;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
 }
@@ -285,10 +293,10 @@ export async function readPortfolioInvestments(
   const metas = await store.readInvestmentAssetsWithMeta();
   return Promise.all(
     metas
-      .filter((meta) => meta.isin || meta.providerSymbol)
+      .filter((meta) => storedIsinOrNull(meta.securityId) || meta.providerSymbol)
       .map(async (meta) => ({
         assetId: meta.id,
-        isin: meta.isin ?? null,
+        isin: storedIsinOrNull(meta.securityId),
         name: meta.name,
         operations: await store.readOperations(meta.id),
         providerSymbol: meta.providerSymbol ?? null,

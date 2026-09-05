@@ -111,7 +111,7 @@ describe("statement import work shape (#1440)", () => {
           asset: {
             currency: "EUR",
             id: "new_fund",
-            isin: "LU00WL000022",
+            securityId: { kind: "isin", value: "LU00WL000022" },
             liquidityTier: "market",
             name: "Fondo nuevo",
             ownership: [{ memberId: "mJ", shareBps: 10_000 }],

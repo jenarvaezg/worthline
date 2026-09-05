@@ -95,11 +95,11 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
     currency: "EUR",
     id: "asset_msci",
     instrument: "etf",
-    isin: MSCI_ISIN,
     liquidityTier: "market",
     name: "MSCI World ETF",
     ownership: owner,
     providerSymbol: "IWDA.AS",
+    securityId: { kind: "isin", value: MSCI_ISIN },
   });
   await store.command.recordInvestmentOperation(
     {
@@ -116,10 +116,10 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
   );
   await store.assets.updateInvestmentAsset({
     id: "asset_msci",
-    isin: MSCI_ISIN,
     manualPricePerUnit: "100",
     name: "MSCI World ETF",
     providerSymbol: "IWDA.AS",
+    securityId: { kind: "isin", value: MSCI_ISIN },
   });
 
   const workspace = (await store.workspace.readWorkspace())!;
@@ -138,10 +138,10 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
 
   await store.assets.updateInvestmentAsset({
     id: "asset_msci",
-    isin: MSCI_ISIN,
     manualPricePerUnit: "130",
     name: "MSCI World ETF",
     providerSymbol: "IWDA.AS",
+    securityId: { kind: "isin", value: MSCI_ISIN },
   });
   const marCapture = captureValuedNetWorthSnapshot({
     assets: await store.assets.readAssets(),

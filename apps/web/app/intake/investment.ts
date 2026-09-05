@@ -12,12 +12,14 @@ import type {
   LiquidityTier,
   Member,
   OperationKind,
+  SecurityId,
 } from "@worthline/domain";
 import {
   isAssignableInstrumentForShape,
   isCaptureCurrency,
   isInstrument,
   isInvestmentPriceProvider,
+  isinSecurityId,
   isValidIsin,
 } from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
@@ -94,7 +96,7 @@ export function parseInvestmentAssetCommandStrict(
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { isin: isin.isin } : {}),
+      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
@@ -234,7 +236,7 @@ export function parseUpdateInvestmentCommand(
   instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
-  isin?: string;
+  securityId?: SecurityId;
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -309,7 +311,7 @@ export function parseUpdateInvestmentCommand(
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { isin: isin.isin } : {}),
+      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },

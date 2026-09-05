@@ -8,6 +8,7 @@
 
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
+import { storedIsinOrNull } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -279,7 +280,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
-      isin,
+      securityId: { kind: "isin", value: isin },
       liquidityTier: "market",
       manualPricePerUnit: "100",
       name: "Fondo indexado",
@@ -313,9 +314,9 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     await seedFund(store);
 
     await run(uploadForm(CSV), store);
-    expect((await store.assets.readInvestmentAssetById("fund"))?.isin).toBe(
-      "IE00BYX5NX33",
-    );
+    expect(
+      storedIsinOrNull((await store.assets.readInvestmentAssetById("fund"))?.securityId),
+    ).toBe("IE00BYX5NX33");
 
     const digest = await run(uploadForm(csvForIsin("LU0000000009")), store);
     expect(digest).toContain("error=");

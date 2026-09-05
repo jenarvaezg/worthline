@@ -177,7 +177,7 @@ export async function persistHoldingCreation(
       liquidityTier: defaults.rung,
       name: plan.name,
       ownership: plan.ownership,
-      ...(plan.isin ? { isin: plan.isin } : {}),
+      ...(plan.securityId ? { securityId: plan.securityId } : {}),
       ...(defaults.priceProvider ? { priceProvider: defaults.priceProvider } : {}),
       ...(plan.providerSymbol ? { providerSymbol: plan.providerSymbol } : {}),
     },
@@ -208,7 +208,7 @@ export async function persistHoldingCreation(
   const catalog: ExposureCatalogStubCandidate = {
     displayName: plan.name,
     instrument: plan.instrument,
-    isin: plan.isin ?? null,
+    isin: plan.securityId?.kind === "isin" ? plan.securityId.value : null,
     priceProvider: defaults.priceProvider ?? null,
     providerSymbol: plan.providerSymbol ?? null,
   };

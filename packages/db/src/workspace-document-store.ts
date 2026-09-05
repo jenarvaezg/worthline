@@ -24,6 +24,7 @@ import {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   instrumentOfAsset,
+  preservedSecurityId,
   serializeWorkspaceExport,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
@@ -318,16 +319,24 @@ async function importWorkspace(
       }
 
       // Every investment gets its metadata row (all-null when the file
-      // carries none) — read paths expect the row to exist. The isin is written
-      // AS THE DOCUMENT SAYS, deliberately skipping the #1453 write guard: a
-      // restore preserves, never derives (#1416), and a legacy non-ISIN here
-      // still classifies correctly because the look-through key validates.
+      // carries none) — read paths expect the row to exist. The identifier is
+      // written AS THE DOCUMENT SAYS, deliberately skipping the per-kind write
+      // guard: a restore preserves, never derives (#1416). `preservedSecurityId`
+      // is total — it classifies by shape and keeps verbatim what it cannot name,
+      // so a legacy `isin` field holding a DGS code lands typed, and garbage lands
+      // with a null kind for data health to claim instead of failing the restore.
+      // Es la única escritura INTERACTIVA que puede dejar esa clase a null; el
+      // backfill de la v70 la deja igual para lo que no supo leer.
       if (asset.type === "investment") {
+        const securityId = preservedSecurityId(
+          asset.investment?.securityId ?? asset.investment?.isin,
+        );
         await db
           .insert(investmentAssets)
           .values({
             assetId: asset.id,
-            isin: asset.investment?.isin ?? null,
+            securityId: securityId?.value ?? null,
+            securityIdKind: securityId?.kind ?? null,
             manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
             manualPricedAt: asset.investment?.manualPricedAt ?? null,
             priceProvider: asset.investment?.priceProvider ?? null,
@@ -935,7 +944,11 @@ async function buildWorkspaceExport(
         ? {
             investment: {
               ...(meta.unitSymbol ? { unitSymbol: meta.unitSymbol } : {}),
-              ...(meta.isin ? { isin: meta.isin } : {}),
+              // El par, y solo el par: el campo legacy `isin` se sigue LEYENDO para
+              // siempre, pero ya no se escribe — perpetuar el nombre sería perpetuar
+              // la mentira de que un plan de pensiones tiene ISIN (#1743).
+              ...(meta.securityId ? { securityId: meta.securityId } : {}),
+              ...(meta.securityIdKind ? { securityIdKind: meta.securityIdKind } : {}),
               ...(meta.priceProvider ? { priceProvider: meta.priceProvider } : {}),
               ...(meta.providerSymbol ? { providerSymbol: meta.providerSymbol } : {}),
               ...(meta.manualPricePerUnit

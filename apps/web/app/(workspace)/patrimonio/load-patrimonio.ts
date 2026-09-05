@@ -48,6 +48,8 @@ import type {
 import {
   collectHoldingPayouts,
   collectWarnings,
+  declaredSecurityId,
+  exposureLookthroughKey,
   groupPortfolio,
   instrumentOfAsset,
   investmentReturnsById,
@@ -363,7 +365,10 @@ export function deriveExposureAndReturns(
   const assetClassByAsset = new Map<string, AssetClassResolution>(
     assets.map((asset) => {
       const meta = metaByAssetId.get(asset.id);
-      const key = meta?.isin ?? meta?.providerSymbol ?? null;
+      const key = exposureLookthroughKey({
+        providerSymbol: meta?.providerSymbol ?? null,
+        securityId: declaredSecurityId(meta?.securityId),
+      });
       const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
       return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
     }),
@@ -393,7 +398,7 @@ export function deriveExposureAndReturns(
         geography: null,
         id: row.id,
         instrument: row.instrument,
-        isin: metaByAssetId.get(row.id)?.isin ?? null,
+        securityId: declaredSecurityId(metaByAssetId.get(row.id)?.securityId),
         providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
         valueMinor: row.valueMinor,
       }))

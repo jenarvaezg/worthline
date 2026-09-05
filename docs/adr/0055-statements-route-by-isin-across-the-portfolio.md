@@ -250,3 +250,15 @@ write time. The #1329 value-only guard makes the same round trip, which is why i
 module moved into the domain: an operation deleted on the ficha between drafting
 and confirming is enough to turn a curated ledger back into the 1-participación
 opening, and the apply lives in `packages/db`, where the web app is out of reach.
+
+## Nota (#1743): la columna cambió de nombre y de alcance
+
+Desde la migración v70 la identidad del valor no vive en `investment_assets.isin`
+sino en el par `security_id` + `security_id_kind` (`'isin' | 'dgs'`), porque un plan
+de pensiones español no tiene ISIN: su identificador es el código DGS `N####`
+(PRD #1741). Nada de lo decidido arriba cambia con eso — un extracto de bróker
+sigue enrutando por ISIN, y la columna que se compara es ahora la mitad `'isin'`
+del par. **El enrutado tipado, con claves con namespace y su enmienda a esta ADR,
+es #1748**; hasta entonces un holding identificado por su código DGS simplemente
+ocupa el hueco: nunca casa con un ISIN del fichero, y el guard lo rechaza en vez de
+rellenarlo.

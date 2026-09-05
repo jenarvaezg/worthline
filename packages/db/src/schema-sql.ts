@@ -173,7 +173,8 @@ CREATE INDEX \`asset_operations_asset_executed_idx\` ON \`asset_operations\` (\`
 CREATE TABLE \`investment_assets\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`unit_symbol\` text,
-	\`isin\` text,
+	\`security_id\` text,
+	\`security_id_kind\` text,
 	\`price_provider\` text,
 	\`provider_symbol\` text,
 	\`manual_price_per_unit\` text,

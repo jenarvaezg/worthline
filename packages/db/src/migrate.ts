@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 69;
+export const SCHEMA_VERSION = 70;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -48,6 +48,52 @@ function amortizationBoundaryDates(plan: {
     );
   }
   return dates;
+}
+
+/**
+ * The ISO 6166 check digit, duplicated here for the same reason
+ * {@link addMonthsClamped} is: migrate.ts is a leaf with no `@worthline/domain`
+ * dependency, and the v70 backfill has to tell an ISIN from a DGS code by shape.
+ * `tests/security-id-migration.persistence.test.ts` pins this copy against the
+ * domain's `classifySecurityId`, so the two can never drift apart in silence.
+ */
+function isValidIsinShape(value: string): boolean {
+  if (!/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(value)) return false;
+  const expanded = [...value]
+    .map((character) =>
+      character >= "0" && character <= "9"
+        ? character
+        : String(character.charCodeAt(0) - 55),
+    )
+    .join("");
+  let sum = 0;
+  let alternate = false;
+  for (let index = expanded.length - 1; index >= 0; index -= 1) {
+    let digit = Number(expanded[index]);
+    if (alternate) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    alternate = !alternate;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * Classify an identifier by SHAPE ALONE — the total function decision 4 of #1667
+ * asks for: it reads, it never derives, and it cannot fail. Anything that is
+ * neither a checksum-valid ISIN nor a canonical `N####` plan code yields null,
+ * and the caller preserves the value with a null kind for data health to claim.
+ */
+function classifySecurityIdByShape(
+  value: string | null | undefined,
+): { kind: "isin" | "dgs"; value: string } | null {
+  const trimmed = (value ?? "").trim().toUpperCase();
+  if (!trimmed) return null;
+  if (isValidIsinShape(trimmed)) return { kind: "isin", value: trimmed };
+  const compact = trimmed.replace(/[-\s]/g, "");
+  return /^N\d{4}$/.test(compact) ? { kind: "dgs", value: compact } : null;
 }
 
 export interface MigrateResult {
@@ -2100,6 +2146,109 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         ON contribution_lots(asset_id, available_from);`,
     );
     await writeSchemaVersion(client, 69);
+  }
+
+  if (version < 70) {
+    // #1743 (slice 2 del PRD #1741, resolución #1667): la columna `isin` se
+    // generaliza al par `security_id` + `security_id_kind`. Un plan de pensiones
+    // español NO tiene ISIN — su identificador es el código DGS `N####` — así que
+    // una columna llamada `isin` no podía guardar la identidad de medio catálogo.
+    //
+    // Rebuild de UNA pasada (patrón v18/v25: `PRAGMA foreign_keys OFF` → tabla
+    // nueva → copia → `RENAME`), sin fase de columna muerta. Se acepta el coste
+    // conocido: durante los minutos de solape del rollout, una lambda vieja que
+    // haga `SELECT isin` falla con «no such column». Ninguna otra tabla referencia
+    // `investment_assets`, y su propia FK a `assets` se resuelve por nombre tras el
+    // rename. Defensivo como v25: solo se copian las columnas que la tabla VIEJA
+    // tiene de verdad, así que una BD que llegue drifteada converge igual.
+    const investmentColumns = (
+      (await client.execute("PRAGMA table_info(investment_assets)")).rows as unknown as {
+        name: string;
+      }[]
+    ).map((column) => column.name);
+
+    if (investmentColumns.length > 0 && !investmentColumns.includes("security_id")) {
+      const carry = [
+        "asset_id",
+        "unit_symbol",
+        "price_provider",
+        "provider_symbol",
+        "manual_price_per_unit",
+        "manual_priced_at",
+        "benchmark_distributing",
+      ].filter((column) => investmentColumns.includes(column));
+      const carryList = carry.join(", ");
+      // El valor viejo viaja VERBATIM a `security_id` con el `kind` sin decidir; el
+      // pase de abajo es quien lo clasifica. Copiarlo ya etiquetado como 'isin'
+      // sellaría como ISIN lo que un restore legacy pudo dejar ahí sin serlo.
+      const legacyIsin = investmentColumns.includes("isin") ? ", isin" : "";
+
+      await client.execute("PRAGMA foreign_keys = OFF");
+      await client.executeMultiple(`BEGIN;
+        CREATE TABLE investment_assets_new (
+          asset_id TEXT PRIMARY KEY NOT NULL,
+          unit_symbol TEXT,
+          security_id TEXT,
+          security_id_kind TEXT,
+          price_provider TEXT,
+          provider_symbol TEXT,
+          manual_price_per_unit TEXT,
+          manual_priced_at TEXT,
+          benchmark_distributing INTEGER DEFAULT 0 NOT NULL,
+          FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+        );
+        INSERT INTO investment_assets_new (${carryList}${legacyIsin ? ", security_id" : ""})
+          SELECT ${carryList}${legacyIsin} FROM investment_assets;
+        DROP TABLE investment_assets;
+        ALTER TABLE investment_assets_new RENAME TO investment_assets;
+        COMMIT;`);
+      await client.execute("PRAGMA foreign_keys = ON");
+    }
+
+    // El backfill del peldaño (decisiones 2 y 4 de #1667). Vive AQUÍ y no en un
+    // script de admin para que llegue solo a cada BD de workspace —restores
+    // futuros incluidos— sin que nadie tenga que enumerarlas.
+    //
+    // Dos lecturas, ninguna derivación: el valor que la columna vieja ya traía, y
+    // —solo si no traía ninguno y el precio lo pone finect— el prefijo del slug
+    // antes del primer guion, que es como `resolveFinectProduct` compone el
+    // símbolo (`<identificador>-<alias>`). Lo que no case exacto por forma se
+    // queda con `kind` null: es un estado legal que salud de datos reclama, nunca
+    // una identidad inventada.
+    // Tolera la tabla ausente por lo mismo que `execToleratingMissingTable`: un
+    // fixture sintético de migración puede levantar solo un subconjunto de tablas.
+    let identityRows: {
+      asset_id: string;
+      security_id: string | null;
+      price_provider: string | null;
+      provider_symbol: string | null;
+    }[] = [];
+    try {
+      const result = await client.execute(
+        `SELECT asset_id, security_id, price_provider, provider_symbol
+           FROM investment_assets WHERE security_id_kind IS NULL`,
+      );
+      identityRows = result.rows as unknown as typeof identityRows;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/no such table/i.test(message)) throw error;
+    }
+
+    for (const row of identityRows) {
+      const stored = classifySecurityIdByShape(row.security_id);
+      const fromSlug =
+        !stored && !row.security_id && row.price_provider === "finect"
+          ? classifySecurityIdByShape((row.provider_symbol ?? "").split("-")[0])
+          : null;
+      const classified = stored ?? fromSlug;
+      if (!classified) continue;
+      await client.execute({
+        sql: "UPDATE investment_assets SET security_id = ?, security_id_kind = ? WHERE asset_id = ?",
+        args: [classified.value, classified.kind, row.asset_id],
+      });
+    }
+
+    await writeSchemaVersion(client, 70);
   }
 
   return { ranV18Backfill, ranV33Backfill };

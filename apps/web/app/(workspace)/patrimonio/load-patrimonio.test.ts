@@ -58,7 +58,7 @@ async function makeFundWithOperation(store: WorthlineStore): Promise<void> {
     currency: "EUR",
     id: "asset_fund",
     instrument: "etf",
-    isin: "IE00SP500002",
+    securityId: { kind: "isin", value: "IE00SP500002" },
     name: "S&P 500 ETF",
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     providerSymbol: "SXR8.DE",

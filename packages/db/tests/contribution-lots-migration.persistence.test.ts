@@ -63,7 +63,7 @@ describe("schema migration v69 (los lotes de aportación, #1676)", () => {
       expect.arrayContaining(["id", "asset_id", "available_from", "amount_minor"]),
     );
     expect(await schemaVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(69);
+    expect(SCHEMA_VERSION).toBe(70);
   });
 
   // El corazón del ticket: la antigüedad está en la fila y AUN ASÍ no se escribe nada.

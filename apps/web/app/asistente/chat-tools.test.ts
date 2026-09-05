@@ -459,7 +459,7 @@ describe("createChatTools · propose_statement_import (#767)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "matched_fund",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       name: "Fondo existente",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -509,7 +509,7 @@ describe("createChatTools · propose_statement_import (#767)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "sxr1",
-      isin: "IE00B5BMR087",
+      securityId: { kind: "isin", value: "IE00B5BMR087" },
       liquidityTier: "market",
       name: "iShares Core S&P 500",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -653,7 +653,7 @@ describe("createChatTools · propose_reconcile (#1108, frontera de documento #13
       currency: "EUR",
       id: "asset-amundi",
       instrument: "fund",
-      isin: "LU1681043599",
+      securityId: { kind: "isin", value: "LU1681043599" },
       name: "Amundi MSCI World",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
@@ -831,7 +831,7 @@ describe("createChatTools · propose_operation (#1374)", () => {
       currency: "EUR",
       id: "asset-plan",
       instrument: "pension_plan",
-      isin: "ES0173516115",
+      securityId: { kind: "isin", value: "ES0173516115" },
       name: "MyInvestor Indexado SP500",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
@@ -1011,7 +1011,7 @@ describe("createChatTools · propose_operation dictada (#1466)", () => {
       currency: "EUR",
       id: "asset-etc",
       instrument: "etf",
-      isin: "IE00B43VDT70",
+      securityId: { kind: "isin", value: "IE00B43VDT70" },
       manualPricePerUnit: "52",
       name: "Invesco Physical Silver ETC",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -3010,7 +3010,7 @@ describe("createChatTools · the instrument inventory in ONE read (#1346)", () =
         currency: "EUR",
         id: `fund-${index}`,
         instrument: "fund",
-        isin: isinFor(index),
+        securityId: { kind: "isin", value: isinFor(index) },
         name: `Fondo ${index}`,
         ownership: SOLO,
         providerSymbol: `0P00000${index.toString().padStart(3, "0")}.F`,

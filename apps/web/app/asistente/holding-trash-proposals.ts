@@ -24,6 +24,7 @@ import {
   type MatchPortfolioHolding,
   matchHoldings,
   reassignToNew,
+  storedIsinOrNull,
 } from "@worthline/domain";
 import {
   connectedSourceRemovalRejection,
@@ -76,7 +77,7 @@ async function projectLiveHoldings(
   const meta = await store.agentView.readInvestmentAssetsWithMeta();
   const metaBy = new Map(meta.map((row) => [row.id, row]));
   const assetHoldings: MatchPortfolioHolding[] = assets.map((asset) => {
-    const isin = metaBy.get(asset.id)?.isin;
+    const isin = storedIsinOrNull(metaBy.get(asset.id)?.securityId);
     const providerSymbol = asset.providerSymbol ?? metaBy.get(asset.id)?.providerSymbol;
     return {
       holdingId: asset.id,

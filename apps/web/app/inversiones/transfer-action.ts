@@ -23,6 +23,7 @@ import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type { DecimalString, Instrument, ManualAsset } from "@worthline/domain";
 import {
   defaultsFor,
+  isinSecurityId,
   netUnitsFromOperations,
   unitsReadAsClosed,
 } from "@worthline/domain";
@@ -295,7 +296,9 @@ async function resolveDestination(
       manualPricePerUnit: params.pricePerUnit,
       name: params.destination.name,
       ownership: params.origin.ownership,
-      ...(params.destination.isin ? { isin: params.destination.isin } : {}),
+      ...(params.destination.isin
+        ? { securityId: isinSecurityId(params.destination.isin) }
+        : {}),
     },
     assetId: id,
     created: {

@@ -10,6 +10,9 @@ import type {
   LiquidityTier,
   ManualAsset,
   OwnershipShare,
+  SecurityId,
+  SecurityIdKind,
+  StoredSecurityId,
   TrashExit,
   ValuationCadence,
 } from "@worthline/domain";
@@ -19,7 +22,8 @@ import {
   defaultInvestmentPriceProvider,
   defaultsFor,
   isRealCalendarDay,
-  validIsinOrNull,
+  normalizedSecurityIdColumnValue,
+  storedSecurityIdFromColumns,
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
@@ -58,7 +62,8 @@ export interface CreateInvestmentAssetInput {
   ownership: OwnershipShare[];
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
-  isin?: string;
+  /** The security's typed identifier (#1743): an ISIN, or a plan's DGS code. */
+  securityId?: SecurityId;
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -77,7 +82,8 @@ export interface InvestmentAssetMeta {
   currency: string;
   liquidityTier: LiquidityTier;
   priceProvider: InvestmentPriceProvider;
-  isin?: string;
+  /** The stored identifier pair (#1743); `kind: null` is a preserved import. */
+  securityId?: StoredSecurityId;
   providerSymbol?: string;
   /** Compare vs price index when true (ADR 0060, #625). */
   benchmarkDistributing: boolean;
@@ -91,7 +97,8 @@ export interface InvestmentAssetFull {
   liquidityTier: LiquidityTier;
   ownership: OwnershipShare[];
   unitSymbol?: string;
-  isin?: string;
+  /** The stored identifier pair (#1743); `kind: null` is a preserved import. */
+  securityId?: StoredSecurityId;
   priceProvider: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -110,7 +117,8 @@ export interface UpdateInvestmentAssetInput {
   instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
-  isin?: string;
+  /** The security's typed identifier (#1743): an ISIN, or a plan's DGS code. */
+  securityId?: SecurityId;
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -198,15 +206,20 @@ export interface AssetStore {
   updateAssetValuation: (assetId: string, currentValueMinor: number) => Promise<void>;
   updateInvestmentAsset: (input: UpdateInvestmentAssetInput) => Promise<void>;
   /**
-   * Backfill an investment's ISIN when it has none (statement ISIN guard,
-   * ADR 0018 S4). Sets ONLY the isin column, leaving other metadata intact, so a
-   * later upload to the same asset is guarded. Returns 1 if updated, 0 if not found.
+   * Backfill an investment's security id when it has none (statement identity
+   * guard, ADR 0018 S4). Sets ONLY the identifier pair, leaving other metadata
+   * intact, so a later upload to the same asset is guarded. Returns 1 if updated,
+   * 0 if not found.
    */
-  backfillInvestmentIsin: (assetId: string, isin: string) => Promise<number>;
+  backfillInvestmentSecurityId: (
+    assetId: string,
+    securityId: SecurityId,
+  ) => Promise<number>;
   /**
    * Fill an investment's identity columns (#1349) — ONLY the ones present in the
-   * patch, like `backfillInvestmentIsin` above and unlike `updateInvestmentAsset`,
-   * whose form-shaped input nulls every metadata column it is not given. The
+   * patch, like `backfillInvestmentSecurityId` above and unlike
+   * `updateInvestmentAsset`, whose form-shaped input nulls every metadata column
+   * it is not given. The
    * assistant's correction never carries the whole metadata row, so a full replace
    * would silently drop the unit symbol or the manual price. Returns 1 if updated,
    * 0 if not found (or if the patch is empty).
@@ -360,7 +373,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     updateAssetValuation: (assetId, currentValueMinor) =>
       updateAssetValuation(ctx, assetId, currentValueMinor),
     updateInvestmentAsset: (input) => updateInvestmentAsset(ctx, input),
-    backfillInvestmentIsin: (assetId, isin) => backfillInvestmentIsin(ctx, assetId, isin),
+    backfillInvestmentSecurityId: (assetId, securityId) =>
+      backfillInvestmentSecurityId(ctx, assetId, securityId),
     patchInvestmentIdentity: (assetId, patch) =>
       patchInvestmentIdentity(ctx, assetId, patch),
     softDeleteAsset: (assetId, deletedAt, exit) =>
@@ -1080,7 +1094,7 @@ async function createInvestmentAsset(
       .insert(investmentAssets)
       .values({
         assetId: asset.id,
-        isin: normalizedIsinColumnValue(input.isin),
+        ...securityIdColumns(input.securityId),
         manualPricePerUnit: input.manualPricePerUnit ?? null,
         manualPricedAt: pricedAt,
         priceProvider: input.priceProvider ?? null,
@@ -1116,7 +1130,8 @@ async function readInvestmentAssetById(
   const investRow = await db
     .select({
       unitSymbol: investmentAssets.unitSymbol,
-      isin: investmentAssets.isin,
+      securityId: investmentAssets.securityId,
+      securityIdKind: investmentAssets.securityIdKind,
       priceProvider: investmentAssets.priceProvider,
       providerSymbol: investmentAssets.providerSymbol,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
@@ -1147,7 +1162,7 @@ async function readInvestmentAssetById(
     priceProvider:
       investRow.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
     ...(investRow.unitSymbol ? { unitSymbol: investRow.unitSymbol } : {}),
-    ...(investRow.isin ? { isin: investRow.isin } : {}),
+    ...storedSecurityIdField(investRow),
     ...(investRow.providerSymbol ? { providerSymbol: investRow.providerSymbol } : {}),
     ...(investRow.manualPricePerUnit
       ? { manualPricePerUnit: investRow.manualPricePerUnit }
@@ -1167,7 +1182,8 @@ async function readInvestmentAssetsWithMeta(
       currency: assets.currency,
       liquidityTier: assets.liquidityTier,
       priceProvider: investmentAssets.priceProvider,
-      isin: investmentAssets.isin,
+      securityId: investmentAssets.securityId,
+      securityIdKind: investmentAssets.securityIdKind,
       providerSymbol: investmentAssets.providerSymbol,
       benchmarkDistributing: investmentAssets.benchmarkDistributing,
     })
@@ -1184,7 +1200,7 @@ async function readInvestmentAssetsWithMeta(
     liquidityTier: row.liquidityTier,
     priceProvider: row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
     benchmarkDistributing: row.benchmarkDistributing === 1,
-    ...(row.isin ? { isin: row.isin } : {}),
+    ...storedSecurityIdField(row),
     ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
   }));
 }
@@ -1311,26 +1327,37 @@ async function updateAssetValuation(
 }
 
 /**
- * The isin column stores an ISIN or nothing (#1453). Every interactive identity
- * write funnels through here: a non-ISIN in the column makes the exposure catalog
- * register the row under the provider key while the look-through searches under
- * the raw value, so the holding turns «sin clasificar» with nothing warning about
- * it. The UI and assistant boundaries refuse earlier with friendly messages —
- * this is the backstop under all of them. The one exempt write is the
- * workspace-document import (`workspace-store.ts`), which preserves the document
- * as-is (#1416: a restore must not fail on legacy data); the validated
- * look-through key still classifies such a row correctly.
+ * The identifier pair is written as ONE fact (#1453, generalized in #1743). Every
+ * interactive identity write funnels through the domain's per-kind validator: a
+ * value that does not match its declared kind makes the exposure catalog register
+ * the row under the provider key while the look-through searches under another,
+ * so the holding turns «sin clasificar» with nothing warning about it. The UI and
+ * assistant boundaries refuse earlier with friendly messages — this is the
+ * backstop under all of them. The one exempt write is the workspace-document
+ * import (`workspace-document-store.ts`), which classifies by shape and preserves
+ * what it cannot recognize (#1416: a restore must not fail on legacy data).
+ *
+ * A blank value clears BOTH columns: a kind with nothing under it would claim an
+ * identity the row does not have.
  */
-function normalizedIsinColumnValue(value: string | null | undefined): string | null {
-  const trimmed = (value ?? "").trim();
-  if (!trimmed) return null;
-  const normalized = validIsinOrNull(trimmed);
-  if (normalized === null) {
-    throw new Error(
-      `"${trimmed}" is not a valid ISIN (12 characters, ISO 6166 check digit) — refuse it or leave the column empty.`,
-    );
-  }
-  return normalized;
+function securityIdColumns(securityId: SecurityId | undefined): {
+  securityId: string | null;
+  securityIdKind: SecurityIdKind | null;
+} {
+  if (!securityId) return { securityId: null, securityIdKind: null };
+  const value = normalizedSecurityIdColumnValue(securityId.kind, securityId.value);
+  return value === null
+    ? { securityId: null, securityIdKind: null }
+    : { securityId: value, securityIdKind: securityId.kind };
+}
+
+/** The read-side projection of the pair — absent when the row carries no value. */
+function storedSecurityIdField(row: {
+  securityId: string | null;
+  securityIdKind: string | null;
+}): { securityId?: StoredSecurityId } {
+  const stored = storedSecurityIdFromColumns(row.securityIdKind, row.securityId);
+  return stored ? { securityId: stored } : {};
 }
 
 async function updateInvestmentAsset(
@@ -1362,7 +1389,7 @@ async function updateInvestmentAsset(
       .update(investmentAssets)
       .set({
         unitSymbol: input.unitSymbol ?? null,
-        isin: normalizedIsinColumnValue(input.isin),
+        ...securityIdColumns(input.securityId),
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
@@ -1379,21 +1406,22 @@ async function updateInvestmentAsset(
   });
 }
 
-async function backfillInvestmentIsin(
+async function backfillInvestmentSecurityId(
   ctx: StoreContext,
   assetId: string,
-  isin: string,
+  securityId: SecurityId,
 ): Promise<number> {
-  const normalized = normalizedIsinColumnValue(isin);
+  const columns = securityIdColumns(securityId);
   const result = await ctx.db
     .update(investmentAssets)
-    .set({ isin: normalized })
+    .set(columns)
     .where(eq(investmentAssets.assetId, assetId))
     .run();
 
   if (result.rowsAffected > 0) {
-    await ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, {
-      isin: normalized,
+    await ctx.writeAuditEntry("backfill_investment_security_id", "asset", assetId, {
+      securityId: columns.securityId,
+      securityIdKind: columns.securityIdKind,
     });
   }
 
@@ -1406,7 +1434,7 @@ async function patchInvestmentIdentity(
   patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
 ): Promise<number> {
   const fields: Partial<typeof investmentAssets.$inferInsert> = {
-    ...(patch.isin === undefined ? {} : { isin: normalizedIsinColumnValue(patch.isin) }),
+    ...(patch.securityId === undefined ? {} : securityIdColumns(patch.securityId)),
     ...(patch.providerSymbol === undefined
       ? {}
       : { providerSymbol: patch.providerSymbol }),

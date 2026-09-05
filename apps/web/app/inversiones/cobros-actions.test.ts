@@ -29,7 +29,7 @@ async function seedHolding(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: HOLDING,
-    isin: "IE00B4L5Y983",
+    securityId: { kind: "isin", value: "IE00B4L5Y983" },
     liquidityTier: "market",
     name: "Fondo distribuidor",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],

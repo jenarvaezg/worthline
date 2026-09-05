@@ -30,8 +30,10 @@ import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices"
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import {
   buildHoldingReturnsView,
+  declaredSecurityId,
   detectSingleAssetBackfillCandidate,
   detectValueOnlyOpening,
+  exposureLookthroughKey,
   getPriceFreshness,
   holdingIrr,
   holdingTrashImpact,
@@ -90,10 +92,13 @@ export async function loadInvestmentSurface(
   const twrMonthlyCloses = monthlyCloseValuesByHolding(twrSnapshotRows).get(id) ?? [];
 
   // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
-  // the security's identity (`isin ?? providerSymbol`) from the global catalog
-  // now that workspace hand-entry was retired (#1014 S5).
+  // the security's identity from the global catalog now that workspace hand-entry
+  // was retired (#1014 S5). Una clave por estado (#1743), nunca el valor crudo.
   const exposureProfileKey = investment
-    ? (investment.isin ?? investment.providerSymbol ?? null)
+    ? exposureLookthroughKey({
+        providerSymbol: investment.providerSymbol ?? null,
+        securityId: declaredSecurityId(investment.securityId),
+      })
     : null;
   const exposureProfile = exposureProfileKey
     ? ((await readExposureProfilesFromCatalog()).find(

@@ -5,6 +5,7 @@ import { defaultInstrumentForAssetType } from "./instrument-catalog";
 import type { LiquidityTier } from "./liquidity-tier";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { assertMinorInteger } from "./money";
+import type { StoredSecurityId } from "./security-id";
 
 export type WorkspaceMode = "individual" | "household";
 
@@ -110,16 +111,18 @@ export interface ManualAsset {
    */
   providerSymbol?: string;
   /**
-   * The investment's ISIN (ADR 0055), when it has one. Like `providerSymbol` above
-   * this is read-only metadata for the health engine — never a figure the math
-   * reads — and it is here for one signal: an investment priced by a symbol with no
-   * ISIN is an ORPHAN (#1489). It is the identity key everything else keys on
-   * (`isin ?? providerSymbol`, ADR 0039/#539), so without it a broker statement
-   * cannot route to this holding, the exposure catalog cannot hand it its profile,
-   * and nothing can decide that `IE00B52MJY50` and `SXR1.DE` are the same product.
-   * Optional on the type for the many in-memory fixtures that predate it.
+   * The investment's typed security id (#1743): an ISIN, or a plan's DGS code —
+   * a Spanish pension plan has no ISIN at all. Like `providerSymbol` above this is
+   * read-only metadata for the health engine — never a figure the math reads — and
+   * it is here for one signal: an investment priced by a symbol with no identifier
+   * is an ORPHAN (#1489). It is the identity key everything else keys on (ADR
+   * 0039/#539), so without it a broker statement cannot route to this holding, the
+   * exposure catalog cannot hand it its profile, and nothing can decide that
+   * `IE00B52MJY50` and `SXR1.DE` are the same product. A `kind: null` value is the
+   * preserved import of #1416. Optional on the type for the many in-memory
+   * fixtures that predate it.
    */
-  isin?: string;
+  securityId?: StoredSecurityId;
   /**
    * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
    * absent for a hand-maintained holding. Read-only metadata for the warnings
@@ -185,8 +188,8 @@ export interface CreateManualAssetInput {
   instrument?: Instrument;
   /** The investment's price-provider lookup key (ADR 0055), when known. */
   providerSymbol?: string;
-  /** The investment's ISIN (ADR 0055), when known — the identity key (#1489). */
-  isin?: string;
+  /** The investment's typed security id (#1743) — the identity key (#1489). */
+  securityId?: StoredSecurityId;
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248), when known. */
   connectedSourceId?: string;
   /** Desde cuándo se puede tocar el holding (#1528, ADR 0100), cuando se ha declarado. */
@@ -231,7 +234,7 @@ export function createManualAsset(
     ownership: input.ownership,
     type: input.type,
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
-    ...(input.isin ? { isin: input.isin } : {}),
+    ...(input.securityId ? { securityId: input.securityId } : {}),
     ...(input.connectedSourceId ? { connectedSourceId: input.connectedSourceId } : {}),
     ...(input.availableFrom ? { availableFrom: input.availableFrom } : {}),
     ...(input.contributionLots && input.contributionLots.length > 0

@@ -1,4 +1,5 @@
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import { storedIsinOrNull } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { chatToolStores } from "./chat-tools";
@@ -29,7 +30,7 @@ async function seedFund(
     liquidityTier: "market",
     name: input.name,
     ownership: [{ memberId: "m", shareBps: 10_000 }],
-    ...(input.isin ? { isin: input.isin } : {}),
+    ...(input.isin ? { securityId: { kind: "isin" as const, value: input.isin } } : {}),
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
   });
 }
@@ -65,7 +66,7 @@ function args(
 
 async function isinOf(store: WorthlineStore, assetId: string) {
   const meta = await store.assets.readInvestmentAssetById(assetId);
-  return meta?.isin ?? null;
+  return storedIsinOrNull(meta?.securityId);
 }
 
 async function symbolOf(store: WorthlineStore, assetId: string) {
@@ -276,7 +277,9 @@ describe("edit_identity (#1349)", () => {
 
     // Between arming the card and confirming it, the ficha (or a sibling proposal)
     // writes a different ISIN. The draft must not win.
-    await store.assets.patchInvestmentIdentity("fund", { isin: "IE00B1G3DH73" });
+    await store.assets.patchInvestmentIdentity("fund", {
+      securityId: { kind: "isin", value: "IE00B1G3DH73" },
+    });
 
     const applied = await confirmCorrectionProposalAction(
       built.proposal.draft,
@@ -302,7 +305,9 @@ describe("edit_identity (#1349)", () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
 
-    await store.assets.patchInvestmentIdentity("other", { isin: "IE00B03HCZ61" });
+    await store.assets.patchInvestmentIdentity("other", {
+      securityId: { kind: "isin", value: "IE00B03HCZ61" },
+    });
 
     const applied = await confirmCorrectionProposalAction(
       built.proposal.draft,

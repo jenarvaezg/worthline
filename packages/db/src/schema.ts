@@ -21,6 +21,7 @@ import type {
   PriceSource,
   RentRevision,
   RiskTolerance,
+  SecurityIdKind,
   SnapshotHoldingKind,
   SourceAdapter,
   TrashExit,
@@ -291,7 +292,15 @@ export const investmentAssets = sqliteTable("investment_assets", {
     .primaryKey()
     .references(() => assets.id, { onDelete: "cascade" }),
   unitSymbol: text("unit_symbol"),
-  isin: text("isin"),
+  /**
+   * The national identifier of the security, generalized from the ISIN-only
+   * column (#1743, PRD #1741): a Spanish pension plan has no ISIN at all — its
+   * identifier is the DGS code `N####`. The value and its kind are ONE fact in
+   * two columns: `security_id_kind` null with a value present is the preserved
+   * import of #1416, and only the workspace-document restore can write it.
+   */
+  securityId: text("security_id"),
+  securityIdKind: text("security_id_kind").$type<SecurityIdKind>(),
   priceProvider: text("price_provider").$type<InvestmentPriceProvider>(),
   providerSymbol: text("provider_symbol"),
   manualPricePerUnit: text("manual_price_per_unit"),

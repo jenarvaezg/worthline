@@ -107,7 +107,10 @@ export const collectInstrumentIdentitySignals: DataQualityCollector<
 function isMissingIsinCandidate(asset: ManualAsset): boolean {
   return (
     valuationMethodOfAsset(asset) === "derived" &&
-    !asset.isin &&
+    // #1743: el hueco es el par entero. Un valor preservado con `kind` null cuenta
+    // como identificador puesto, igual que contaba antes de tipar la columna; que
+    // un `kind` null sea por sí mismo una señal lo decide #1745.
+    !asset.securityId &&
     Boolean(asset.providerSymbol) &&
     !asset.connectedSourceId &&
     INVESTMENT_PROFILE_INSTRUMENTS.has(instrumentOfAsset(asset))

@@ -48,7 +48,7 @@ async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "a_inv",
-    isin: "IE00BK5BQT80",
+    securityId: { kind: "isin", value: "IE00BK5BQT80" },
     manualPricePerUnit: "105.5",
     name: "Fondo Indexado",
     ownership: [
@@ -276,7 +276,11 @@ describe("exportWorkspace", () => {
     expect("currentValue" in inv).toBe(false);
     expect(inv.investment).toBeDefined();
     expect(inv.investment!.unitSymbol).toBe("VWCE");
-    expect(inv.investment!.isin).toBe("IE00BK5BQT80");
+    expect(inv.investment!.securityId).toBe("IE00BK5BQT80");
+    expect(inv.investment!.securityIdKind).toBe("isin");
+    // El nombre viejo ya no se ESCRIBE: perpetuarlo perpetuaría la mentira de que
+    // un plan de pensiones tiene ISIN (#1743). Se sigue leyendo al importar.
+    expect(inv.investment).not.toHaveProperty("isin");
     expect(inv.investment!.priceProvider).toBe("stooq");
     expect(inv.investment!.providerSymbol).toBe("VWCE.DE");
     expect(inv.investment!.manualPricePerUnit).toBe("105.5");
