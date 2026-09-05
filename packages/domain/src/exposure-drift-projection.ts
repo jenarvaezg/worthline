@@ -25,11 +25,17 @@ import { addHoldingContributions, growHoldingBuckets } from "./projection-bucket
 import type { HoldingReturnsView } from "./returns-display";
 import { resolveHoldingAnnualReturnForProjection } from "./returns-display";
 import type { ScopeOption } from "./scope";
+import { declaredSecurityId, type StoredSecurityId } from "./security-id";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
 export interface ExposureDriftHoldingMeta {
   id: string;
-  isin?: string | null;
+  /**
+   * The holding's stored identifier (#1743), straight from the workspace read.
+   * A `kind: null` value declares no identity — `declaredSecurityId` is what
+   * turns the stored pair into the key the look-through resolves with.
+   */
+  securityId?: StoredSecurityId | null;
   providerSymbol?: string | null;
 }
 
@@ -76,7 +82,7 @@ export function assembleExposureDriftHoldings(
       geography: null,
       id: row.id,
       instrument: row.instrument,
-      isin: metaByAssetId.get(row.id)?.isin ?? null,
+      securityId: declaredSecurityId(metaByAssetId.get(row.id)?.securityId),
       providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
       valueMinor: row.valueMinor,
     }),
@@ -96,7 +102,7 @@ export function assembleExposureDriftHoldings(
       geography: null,
       id: asset.id,
       instrument: instrumentOfAsset(asset),
-      isin: meta?.isin ?? null,
+      securityId: declaredSecurityId(meta?.securityId),
       providerSymbol: meta?.providerSymbol ?? null,
       valueMinor: 0,
     });

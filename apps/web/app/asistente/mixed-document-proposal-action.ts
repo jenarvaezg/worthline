@@ -124,7 +124,9 @@ export async function confirmMixedDocumentProposalAction(
               asset: {
                 currency: fund.creation.currency,
                 id: assetId,
-                ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
+                ...(isIsinShaped(fund.isin)
+                  ? { securityId: { kind: "isin" as const, value: fund.isin } }
+                  : {}),
                 name: fund.creation.name,
                 ownership: fund.creation.ownership,
                 ...(fund.creation.instrument

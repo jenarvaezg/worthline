@@ -1226,9 +1226,9 @@ describe("collectDataQualitySignals — MISSING_INVESTMENT_ISIN (#1489)", () => 
   });
 
   test("an investment that carries its ISIN is silent", () => {
-    expect(codes([fund("inv1", { isin: "IE00B52MJY50" })])).not.toContain(
-      "MISSING_INVESTMENT_ISIN",
-    );
+    expect(
+      codes([fund("inv1", { securityId: { kind: "isin", value: "IE00B52MJY50" } })]),
+    ).not.toContain("MISSING_INVESTMENT_ISIN");
   });
 
   test("a symbol-less investment is silent — MISSING_PROVIDER_SYMBOL owns that state", () => {
@@ -1636,8 +1636,8 @@ describe("collectDataQualitySignals — COST_BASIS_VALUE_ONLY (#1505)", () => {
     asset({
       id: "inv1",
       instrument: "etf",
-      isin: "IE00B5BMR087",
       name: "iShares Core S&P 500",
+      securityId: { kind: "isin", value: "IE00B5BMR087" },
       type: "investment",
     });
 

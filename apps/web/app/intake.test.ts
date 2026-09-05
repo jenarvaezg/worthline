@@ -1223,7 +1223,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.unitSymbol).toBeUndefined();
-    expect(result.command.isin).toBeUndefined();
+    expect(result.command.securityId?.value).toBeUndefined();
   });
 
   test("parses provider symbol, provider, and liquidity tier for pension plans", () => {
@@ -1256,7 +1256,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
     if (!result.ok) return;
     // `isin ?? providerSymbol` is compared as text everywhere: a lowercase copy of
     // the same ISIN is a second, unmatchable identity.
-    expect(result.command.isin).toBe("IE00B52MJY50");
+    expect(result.command.securityId?.value).toBe("IE00B52MJY50");
   });
 
   test("rejects an ISIN that fails its own checksum instead of storing a typo", () => {
@@ -1280,7 +1280,7 @@ describe("parseUpdateInvestmentCommand — the ficha applies the same ISIN rule 
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.command.isin).toBe("IE00B52MJY50");
+    expect(result.command.securityId?.value).toBe("IE00B52MJY50");
   });
 
   test("rejects an invalid ISIN", () => {
@@ -1543,7 +1543,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
     expect(result.command.name).toBe("ACME Updated");
     expect(result.command.manualPricePerUnit).toBe("15.00");
     expect(result.command.unitSymbol).toBe("acme.us");
-    expect(result.command.isin).toBe("US0231351067");
+    expect(result.command.securityId?.value).toBe("US0231351067");
   });
 
   test("rejects blank name", () => {
@@ -1569,7 +1569,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.unitSymbol).toBeUndefined();
-    expect(result.command.isin).toBeUndefined();
+    expect(result.command.securityId?.value).toBeUndefined();
     expect(result.command.manualPricePerUnit).toBeUndefined();
   });
 

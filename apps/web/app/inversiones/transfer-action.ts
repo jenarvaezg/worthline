@@ -295,7 +295,9 @@ async function resolveDestination(
       manualPricePerUnit: params.pricePerUnit,
       name: params.destination.name,
       ownership: params.origin.ownership,
-      ...(params.destination.isin ? { isin: params.destination.isin } : {}),
+      ...(params.destination.isin
+        ? { securityId: { kind: "isin" as const, value: params.destination.isin } }
+        : {}),
     },
     assetId: id,
     created: {

@@ -81,7 +81,7 @@ describe("confirmReconcileProposalAction (#1108) · dispatch", () => {
       currency: "EUR",
       id: "asset-amundi",
       instrument: "fund",
-      isin: AMUNDI,
+      securityId: { kind: "isin", value: AMUNDI },
       name: "Amundi MSCI World",
       ownership: OWNERSHIP,
     });
@@ -139,7 +139,7 @@ describe("confirmReconcileProposalAction (#1108) · dispatch", () => {
       currency: "EUR",
       id: "asset-amundi",
       instrument: "fund",
-      isin: AMUNDI,
+      securityId: { kind: "isin", value: AMUNDI },
       name: "Amundi MSCI World",
       ownership: OWNERSHIP,
     });
@@ -239,7 +239,7 @@ describe("confirmReconcileProposalAction (#1108) · dispatch", () => {
       currency: "EUR",
       id: "asset-closed",
       instrument: "fund",
-      isin: SHARED,
+      securityId: { kind: "isin", value: SHARED },
       name: "Vanguard U.S. 500 Stk Idx € H Acc",
       ownership: OWNERSHIP,
     });
@@ -268,7 +268,7 @@ describe("confirmReconcileProposalAction (#1108) · dispatch", () => {
       currency: "EUR",
       id: "asset-live",
       instrument: "fund",
-      isin: SHARED,
+      securityId: { kind: "isin", value: SHARED },
       name: "Vanguard US Equity Index Fund EUR Hedged",
       ownership: OWNERSHIP,
     });

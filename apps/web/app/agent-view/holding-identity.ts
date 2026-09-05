@@ -14,8 +14,8 @@
  * quote different participaciones for the same fund.
  */
 
-import type { InvestmentOperation } from "@worthline/domain";
-import { netUnitsFromOperations } from "@worthline/domain";
+import type { InvestmentOperation, StoredSecurityId } from "@worthline/domain";
+import { netUnitsFromOperations, storedIsinOrNull } from "@worthline/domain";
 
 import type { AgentViewHoldingIdentity } from "./contract";
 
@@ -23,7 +23,14 @@ export interface HoldingIdentityInput {
   /** The projected asset row, whose `providerSymbol` is what the price path reads. */
   asset?: { providerSymbol?: string | undefined } | undefined;
   /** The investment reference row (`readInvestmentAssetsWithMeta`), when it exists. */
-  meta?: { isin?: string | undefined; providerSymbol?: string | undefined } | undefined;
+  meta?:
+    | {
+        /** El par tipado (#1743). El contrato del agent-view sigue hablando de ISIN
+         *  hasta #1745, así que un código DGS todavía no viaja por esta fila. */
+        securityId?: StoredSecurityId | undefined;
+        providerSymbol?: string | undefined;
+      }
+    | undefined;
   /**
    * The holding's operation ledger. Pass it only for investments: `undefined` (or
    * empty) leaves `units` absent, which reads as "no units recorded here" — the
@@ -42,7 +49,7 @@ export interface HoldingIdentityInput {
 export function resolveHoldingIdentity(
   input: HoldingIdentityInput,
 ): AgentViewHoldingIdentity {
-  const isin = input.meta?.isin;
+  const isin = storedIsinOrNull(input.meta?.securityId);
   const providerSymbol = input.asset?.providerSymbol ?? input.meta?.providerSymbol;
   const operations = input.operations;
 

@@ -416,6 +416,19 @@ export type ExportedBalanceAnchor = z.output<typeof balanceAnchorSchema>;
 
 const investmentMetaSchema = z.object({
   unitSymbol: nonEmptyString.optional(),
+  /**
+   * The typed security identifier (#1743). The kind travels beside the value but
+   * the import does not trust it: it classifies by SHAPE (#1416) so a document
+   * whose two fields disagree still restores, with the value preserved and no
+   * kind. Its absence next to a value is that preserved state.
+   */
+  securityId: nonEmptyString.optional(),
+  securityIdKind: z.enum(["isin", "dgs"]).optional(),
+  /**
+   * The pre-#1743 field name, accepted FOREVER — a document written by any past
+   * version must keep restoring (ADR 0071: one gate, two readers). Read only when
+   * `securityId` is absent; classified by the same shape rule.
+   */
   isin: nonEmptyString.optional(),
   priceProvider: investmentPriceProviderSchema.optional(),
   providerSymbol: nonEmptyString.optional(),

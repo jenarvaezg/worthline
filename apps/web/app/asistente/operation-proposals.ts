@@ -41,6 +41,7 @@ import {
   multiplyToMinor,
   netUnitsFromOperations,
   normalizeDecimal,
+  storedIsinOrNull,
   subtractUnits,
 } from "@worthline/domain";
 
@@ -182,12 +183,16 @@ export async function projectOperationWrite(
   // holding used to be invisible. A holding with no ISIN registered contradicts
   // nothing — the card prints both lines and the user sees what is being matched.
   const documentIsin = write.documentIsin?.toUpperCase();
-  if (documentIsin && holding.isin && holding.isin.toUpperCase() !== documentIsin) {
+  // El contrato de extracción todavía habla solo de ISIN (#1747): un plan
+  // identificado por su código DGS no contradice a un papel con ISIN, y quien
+  // decide esa frontera es esa slice, no esta.
+  const holdingIsin = storedIsinOrNull(holding.securityId);
+  if (documentIsin && holdingIsin && holdingIsin.toUpperCase() !== documentIsin) {
     return {
       ok: false as const,
       error:
         `La operación es del ISIN ${write.documentIsin} y «${holding.name}» tiene registrado ` +
-        `${holding.isin}: son instrumentos distintos, así que no anoto la operación ahí. Busca ` +
+        `${holdingIsin}: son instrumentos distintos, así que no anoto la operación ahí. Busca ` +
         "la posición de ese ISIN en la cartera, y si no existe, dala de alta.",
     };
   }
@@ -238,7 +243,7 @@ export async function projectOperationWrite(
       currency: holding.currency,
       id: holding.id,
       name: holding.name,
-      ...(holding.isin === undefined ? {} : { isin: holding.isin }),
+      ...(holdingIsin === null ? {} : { isin: holdingIsin }),
     },
     ok: true as const,
     unitsAfter,

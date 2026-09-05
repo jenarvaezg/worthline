@@ -18,6 +18,7 @@ import {
 } from "./exposure-taxonomy";
 import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
+import type { SecurityId } from "./security-id";
 
 type Breakdown = Record<string, DecimalString>;
 type DimensionResolution =
@@ -53,7 +54,11 @@ export interface ExposureLookthroughHolding {
   currency: CurrencyCode;
   instrument: Instrument;
   geography?: ExposureGeographyBucket | null;
-  isin?: string | null;
+  /**
+   * The holding's typed identifier (#1743). Explicit null selects the provider
+   * symbol; the field is optional only for the fixtures that predate the pair.
+   */
+  securityId?: SecurityId | null;
   providerSymbol?: string | null;
 }
 

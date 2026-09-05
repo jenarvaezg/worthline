@@ -22,6 +22,7 @@ import type {
   CreateInvestmentOperationInput,
   DebtModel,
   InstrumentIdentityPatch,
+  StoredSecurityId,
   ValuationCadence,
 } from "@worthline/domain";
 import type { AddValuationAnchorInput, UpdateAssetInput } from "./asset-store";
@@ -96,15 +97,15 @@ export type CorrectionEdit =
     }
   | {
       /**
-       * Fill an investment's empty ISIN / provider symbol (#1349). Carries the
-       * declaration, not a full metadata row: the apply re-resolves it against
-       * live data through `resolveInstrumentIdentityFill`, so a draft armed when
-       * the field was empty cannot overwrite what a sibling proposal — or the
+       * Fill an investment's empty security id / provider symbol (#1349, #1743).
+       * Carries the declaration, not a full metadata row: the apply re-resolves it
+       * against live data through `resolveInstrumentIdentityFill`, so a draft armed
+       * when the field was empty cannot overwrite what a sibling proposal — or the
        * ficha — wrote in the meantime.
        */
       kind: "investment_identity";
       assetId: string;
-      before: { isin: string | null; providerSymbol: string | null };
+      before: { securityId: StoredSecurityId | null; providerSymbol: string | null };
       declaration: InstrumentIdentityPatch;
     }
   | {

@@ -12,6 +12,7 @@ import type {
   LiquidityTier,
   Member,
   OperationKind,
+  SecurityId,
 } from "@worthline/domain";
 import {
   isAssignableInstrumentForShape,
@@ -94,7 +95,7 @@ export function parseInvestmentAssetCommandStrict(
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { isin: isin.isin } : {}),
+      ...(isin.isin ? { securityId: { kind: "isin", value: isin.isin } } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
@@ -234,7 +235,7 @@ export function parseUpdateInvestmentCommand(
   instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
-  isin?: string;
+  securityId?: SecurityId;
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -309,7 +310,7 @@ export function parseUpdateInvestmentCommand(
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { isin: isin.isin } : {}),
+      ...(isin.isin ? { securityId: { kind: "isin", value: isin.isin } } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },

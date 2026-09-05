@@ -55,7 +55,12 @@ async function seedPortfolio(
     ownership: OWNERSHIP,
     ...(overrides.isin === undefined && "isin" in overrides
       ? {}
-      : { isin: overrides.isin ?? PLAN_ISIN }),
+      : {
+          securityId: {
+            kind: "isin" as const,
+            value: overrides.isin ?? PLAN_ISIN,
+          },
+        }),
   });
   await store.operations.recordOperation({
     assetId: "plan-sp500",

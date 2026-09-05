@@ -58,7 +58,7 @@ async function createFund(
     instrument: "fund",
     name: input.name,
     ownership: SOLO,
-    ...(input.isin ? { isin: input.isin } : {}),
+    ...(input.isin ? { securityId: { kind: "isin" as const, value: input.isin } } : {}),
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
   });
 
@@ -109,7 +109,10 @@ describe("resolveHoldingIdentity", () => {
   test("carries the registered ISIN, provider symbol and net units held", () => {
     expect(
       resolveHoldingIdentity({
-        meta: { isin: "LU0000000124", providerSymbol: "0P0000TEST.F" },
+        meta: {
+          providerSymbol: "0P0000TEST.F",
+          securityId: { kind: "isin", value: "LU0000000124" },
+        },
         operations: ledger([
           ["buy", "10"],
           ["sell", "2.5"],

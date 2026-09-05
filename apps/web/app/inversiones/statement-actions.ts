@@ -37,6 +37,7 @@ import {
   parseStatement,
   planStatementMerge,
   resolvePerHoldingStatementIsinGuard,
+  storedIsinOrNull,
 } from "@worthline/domain";
 import {
   type ConvertCapturedOperationsOptions,
@@ -150,10 +151,10 @@ export async function previewStatementAction(
   return runActionWithStore(async (store) => {
     // ISIN guard (S4): block a wrong-file slip before showing any summary.
     const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
+    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
     if (guard.status === "mismatch") {
       return {
-        message: isinMismatchMessage(guard.fileIsins, asset?.isin ?? ""),
+        message: isinMismatchMessage(guard.fileIsins, asset?.securityId?.value ?? ""),
         status: "error",
       };
     }
@@ -229,15 +230,18 @@ export async function confirmStatementAction(
       // ISIN guard (S4): block a mismatch before any write; backfill an empty
       // asset so a later upload to the same holding is guarded too.
       const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-      const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
+      const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
       if (guard.status === "mismatch") {
         return {
-          error: isinMismatchMessage(guard.fileIsins, asset?.isin ?? ""),
+          error: isinMismatchMessage(guard.fileIsins, asset?.securityId?.value ?? ""),
           ok: false,
         };
       }
       if (guard.status === "backfill") {
-        await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
+        await store.assets.backfillInvestmentSecurityId(routeAssetId, {
+          kind: "isin",
+          value: guard.isin,
+        });
       }
 
       // The catalog identity to register once the merge commits (#1097). A
@@ -247,7 +251,10 @@ export async function confirmStatementAction(
       // supplies its own provider.
       const catalog: ExposureCatalogStubCandidate = {
         displayName: asset?.name ?? null,
-        isin: guard.status === "backfill" ? guard.isin : (asset?.isin ?? null),
+        isin:
+          guard.status === "backfill"
+            ? guard.isin
+            : (storedIsinOrNull(asset?.securityId) ?? null),
         priceProvider: asset?.priceProvider ?? null,
         providerSymbol: asset?.providerSymbol ?? null,
       };

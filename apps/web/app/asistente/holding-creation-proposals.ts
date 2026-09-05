@@ -283,7 +283,9 @@ function buildPlan(
     instrument,
     name,
     ownership,
-    ...(parsedIsin.isin ? { isin: parsedIsin.isin } : {}),
+    ...(parsedIsin.isin
+      ? { securityId: { kind: "isin" as const, value: parsedIsin.isin } }
+      : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
   const resolved = resolveHoldingCreationOpening(
@@ -320,7 +322,9 @@ function duplicateOf(
     rowId: "alta",
     instrument: plan.instrument,
     name: plan.name,
-    ...(plan.family === "investment" && plan.isin ? { isin: plan.isin } : {}),
+    ...(plan.family === "investment" && plan.securityId?.kind === "isin"
+      ? { isin: plan.securityId.value }
+      : {}),
     ...(plan.family === "investment" && plan.providerSymbol
       ? { providerSymbol: plan.providerSymbol }
       : {}),

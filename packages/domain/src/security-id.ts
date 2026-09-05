@@ -17,6 +17,64 @@ export function normalizeDgsCode(value: string): string | null {
   return DGS_PATTERN.test(normalized) ? normalized : null;
 }
 
+/**
+ * What the workspace column pair holds: a classified identifier, or a value
+ * preserved verbatim whose shape no classifier recognized. `kind: null` is legal
+ * ONLY through the workspace-document import (#1416, #1743) — a restore preserves
+ * and never derives, while every interactive write validates by kind.
+ */
+export type StoredSecurityId = SecurityId | { kind: null; value: string };
+
+/**
+ * Rebuild the stored pair from its two columns. An empty value has no identity
+ * whatever the kind column says, so a half-written row never claims one.
+ */
+export function storedSecurityIdFromColumns(
+  kind: string | null | undefined,
+  value: string | null | undefined,
+): StoredSecurityId | undefined {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return undefined;
+  return kind === "isin" || kind === "dgs"
+    ? { kind, value: trimmed }
+    : { kind: null, value: trimmed };
+}
+
+/**
+ * The typed declaration a stored identifier carries, or null when it carries
+ * none — the shape the look-through and catalog keys take (#1667, decision 6).
+ * Null is explicit on purpose: it selects the provider symbol rather than the
+ * legacy ISIN-or-symbol path a missing field would.
+ */
+export function declaredSecurityId(
+  stored: StoredSecurityId | null | undefined,
+): SecurityId | null {
+  return stored && stored.kind !== null
+    ? { kind: stored.kind, value: stored.value }
+    : null;
+}
+
+/**
+ * The import boundary of #1416, and the ONLY path that may write a null kind: a
+ * restore preserves and never derives, so it classifies by shape and keeps
+ * verbatim whatever it cannot name. It never throws — a restore must not fail on
+ * legacy data — and blank input carries no identity at all.
+ */
+export function preservedSecurityId(value: unknown): StoredSecurityId | undefined {
+  const classified = classifySecurityId(value);
+  if (classified) return classified;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? { kind: null, value: trimmed } : undefined;
+}
+
+/** The ISIN a stored identifier declares, or null when it declares another kind. */
+export function storedIsinOrNull(
+  stored: StoredSecurityId | null | undefined,
+): string | null {
+  return stored?.kind === "isin" ? stored.value : null;
+}
+
 /** Total classifier for imported data: invalid or non-string input has no identity. */
 export function classifySecurityId(value: unknown): SecurityId | null {
   if (typeof value !== "string") return null;
@@ -52,18 +110,24 @@ export function normalizedSecurityIdColumnValue(
   );
 }
 
+/** How a form field and a diff row name each kind (decision 9 del mapa, #1742). */
+export const SECURITY_ID_KIND_LABEL: Record<SecurityIdKind, string> = {
+  dgs: "Código DGS",
+  isin: "ISIN",
+};
+
 /** The instrument selects both the input label and its write-validation kind. */
 export function securityIdFieldForInstrument(
   instrument: Instrument,
 ): { kind: SecurityIdKind; label: string } | null {
   switch (instrument) {
     case "pension_plan":
-      return { kind: "dgs", label: "Código DGS" };
+      return { kind: "dgs", label: SECURITY_ID_KIND_LABEL.dgs };
     case "fund":
     case "etf":
     case "stock":
     case "index":
-      return { kind: "isin", label: "ISIN" };
+      return { kind: "isin", label: SECURITY_ID_KIND_LABEL.isin };
     default:
       return null;
   }

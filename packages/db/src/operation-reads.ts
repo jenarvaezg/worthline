@@ -11,8 +11,13 @@ import type {
   DecimalString,
   InvestmentOperation,
   OperationCapture,
+  StoredSecurityId,
 } from "@worthline/domain";
-import { asDateKey, usableCachedPrice } from "@worthline/domain";
+import {
+  asDateKey,
+  storedSecurityIdFromColumns,
+  usableCachedPrice,
+} from "@worthline/domain";
 import { asc } from "drizzle-orm";
 
 import { assetOperations, assetPriceCache, investmentAssets } from "./schema";
@@ -22,8 +27,8 @@ export interface InvestmentMeta {
   manualPricePerUnit?: DecimalString;
   /** The provider-symbol lookup key (ADR 0055), for the warnings projection. */
   providerSymbol?: string;
-  /** The ISIN (ADR 0055), for the missing-identity signal (#1489). */
-  isin?: string;
+  /** The typed security id (#1743), for the missing-identity signal (#1489). */
+  securityId?: StoredSecurityId;
 }
 
 /**
@@ -182,18 +187,20 @@ export async function readInvestmentMeta(
   const rows = await db
     .select({
       assetId: investmentAssets.assetId,
-      isin: investmentAssets.isin,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
       providerSymbol: investmentAssets.providerSymbol,
+      securityId: investmentAssets.securityId,
+      securityIdKind: investmentAssets.securityIdKind,
     })
     .from(investmentAssets)
     .all();
 
   return rows.reduce((byAsset, row) => {
+    const securityId = storedSecurityIdFromColumns(row.securityIdKind, row.securityId);
     byAsset.set(row.assetId, {
       ...(row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {}),
       ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
-      ...(row.isin ? { isin: row.isin } : {}),
+      ...(securityId ? { securityId } : {}),
     });
 
     return byAsset;

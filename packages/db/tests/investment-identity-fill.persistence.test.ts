@@ -33,12 +33,12 @@ describe("patchInvestmentIdentity (#1349)", () => {
       });
 
       const updated = await store.assets.patchInvestmentIdentity("fund", {
-        isin: "IE00B03HCZ61",
+        securityId: { kind: "isin", value: "IE00B03HCZ61" },
       });
 
       expect(updated).toBe(1);
       const meta = await store.assets.readInvestmentAssetById("fund");
-      expect(meta?.isin).toBe("IE00B03HCZ61");
+      expect(meta?.securityId).toEqual({ kind: "isin", value: "IE00B03HCZ61" });
       expect(meta?.unitSymbol).toBe("uds");
       expect(meta?.manualPricePerUnit).toBe("12.34");
       expect(meta?.providerSymbol).toBeUndefined();
@@ -64,7 +64,7 @@ describe("patchInvestmentIdentity (#1349)", () => {
     }
   });
 
-  test("refuses a non-ISIN in the isin field and writes nothing (#1453)", async () => {
+  test("refuses a value that is not of its declared kind and writes nothing (#1453)", async () => {
     const store = await seedStore();
     try {
       await store.assets.createInvestmentAsset({
@@ -76,10 +76,12 @@ describe("patchInvestmentIdentity (#1349)", () => {
       });
 
       await expect(
-        store.assets.patchInvestmentIdentity("fund", { isin: "N5394" }),
+        store.assets.patchInvestmentIdentity("fund", {
+          securityId: { kind: "isin", value: "N5394" },
+        }),
       ).rejects.toThrow(/ISIN/);
       const meta = await store.assets.readInvestmentAssetById("fund");
-      expect(meta?.isin).toBeUndefined();
+      expect(meta?.securityId).toBeUndefined();
     } finally {
       store.close();
     }
@@ -96,9 +98,11 @@ describe("patchInvestmentIdentity (#1349)", () => {
         ownership: [{ memberId: "m", shareBps: 10_000 }],
       });
 
-      await store.assets.patchInvestmentIdentity("fund", { isin: " ie00b03hcz61 " });
+      await store.assets.patchInvestmentIdentity("fund", {
+        securityId: { kind: "isin", value: " ie00b03hcz61 " },
+      });
       const meta = await store.assets.readInvestmentAssetById("fund");
-      expect(meta?.isin).toBe("IE00B03HCZ61");
+      expect(meta?.securityId).toEqual({ kind: "isin", value: "IE00B03HCZ61" });
     } finally {
       store.close();
     }
@@ -152,7 +156,7 @@ describe("patchInvestmentIdentity (#1349)", () => {
               edits: [
                 {
                   assetId: "fund",
-                  before: { isin: null, providerSymbol: null },
+                  before: { providerSymbol: null, securityId: null },
                   declaration: { providerSymbol: "SAN.MC" },
                   kind: "investment_identity",
                 },
@@ -182,13 +186,14 @@ describe("patchInvestmentIdentity (#1349)", () => {
 });
 
 /**
- * The isin column accepts only what an ISIN is (#1453): every write path funnels
- * through the store, so refusing here cuts the whole failure class — a non-ISIN
- * stored in the column makes the exposure catalog register the row under the
- * provider key while the look-through searches under the garbage value, and the
- * holding turns «sin clasificar» with nothing warning about it.
+ * The identifier columns accept only what their declared kind is (#1453,
+ * generalizado en #1743): every write path funnels through the store, so refusing
+ * here cuts the whole failure class — un valor que no es de su clase hace que el
+ * catálogo de exposición registre la fila bajo la clave del proveedor mientras el
+ * look-through la busca bajo otra, y el holding se queda «sin clasificar» sin que
+ * nada avise.
  */
-describe("isin column validation (#1453)", () => {
+describe("security id column validation (#1453, #1743)", () => {
   async function seedFund(store: Awaited<ReturnType<typeof seedStore>>) {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
@@ -199,17 +204,17 @@ describe("isin column validation (#1453)", () => {
     });
   }
 
-  test("createInvestmentAsset refuses a non-ISIN", async () => {
+  test("createInvestmentAsset refuses a DGS code declared as an ISIN", async () => {
     const store = await seedStore();
     try {
       await expect(
         store.assets.createInvestmentAsset({
           currency: "EUR",
           id: "fund",
-          isin: "N5394",
           liquidityTier: "market",
           name: "Fondo",
           ownership: [{ memberId: "m", shareBps: 10_000 }],
+          securityId: { kind: "isin", value: "N5394" },
         }),
       ).rejects.toThrow(/ISIN/);
     } finally {
@@ -217,37 +222,83 @@ describe("isin column validation (#1453)", () => {
     }
   });
 
-  test("updateInvestmentAsset refuses a non-ISIN and writes nothing", async () => {
+  // El destino de #1741: el identificador de un plan de pensiones ENTRA, con su
+  // clase propia, y no tiene que disfrazarse de ISIN para caber en la columna.
+  test("createInvestmentAsset stores a plan's DGS code as what it is", async () => {
+    const store = await seedStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "plan",
+        instrument: "pension_plan",
+        liquidityTier: "term-locked",
+        name: "PP Indexado",
+        ownership: [{ memberId: "m", shareBps: 10_000 }],
+        securityId: { kind: "dgs", value: "n-5394" },
+      });
+
+      const meta = await store.assets.readInvestmentAssetById("plan");
+      expect(meta?.securityId).toEqual({ kind: "dgs", value: "N5394" });
+    } finally {
+      store.close();
+    }
+  });
+
+  test("createInvestmentAsset refuses the pension FUND code with its guidance", async () => {
+    const store = await seedStore();
+    try {
+      await expect(
+        store.assets.createInvestmentAsset({
+          currency: "EUR",
+          id: "plan",
+          liquidityTier: "term-locked",
+          name: "PP Indexado",
+          ownership: [{ memberId: "m", shareBps: 10_000 }],
+          securityId: { kind: "dgs", value: "F2244" },
+        }),
+      ).rejects.toThrow(/empieza por N/);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("updateInvestmentAsset refuses a value of the wrong kind and writes nothing", async () => {
     const store = await seedStore();
     try {
       await seedFund(store);
       await expect(
         store.assets.updateInvestmentAsset({
           id: "fund",
-          isin: "N5394",
           name: "Fondo renombrado",
+          securityId: { kind: "isin", value: "N5394" },
         }),
       ).rejects.toThrow(/ISIN/);
       const meta = await store.assets.readInvestmentAssetById("fund");
-      expect(meta?.isin).toBeUndefined();
+      expect(meta?.securityId).toBeUndefined();
       expect(meta?.name).toBe("Fondo");
     } finally {
       store.close();
     }
   });
 
-  test("backfillInvestmentIsin refuses a non-ISIN and normalizes a valid one", async () => {
+  test("backfillInvestmentSecurityId refuses the wrong kind and normalizes a valid one", async () => {
     const store = await seedStore();
     try {
       await seedFund(store);
-      await expect(store.assets.backfillInvestmentIsin("fund", "N5394")).rejects.toThrow(
-        /ISIN/,
-      );
+      await expect(
+        store.assets.backfillInvestmentSecurityId("fund", {
+          kind: "isin",
+          value: "N5394",
+        }),
+      ).rejects.toThrow(/ISIN/);
 
-      const updated = await store.assets.backfillInvestmentIsin("fund", "ie00b03hcz61");
+      const updated = await store.assets.backfillInvestmentSecurityId("fund", {
+        kind: "isin",
+        value: "ie00b03hcz61",
+      });
       expect(updated).toBe(1);
       const meta = await store.assets.readInvestmentAssetById("fund");
-      expect(meta?.isin).toBe("IE00B03HCZ61");
+      expect(meta?.securityId).toEqual({ kind: "isin", value: "IE00B03HCZ61" });
     } finally {
       store.close();
     }

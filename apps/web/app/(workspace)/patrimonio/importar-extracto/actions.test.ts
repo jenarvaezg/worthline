@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
-import { parseStatement } from "@worthline/domain";
+import { parseStatement, storedIsinOrNull } from "@worthline/domain";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
 
@@ -69,7 +69,7 @@ async function seed(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "matched_fund",
-    isin: "ES00WL000009",
+    securityId: { kind: "isin", value: "ES00WL000009" },
     liquidityTier: "market",
     manualPricePerUnit: "35",
     name: "Fondo existente",
@@ -368,14 +368,20 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     );
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "LU00WL000022");
+    const created = metas.find(
+      (meta) => storedIsinOrNull(meta.securityId) === "LU00WL000022",
+    );
     expect(created).toBeDefined();
     expect(created?.providerSymbol).toBe("BRUJULA.FAKE");
     expect(await store.operations.readOperations(created!.id)).toHaveLength(2);
 
     // The excluded ISINs never got a holding created — an untouched fund.
-    expect(metas.some((meta) => meta.isin === "IE00WL000001")).toBe(false);
-    expect(metas.some((meta) => meta.isin === "FR00WL000009")).toBe(false);
+    expect(
+      metas.some((meta) => storedIsinOrNull(meta.securityId) === "IE00WL000001"),
+    ).toBe(false);
+    expect(
+      metas.some((meta) => storedIsinOrNull(meta.securityId) === "FR00WL000009"),
+    ).toBe(false);
     expect(metas).toHaveLength(2); // the seeded one + the one new inclusion
   });
 
@@ -390,7 +396,9 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     await confirm(fd, store);
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "FR00WL000009");
+    const created = metas.find(
+      (meta) => storedIsinOrNull(meta.securityId) === "FR00WL000009",
+    );
     expect(created).toBeDefined();
     expect(created?.name).toBe("FR00WL000009"); // falls back to the ISIN
     expect(created?.providerSymbol).toBeUndefined();
@@ -410,7 +418,7 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     // No provider quotes by name: with no symbol the holding is valued at cost
     // instead of rewriting a `failed` price row on every daily retry.
     const created = (await store.assets.readInvestmentAssetsWithMeta()).find(
-      (meta) => meta.isin === "FR00WL000009",
+      (meta) => storedIsinOrNull(meta.securityId) === "FR00WL000009",
     );
     expect(created?.name).toBe("Vanguard US Equity Index Fund EUR Hedged");
     expect(created?.providerSymbol).toBeUndefined();
@@ -433,7 +441,9 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     expect(metas).toHaveLength(2); // no duplicate holding created on re-confirm
-    const created = metas.find((meta) => meta.isin === "LU00WL000022");
+    const created = metas.find(
+      (meta) => storedIsinOrNull(meta.securityId) === "LU00WL000022",
+    );
     expect(await store.operations.readOperations(created!.id)).toHaveLength(2);
     expect(await store.operations.readOperations("matched_fund")).toHaveLength(2);
   });
@@ -505,7 +515,9 @@ describe("plantilla import (#695)", () => {
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     expect(metas).toHaveLength(3);
-    const created = metas.find((meta) => meta.isin === "LU00WL000022");
+    const created = metas.find(
+      (meta) => storedIsinOrNull(meta.securityId) === "LU00WL000022",
+    );
     expect(created).toBeDefined();
     const ops = await store.operations.readOperations(created!.id);
     expect(ops.map((op) => op.kind).sort()).toEqual(["buy", "sell"]);
@@ -781,7 +793,7 @@ describe("an identifier two holdings claim (#1366)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "live_fund",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       manualPricePerUnit: "35",
       name: "Mismo fondo, bróker actual",
@@ -927,7 +939,9 @@ describe("importar-extracto — la columna Divisa", () => {
     await confirm(usdForm(), store, usdRates);
 
     const investments = await store.assets.readInvestmentAssetsWithMeta();
-    const created = investments.find((asset) => asset.isin === "IE00BDZVHT63");
+    const created = investments.find(
+      (asset) => storedIsinOrNull(asset.securityId) === "IE00BDZVHT63",
+    );
     const operations = await store.operations.readOperations(created?.id ?? "");
 
     expect(operations[0]?.currency).toBe("EUR");
@@ -951,6 +965,8 @@ describe("importar-extracto — la columna Divisa", () => {
       "No hay tipo de cambio del BCE de USD",
     );
     const investments = await store.assets.readInvestmentAssetsWithMeta();
-    expect(investments.find((asset) => asset.isin === "IE00BDZVHT63")).toBeUndefined();
+    expect(
+      investments.find((asset) => storedIsinOrNull(asset.securityId) === "IE00BDZVHT63"),
+    ).toBeUndefined();
   });
 });

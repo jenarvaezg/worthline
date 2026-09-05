@@ -409,7 +409,9 @@ export async function confirmImportStatementAction(
             id: fund.creation.assetId,
             // A plantilla identifier without ISIN shape (Finect code, CoinGecko
             // id) lives in providerSymbol, never in the isin column (#695).
-            ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
+            ...(isIsinShaped(fund.isin)
+              ? { securityId: { kind: "isin" as const, value: fund.isin } }
+              : {}),
             name: fund.creation.name,
             ownership: fund.creation.ownership,
             ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),

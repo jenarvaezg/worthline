@@ -19,6 +19,7 @@ import type {
   DebtModel,
   Instrument,
   OwnershipShare,
+  SecurityId,
 } from "@worthline/domain";
 
 /** Fields every family shares: the resolved identity + ownership split. */
@@ -91,7 +92,8 @@ export interface DebtHoldingCreationPlan extends HoldingCreationPlanBase {
 export interface InvestmentHoldingCreationPlan extends HoldingCreationPlanBase {
   family: "investment";
   providerSymbol?: string;
-  isin?: string;
+  /** The security's typed identifier (#1743): an ISIN, or a plan's DGS code. */
+  securityId?: SecurityId;
   /**
    * The opening BUY dated today, when the user declared it. `units` and
    * `pricePerUnit` are persisted on the operation verbatim; `valueMinor` is the

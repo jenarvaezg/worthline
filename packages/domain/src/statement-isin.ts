@@ -12,6 +12,7 @@
  */
 
 import { isValidIsin } from "./exposure-identity";
+import { declaredSecurityId, type StoredSecurityId } from "./security-id";
 import type { ParsedStatement } from "./statement-parse";
 
 export type StatementIsinGuard =
@@ -75,16 +76,24 @@ function distinctStatementIsins(statement: ParsedStatement): string[] {
  */
 export function resolvePerHoldingStatementIsinGuard(
   statement: ParsedStatement,
-  assetIsin: string | null | undefined,
+  assetSecurityId: StoredSecurityId | null | undefined,
 ): PerHoldingStatementIsinGuard {
   const fileIsins = distinctStatementIsins(statement);
-  const asset = normalize(assetIsin);
+  const declared = declaredSecurityId(assetSecurityId);
+  const asset = declared?.kind === "isin" ? normalize(declared.value) : null;
 
   if (fileIsins.length === 0) {
     return { status: "absent" };
   }
 
   if (asset === null) {
+    // Un identificador de OTRA clase ocupa el hueco igual que un ISIN (#1743): el
+    // extracto de un fondo sobre un plan identificado por su código DGS es
+    // exactamente el resbalón que este guard existe para bloquear, y rellenarlo
+    // borraría el identificador del plan con el del papel equivocado.
+    if (assetSecurityId?.value.trim()) {
+      return { fileIsins, status: "mismatch" };
+    }
     if (fileIsins.length !== 1) {
       return { fileIsins, status: "mismatch" };
     }

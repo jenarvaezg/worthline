@@ -328,7 +328,11 @@ async function buildAssetCorrection(
       {
         assetId: asset.id,
         declaration: {
-          ...(correction.isin === undefined ? {} : { isin: correction.isin }),
+          // El contrato del chat todavía declara solo ISIN (#1747): la clase la
+          // pone aquí la puerta, y el validador por tipo la comprueba.
+          ...(correction.isin === undefined
+            ? {}
+            : { securityId: { kind: "isin" as const, value: correction.isin } }),
           ...(correction.providerSymbol === undefined
             ? {}
             : { providerSymbol: correction.providerSymbol }),

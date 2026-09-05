@@ -6,7 +6,7 @@ import {
 } from "@web/patrimonio/importar-extracto/actions";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
-import { asInstant, derivePosition } from "@worthline/domain";
+import { asInstant, derivePosition, storedIsinOrNull } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -52,7 +52,7 @@ async function seedMatchedFund(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "matched_fund",
-    isin: "ES00WL000009",
+    securityId: { kind: "isin", value: "ES00WL000009" },
     liquidityTier: "market",
     manualPricePerUnit: "35",
     name: "Fondo existente",
@@ -83,7 +83,7 @@ async function unitsByIsin(store: WorthlineStore): Promise<Map<string, string>> 
   const out = new Map<string, string>();
 
   for (const meta of metas) {
-    const key = meta.isin ?? meta.id;
+    const key = storedIsinOrNull(meta.securityId) ?? meta.id;
     const ops = await store.operations.readOperations(meta.id);
     const position = derivePosition(ops, {
       assetId: meta.id,
@@ -283,7 +283,7 @@ describe("confirmStatementImportProposalAction regression", () => {
     expect(await unitsByIsin(manualStore)).toEqual(await unitsByIsin(agentStore));
 
     const brujula = (await agentStore.assets.readInvestmentAssetsWithMeta()).find(
-      (asset) => asset.isin === "LU00WL000022",
+      (asset) => storedIsinOrNull(asset.securityId) === "LU00WL000022",
     );
     expect(brujula?.providerSymbol).toBe("BRUJULA.FAKE");
 
@@ -317,7 +317,7 @@ describe("confirmStatementImportProposalAction regression", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "created_after_preview",
-      isin: "LU00WL000022",
+      securityId: { kind: "isin", value: "LU00WL000022" },
       liquidityTier: "market",
       name: "Creado tras preview",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -380,7 +380,7 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "second_claimant",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       name: "Mismo fondo, otro bróker",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -414,7 +414,9 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     expect(await store.operations.readOperations("matched_fund")).toHaveLength(0);
     expect(await store.operations.readOperations("second_claimant")).toHaveLength(0);
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "LU00WL000022");
+    const created = metas.find(
+      (meta) => storedIsinOrNull(meta.securityId) === "LU00WL000022",
+    );
     expect(await store.operations.readOperations(created!.id)).toHaveLength(1);
   });
 });

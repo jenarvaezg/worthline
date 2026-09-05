@@ -30,8 +30,10 @@ import {
   calculateNetWorth,
   collectHoldingPayouts,
   compareGrowthToBenchmark,
+  declaredSecurityId,
   defaultsFor,
   deriveMonthlyCloses,
+  exposureLookthroughKey,
   listScopeOptions,
   lookThroughExposure,
   managedPortfolioMemberValues,
@@ -216,7 +218,12 @@ export async function buildFinancialContext(
     catalog.status === "unavailable" ? catalog.reason : undefined;
   const assetClassOf = (id: string, instrument: Instrument): AssetClassResolution => {
     const meta = metaById.get(id);
-    const key = meta?.isin ?? meta?.providerSymbol ?? null;
+    // Una clave por estado (#1667): el identificador tipado, o el símbolo del
+    // proveedor cuando la fila no declara ninguno. Nunca el valor crudo.
+    const key = exposureLookthroughKey({
+      providerSymbol: meta?.providerSymbol ?? null,
+      securityId: declaredSecurityId(meta?.securityId),
+    });
     const profile = key ? (exposureProfiles.get(key) ?? null) : null;
     return resolveAssetClassBreakdown(instrument, profile);
   };
@@ -690,7 +697,7 @@ async function buildExposureLookthrough(
       geography: null,
       id: holding.id,
       instrument: holding.instrument as Instrument,
-      isin: metaByPublicId.get(holding.id)?.isin ?? null,
+      securityId: declaredSecurityId(metaByPublicId.get(holding.id)?.securityId),
       providerSymbol: metaByPublicId.get(holding.id)?.providerSymbol ?? null,
       valueMinor: holding.currentValue.amountMinor,
     }));

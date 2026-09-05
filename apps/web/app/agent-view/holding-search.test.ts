@@ -67,7 +67,7 @@ async function createEmptyFund(
     name: input.name,
     ownership: SOLO,
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
-    ...(input.isin ? { isin: input.isin } : {}),
+    ...(input.isin ? { securityId: { kind: "isin" as const, value: input.isin } } : {}),
   });
 }
 

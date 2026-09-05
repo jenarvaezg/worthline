@@ -323,8 +323,16 @@ describe("assembleExposureDriftHoldings", () => {
       assets: [listedHolding, outOfScopeDestination],
       liabilities: [],
       investmentMeta: [
-        { id: "h_listed", isin: "IE00EU", providerSymbol: "EUNL.DE" },
-        { id: "h_plan_only", isin: "IE00US", providerSymbol: "CSPX.L" },
+        {
+          id: "h_listed",
+          providerSymbol: "EUNL.DE",
+          securityId: { kind: "isin", value: "IE00EU" },
+        },
+        {
+          id: "h_plan_only",
+          providerSymbol: "CSPX.L",
+          securityId: { kind: "isin", value: "IE00US" },
+        },
       ],
       exposureProfiles: [europeProfile],
       plan: contributionPlan,
@@ -336,8 +344,8 @@ describe("assembleExposureDriftHoldings", () => {
         geography: null,
         id: "h_listed",
         instrument: "fund",
-        isin: "IE00EU",
         providerSymbol: "EUNL.DE",
+        securityId: { kind: "isin", value: "IE00EU" },
         valueMinor: 500_000,
       },
       {
@@ -345,8 +353,8 @@ describe("assembleExposureDriftHoldings", () => {
         geography: null,
         id: "h_plan_only",
         instrument: "fund",
-        isin: "IE00US",
         providerSymbol: "CSPX.L",
+        securityId: { kind: "isin", value: "IE00US" },
         valueMinor: 0,
       },
     ]);

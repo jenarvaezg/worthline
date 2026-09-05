@@ -237,7 +237,7 @@ describe("recordTransferAction — a destination created on the way in", () => {
 
     const investment = await store.assets.readInvestmentAssetById(created?.id ?? "");
     expect(investment).toMatchObject({
-      isin: "ES0173894017",
+      securityId: { kind: "isin", value: "ES0173894017" },
       // Nobody will quote a hand-created plan, so the VL just declared is its price
       // — otherwise the holding would land worth 0 €.
       manualPricePerUnit: "14.50",

@@ -17,7 +17,7 @@ describe("mixed document proposal router", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "timed_fund",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       name: "Fondo con hora",
       ownership: [{ memberId: "m", shareBps: 10_000 }],
@@ -207,7 +207,7 @@ describe("mixed document proposal router", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
-      isin: "ES00WL000009",
+      securityId: { kind: "isin", value: "ES00WL000009" },
       liquidityTier: "market",
       manualPricePerUnit: "10",
       name: "Fondo",

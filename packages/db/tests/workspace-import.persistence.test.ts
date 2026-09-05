@@ -390,7 +390,7 @@ describe("importWorkspace", () => {
     const investmentRow = await store.assets.readInvestmentAssetById("b-a2");
     expect(investmentRow).not.toBeNull();
     expect(investmentRow!.unitSymbol).toBe("VWCE");
-    expect(investmentRow!.isin).toBe("IE00BK5BQT80");
+    expect(investmentRow!.securityId).toEqual({ kind: "isin", value: "IE00BK5BQT80" });
     expect(investmentRow!.priceProvider).toBe("stooq");
     expect(investmentRow!.providerSymbol).toBe("VWCE.DE");
     expect(investmentRow!.manualPricePerUnit).toBe("100");

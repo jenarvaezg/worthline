@@ -43,7 +43,11 @@ import type {
   InvestmentOperation,
   LiquidityTier,
 } from "@worthline/domain";
-import { checkOwnershipSplit, createInvestmentOperationSafe } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  createInvestmentOperationSafe,
+  storedIsinOrNull,
+} from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
 import {
   carry,
@@ -312,7 +316,7 @@ export async function runInvestmentAlta(
   const catalog: ExposureCatalogStubCandidate = {
     displayName: parsed.command.name,
     instrument: ctx.instrument,
-    isin: parsed.command.isin ?? null,
+    isin: storedIsinOrNull(parsed.command.securityId),
     priceProvider: parsed.command.priceProvider ?? null,
     providerSymbol: parsed.command.providerSymbol ?? null,
   };

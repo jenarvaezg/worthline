@@ -9,7 +9,9 @@ import type {
 } from "@worthline/domain";
 import {
   collectWarnings,
+  declaredSecurityId,
   defaultsFor,
+  exposureLookthroughKey,
   listScopeOptions,
   monthlyCloseValuesByHolding,
   netUnitsByAsset,
@@ -407,7 +409,10 @@ async function resolveExposureProfile(
   const meta = (await store.readInvestmentAssetsWithMeta()).find(
     (row) => row.id === internalHoldingId,
   );
-  const key = meta?.isin ?? meta?.providerSymbol ?? null;
+  const key = exposureLookthroughKey({
+    providerSymbol: meta?.providerSymbol ?? null,
+    securityId: declaredSecurityId(meta?.securityId),
+  });
   if (!key) {
     return { profile: null };
   }

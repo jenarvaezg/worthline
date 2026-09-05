@@ -77,7 +77,7 @@ describe("resolvePerHoldingStatementIsinGuard (ADR 0055 one-fund case)", () => {
     expect(
       resolvePerHoldingStatementIsinGuard(
         statementWithIsins(["IE00BYX5NX33", "IE00BYX5NX33"]),
-        "IE00BYX5NX33",
+        { kind: "isin", value: "IE00BYX5NX33" },
       ),
     ).toEqual({ status: "match" });
   });
@@ -86,7 +86,7 @@ describe("resolvePerHoldingStatementIsinGuard (ADR 0055 one-fund case)", () => {
     expect(
       resolvePerHoldingStatementIsinGuard(
         statementWithIsins(["IE00BYX5NX33", "LU0000000009"]),
-        "IE00BYX5NX33",
+        { kind: "isin", value: "IE00BYX5NX33" },
       ),
     ).toEqual({
       fileIsins: ["IE00BYX5NX33", "LU0000000009"],
@@ -110,5 +110,25 @@ describe("resolvePerHoldingStatementIsinGuard (ADR 0055 one-fund case)", () => {
     expect(
       resolvePerHoldingStatementIsinGuard(statementWithIsins(["N5394"]), null),
     ).toEqual({ status: "absent" });
+  });
+
+  // #1743: el hueco lo ocupa el identificador, sea de la clase que sea. Rellenar
+  // aquí borraría el código DGS del plan con el ISIN de un papel que no es suyo.
+  test("a holding identified by its DGS code is never backfilled from a file ISIN", () => {
+    expect(
+      resolvePerHoldingStatementIsinGuard(statementWithIsins(["IE00BYX5NX33"]), {
+        kind: "dgs",
+        value: "N5394",
+      }),
+    ).toEqual({ fileIsins: ["IE00BYX5NX33"], status: "mismatch" });
+  });
+
+  test("a preserved import (kind null) also occupies the hole", () => {
+    expect(
+      resolvePerHoldingStatementIsinGuard(statementWithIsins(["IE00BYX5NX33"]), {
+        kind: null,
+        value: "algo-que-nadie-supo-leer",
+      }),
+    ).toEqual({ fileIsins: ["IE00BYX5NX33"], status: "mismatch" });
   });
 });

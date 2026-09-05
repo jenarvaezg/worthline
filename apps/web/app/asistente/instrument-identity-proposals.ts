@@ -21,6 +21,8 @@ import {
   detectValueOnlyOpening,
   type InstrumentIdentityPatch,
   resolveInstrumentIdentityFill,
+  SECURITY_ID_KIND_LABEL,
+  type StoredSecurityId,
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import type { CorrectionProposalEditRow } from "./correction-proposal-contract";
@@ -54,7 +56,7 @@ export type InstrumentIdentityCorrection =
   | {
       ok: true;
       declaration: InstrumentIdentityPatch;
-      before: { isin: string | null; providerSymbol: string | null };
+      before: { securityId: StoredSecurityId | null; providerSymbol: string | null };
       rows: CorrectionProposalEditRow[];
     };
 
@@ -131,11 +133,11 @@ export async function resolveInstrumentIdentityCorrection(
   }
 
   const rows: CorrectionProposalEditRow[] = [];
-  if (resolved.patch.isin !== undefined) {
+  if (resolved.patch.securityId !== undefined) {
     rows.push({
-      after: resolved.patch.isin,
+      after: resolved.patch.securityId.value,
       before: "—",
-      label: "ISIN",
+      label: SECURITY_ID_KIND_LABEL[resolved.patch.securityId.kind],
       origin: "assistant",
     });
   }
@@ -151,8 +153,8 @@ export async function resolveInstrumentIdentityCorrection(
   return {
     ok: true,
     before: {
-      isin: target.isin ?? null,
       providerSymbol: target.providerSymbol ?? null,
+      securityId: target.securityId ?? null,
     },
     declaration: resolved.patch,
     rows,

@@ -23,6 +23,7 @@ import type { MatchPortfolioHolding } from "@worthline/domain";
 import {
   isClosedPosition,
   netUnitsByAsset,
+  storedIsinOrNull,
   valuationMethodOfAsset,
 } from "@worthline/domain";
 
@@ -83,7 +84,9 @@ export async function projectMatcherPortfolio(
       name: asset.name,
       ...(isClosedPosition(asset, netUnitsByAssetId) ? { closed: true } : {}),
       ...(asset.instrument ? { instrument: asset.instrument } : {}),
-      ...(meta?.isin ? { isin: meta.isin } : {}),
+      ...(storedIsinOrNull(meta?.securityId)
+        ? { isin: storedIsinOrNull(meta?.securityId) as string }
+        : {}),
       ...((asset.providerSymbol ?? meta?.providerSymbol)
         ? { providerSymbol: asset.providerSymbol ?? meta?.providerSymbol ?? null }
         : {}),

@@ -373,10 +373,11 @@ describe("lookThroughExposure", () => {
     ]);
   });
 
-  test("resolves by provider symbol when the isin column holds a non-ISIN (#1453)", () => {
-    // The real case: a pension plan with its DGS code in the isin column. The
-    // catalog registered the profile under the provider symbol (the derivation
-    // validates); the look-through must not search under the garbage value.
+  test("resolves by provider symbol when the row carries no typed identifier (#1453, #1743)", () => {
+    // El estado que sobrevive al tipado: un valor preservado por el restore de
+    // documento (#1416) que no casa ninguna forma conocida, así que la fila no
+    // declara identidad. Es UNA clave por estado, sin cadena de fallback: sin
+    // declaración se busca por el símbolo del proveedor, jamás por el valor crudo.
     const result = lookThroughExposure({
       baseCurrency: "EUR",
       grossAssets: { amountMinor: 90_000, currency: "EUR" },
@@ -385,8 +386,8 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_plan",
           instrument: "pension_plan",
-          isin: "N5394",
           providerSymbol: "N5394-Myinvestor",
+          securityId: null,
           valueMinor: 90_000,
         },
       ],
@@ -396,6 +397,40 @@ describe("lookThroughExposure", () => {
           fixtureProfile({
             breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } },
             key: "N5394-Myinvestor",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.slices).toEqual([
+      { key: "us", value: { amountMinor: 90_000, currency: "EUR" }, weight: "1" },
+    ]);
+    expect(result.geography.coverage.unknown.amountMinor).toBe(0);
+  });
+
+  test("a plan resolves by its DGS key, so two partícipes share one ficha (#1743)", () => {
+    // La prueba del destino de #1741: el identificador nacional tiene rango propio,
+    // así que la ficha del catálogo se busca por `dgs:N5394` y no por el slug del
+    // proveedor —que es distinto en cada comercializadora.
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 90_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_plan",
+          instrument: "pension_plan",
+          providerSymbol: "N5394-Myinvestor",
+          securityId: { kind: "dgs", value: "N5394" },
+          valueMinor: 90_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "dgs:N5394",
+          fixtureProfile({
+            breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } },
+            key: "dgs:N5394",
           }),
         ],
       ]),

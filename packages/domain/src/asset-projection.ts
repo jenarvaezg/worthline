@@ -6,6 +6,7 @@ import type { InvestmentOperation, PositionSummary } from "./investment-types";
 import { deriveInvestmentValuation, selectInvestmentPrice } from "./investment-valuation";
 import { derivePosition } from "./positions";
 import { resolveScopeMemberIds } from "./scope";
+import type { StoredSecurityId } from "./security-id";
 import type { InvestmentCaptureDetail } from "./snapshot-holdings";
 import type {
   AssetType,
@@ -77,11 +78,11 @@ export interface AssetProjectionContext {
    */
   providerSymbolByAsset?: Map<string, string | undefined>;
   /**
-   * The investment's ISIN metadata (ADR 0055), for the `MISSING_INVESTMENT_ISIN`
+   * The investment's typed security id (#1743), for the `MISSING_INVESTMENT_ISIN`
    * signal (#1489). Optional for the same reason as `providerSymbolByAsset`;
-   * absent is read the same as "no ISIN".
+   * absent is read the same as "no identifier".
    */
-  isinByAsset?: Map<string, string | undefined>;
+  securityIdByAsset?: Map<string, StoredSecurityId | undefined>;
 }
 
 /** A derived position plus the asset name, for the dashboard positions table. */
@@ -116,7 +117,7 @@ export function projectAssets(
 ): ManualAsset[] {
   return rows.map((row) => {
     const providerSymbol = ctx.providerSymbolByAsset?.get(row.id);
-    const isin = ctx.isinByAsset?.get(row.id);
+    const securityId = ctx.securityIdByAsset?.get(row.id);
 
     return createManualAsset(workspace, {
       currency: row.currency,
@@ -132,7 +133,7 @@ export function projectAssets(
       type: row.type,
       ...(row.instrument ? { instrument: row.instrument } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
-      ...(isin ? { isin } : {}),
+      ...(securityId ? { securityId } : {}),
       ...(row.connectedSourceId ? { connectedSourceId: row.connectedSourceId } : {}),
       ...(row.availableFrom ? { availableFrom: row.availableFrom } : {}),
       ...(row.contributionLots && row.contributionLots.length > 0

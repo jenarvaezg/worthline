@@ -27,6 +27,7 @@ import {
   isRetiredInvestmentPriceProvider,
   keepsKnownPartialOwnership,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
+  storedIsinOrNull,
   VALUE_ONLY_ACK_LABEL,
   type ValueOnlyOpening,
   valueOnlySymbolFormNotice,
@@ -212,7 +213,9 @@ export function AssetEditForm({
             <input
               aria-label="ISIN"
               autoComplete="off"
-              defaultValue={values["isin"] ?? investment.isin ?? ""}
+              defaultValue={
+                values["isin"] ?? storedIsinOrNull(investment.securityId) ?? ""
+              }
               name="isin"
             />
           </label>

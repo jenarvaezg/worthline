@@ -702,7 +702,7 @@ describe("createHoldingAction — derived investments", () => {
     );
 
     const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
-    expect(meta.isin).toBe("IE00BYX5NX33");
+    expect(meta.securityId).toEqual({ kind: "isin", value: "IE00BYX5NX33" });
     expect(meta.providerSymbol).toBe("0P0001CLDK.F");
   });
 });
