@@ -15,13 +15,18 @@ import collectedItemsFixture from "./__fixtures__/numista/collected-items.json";
 import typeDetailFixture from "./__fixtures__/numista/type-detail.json";
 import typePricesFixture from "./__fixtures__/numista/type-prices.json";
 import {
+  describeNumistaFailure,
   getCollectedItems,
   getPrices,
   getTypeDetail,
+  isNumistaProviderFailure,
   isTokenValid,
   mapCollectedItem,
   mintNumistaToken,
+  NumistaRequestError,
   numismaticEstimateMinor,
+  numistaFailureKind,
+  numistaPricesReader,
 } from "./numista";
 
 // Per Numista's docs, the client_credentials grant authenticates "to your own
@@ -227,5 +232,106 @@ describe("Numista readers — parse the live response shapes (fixtures, spike #1
       grade: "vf",
     };
     expect(mapCollectedItem(noIssue).year).toBeNull();
+  });
+});
+
+/**
+ * Which failures are Numista's and which are the coin's (#1761). A valuation pass
+ * is ~80 sequential estimate reads; once Numista has stopped answering the account
+ * (credentials, quota, its servers) every further read is a request spent for
+ * nothing, so the pass has to tell that apart from "this issue has no estimate".
+ */
+describe("Numista failures — the provider's vs the issue's (#1761)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("getPrices rejects with the HTTP status a non-OK answer carried", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    const failure = await getPrices(creds, 1493, 1).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(NumistaRequestError);
+    expect((failure as NumistaRequestError).status).toBe(404);
+  });
+
+  it("mintNumistaToken rejects with the status too, so a bad key reads as a bad key", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 401 } as Response);
+
+    const failure = await mintNumistaToken(creds, 0).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(NumistaRequestError);
+    expect((failure as NumistaRequestError).status).toBe(401);
+  });
+
+  it("does not retry a 429: the quota is monthly, a second request only spends more of it", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 429 } as Response);
+
+    await expect(getPrices(creds, 1493, 32723)).rejects.toBeInstanceOf(
+      NumistaRequestError,
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies rejected credentials, the quota, server errors and silence as the provider's", () => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      expect(isNumistaProviderFailure(new NumistaRequestError(status, "x"))).toBe(true);
+    }
+    // No HTTP answer at all — a timeout, a DNS failure — is silence, not a verdict
+    // on the coin.
+    expect(isNumistaProviderFailure(new Error("fetch failed"))).toBe(true);
+  });
+
+  it("classifies an answer about the issue itself (404, 400) as the coin's, not the provider's", () => {
+    expect(isNumistaProviderFailure(new NumistaRequestError(404, "x"))).toBe(false);
+    expect(isNumistaProviderFailure(new NumistaRequestError(400, "x"))).toBe(false);
+  });
+
+  // The reader BOTH wirings inject, so the sync and the revalue cannot drift apart
+  // about what a failure means — the drift that left the sync burning the
+  // collection after the revalue had been fixed.
+  it("numistaPricesReader resolves null for an issue Numista has no estimate for", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    await expect(numistaPricesReader(creds)(1493, 1)).resolves.toBeNull();
+  });
+
+  it("numistaPricesReader re-throws when the provider has stopped answering", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 429 } as Response);
+
+    await expect(numistaPricesReader(creds)(1493, 32723)).rejects.toBeInstanceOf(
+      NumistaRequestError,
+    );
+  });
+
+  it("numistaPricesReader passes an answer straight through", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okJson(typePricesFixture));
+
+    const prices = await numistaPricesReader(creds)(1493, 32723);
+
+    expect(prices?.prices).toContainEqual({ grade: "unc", price: 75.585 });
+  });
+
+  it("names the failure kind once, for both the cut decision and the copy", () => {
+    expect(numistaFailureKind(new NumistaRequestError(401, "x"))).toBe("credentials");
+    expect(numistaFailureKind(new NumistaRequestError(429, "x"))).toBe("quota");
+    expect(numistaFailureKind(new NumistaRequestError(502, "x"))).toBe("server");
+    expect(numistaFailureKind(new NumistaRequestError(404, "x"))).toBe("item");
+    expect(numistaFailureKind(new Error("fetch failed"))).toBe("silence");
+  });
+
+  it("describes the failure by what the user can do about it", () => {
+    expect(describeNumistaFailure(new NumistaRequestError(401, "x"))).toMatch(/clave/i);
+    expect(describeNumistaFailure(new NumistaRequestError(403, "x"))).toMatch(/clave/i);
+    expect(describeNumistaFailure(new NumistaRequestError(429, "x"))).toMatch(/cupo/i);
+    expect(describeNumistaFailure(new NumistaRequestError(503, "x"))).toMatch(
+      /servidor/i,
+    );
+    // Anything else keeps the generic sentence the collection page already shows.
+    expect(describeNumistaFailure(new Error("boom"))).toMatch(/colección Numista/);
   });
 });

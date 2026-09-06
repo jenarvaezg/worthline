@@ -6,9 +6,9 @@ import {
 import type { WorthlineStore } from "@worthline/db";
 import {
   fetchMetalSpotEur,
-  getPrices,
   isTokenValid,
   mintNumistaToken,
+  numistaPricesReader,
   REVALUE_CHECKPOINT_COINS,
   refreshCoinValuations,
 } from "@worthline/pricing";
@@ -24,7 +24,10 @@ import { parseNumistaToken, readApiKey } from "./numista-helpers";
  * spot, then persists via the store. Token mint failure / network outage is caught
  * upstream, keeping the last-known value and marking the source stale.
  *
- * Runs on the dashboard load alongside investment prices; `withStore` is sync-only
+ * Runs on the nightly capture's source-sync phase and on the explicit connect /
+ * credentials-change / manual-sync actions — NOT on a dashboard render, which has
+ * been cache-only since #895. That is what keeps the retrying of a failing source
+ * bounded to once per pass (see `isPriceStale`). `withStore` is sync-only
  * so the caller keeps the store open across the awaited network here.
  */
 export async function runNumistaCoinRefresh(
@@ -69,10 +72,13 @@ export async function runNumistaCoinRefresh(
       return refreshCoinValuations(
         positions,
         {
-          prices: (typeId, issueId) =>
-            getPrices(credentials, typeId, issueId)
-              .then((prices) => prices)
-              .catch(() => null),
+          // The shared reader (#1761): a failure about ONE coin resolves to null
+          // and the pass moves on; a provider that has stopped answering (bad
+          // credentials, spent quota, its servers, silence) comes through as a
+          // throw and CUTS the pass, which then keeps what it already paid for
+          // and leaves the source stale (#1739). Both used to be the same `null`,
+          // so a dead provider was asked about all ~80 coins, every night.
+          prices: numistaPricesReader(credentials),
           spotPerOzEur: (metal) => fetchMetalSpotEur(metal, now),
         },
         {

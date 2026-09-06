@@ -7,6 +7,7 @@ import type {
   RevaluePassOutcome,
   RevaluePosition,
 } from "@worthline/pricing";
+import { describeNumistaFailure } from "@worthline/pricing";
 
 /**
  * Coin-valuation refresh orchestration (PRD #160 / #166, ADR 0017).
@@ -33,10 +34,18 @@ import type {
  * coin — 440 `getPrices` calls in one day over 78 coins, with nothing to show.
  *
  * A tranche deliberately does NOT stamp the freshness row (it persists with
- * `null`): the gate reads that row's `fetchedAt` and ignores `freshnessState`, so
- * stamping it mid-pass would make an unfinished collection read as valued today —
- * worst of all on a source that was never valued, where the pass still has every
- * coin to buy. Untouched, the source stays due until the pass actually ends.
+ * `null`): a `fresh` stamp mid-pass would make an unfinished collection read as
+ * valued today — worst of all on a source that was never valued, where the pass
+ * still has every coin to buy. Untouched, the source stays due until the pass
+ * actually ends.
+ *
+ * And a pass stops paying once Numista has stopped answering (#1761). The wiring
+ * lets a provider-level failure — rejected credentials, the quota, its servers,
+ * silence — through to the pass instead of reading it as "no estimate for this
+ * coin", so the pass ends there: what it bought is kept, the source is left
+ * `stale` with the reason in the user's words, and the next pass retries. The gate
+ * honours that `stale` whatever the row's date, which is what keeps a never-valued
+ * source due after its first pass fails (its failure row can only be dated now).
  *
  * Pure orchestration: the store reads/writes and the Numista/Yahoo network are
  * injected, so the gate and outage paths are testable without I/O.
@@ -129,7 +138,7 @@ export async function refreshStaleCoinValuations(
     // stays inside the try: a failed write is a failed refresh too, and is reported
     // as one below instead of escaping.
     let updates: RevaluedPosition[] = [];
-    let failureMessage: string;
+    let failure: unknown;
     try {
       const outcome = await input.revalue(
         source.sourceId,
@@ -145,23 +154,25 @@ export async function refreshStaleCoinValuations(
         });
         continue;
       }
-      failureMessage = outcome.error.message;
+      failure = outcome.error;
     } catch (err) {
-      failureMessage = messageOf(err);
+      failure = err;
     }
 
     // Outage / bad credentials: persist the coins the pass DID resolve (their
     // estimates are already paid for), keep the last-known value for the rest, and
     // mark the source stale — leaving the prior fetched-at so the next pass retries,
-    // now starting from those stamps. The reason rides the banner via `errors`.
-    errors.push(failureMessage);
+    // now starting from those stamps. The technical message rides `errors` (the
+    // maintainer alert); the row gets the reason in the user's words (#1761).
+    errors.push(messageOf(failure));
     try {
       await input.persist(source.sourceId, updates, {
-        // The prior stamp, so the source stays stale and the next pass retries.
+        // The prior stamp, so the source stays stale and the next pass retries. A
+        // never-valued source has none, so its row is dated now — the gate honours
+        // the `stale` word regardless (#1761), so it stays due all the same.
         fetchedAt: source.freshness?.fetchedAt ?? input.nowIso,
         freshnessState: "stale",
-        staleReason:
-          "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
+        staleReason: describeNumistaFailure(failure),
       });
     } catch (err) {
       // The store itself is unwell (this is also the retry of a happy-path write

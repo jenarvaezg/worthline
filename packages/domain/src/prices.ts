@@ -191,12 +191,31 @@ export function selectStalePrices(
 }
 
 /**
- * Whether a single source's valuation needs refreshing: never valued, or past
- * the per-source TTL (`selectStalePrices`' canonical rule applied to one row).
- * Shared by the connected-source refreshers (Numista, Binance) so the gate is
- * the same single staleness rule.
+ * Whether a connected source's valuation needs refreshing: never valued, marked
+ * `stale` by a failed refresh, or past the per-source TTL (`selectStalePrices`'
+ * canonical rule applied to one row). Shared by the connected-source refreshers
+ * (Numista, Binance) so they gate on one rule.
+ *
+ * The `stale` clause is the connected-source refreshers' own (#1761). Their failure
+ * path stamps `stale` with whatever fetched-at the row already had — and on a
+ * source that was never valued that is "now", so by age alone the row read fresh
+ * for a whole TTL: connect Numista, watch the first pass fail, and the collection
+ * sat unvalued for a day while the row said «Desactualizado». Honouring the word
+ * keeps the source due until a pass actually finishes.
+ *
+ * What bounds the retrying: only the nightly capture and the explicit
+ * connect/sync actions run these refreshers — never a dashboard render — so a
+ * source stuck failing is retried once per pass, not once per page view. On the
+ * Numista side the pass ALSO bounds its own cost (a provider that has stopped
+ * answering costs one request, not the collection); the Binance refresher has no
+ * such classification, so a source it cannot read costs one account read per pass.
+ *
+ * `selectStalePrices` deliberately does NOT take this clause: the investment-price
+ * pass marks a KEPT price `stale` with a fresh date precisely so that price
+ * retries once per TTL, and it runs on surfaces this gate does not.
  */
 export function isPriceStale(freshness: AssetPrice | null, nowIso: string): boolean {
   if (freshness === null) return true;
+  if (freshness.freshnessState === "stale") return true;
   return selectStalePrices([freshness], nowIso).length > 0;
 }

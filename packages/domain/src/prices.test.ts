@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { AssetPrice } from "./prices";
 import {
   getPriceFreshness,
+  isPriceStale,
   isProviderSymbolShaped,
   PRICE_TTL_DAYS,
   selectStalePrices,
@@ -170,6 +171,40 @@ describe("selectStalePrices (per-source TTL)", () => {
 
     const fresh = makeEntry({ source: "numista", fetchedAt: "2026-06-09T08:00:00Z" });
     expect(selectStalePrices([fresh], "2026-06-09T10:00:00Z")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPriceStale — the connected-source gate (Numista / Binance)
+// ---------------------------------------------------------------------------
+
+describe("isPriceStale (connected-source gate)", () => {
+  const NOW = "2026-06-09T10:00:00Z";
+
+  test("a source never valued (no row) is due", () => {
+    expect(isPriceStale(null, NOW)).toBe(true);
+  });
+
+  test("a fresh row past the daily TTL is due; one stamped today is not", () => {
+    const lapsed = makeEntry({ source: "numista", fetchedAt: "2026-06-08T09:00:00Z" });
+    const today = makeEntry({ source: "numista", fetchedAt: "2026-06-09T08:00:00Z" });
+
+    expect(isPriceStale(lapsed, NOW)).toBe(true);
+    expect(isPriceStale(today, NOW)).toBe(false);
+  });
+
+  // #1761: a failed refresh stamps `stale` with whatever fetched-at it has, and on a
+  // source that was never valued that is "now". Judged by age alone the row read
+  // fresh for a whole day — hiding the one pass with every coin still to buy.
+  test("a row a failed refresh marked stale is due whatever its age", () => {
+    const failedToday = makeEntry({
+      source: "numista",
+      fetchedAt: NOW,
+      freshnessState: "stale",
+      staleReason: "Numista rechazó la clave.",
+    });
+
+    expect(isPriceStale(failedToday, NOW)).toBe(true);
   });
 });
 

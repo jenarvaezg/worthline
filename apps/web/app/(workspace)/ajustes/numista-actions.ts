@@ -13,10 +13,10 @@ import type { CoinPosition } from "@worthline/domain";
 import {
   fetchMetalSpotEur,
   getCollectedItems,
-  getPrices,
   getTypeDetail,
   isTokenValid,
   mintNumistaToken,
+  numistaPricesReader,
   syncedCoinFromPosition,
   syncNumistaCollection,
 } from "@worthline/pricing";
@@ -348,10 +348,12 @@ export async function syncNumistaAction(
       {
         listItems: () => getCollectedItems(creds, bound.accessToken, bound.userId),
         typeDetail: (typeId) => getTypeDetail(creds, typeId),
-        prices: (typeId, issueId) =>
-          getPrices(creds, typeId, issueId)
-            .then((prices) => prices)
-            .catch(() => null),
+        // The same shared reader the daily revalue injects (#1761): an issue with
+        // no estimate resolves to null and the sync moves on, but a provider that
+        // has stopped answering throws — and the catch below turns that into the
+        // "no se pudo sincronizar" redirect instead of walking every remaining
+        // coin to collect ~78 silences and call the sync a success.
+        prices: numistaPricesReader(creds),
         spotPerOzEur: (metal) => fetchMetalSpotEur(metal, nowIso),
       },
       nowIso,

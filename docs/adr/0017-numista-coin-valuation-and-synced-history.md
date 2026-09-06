@@ -157,15 +157,46 @@ refreshes, comfortably under the cap.
     nearly unreachable.
 
     A tranche persists with a **null freshness**: the values land and the holding is
-    re-rolled, but the price-cache row is not stamped at all. The gate reads that
-    row's `fetchedAt` and ignores `freshnessState` (`selectStalePrices`), so any
-    stamp mid-pass would make an unfinished collection read as valued today — worst
-    on a never-valued source, the pass with every coin still to buy — and it would
-    also erase the previous failure's reason from the banner. Untouched, the source
-    stays due until the pass actually ends.
+    re-rolled, but the price-cache row is not stamped at all. A `fresh` stamp
+    mid-pass would make an unfinished collection read as valued today — worst on a
+    never-valued source, the pass with every coin still to buy — and it would also
+    erase the previous failure's reason from the banner. Untouched, the source stays
+    due until the pass actually ends.
 
   Measured on Jose's 78 priced coins: **440 `getPrices` calls on 2026-08-11 alone**,
   ~5.6 passes over the same collection in one day, with not one stamp surviving.
+- **A pass stops paying once Numista has stopped answering** (#1761). The
+  symmetric case of #1739: a revoked key (401/403), an exhausted quota (429) or a
+  server error that survived its retries (5xx) used to resolve to the same `null` as
+  "this issue has no estimate", so the pass asked about every remaining coin — ~78
+  mute calls a night, no stamp moving, the pass ending `fresh`, and the same again
+  the next night. The worst case for the cap was the one that spent the whole
+  collection for nothing. Now the Numista client types its failures with the HTTP
+  status (`NumistaRequestError`) and `numistaFailureKind` names it once, for both
+  the cut decision and the user-facing sentence: an answer about the item (404,
+  400) is the coin's and the pass moves on; anything else — credentials, quota,
+  5xx, and silence (no HTTP answer at all) — is the provider's and goes through,
+  cutting the pass. **A 400 is deliberately the item's**, even though a systematic
+  400 would spend the collection once per pass: cutting on it would be worse, since
+  one stored issue id Numista will not accept would abort every pass at the same
+  coin, forever, and the collection would never finish being valued.
+
+  Both wirings inject ONE reader (`numistaPricesReader`) — the on-demand sync and
+  the daily revalue — so they cannot drift apart about what a failure means, which
+  is exactly how the sync was left burning the collection after the revalue had
+  been fixed. Cutting is safe because of #1739: what the pass bought is kept, and
+  the source is left `stale` with the reason in the user's words
+  (`describeNumistaFailure`). A
+  429 is also no longer retried: the quota is monthly, so a backoff of 400 ms only
+  spends a second request to earn the same answer.
+- **The connected-source gate honours `stale`** (#1761). `isPriceStale` — the gate
+  the Numista and Binance refreshers share — treats a row a failed refresh marked
+  `stale` as due whatever its date. The failure path carries the row's prior
+  fetched-at, and a never-valued source has none, so its failure row could only be
+  dated now; judged by age alone it read fresh for a whole TTL, and the collection
+  sat unvalued for a day while the row said «Desactualizado». `selectStalePrices`
+  deliberately does not take this clause: the investment-price pass marks a kept
+  price `stale` with a fresh date precisely so it retries once per TTL.
 - The spot provider's coverage of platinum/palladium must be verified whenever it
   changes (`PL=F`/`PA=F` verified on Yahoo 2026-07-30); base-metal circulation
   coins lean on the numismatic estimate or the purchase-price fallback.

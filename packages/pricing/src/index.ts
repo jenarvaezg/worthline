@@ -319,18 +319,24 @@ export type {
   CollectedItemDraft,
   NumistaCollectedItem,
   NumistaCredentials,
+  NumistaFailureKind,
   NumistaPriceEntry,
   NumistaPrices,
   NumistaToken,
   NumistaTypeDetail,
 } from "./numista";
 export {
+  describeNumistaFailure,
   getCollectedItems,
   getPrices,
   getTypeDetail,
+  isNumistaProviderFailure,
   isTokenValid,
   mapCollectedItem,
   mintNumistaToken,
+  NumistaRequestError,
+  numistaFailureKind,
+  numistaPricesReader,
 } from "./numista";
 export type {
   NumistaSyncDeps,
