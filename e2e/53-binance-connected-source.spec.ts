@@ -1,5 +1,5 @@
 /**
- * Journey 31: Binance connected source, end to end (PRD #245 S7, #252, ADR 0021).
+ * Journey 53: Binance connected source, end to end (PRD #245 S7, #252, ADR 0021).
  *
  * Against a stubbed Binance + CoinGecko API (e2e/fake-binance-server.mjs, wired in
  * via WORTHLINE_BINANCE_BASE_URL / WORTHLINE_COINGECKO_BASE_URL — the connect/sync

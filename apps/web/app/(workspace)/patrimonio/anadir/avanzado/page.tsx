@@ -135,7 +135,7 @@ function tierVar(instrument: Instrument): string {
   return `var(--tier-${defaultsFor(instrument).rung})`;
 }
 
-export default function AnadirHoldingPage({
+export default function AnadirAvanzadoPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
