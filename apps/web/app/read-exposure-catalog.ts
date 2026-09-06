@@ -1,9 +1,11 @@
-import type { BenchmarkPriceCache, ExposureProfileCatalog } from "@worthline/db";
 import type { ExposureCatalogAvailability, ExposureProfile } from "@worthline/domain";
 import { exposureProfileLookthroughMap } from "@worthline/domain";
 
 import { withOptionalControlPlaneStore } from "./control-plane-store";
-import { createControlPlaneReferenceDataReaders } from "./reference-data-readers";
+import {
+  createControlPlaneReferenceDataReaders,
+  type ReferenceDataStore,
+} from "./reference-data-readers";
 
 /**
  * Global exposure-profile catalog reader (PRD #711 S3, boundary #943). Reads the
@@ -21,8 +23,7 @@ export async function readExposureCatalogFromControlPlane(): Promise<ExposureCat
   try {
     const availability = await withOptionalControlPlaneStore<
       ExposureCatalogAvailability,
-      Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
-        Pick<BenchmarkPriceCache, "readBenchmarkPrices">
+      ReferenceDataStore
     >(async (store) => {
       const readers = createControlPlaneReferenceDataReaders(store);
       return await readers.exposureCatalogReader.readCatalog();

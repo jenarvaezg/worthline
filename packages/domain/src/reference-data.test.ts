@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type {
-  BenchmarkSeriesAvailability,
-  ExposureCatalogAvailability,
-} from "./reference-data";
+import type { ExposureCatalogAvailability } from "./reference-data";
 
 describe("reference data availability (#943)", () => {
   test("available catalog with profiles is distinct from unavailable read_failed", () => {
@@ -19,14 +16,5 @@ describe("reference data availability (#943)", () => {
     expect(available.status).toBe("available");
     expect(failed.status).toBe("unavailable");
     expect(failed.reason).toBe("read_failed");
-  });
-
-  test("benchmark series mirrors the same unavailable reasons", () => {
-    const notConfigured: BenchmarkSeriesAvailability = {
-      status: "unavailable",
-      reason: "not_configured",
-    };
-
-    expect(notConfigured.reason).toBe("not_configured");
   });
 });

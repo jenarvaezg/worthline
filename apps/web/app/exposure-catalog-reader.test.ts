@@ -75,13 +75,9 @@ describe("exposure catalog reader (#1011)", () => {
 
 describe("control-plane exposure catalog reader (#1011)", () => {
   const readGlobalExposureProfiles = vi.fn();
-  const readBenchmarkPrices = vi.fn();
-  const close = vi.fn();
 
   beforeEach(() => {
     readGlobalExposureProfiles.mockReset();
-    readBenchmarkPrices.mockReset();
-    close.mockReset();
   });
 
   afterEach(() => {
@@ -92,9 +88,7 @@ describe("control-plane exposure catalog reader (#1011)", () => {
     readGlobalExposureProfiles.mockResolvedValue([sampleProfile]);
     const readers = createControlPlaneReferenceDataReaders({
       readGlobalExposureProfiles,
-      readBenchmarkPrices,
-      close,
-    } as never);
+    });
 
     const first = await readers.exposureCatalogReader.readCatalog();
     const second = await readers.exposureCatalogReader.readCatalog();
@@ -108,9 +102,7 @@ describe("control-plane exposure catalog reader (#1011)", () => {
     readGlobalExposureProfiles.mockRejectedValue(new Error("transient"));
     const readers = createControlPlaneReferenceDataReaders({
       readGlobalExposureProfiles,
-      readBenchmarkPrices,
-      close,
-    } as never);
+    });
 
     await expect(readers.exposureCatalogReader.readCatalog()).resolves.toEqual({
       status: "unavailable",
