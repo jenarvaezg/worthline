@@ -54,7 +54,7 @@ import {
   type MoversDataByPeriod,
   parseMoversPeriod,
 } from "./movers-data";
-import { ONBOARDING_LINKS } from "./onboarding-links";
+import OnboardingChecklist from "./onboarding-checklist";
 import PrivacyToggle from "./privacy-toggle";
 import { readBenchmarkPricesFromControlPlane } from "./read-benchmark-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
@@ -420,8 +420,6 @@ export default async function DashboardContent({
     label: tab.label,
   }));
 
-  const anyStepPending = onboarding.some((step) => !step.done);
-
   const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
   const tierPercents = largestRemainderPercentages(tierBpsValues);
   const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
@@ -638,30 +636,7 @@ export default async function DashboardContent({
           )}
         </section>
 
-        {anyStepPending ? (
-          <section className="onboardingChecklist section" aria-label="Primeros pasos">
-            <div className="panelHeader">
-              <h2>Primeros pasos</h2>
-              <span>Empieza aquí</span>
-            </div>
-            <ol>
-              {onboarding.map((step) => {
-                const href = ONBOARDING_LINKS[step.id];
-                return (
-                  <li className={step.done ? "done" : undefined} key={step.id}>
-                    {step.done ? (
-                      <span>✓ {step.label}</span>
-                    ) : href ? (
-                      <Link href={href}>○ {step.label}</Link>
-                    ) : (
-                      <span>○ {step.label}</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        ) : null}
+        <OnboardingChecklist onboarding={onboarding} />
       </div>
     </>
   );

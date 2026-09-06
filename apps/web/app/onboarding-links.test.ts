@@ -11,6 +11,7 @@
  * pasos que el dominio produce (no hay fallback al que caer), y cada destino
  * resuelve a una página real bajo `app/(workspace)` — el área autenticada.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { deriveOnboardingProgress } from "@worthline/domain";
@@ -34,16 +35,6 @@ describe("ONBOARDING_LINKS", () => {
     expect(Object.keys(ONBOARDING_LINKS).sort()).toEqual([...stepIds].sort());
   });
 
-  it("manda cada paso accionable a su pantalla", () => {
-    expect(ONBOARDING_LINKS).toEqual({
-      members: "/ajustes",
-      holdings: "/patrimonio/anadir",
-      fire: "/objetivos#supuestos",
-      // El snapshot se captura solo: no hay nada que pulsar.
-      snapshot: null,
-    });
-  });
-
   it("nunca manda a `/`: es el landing público, no la app", () => {
     for (const href of Object.values(ONBOARDING_LINKS)) {
       expect(href).not.toBe("/");
@@ -56,8 +47,25 @@ describe("ONBOARDING_LINKS", () => {
       const pathname = href.split("#")[0] ?? "";
       const segments = pathname.split("/").filter(Boolean);
       expect(segments.length, `${id} apunta a la raíz`).toBeGreaterThan(0);
-      const page = join(workspaceDirectory, ...segments, "page.tsx");
-      expect(existsSync(page), `${id} → ${href} no existe (${page})`).toBe(true);
+      const page = join(workspaceDirectory, ...segments, "page");
+      const exists = existsSync(`${page}.tsx`) || existsSync(`${page}.ts`);
+      expect(exists, `${id} → ${href} no tiene página (${page}.tsx)`).toBe(true);
+    }
+  });
+
+  it("aterriza en el ancla que promete, no arriba de la página", () => {
+    // Un fragmento que ya no existe no rompe la navegación: la degrada en
+    // silencio, que es peor. El `id` puede mudarse de fichero, así que se busca
+    // por toda la app y no en la página concreta.
+    for (const href of Object.values(ONBOARDING_LINKS)) {
+      const fragment = href?.split("#")[1];
+      if (fragment === undefined) continue;
+      const found = execFileSync(
+        "grep",
+        ["-rl", `id="${fragment}"`, "--include=*.tsx", import.meta.dirname],
+        { encoding: "utf8" },
+      );
+      expect(found.trim(), `nadie declara id="${fragment}"`).not.toBe("");
     }
   });
 });

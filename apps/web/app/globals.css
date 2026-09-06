@@ -2890,6 +2890,14 @@ code {
   text-decoration: underline;
 }
 
+/* Un paso pendiente sin nada que pulsar (#1702). El azul del enlace no puede
+   ser la única señal de que los demás sí se pulsan, así que este baja de peso:
+   sigue siendo texto pleno —no está hecho, no va en `--muted`— pero deja de
+   competir en prominencia con las acciones reales. */
+.onboardingChecklist ol .info {
+  font-weight: 400;
+}
+
 /* === end #56 resumen === */
 
 /* /objetivos page (PRD #507, S2 #510) ─────────────────────────────────── */

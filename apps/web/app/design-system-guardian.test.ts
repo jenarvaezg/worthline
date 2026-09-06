@@ -390,15 +390,21 @@ describe("Libro mayor design-system guardian (#906)", () => {
   test("the Resumen reference surface consumes the canonical primitives", () => {
     const dashboard = readFileSync(join(appDirectory, "dashboard-content.tsx"), "utf8");
 
-    for (const className of [
-      "summaryBand heroPanel",
-      "emptyDashCta section",
-      "liquidityPanel section",
-      "historyPanel section",
-      "firePanel section",
-      "onboardingChecklist section",
-    ]) {
-      expect(dashboard, className).toContain(`className=\"${className}\"`);
+    // Fichero por receta: la superficie es el Resumen, pero una sección puede
+    // vivir en su propio componente (el checklist se extrajo en #1702) sin que
+    // eso signifique que la receta se haya perdido.
+    const expectations: Array<[file: string, className: string]> = [
+      ["dashboard-content.tsx", "summaryBand heroPanel"],
+      ["dashboard-content.tsx", "emptyDashCta section"],
+      ["dashboard-content.tsx", "liquidityPanel section"],
+      ["dashboard-content.tsx", "historyPanel section"],
+      ["dashboard-content.tsx", "firePanel section"],
+      ["onboarding-checklist.tsx", "onboardingChecklist section"],
+    ];
+
+    for (const [file, className] of expectations) {
+      const source = readFileSync(join(appDirectory, file), "utf8");
+      expect(source, `${file} :: ${className}`).toContain(`className="${className}"`);
     }
     expect(dashboard).toContain('className={hasHoldings ? "totalRule"');
     expect(dashboard).toContain('className="debitCol"');
