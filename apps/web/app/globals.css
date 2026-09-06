@@ -2877,7 +2877,8 @@ code {
   text-decoration: underline;
 }
 
-/* Onboarding checklist: pending steps are links, done steps are plain text. */
+/* Onboarding checklist: a pending step is a link when there is somewhere to go;
+   done steps — and the purely informational one (#1702) — are plain text. */
 .onboardingChecklist ol a {
   color: var(--blue);
   font-size: 0.9rem;
