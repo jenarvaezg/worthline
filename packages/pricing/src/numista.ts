@@ -16,9 +16,100 @@
  * added against the committed S0 fixtures (spike #161).
  */
 
-import { fetchHttpWithRetry } from "./fetch-with-retry";
+import {
+  fetchHttpWithRetry,
+  TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT,
+} from "./fetch-with-retry";
 
 const NUMISTA_BASE = "https://api.numista.com/v3";
+
+/**
+ * A non-2xx answer from Numista, carrying the status so the caller can tell WHAT
+ * failed (#1761): the request it made, or the account it made it from. A plain
+ * `Error` collapsed both into one message, which the valuation wiring then
+ * collapsed further into `null` — and a dead provider was asked about every coin.
+ */
+export class NumistaRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "NumistaRequestError";
+  }
+}
+
+/**
+ * What a failed Numista read was really about (#1761) — the ONE classification
+ * both the cut decision and the user-facing sentence read, so the two can never
+ * disagree about the same status.
+ *
+ * - `credentials` (401/403) — Numista refuses this account.
+ * - `quota` (429) — the account's monthly request budget is spent (ADR 0017).
+ * - `server` (5xx that survived its retries) — Numista itself is unwell.
+ * - `silence` — no HTTP answer at all: a timeout, a DNS failure, a body that did
+ *   not parse. Nothing was said about the item, so nothing can be concluded from it.
+ * - `item` — an answer ABOUT the thing asked for: 404 for an issue Numista does
+ *   not know, 400 for an id it will not accept.
+ *
+ * Every kind but `item` means no later read will be answered either.
+ */
+export type NumistaFailureKind = "credentials" | "quota" | "server" | "silence" | "item";
+
+export function numistaFailureKind(err: unknown): NumistaFailureKind {
+  if (!(err instanceof NumistaRequestError)) {
+    return "silence";
+  }
+  if (err.status === 401 || err.status === 403) {
+    return "credentials";
+  }
+  if (err.status === 429) {
+    return "quota";
+  }
+  if (err.status >= 500) {
+    return "server";
+  }
+  return "item";
+}
+
+/**
+ * Whether a failed Numista read is the PROVIDER's — Numista has stopped answering
+ * this account — rather than an answer about the one item asked for (#1761). Every
+ * further read after a provider failure is a request spent for nothing, so a
+ * valuation pass stops paying; an item failure only means that coin has no
+ * estimate, and the pass moves on to the next one.
+ *
+ * A 400 counts as the ITEM's, deliberately, even though a systematic 400 (a
+ * renamed query param on our side) would then spend the collection once per pass
+ * — the very smell #1761 is about. Cutting on it would be worse: a single stored
+ * issue id Numista will not accept would abort every pass at the same coin,
+ * forever, and the collection would never finish being valued. A wrong request
+ * shape is a bug to fix, not a budget to defend against.
+ */
+export function isNumistaProviderFailure(err: unknown): boolean {
+  return numistaFailureKind(err) !== "item";
+}
+
+/**
+ * The reason a failed valuation pass leaves on the collection's freshness row
+ * (#1761), in the user's words: what happened, and what they can do about it. The
+ * collection page and the connections page show it verbatim.
+ */
+const FAILURE_COPY: Record<NumistaFailureKind, string> = {
+  credentials:
+    "Numista rechazó la clave de API de la colección. Revísala en Ajustes → Conexiones.",
+  quota:
+    "Se ha agotado el cupo mensual de peticiones a Numista. La valoración se reintentará en la próxima pasada.",
+  server:
+    "Numista no responde (error de su servidor). La valoración se reintentará en la próxima pasada.",
+  silence:
+    "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
+  item: "No se pudo actualizar la valoración de la colección Numista (revisa la conexión).",
+};
+
+export function describeNumistaFailure(err: unknown): string {
+  return FAILURE_COPY[numistaFailureKind(err)];
+}
 
 /** Re-mint when fewer than this many ms remain, so a sync never races expiry. */
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
@@ -66,17 +157,27 @@ export async function mintNumistaToken(
   // Retriable: `client_credentials` carries no nonce and no timestamp, so a
   // re-presented mint is the same request, not a stale one (contrast the signed
   // Binance calls). A blip here otherwise fails a whole collection sync.
-  const res = await fetchHttpWithRetry(`${NUMISTA_BASE}/oauth_token`, {
-    method: "POST",
-    headers: {
-      "Numista-API-Key": credentials.apiKey,
-      "Content-Type": "application/x-www-form-urlencoded",
+  const res = await fetchHttpWithRetry(
+    `${NUMISTA_BASE}/oauth_token`,
+    {
+      method: "POST",
+      headers: {
+        "Numista-API-Key": credentials.apiKey,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
     },
-    body: body.toString(),
-  });
+    // Numista's quota is MONTHLY (2,000 requests, ADR 0017), so a 429 never clears
+    // inside a 200/400 ms backoff: retrying it spends a second request to earn the
+    // same answer (#1761). Server errors and timeouts still get their attempts.
+    { retryStatuses: TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT },
+  );
 
   if (!res.ok) {
-    throw new Error(`Numista token mint failed (HTTP ${res.status}).`);
+    throw new NumistaRequestError(
+      res.status,
+      `Numista token mint failed (HTTP ${res.status}).`,
+    );
   }
 
   const data = (await res.json()) as TokenResponse;
@@ -144,9 +245,19 @@ async function numistaGet<T>(path: string, apiKey: string, token?: string): Prom
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const res = await fetchHttpWithRetry(`${NUMISTA_BASE}${path}`, { headers });
+  const res = await fetchHttpWithRetry(
+    `${NUMISTA_BASE}${path}`,
+    { headers },
+    // Numista's quota is MONTHLY (2,000 requests, ADR 0017), so a 429 never clears
+    // inside a 200/400 ms backoff: retrying it spends a second request to earn the
+    // same answer (#1761). Server errors and timeouts still get their attempts.
+    { retryStatuses: TRANSIENT_HTTP_STATUSES_EXCEPT_RATE_LIMIT },
+  );
   if (!res.ok) {
-    throw new Error(`Numista GET ${path} failed (HTTP ${res.status}).`);
+    throw new NumistaRequestError(
+      res.status,
+      `Numista GET ${path} failed (HTTP ${res.status}).`,
+    );
   }
   return (await res.json()) as T;
 }
@@ -202,6 +313,31 @@ export async function getPrices(
     `/types/${typeId}/issues/${issueId}/prices?currency=EUR&lang=${LANG}`,
     credentials.apiKey,
   );
+}
+
+/**
+ * The estimate reader BOTH valuation wirings inject — the on-demand collection
+ * sync and the daily revalue (#1761). One reader, so the two can never again
+ * disagree about what a failure means.
+ *
+ * It resolves `null` for a failure ABOUT THIS COIN (Numista has no estimate for
+ * the issue, or will not accept the id): that is a legitimate answer, and the
+ * caller moves on to the next coin. Anything else — rejected credentials, the
+ * spent quota, Numista's own errors, silence — it RE-THROWS, because no later
+ * read will be answered either and the caller must stop paying. Collapsing both
+ * into `null` is what had a dead provider asked about all ~78 coins, every night,
+ * for nothing.
+ */
+export function numistaPricesReader(
+  credentials: NumistaCredentials,
+): (typeId: number, issueId: number) => Promise<NumistaPrices | null> {
+  return (typeId, issueId) =>
+    getPrices(credentials, typeId, issueId).catch((err: unknown) => {
+      if (isNumistaProviderFailure(err)) {
+        throw err;
+      }
+      return null;
+    });
 }
 
 /**

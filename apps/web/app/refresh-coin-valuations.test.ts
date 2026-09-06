@@ -11,7 +11,7 @@ import type { ValuationFreshness } from "@worthline/db";
 import type { AssetPrice, CoinPosition } from "@worthline/domain";
 import { isPriceStale } from "@worthline/domain";
 import type { RevaluedPosition } from "@worthline/pricing";
-import { refreshCoinValuations } from "@worthline/pricing";
+import { NumistaRequestError, refreshCoinValuations } from "@worthline/pricing";
 import { describe, expect, it, vi } from "vitest";
 import type { CoinSourceRef } from "./refresh-coin-valuations";
 import { refreshStaleCoinValuations } from "./refresh-coin-valuations";
@@ -283,6 +283,54 @@ describe("refreshStaleCoinValuations", () => {
       }),
     );
     expect(result.errors.length).toBe(1);
+  });
+
+  // #1761: with no prior stamp to carry, the failure row is dated NOW and says
+  // `stale`. Judged by age alone it read fresh for a day — on the one source with
+  // every coin still to buy — so the gate has to honour the word, not the date.
+  it("leaves a never-valued source due when its first pass fails", async () => {
+    const d = deps({
+      sources: [{ sourceId: "src-1", freshness: null }] satisfies CoinSourceRef[],
+      revalue: vi.fn(async () => {
+        throw new Error("Numista unreachable");
+      }),
+    });
+
+    await refreshStaleCoinValuations(d);
+
+    const [, , written] = d.persist.mock.calls[0]!;
+    expect(written).toMatchObject({ fetchedAt: NOW, freshnessState: "stale" });
+    const row = freshness({
+      fetchedAt: written.fetchedAt,
+      freshnessState: written.freshnessState,
+    });
+    expect(isPriceStale(row, NOW)).toBe(true);
+  });
+
+  it("writes the reason Numista gave on the stale row — the quota, in the user's words", async () => {
+    const twoDaysAgo = "2026-06-13T12:00:00.000Z";
+    const d = deps({
+      sources: [
+        { sourceId: "src-1", freshness: freshness({ fetchedAt: twoDaysAgo }) },
+      ] satisfies CoinSourceRef[],
+      revalue: vi.fn(async () => ({
+        error: new NumistaRequestError(429, "Numista GET /prices failed (HTTP 429)."),
+        updates: [],
+      })),
+    });
+
+    const result = await refreshStaleCoinValuations(d);
+
+    expect(d.persist).toHaveBeenCalledWith(
+      "src-1",
+      [],
+      expect.objectContaining({
+        freshnessState: "stale",
+        staleReason: expect.stringMatching(/cupo/i),
+      }),
+    );
+    // The technical message still rides `errors`, for the maintainer alert.
+    expect(result.errors).toEqual(["Numista GET /prices failed (HTTP 429)."]);
   });
 });
 

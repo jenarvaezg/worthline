@@ -126,12 +126,12 @@ export interface ConnectedSourceStore {
    *
    * `freshness: null` banks a MID-PASS tranche (#1739): the coin values land and
    * the holding is re-rolled, but the freshness row is left exactly as it was. It
-   * has to be: the row's `fetchedAt` is what the staleness gate reads (it ignores
-   * `freshnessState` — see `selectStalePrices`), so stamping it with "now" halfway
-   * through would make an unfinished collection read as valued today. On a source
-   * that was never valued that is the most expensive case there is — the pass with
-   * every coin still to buy — and it would also erase the prior failure's reason
-   * from the banner. An untouched row keeps the source due until the pass ends.
+   * has to be: a `fresh` stamp dated "now" halfway through would make an
+   * unfinished collection read as valued today (the gate, `isPriceStale`, honours a
+   * `stale` word but reads a `fresh` row by its date). On a source that was never
+   * valued that is the most expensive case there is — the pass with every coin
+   * still to buy — and it would also erase the prior failure's reason from the
+   * banner. An untouched row keeps the source due until the pass ends.
    */
   revaluePositions(
     sourceId: string,
