@@ -1036,9 +1036,6 @@ export {
   usableCachedPrice,
 } from "./prices";
 export type {
-  BenchmarkSeriesAvailability,
-  BenchmarkSeriesPricePoint,
-  BenchmarkSeriesReader,
   ExposureCatalogAvailability,
   ExposureCatalogReader,
   ReferenceDataReaders,

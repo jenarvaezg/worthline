@@ -1,22 +1,23 @@
-import type { BenchmarkPriceCache, ExposureProfileCatalog } from "@worthline/db";
+import type { ExposureProfileCatalog } from "@worthline/db";
 import type {
-  BenchmarkSeriesAvailability,
-  BenchmarkSeriesReader,
   ExposureCatalogAvailability,
   ExposureCatalogReader,
   ReferenceDataReaders,
   ReferenceDataUnavailableReason,
 } from "@worthline/domain";
 
+/**
+ * The slice of the control plane the reference readers read. Only the exposure
+ * catalog since #1750: benchmark series go through `read-benchmark-prices.ts`.
+ */
+export type ReferenceDataStore = Pick<
+  ExposureProfileCatalog,
+  "readGlobalExposureProfiles"
+>;
+
 function unavailableCatalog(
   reason: ReferenceDataUnavailableReason,
 ): ExposureCatalogAvailability {
-  return { status: "unavailable", reason };
-}
-
-function unavailableSeries(
-  reason: ReferenceDataUnavailableReason,
-): BenchmarkSeriesAvailability {
   return { status: "unavailable", reason };
 }
 
@@ -28,28 +29,16 @@ export function createFixedExposureCatalogReader(
   };
 }
 
-export function createFixedBenchmarkSeriesReader(
-  read: (seriesId: string) => Promise<BenchmarkSeriesAvailability>,
-): BenchmarkSeriesReader {
-  return {
-    readSeries: read,
-  };
-}
-
 export function createUnavailableReferenceDataReaders(
   reason: ReferenceDataUnavailableReason,
 ): ReferenceDataReaders {
-  const catalog = unavailableCatalog(reason);
-  const series = unavailableSeries(reason);
   return {
-    exposureCatalogReader: createFixedExposureCatalogReader(catalog),
-    benchmarkSeriesReader: createFixedBenchmarkSeriesReader(async () => series),
+    exposureCatalogReader: createFixedExposureCatalogReader(unavailableCatalog(reason)),
   };
 }
 
 export function createControlPlaneReferenceDataReaders(
-  store: Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
-    Pick<BenchmarkPriceCache, "readBenchmarkPrices">,
+  store: ReferenceDataStore,
 ): ReferenceDataReaders {
   let catalogSnapshot: ExposureCatalogAvailability | undefined;
   let catalogLoadPromise: Promise<ExposureCatalogAvailability> | undefined;
@@ -74,16 +63,5 @@ export function createControlPlaneReferenceDataReaders(
     },
   };
 
-  const benchmarkSeriesReader: BenchmarkSeriesReader = {
-    async readSeries(seriesId) {
-      try {
-        const prices = await store.readBenchmarkPrices(seriesId);
-        return { status: "available", prices };
-      } catch {
-        return unavailableSeries("read_failed");
-      }
-    },
-  };
-
-  return { exposureCatalogReader, benchmarkSeriesReader };
+  return { exposureCatalogReader };
 }
