@@ -293,6 +293,7 @@ export type {
   ObjetivosGoalView,
   ObjetivosState,
   OnboardingStep,
+  OnboardingStepId,
 } from "./dashboard";
 export {
   deriveOnboardingProgress,

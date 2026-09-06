@@ -93,8 +93,16 @@ export function largestRemainderPercentages(values: number[]): number[] {
   return floors;
 }
 
+/**
+ * The closed set of first-steps the checklist can show. Closed on purpose: the
+ * web maps each one to a destination, and a `string` id let a step exist with
+ * no entry in that map — which is how one of them ended up falling back to the
+ * public landing (#1702).
+ */
+export type OnboardingStepId = "members" | "holdings" | "fire" | "snapshot";
+
 export interface OnboardingStep {
-  id: string;
+  id: OnboardingStepId;
   label: string;
   done: boolean;
 }

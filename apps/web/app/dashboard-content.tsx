@@ -54,6 +54,7 @@ import {
   type MoversDataByPeriod,
   parseMoversPeriod,
 } from "./movers-data";
+import OnboardingChecklist from "./onboarding-checklist";
 import PrivacyToggle from "./privacy-toggle";
 import { readBenchmarkPricesFromControlPlane } from "./read-benchmark-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
@@ -70,14 +71,6 @@ const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
   housing: "ver desglose de la vivienda",
   liquid: "ver desglose del líquido",
   rest: "ver desglose del resto",
-};
-
-const ONBOARDING_LINKS: Record<string, string> = {
-  members: "/ajustes",
-  holdings: "/patrimonio/anadir",
-  // Los supuestos FIRE se editan junto a sus cifras desde #1450.
-  fire: "/objetivos#supuestos",
-  snapshot: "/",
 };
 
 function formatPct(pct: number): string {
@@ -113,7 +106,8 @@ function DeltaChip({
 /**
  * Compact FIRE glance card for the home dashboard (PRD #507, S1).
  * Shows: % funded + progress bar with coast tick + status pill +
- * years-to-FIRE + goals teaser + link to /ajustes until /objetivos exists.
+ * years-to-FIRE + goals teaser + link to the FIRE assumptions, which live next
+ * to their own figures in /objetivos since #1450.
  */
 function FireGlanceCard({
   glance,
@@ -426,8 +420,6 @@ export default async function DashboardContent({
     label: tab.label,
   }));
 
-  const anyStepPending = onboarding.some((step) => !step.done);
-
   const tierBpsValues = pyramid.map((tier) => tier.shareOfGrossBps);
   const tierPercents = largestRemainderPercentages(tierBpsValues);
   const donutSegments = donutArcSegments(tierPercents, TIER_DONUT_GEOMETRY);
@@ -644,25 +636,7 @@ export default async function DashboardContent({
           )}
         </section>
 
-        {anyStepPending ? (
-          <section className="onboardingChecklist section" aria-label="Primeros pasos">
-            <div className="panelHeader">
-              <h2>Primeros pasos</h2>
-              <span>Empieza aquí</span>
-            </div>
-            <ol>
-              {onboarding.map((step) => (
-                <li className={step.done ? "done" : undefined} key={step.id}>
-                  {step.done ? (
-                    <span>✓ {step.label}</span>
-                  ) : (
-                    <Link href={ONBOARDING_LINKS[step.id] ?? "/"}>○ {step.label}</Link>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
+        <OnboardingChecklist onboarding={onboarding} />
       </div>
     </>
   );
