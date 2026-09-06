@@ -10,8 +10,10 @@
  * dev filesystem cache means that cost is paid once per machine — but the run
  * that pays it is a run where a `page.goto` can sit for 8–14 s (measured on a
  * cold `.next`: `/login` 13.8 s, `/objetivos` 12.3 s, `/patrimonio` 10.5 s). That
- * is what made journeys 40, 43, 45 and 46 red on a fresh checkout and green on
- * every later run (#1270).
+ * is what made journeys 43, 45, 46 and one of the two then numbered 40 red on a
+ * fresh checkout and green on every later run (#1270). Which of those two is no
+ * longer recoverable — neither #1270 nor its commit names the file — and that is
+ * precisely the ambiguity a duplicated index buys you (#1706).
  *
  * The answer is not a wider budget — the assertions inside the journeys are about
  * the product, and a 30 s ceiling would just make a hang take 30 s to report.

@@ -1,5 +1,5 @@
 /**
- * Journey 40: Per-holding benchmark comparison on the ficha (PRD #546 S5, #626).
+ * Journey 54: Per-holding benchmark comparison on the ficha (PRD #546 S5, #626).
  *
  * A market investment whose identity matches a global-catalog exposure profile
  * with a mapped tracked-index shows the vs-benchmark card on `/patrimonio/[id]/editar`.
