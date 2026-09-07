@@ -41,7 +41,7 @@ nothing changed).
 **Remote cache:** CI/deploy set `TURBO_TOKEN` (from `TURBO_CACHE_TOKEN`, a cache-scoped
 Vercel token — falling back to `VERCEL_TOKEN` until that secret exists, #1180) + `TURBO_TEAM`
 for Vercel Remote Cache (shared across jobs and runs). Setup:
-[`docs/agents/turbo-remote-cache.md`](docs/agents/turbo-remote-cache.md).
+[`turbo-remote-cache.md`](turbo-remote-cache.md).
 
 Biome runs at the repo root (not per-package via Turbo).
 

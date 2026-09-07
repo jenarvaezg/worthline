@@ -34,7 +34,11 @@ playwright-report-routing/
 
 transcript.txt
 .playwright-mcp/
-.claude/
+# Repo-specific subagents are versioned (docs/agents/subagents.md); everything
+# else under .claude/ (settings, worktrees, local skills) is local-only. The
+# directory itself cannot be ignored or the negation below would not be read.
+.claude/*
+!.claude/agents/
 .github/hooks/
 .github/skills/
 
