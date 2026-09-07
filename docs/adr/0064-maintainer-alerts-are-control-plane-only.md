@@ -118,6 +118,25 @@ no backoffice and no «equipo», so the assistant never promises that anyone wil
 review anything later, and an unsupported request is answered with the truth plus
 the surface that does support it.
 
+## Amendment (#1744): catalog identity collisions preserve curated evidence
+
+The DGS identity migration raises `catalog_identity_collision` when two curated
+exposure profiles share a DGS code. This is another system-only category, absent
+from the chat tool's enum. Its dedup key uses workspace `catalog` and the canonical
+identity (for example `dgs:N5394`) as the subject: the incident belongs to the
+shared catalog, with no workspace holding involved.
+
+The migration preserves both curated profiles instead of overwriting either one.
+The occurrence records the DGS code, canonical identity key, retained provider
+identity key, and collision reason. Identity changes, the alert occurrence, and
+the migration version commit in one transaction, so a failed migration cannot
+leave a collision without its evidence or mark an incomplete repair as applied.
+
+The existing `/admin/alertas` surface names the shared catalog and renders the
+diagnosis with links to both profiles in `/admin/catalogo`. A maintainer can review
+the preserved evidence and close the alert through the existing lifecycle. No
+calculation trace, user-facing signal, or notification channel is introduced.
+
 ## Considered options
 
 - **Store alerts in the workspace database** — rejected. Any export/transfer would

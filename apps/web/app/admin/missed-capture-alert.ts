@@ -52,17 +52,24 @@ export function missedCapturePassFromHoldingId(holdingId: string): string | null
 }
 
 /**
- * How a maintainer surface names an alert's subject. Every category but
- * `missed_capture` is about a holding inside one workspace; a missed pass is about
- * the FLEET and encodes the pass in its key, so its sentinels are translated
- * rather than shown raw (#1339). Shared by the alert index and the detail header
- * so the two never disagree.
+ * How a maintainer surface names an alert's subject. Global incidents translate
+ * their sentinels: missed captures name the fleet and pass (#1339), catalog
+ * collisions name the shared catalog and identity (#1744). Shared by the alert
+ * index and detail header so the two never disagree.
  */
 export function maintainerAlertSubject(alert: {
   category: MaintainerAlertCategory;
   workspaceId: string;
   holdingId: string;
-}): { isFleet: boolean; subject: string; workspace: string } {
+}): { isFleet: boolean; isCatalog?: boolean; subject: string; workspace: string } {
+  if (alert.category === "catalog_identity_collision") {
+    return {
+      isFleet: false,
+      isCatalog: true,
+      subject: alert.holdingId,
+      workspace: "catálogo compartido",
+    };
+  }
   const pass =
     alert.category === "missed_capture"
       ? missedCapturePassFromHoldingId(alert.holdingId)

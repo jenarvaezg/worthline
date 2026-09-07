@@ -45,6 +45,8 @@ export function maintainerAlertCategoryLabel(category: MaintainerAlertCategory):
       return "Olor a sync/fuente";
     case "missed_capture":
       return "Captura diaria perdida (cron)";
+    case "catalog_identity_collision":
+      return "Colisión de identidad del catálogo";
   }
 }
 

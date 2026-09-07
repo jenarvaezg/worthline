@@ -5,6 +5,7 @@ import {
   maintainerAlertCategoryLabel,
 } from "@web/asistente/maintainer-alert";
 import type {
+  MaintainerAlertCategory,
   MaintainerAlertStatus,
   MaintainerAlertWithOccurrences,
 } from "@worthline/db";
@@ -182,11 +183,67 @@ function MissedCaptureView({ payload }: { payload: MissedCapturePayload }) {
   );
 }
 
+interface CatalogCollisionPayload {
+  dgsCode: string;
+  canonicalIdentityKey: string;
+  retainedProviderIdentityKey: string;
+  reason: string;
+}
+
+function isCatalogCollisionPayload(value: unknown): value is CatalogCollisionPayload {
+  if (value === null || typeof value !== "object") return false;
+  const candidate = value as Partial<CatalogCollisionPayload>;
+  return [
+    candidate.dgsCode,
+    candidate.canonicalIdentityKey,
+    candidate.retainedProviderIdentityKey,
+    candidate.reason,
+  ].every((field) => typeof field === "string" && field.length > 0);
+}
+
+function CatalogCollisionView({ payload }: { payload: unknown }) {
+  if (!isCatalogCollisionPayload(payload)) {
+    return (
+      <>
+        <p className="alertMeta">Datos de colisión incompletos.</p>
+        <details suppressHydrationWarning className="alertExtracted">
+          <summary>Datos de colisión (formato no reconocido)</summary>
+          <pre>{JSON.stringify(payload, null, 2)}</pre>
+        </details>
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="alertSummary">{payload.reason}</p>
+      <p className="alertMeta">Código DGS: {payload.dgsCode}</p>
+      <p className="alertMeta">
+        Identidad canónica:{" "}
+        <a
+          href={`/admin/catalogo?perfil=${encodeURIComponent(payload.canonicalIdentityKey)}`}
+        >
+          {payload.canonicalIdentityKey}
+        </a>
+      </p>
+      <p className="alertMeta">
+        Identidad de proveedor conservada:{" "}
+        <a
+          href={`/admin/catalogo?perfil=${encodeURIComponent(payload.retainedProviderIdentityKey)}`}
+        >
+          {payload.retainedProviderIdentityKey}
+        </a>
+      </p>
+    </>
+  );
+}
+
 function OccurrenceView({
+  category,
   payload,
   occurredAt,
   index,
 }: {
+  category: MaintainerAlertCategory;
   payload: MaintainerAlertPayload | null;
   occurredAt: string;
   index: number;
@@ -196,7 +253,9 @@ function OccurrenceView({
       <h3>
         Ocurrencia {index + 1} · {occurredAt}
       </h3>
-      {isMissedCapturePayload(payload) ? (
+      {category === "catalog_identity_collision" ? (
+        <CatalogCollisionView payload={payload} />
+      ) : isMissedCapturePayload(payload) ? (
         <MissedCaptureView payload={payload} />
       ) : payload === null ? (
         <p className="alertMeta">Payload ilegible.</p>
@@ -282,9 +341,8 @@ export function MaintainerAlertDetail({
         <h1>{maintainerAlertCategoryLabel(alert.category)}</h1>
         <p className="demoLede">
           {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) ·{" "}
-          {subject.isFleet
-            ? // A missed pass belongs to no tenant: its key carries the pass, not a
-              // holding (#1339), so the header names the pass, not the sentinels.
+          {subject.isFleet || subject.isCatalog
+            ? // Global incidents name their catalog identity or capture pass.
               `${subject.workspace} · ${subject.subject}`
             : `workspace ${subject.workspace} · holding ${subject.subject}`}
         </p>
@@ -320,6 +378,7 @@ export function MaintainerAlertDetail({
         {alert.occurrences.map((occurrence, index) => (
           <OccurrenceView
             key={occurrence.id}
+            category={alert.category}
             index={index}
             occurredAt={occurrence.occurredAt}
             payload={asPayload(occurrence.payload)}

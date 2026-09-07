@@ -44,13 +44,17 @@ CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
  * verifying config; `sync_source`: the smell is a connected-source/sync
  * ownership problem, not a worthline calc bug.
  *
- * `missed_capture` (#1339) is the one category NO model can raise: the
+ * `catalog_identity_collision` (#1744) is raised by the catalog migration when
+ * two curated profiles share a DGS identity. Its subject is the catalog key.
+ *
+ * `missed_capture` (#1339) is another category no model can raise: the
  * daily-capture cron raises it about ITSELF when the ledger shows an expected
  * pass that never finalized (Vercel Cron is best-effort and skips invocations).
  * It is fleet-wide, so it carries sentinel workspace/holding ids rather than a
  * tenant's — see the raiser for the contract.
  */
 export type MaintainerAlertCategory =
+  | "catalog_identity_collision"
   | "infidelity"
   | "missed_capture"
   | "residual"
@@ -185,7 +189,7 @@ function isOpenKeyConflict(error: unknown): boolean {
 }
 
 export function createMaintainerAlertLog(
-  client: Client,
+  client: Pick<Client, "execute">,
   newId: () => string,
 ): MaintainerAlertLog {
   /**

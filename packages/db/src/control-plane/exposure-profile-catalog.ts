@@ -37,10 +37,13 @@ CREATE TABLE IF NOT EXISTS global_exposure_profiles (
   -- every row written before this seam.
   confidence TEXT,
   as_of_date TEXT,
-  sources TEXT
+  sources TEXT,
+  dgs_code TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_isin
   ON global_exposure_profiles(isin) WHERE isin IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_dgs
+  ON global_exposure_profiles(dgs_code) WHERE dgs_code IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_provider
   ON global_exposure_profiles(price_provider, provider_symbol)
   WHERE price_provider IS NOT NULL AND provider_symbol IS NOT NULL;
@@ -105,6 +108,9 @@ function toGlobalExposureProfileIdentity(
   row: Record<string, unknown>,
 ): GlobalExposureProfileIdentity {
   const kind = String(row["identity_kind"]);
+  if (kind === "dgs") {
+    return { kind: "dgs", code: String(row["dgs_code"]) };
+  }
   if (kind === "isin") {
     return { isin: String(row["isin"]), kind: "isin" };
   }
@@ -141,6 +147,7 @@ function identityColumns(identity: GlobalExposureProfileIdentity): {
   identityKey: string;
   identityKind: string;
   isin: string | null;
+  dgsCode: string | null;
   priceProvider: string | null;
   providerSymbol: string | null;
 } {
@@ -149,17 +156,26 @@ function identityColumns(identity: GlobalExposureProfileIdentity): {
       identityKey: globalExposureProfileIdentityKey(identity),
       identityKind: "isin",
       isin: identity.isin,
+      dgsCode: null,
       priceProvider: null,
       providerSymbol: null,
     };
   }
   if (identity.kind === "dgs") {
-    throw new Error("DGS catalog persistence requires migration #1744.");
+    return {
+      identityKey: globalExposureProfileIdentityKey(identity),
+      identityKind: "dgs",
+      isin: null,
+      dgsCode: identity.code,
+      priceProvider: null,
+      providerSymbol: null,
+    };
   }
   return {
     identityKey: globalExposureProfileIdentityKey(identity),
     identityKind: "provider",
     isin: null,
+    dgsCode: null,
     priceProvider: identity.priceProvider,
     providerSymbol: identity.providerSymbol,
   };
@@ -182,14 +198,15 @@ export function createExposureProfileCatalog(
 
       await client.execute({
         sql: `INSERT INTO global_exposure_profiles (
-                identity_key, identity_kind, isin, price_provider, provider_symbol,
+                identity_key, identity_kind, isin, dgs_code, price_provider, provider_symbol,
                 display_name, breakdowns_json, ter, tracked_index, hedged_to_currency,
                 confidence, as_of_date, sources
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           columns.identityKey,
           columns.identityKind,
           columns.isin,
+          columns.dgsCode,
           columns.priceProvider,
           columns.providerSymbol,
           validated.displayName,
@@ -217,13 +234,14 @@ export function createExposureProfileCatalog(
       // the metadata columns to null, the timestamps to CURRENT_TIMESTAMP.
       await client.execute({
         sql: `INSERT INTO global_exposure_profiles (
-                identity_key, identity_kind, isin, price_provider, provider_symbol, display_name
-              ) VALUES (?, ?, ?, ?, ?, ?)
+                identity_key, identity_kind, isin, dgs_code, price_provider, provider_symbol, display_name
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(identity_key) DO NOTHING`,
         args: [
           columns.identityKey,
           columns.identityKind,
           columns.isin,
+          columns.dgsCode,
           columns.priceProvider,
           columns.providerSymbol,
           name,
@@ -305,6 +323,7 @@ export function createExposureProfileCatalog(
                 identity_key = ?,
                 identity_kind = ?,
                 isin = ?,
+                dgs_code = ?,
                 price_provider = ?,
                 provider_symbol = ?,
                 updated_at = CURRENT_TIMESTAMP
@@ -313,6 +332,7 @@ export function createExposureProfileCatalog(
           toColumns.identityKey,
           toColumns.identityKind,
           toColumns.isin,
+          toColumns.dgsCode,
           toColumns.priceProvider,
           toColumns.providerSymbol,
           fromKey,

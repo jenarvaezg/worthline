@@ -10,6 +10,7 @@
  * for a holding the rollback already took away.
  */
 
+import { ensureExposureCatalogStubs } from "@web/ensure-exposure-catalog-stubs";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { describe, expect, test, vi } from "vitest";
 
@@ -46,6 +47,28 @@ const PLAN = {
 };
 
 describe("persistHoldingCreation — the alta's refusal is a message", () => {
+  test("a pension plan registers its typed DGS identity with the catalog", async () => {
+    const store = await seedWorkspace();
+    const result = await persistHoldingCreation(
+      store,
+      {
+        ...PLAN,
+        instrument: "pension_plan",
+        securityId: { kind: "dgs", value: "N5394" },
+        providerSymbol: "N5394-Myinvestor",
+      },
+      1,
+      TODAY,
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(ensureExposureCatalogStubs).toHaveBeenLastCalledWith([
+      expect.objectContaining({ securityId: { kind: "dgs", value: "N5394" } }),
+    ]);
+    store.close();
+  });
+
   test("a seam that refuses comes back as a Spanish error, not as a created holding", async () => {
     const store = await seedWorkspace();
     const refusing = {
