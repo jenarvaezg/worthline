@@ -347,3 +347,14 @@ Related: the column this ADR compares (`investment_assets.security_id` +
 `security_id_kind`, `'isin' | 'dgs'`) arrived with the v70 migration of #1743; the
 classifier and the canonical DGS shape live in `packages/domain/src/security-id.ts`
 (#1742).
+
+**Amendment (#1770): «the #1416 import exemption» names where a null kind is BORN,
+not who may persist one.** A holding's ficha writes it too — not as an exemption but
+as the same fact travelling back: its single field asks by kind, so no box can ever
+ask for a value that has none, and a save that did not ask cannot answer «bórralo».
+Before this, saving such a ficha dropped the value, which turned the health signal
+that sends the user there (`UNCLASSIFIED_SECURITY_ID`, #1745) into the one screen
+that destroyed its own evidence. The invariant that did not move: nothing writes a
+null kind over a value that IS recognizable — every writer funnels through
+`preservedSecurityId`, so the kind is classified at the boundary, never trusted from
+the caller.

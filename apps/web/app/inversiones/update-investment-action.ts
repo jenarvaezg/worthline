@@ -29,10 +29,10 @@ import {
 import { resolvePlanSymbolFromDgs } from "@web/inversiones/plan-symbol-seed";
 import { validateInvestmentProviderSymbol } from "@web/inversiones/provider-symbol-check";
 import { currentUrlOf } from "@web/inversiones/return-url";
+import type { UpdateInvestmentAssetInput } from "@worthline/db";
 import {
   defaultInvestmentPriceProvider,
   detectValueOnlyOpening,
-  type StoredSecurityId,
   systemClock,
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
@@ -161,16 +161,6 @@ export async function updateInvestmentAction(
 }
 
 /**
- * Lo que se escribe, que no es exactamente lo que se parseó: el campo solo sabe
- * teclear un par TIPADO, y la guarda de #1770 puede devolver además la identidad
- * que el import preservó sin clase. La escritura acepta las dos.
- */
-type EditInvestmentCommand = Omit<
-  Extract<ReturnType<typeof parseUpdateInvestmentCommand>, { ok: true }>["command"],
-  "securityId"
-> & { securityId?: StoredSecurityId };
-
-/**
  * The plan's «Buscar el símbolo en Finect por su código DGS» retry, resolved into
  * the command the ordinary save is about to write.
  *
@@ -181,10 +171,10 @@ type EditInvestmentCommand = Omit<
  * #1329 value-only guard like any hand-typed one.
  */
 async function seedPlanSymbolIfAsked(
-  command: EditInvestmentCommand,
+  command: UpdateInvestmentAssetInput,
   formData: FormData,
   editErrorUrl: (message: string) => string,
-): Promise<EditInvestmentCommand> {
+): Promise<UpdateInvestmentAssetInput> {
   if (String(formData.get("seedPlanSymbol") ?? "").trim() === "") {
     return command;
   }

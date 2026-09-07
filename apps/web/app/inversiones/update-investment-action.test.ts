@@ -63,6 +63,18 @@ async function seedPlan(
   });
 }
 
+/** El estado que solo nace del import de documento (#1416): valor puesto, clase nula. */
+async function seedIdentifierWithNoKind(store: WorthlineStore): Promise<void> {
+  await seedPlan(store);
+  await store.assets.updateInvestmentAsset({
+    id: PLAN_ID,
+    liquidityTier: "term-locked",
+    name: "MyInvestor S&P 500 PP",
+    priceProvider: "finect",
+    securityId: { kind: null, value: "raro" },
+  });
+}
+
 /** What the redirect said, decoded — `+` for spaces included. */
 function errorMessageOf(digest: string): string {
   const url = digest.split(";")[2] ?? "";
@@ -190,14 +202,7 @@ describe("guardar la ficha no borra el identificador que no enseñó", () => {
   // clase nula. Es exactamente el dato que la señal `UNCLASSIFIED_SECURITY_ID`
   // manda a reparar en esta ficha, y era la única pista para escribir el bueno.
   test("un valor preservado SIN CLASE sobrevive a un guardado que no lo teclea (#1770)", async () => {
-    await seedPlan(store);
-    await store.assets.updateInvestmentAsset({
-      id: PLAN_ID,
-      liquidityTier: "term-locked",
-      name: "MyInvestor S&P 500 PP",
-      priceProvider: "finect",
-      securityId: { kind: null, value: "raro" },
-    });
+    await seedIdentifierWithNoKind(store);
 
     await run(store, fichaForm({ securityId: "" }));
 
@@ -206,14 +211,7 @@ describe("guardar la ficha no borra el identificador que no enseñó", () => {
   });
 
   test("teclear el código bueno encima del valor sin clase SÍ lo re-tipa (#1770)", async () => {
-    await seedPlan(store);
-    await store.assets.updateInvestmentAsset({
-      id: PLAN_ID,
-      liquidityTier: "term-locked",
-      name: "MyInvestor S&P 500 PP",
-      priceProvider: "finect",
-      securityId: { kind: null, value: "raro" },
-    });
+    await seedIdentifierWithNoKind(store);
 
     await run(store, fichaForm({ securityId: "N5396" }));
 

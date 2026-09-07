@@ -96,6 +96,28 @@ describe("updateInvestmentAsset y el par preservado sin clase (#1770)", () => {
     }
   });
 
+  // El invariante que NO se mueve: nadie escribe clase nula sobre un valor que SÍ
+  // se reconoce. El escritor no se cree la clase que le pasan — la clasifica en el
+  // borde, con la misma función que el import (`preservedSecurityId`).
+  test("una clase nula sobre un valor reconocible no se cree: se clasifica", async () => {
+    const store = await seedFund();
+    try {
+      await store.assets.updateInvestmentAsset({
+        id: "fund",
+        liquidityTier: "market",
+        name: "Fondo raro",
+        securityId: { kind: null, value: "ie00b52mjy50" },
+      });
+
+      expect((await store.assets.readInvestmentAssetById("fund"))?.securityId).toEqual({
+        kind: "isin",
+        value: "IE00B52MJY50",
+      });
+    } finally {
+      store.close();
+    }
+  });
+
   test("un par tipado que no valida por su clase se sigue rechazando", async () => {
     const store = await seedFund();
     try {

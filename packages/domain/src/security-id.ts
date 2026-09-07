@@ -69,9 +69,11 @@ export function declaredSecurityId(
  * classifies by shape and keeps verbatim whatever it cannot name. It never throws
  * — a restore must not fail on legacy data — and blank input carries no identity.
  *
- * It is the only INTERACTIVE path that may leave the kind null; the v70 backfill
- * leaves it null too, for the legacy values it could not read (#1743). What no
- * path may do is write a null kind over a value it DID recognize.
+ * It is where a null kind is BORN — the v70 backfill leaves it null too, for the
+ * legacy values it could not read (#1743) — and, since #1770, also the gate the
+ * ficha's preserving save funnels through when it hands one back untouched. What no
+ * path may do is write a null kind over a value it DID recognize, which is why
+ * every writer goes through here rather than trusting the kind it was handed.
  */
 export function preservedSecurityId(value: unknown): StoredSecurityId | undefined {
   const classified = classifySecurityId(value);
