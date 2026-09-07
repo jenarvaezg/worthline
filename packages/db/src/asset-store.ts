@@ -23,6 +23,7 @@ import {
   defaultsFor,
   isRealCalendarDay,
   normalizedSecurityIdColumnValue,
+  preservedSecurityId,
   storedSecurityIdFromColumns,
   valueHousingAtDate,
 } from "@worthline/domain";
@@ -126,8 +127,17 @@ export interface UpdateInvestmentAssetInput {
   instrument?: Instrument;
   liquidityTier?: LiquidityTier;
   unitSymbol?: string;
-  /** The security's typed identifier (#1743): an ISIN, or a plan's DGS code. */
-  securityId?: SecurityId;
+  /**
+   * The security's identifier (#1743): an ISIN, a plan's DGS code — or the value
+   * an import preserved with no kind at all (#1770).
+   *
+   * The untyped half is legal here and NOT in {@link CreateInvestmentAssetInput}
+   * on purpose: an alta DECLARES an identity and so must declare a kind, while
+   * this form-shaped input is also the path that puts BACK what the ficha's single
+   * field could not show. Absent still means «null both columns», which is the
+   * whole reason that guard exists.
+   */
+  securityId?: StoredSecurityId;
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
@@ -1346,18 +1356,31 @@ async function updateAssetValuation(
  * the row under the provider key while the look-through searches under another,
  * so the holding turns «sin clasificar» with nothing warning about it. The UI and
  * assistant boundaries refuse earlier with friendly messages — this is the
- * backstop under all of them. The one exempt write is the workspace-document
- * import (`workspace-document-store.ts`), which classifies by shape and preserves
- * what it cannot recognize (#1416: a restore must not fail on legacy data).
+ * backstop under all of them.
  *
- * A blank value clears BOTH columns: a kind with nothing under it would claim an
- * identity the row does not have.
+ * What the per-kind validator checks is what DECLARES a kind. A pair that declares
+ * none (`kind: null`, #1770) has no kind to be checked against: the value is one
+ * nobody could classify, born of the workspace-document import
+ * (`workspace-document-store.ts`, #1416 — a restore must not fail on legacy data)
+ * and handed BACK by the ficha guard that preserves what its single field could not
+ * show. It goes through the domain's own preserving classifier, the SAME call the
+ * import makes, so the one thing no path may do — write a null kind over a value
+ * that IS recognizable — is not merely promised here, it is impossible.
+ *
+ * A blank value clears BOTH columns, whatever the kind: a kind with nothing under
+ * it would claim an identity the row does not have.
  */
-function securityIdColumns(securityId: SecurityId | undefined): {
+function securityIdColumns(securityId: StoredSecurityId | undefined): {
   securityId: string | null;
   securityIdKind: SecurityIdKind | null;
 } {
   if (!securityId) return { securityId: null, securityIdKind: null };
+  if (securityId.kind === null) {
+    const preserved = preservedSecurityId(securityId.value);
+    return preserved
+      ? { securityId: preserved.value, securityIdKind: preserved.kind }
+      : { securityId: null, securityIdKind: null };
+  }
   const value = normalizedSecurityIdColumnValue(securityId.kind, securityId.value);
   return value === null
     ? { securityId: null, securityIdKind: null }

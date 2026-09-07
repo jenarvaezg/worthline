@@ -29,6 +29,7 @@ import {
 import { resolvePlanSymbolFromDgs } from "@web/inversiones/plan-symbol-seed";
 import { validateInvestmentProviderSymbol } from "@web/inversiones/provider-symbol-check";
 import { currentUrlOf } from "@web/inversiones/return-url";
+import type { UpdateInvestmentAssetInput } from "@worthline/db";
 import {
   defaultInvestmentPriceProvider,
   detectValueOnlyOpening,
@@ -88,7 +89,8 @@ export async function updateInvestmentAction(
   // reintentar más tarde.
   // El identificador que este formulario NO pudo enseñar no se toca (ver
   // `securityIdToWriteFromFicha`): un instrumento sin identificador no tiene campo,
-  // y un valor guardado de otra clase se enseña en una línea, no en la caja.
+  // y un valor guardado de otra clase —o sin clase ninguna, #1770— se enseña en una
+  // línea, no en la caja. Guardar sin teclear no contesta por ninguno de los dos.
   const securityId = securityIdToWriteFromFicha({
     formData,
     stored: existing?.securityId,
@@ -158,11 +160,6 @@ export async function updateInvestmentAction(
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
 
-type EditInvestmentCommand = Extract<
-  ReturnType<typeof parseUpdateInvestmentCommand>,
-  { ok: true }
->["command"];
-
 /**
  * The plan's «Buscar el símbolo en Finect por su código DGS» retry, resolved into
  * the command the ordinary save is about to write.
@@ -174,10 +171,10 @@ type EditInvestmentCommand = Extract<
  * #1329 value-only guard like any hand-typed one.
  */
 async function seedPlanSymbolIfAsked(
-  command: EditInvestmentCommand,
+  command: UpdateInvestmentAssetInput,
   formData: FormData,
   editErrorUrl: (message: string) => string,
-): Promise<EditInvestmentCommand> {
+): Promise<UpdateInvestmentAssetInput> {
   if (String(formData.get("seedPlanSymbol") ?? "").trim() === "") {
     return command;
   }
