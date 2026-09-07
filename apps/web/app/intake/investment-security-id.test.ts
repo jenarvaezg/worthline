@@ -186,11 +186,44 @@ describe("un guardado no contesta por el campo que su formulario no enseñó", (
     ).toEqual({ kind: "dgs", value: "N5396" });
   });
 
-  test("un valor preservado sin clase no puede viajar: la escritura solo acepta par tipado (#1770)", () => {
+  test("un valor preservado SIN CLASE también sobrevive: la caja de ISIN no habla de él (#1770)", () => {
+    // El estado que solo nace del import de documento (#1416) y que salud de datos
+    // manda a reparar: es la única pista que el usuario tiene para escribir el
+    // identificador bueno, así que guardar sin teclear no puede tirarla.
     expect(
       securityIdToWriteFromFicha({
         formData: form({ securityIdKind: "isin" }),
         stored: { kind: null, value: "LU-1234" },
+        submitted: undefined,
+      }),
+    ).toEqual({ kind: null, value: "LU-1234" });
+  });
+
+  test("sin campo, un valor preservado sin clase tampoco se toca (#1770)", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ instrument: "crypto", name: "Bitcoin" }),
+        stored: { kind: null, value: "LU-1234" },
+        submitted: undefined,
+      }),
+    ).toEqual({ kind: null, value: "LU-1234" });
+  });
+
+  test("lo tecleado re-tipa el valor sin clase: por eso la ficha es el arreglo", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "isin" }),
+        stored: { kind: null, value: "LU-1234" },
+        submitted: { kind: "isin", value: "IE00B52MJY50" },
+      }),
+    ).toEqual({ kind: "isin", value: "IE00B52MJY50" });
+  });
+
+  test("nada guardado y nada tecleado no inventa identidad", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "isin" }),
+        stored: undefined,
         submitted: undefined,
       }),
     ).toBeUndefined();

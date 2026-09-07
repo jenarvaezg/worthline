@@ -25,9 +25,13 @@ export function normalizeDgsCode(value: string): string | null {
 
 /**
  * What the workspace column pair holds: a classified identifier, or a value
- * preserved verbatim whose shape no classifier recognized. `kind: null` is legal
- * ONLY through the workspace-document import (#1416, #1743) — a restore preserves
- * and never derives, while every interactive write validates by kind.
+ * preserved verbatim whose shape no classifier recognized.
+ *
+ * A `kind: null` value can only be BORN of the workspace-document import (#1416,
+ * #1743) — a restore preserves and never derives, while every interactive write
+ * validates by kind. What an interactive write may do is hand one BACK unchanged:
+ * the ficha's save preserves the identifier its single field could not show
+ * (#1770), because no form field can ask for a value with no kind.
  */
 export type StoredSecurityId = SecurityId | { kind: null; value: string };
 

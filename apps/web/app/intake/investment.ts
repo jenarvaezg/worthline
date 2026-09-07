@@ -17,7 +17,6 @@ import type {
   StoredSecurityId,
 } from "@worthline/domain";
 import {
-  declaredSecurityId,
   instrumentLabelEs,
   isAssignableInstrumentForShape,
   isCaptureCurrency,
@@ -201,13 +200,15 @@ export function parseOptionalSecurityId(
  *   and the identifier goes;
  * - no box at all (an instrument that carries no identifier, so the form declared
  *   no kind) → whatever is stored rides through untouched;
- * - a box of ANOTHER kind (a plan whose row still holds an ISIN) → it was rendered
- *   empty next to a line quoting the stored value, so a blank submit is not an
- *   answer about it either.
+ * - a box of ANOTHER kind (a plan whose row still holds an ISIN, or a value the
+ *   import preserved with NO kind at all) → it was rendered empty next to a line
+ *   quoting the stored value, so a blank submit is not an answer about it either.
  *
- * A stored value the import preserved with NO kind (#1416) cannot ride through: the
- * store's update input only accepts a typed pair, which is the missing half of
- * #1770. It is reported by salud de datos and repaired by typing the right one.
+ * The untyped case (`kind: null`, born only of the document import, #1416) is the
+ * half #1770 closed. No box can ever ASK for it — a form field asks by kind — so it
+ * is preserved through every save until the user types the good identifier over it,
+ * which is exactly the repair salud de datos sends him here to make. Dropping it
+ * left the row warned about and the user with no clue left to read.
  */
 export function securityIdToWriteFromFicha({
   formData,
@@ -218,13 +219,15 @@ export function securityIdToWriteFromFicha({
   stored: StoredSecurityId | undefined;
   /** What the form's own field parsed to, when it carried one. */
   submitted: SecurityId | undefined;
-}): SecurityId | undefined {
+}): StoredSecurityId | undefined {
   if (submitted) return submitted;
+  if (!stored) return undefined;
 
+  // Only a box of the stored value's OWN kind speaks for it. `null` on either side
+  // is not a match: no box at all answers nothing, and no box asks by «sin clase».
   const declared = declaredSecurityIdKind(formData);
-  const preserved = declaredSecurityId(stored);
 
-  return preserved && preserved.kind !== declared ? preserved : undefined;
+  return declared !== null && stored.kind === declared ? undefined : stored;
 }
 
 /** The kind the FORM was rendered with, when it says so (a hidden declaration). */

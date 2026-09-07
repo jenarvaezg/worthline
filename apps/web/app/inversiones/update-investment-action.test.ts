@@ -185,6 +185,41 @@ describe("guardar la ficha no borra el identificador que no enseñó", () => {
     // ficha lo cita en una línea, y guardar sin teclear no lo borra.
     expect(saved?.securityId).toEqual({ kind: "isin", value: "IE00B52MJY50" });
   });
+
+  // #1770: el estado que solo nace del import de documento (#1416) — valor puesto,
+  // clase nula. Es exactamente el dato que la señal `UNCLASSIFIED_SECURITY_ID`
+  // manda a reparar en esta ficha, y era la única pista para escribir el bueno.
+  test("un valor preservado SIN CLASE sobrevive a un guardado que no lo teclea (#1770)", async () => {
+    await seedPlan(store);
+    await store.assets.updateInvestmentAsset({
+      id: PLAN_ID,
+      liquidityTier: "term-locked",
+      name: "MyInvestor S&P 500 PP",
+      priceProvider: "finect",
+      securityId: { kind: null, value: "raro" },
+    });
+
+    await run(store, fichaForm({ securityId: "" }));
+
+    const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
+    expect(saved?.securityId).toEqual({ kind: null, value: "raro" });
+  });
+
+  test("teclear el código bueno encima del valor sin clase SÍ lo re-tipa (#1770)", async () => {
+    await seedPlan(store);
+    await store.assets.updateInvestmentAsset({
+      id: PLAN_ID,
+      liquidityTier: "term-locked",
+      name: "MyInvestor S&P 500 PP",
+      priceProvider: "finect",
+      securityId: { kind: null, value: "raro" },
+    });
+
+    await run(store, fichaForm({ securityId: "N5396" }));
+
+    const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
+    expect(saved?.securityId).toEqual({ kind: "dgs", value: "N5396" });
+  });
 });
 
 describe("el reintento del plan: «búscame el símbolo por el código DGS»", () => {

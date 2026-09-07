@@ -32,6 +32,7 @@ import { currentUrlOf } from "@web/inversiones/return-url";
 import {
   defaultInvestmentPriceProvider,
   detectValueOnlyOpening,
+  type StoredSecurityId,
   systemClock,
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
@@ -88,7 +89,8 @@ export async function updateInvestmentAction(
   // reintentar más tarde.
   // El identificador que este formulario NO pudo enseñar no se toca (ver
   // `securityIdToWriteFromFicha`): un instrumento sin identificador no tiene campo,
-  // y un valor guardado de otra clase se enseña en una línea, no en la caja.
+  // y un valor guardado de otra clase —o sin clase ninguna, #1770— se enseña en una
+  // línea, no en la caja. Guardar sin teclear no contesta por ninguno de los dos.
   const securityId = securityIdToWriteFromFicha({
     formData,
     stored: existing?.securityId,
@@ -158,10 +160,15 @@ export async function updateInvestmentAction(
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
 
-type EditInvestmentCommand = Extract<
-  ReturnType<typeof parseUpdateInvestmentCommand>,
-  { ok: true }
->["command"];
+/**
+ * Lo que se escribe, que no es exactamente lo que se parseó: el campo solo sabe
+ * teclear un par TIPADO, y la guarda de #1770 puede devolver además la identidad
+ * que el import preservó sin clase. La escritura acepta las dos.
+ */
+type EditInvestmentCommand = Omit<
+  Extract<ReturnType<typeof parseUpdateInvestmentCommand>, { ok: true }>["command"],
+  "securityId"
+> & { securityId?: StoredSecurityId };
 
 /**
  * The plan's «Buscar el símbolo en Finect por su código DGS» retry, resolved into
