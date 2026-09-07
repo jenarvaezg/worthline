@@ -61,16 +61,31 @@ product slug (`N5394-Myinvestor_indexado_sp_500_pp`,
 `IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc`); a bare code is resolved
 to its slug through Finect's public plans API before use.
 
+Nobody has that slug printed on any paper, so the simple alta of a pension plan does
+not ask for it (#1746, variante A de #1669): the user types the plan's **Código DGS**
+— the identifier, which IS printed on their statement — and a «Buscar plan» GET
+resolves it against the same public API. Picking the candidate prefills name and
+symbol. From then on the two live apart: the code identifies the product, the slug
+quotes it. The manual symbol entry #1357 needed did not disappear; it lives in the
+advanced alta and on the ficha.
+
+Resolution NEVER blocks the alta. Finect down, Finect slow or a code that does not
+resolve leaves the holding **identified and not quoting** — a legitimate state that
+salud de datos reports, with a retry on the ficha that seeds the symbol from the same
+code.
+
 ## Validation
 
 On investment create/edit, the system validates that the provider symbol
 resolves to a real asset by performing a test fetch. Invalid symbols are
 rejected at the form level.
 
-## ISIN
+## The security id (ISIN / Código DGS)
 
 Stored as reference metadata only. Not used for price lookups — the provider
-symbol is the sole key.
+symbol is the sole key. Which identifier a holding carries is its instrument's
+business (a plan has a DGS code and never an ISIN), and each door validates by that
+kind — see ADR 0055 and PRD #1741.
 
 ## TTL
 

@@ -41,7 +41,7 @@ describe("AssetEditForm — investment settings", () => {
       />,
     );
 
-    expect(markup).toContain("Símbolo del proveedor");
+    expect(markup).toContain("Símbolo de precio");
     expect(markup).toContain('name="providerSymbol"');
     expect(markup).toContain('value="0P00000RN9.F"');
     expect(markup).toContain("Yahoo Finance");
@@ -154,6 +154,147 @@ describe("AssetEditForm — the instrument picker (#1512)", () => {
     expect(markup).toContain(">Plan de pensiones<");
     expect(markup).toContain(">Fondo<");
     expect(markup).not.toContain(">Inmueble<");
+  });
+});
+
+describe("AssetEditForm — el identificador es el del instrumento (#1746)", () => {
+  function planForm(
+    investment: Record<string, unknown>,
+    values: Record<string, string> = {},
+  ): string {
+    return renderToStaticMarkup(
+      <AssetEditForm
+        boardHref="/patrimonio#wl_hld_plan"
+        currentUrl="/patrimonio/wl_hld_plan/editar"
+        asset={
+          {
+            currency: "EUR",
+            currentValue: { amountMinor: 1_000_00, currency: "EUR" },
+            id: "asset_plan",
+            instrument: "pension_plan",
+            isPrimaryResidence: false,
+            liquidityTier: "term-locked",
+            name: "MyInvestor S&P 500 PP",
+            ownership: [{ memberId: "m1", shareBps: 10_000 }],
+            type: "investment",
+          } as const
+        }
+        investment={
+          {
+            currency: "EUR",
+            id: "asset_plan",
+            liquidityTier: "term-locked",
+            name: "MyInvestor S&P 500 PP",
+            ownership: [{ memberId: "m1", shareBps: 10_000 }],
+            priceProvider: "finect",
+            ...investment,
+          } as never
+        }
+        members={[{ id: "m1", name: "Jose" }]}
+        method="derived"
+        privacyMode={false}
+        scopeMemberId="m1"
+        updateInvestmentAction={() => undefined}
+        values={values}
+      />,
+    );
+  }
+
+  test("un plan pide su código DGS, no un ISIN que no puede tener", () => {
+    const markup = planForm({
+      providerSymbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    expect(markup).toContain("Código DGS");
+    expect(markup).toContain('name="securityId"');
+    expect(markup).toContain('value="N5394"');
+    // La clase declarada viaja: el selector de instrumento puede reclasificarlo en
+    // el mismo envío, y entonces el rechazo tiene que poder nombrar el cambio.
+    expect(markup).toContain('name="securityIdKind"');
+    expect(markup).toContain('value="dgs"');
+  });
+
+  test("los dos campos dicen de dónde salen: uno identifica, el otro cotiza", () => {
+    const markup = planForm({
+      providerSymbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    expect(markup).toContain("identifica el producto");
+    expect(markup).toContain("sembrado del código DGS en el alta");
+  });
+
+  test("un plan identificado y sin cotizar ofrece el reintento", () => {
+    const markup = planForm({ securityId: { kind: "dgs", value: "N5394" } });
+
+    expect(markup).toContain("Buscar el símbolo por su código DGS");
+    expect(markup).toContain('name="seedPlanSymbol"');
+  });
+
+  test("con símbolo ya puesto no hay nada que reintentar", () => {
+    const markup = planForm({
+      providerSymbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    expect(markup).not.toContain("Buscar el símbolo por su código DGS");
+  });
+
+  test("un identificador guardado de otra clase se dice, no se ofrece como propio", () => {
+    const markup = planForm({
+      providerSymbol: "N5394-Myinvestor_indexado_sp_500_pp",
+      securityId: { kind: "isin", value: "IE00B52MJY50" },
+    });
+
+    // El ISIN de un plan no identifica nada, y borrarlo en silencio del campo lo
+    // escondería: se enseña en una línea que el usuario puede seguir.
+    expect(markup).toContain("IE00B52MJY50");
+    expect(markup).toContain("no es un código DGS");
+  });
+
+  test("un fondo sigue pidiendo su ISIN, con las mismas palabras de antes", () => {
+    const markup = renderToStaticMarkup(
+      <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar"
+        asset={
+          {
+            currency: "EUR",
+            currentValue: { amountMinor: 94964, currency: "EUR" },
+            id: "asset_fund",
+            instrument: "fund",
+            isPrimaryResidence: false,
+            liquidityTier: "market",
+            name: "Vanguard Fund",
+            ownership: [{ memberId: "m1", shareBps: 10000 }],
+            type: "investment",
+          } as const
+        }
+        investment={
+          {
+            currency: "EUR",
+            id: "asset_fund",
+            liquidityTier: "market",
+            name: "Vanguard Fund",
+            ownership: [{ memberId: "m1", shareBps: 10000 }],
+            priceProvider: "yahoo",
+            providerSymbol: "0P00000RN9.F",
+            securityId: { kind: "isin", value: "IE00B52MJY50" },
+          } as never
+        }
+        members={[{ id: "m1", name: "Jose" }]}
+        method="derived"
+        privacyMode={false}
+        scopeMemberId="m1"
+        updateInvestmentAction={() => undefined}
+        values={{}}
+      />,
+    );
+
+    expect(markup).toContain("ISIN");
+    expect(markup).toContain('value="IE00B52MJY50"');
+    expect(markup).not.toContain("Buscar el símbolo por su código DGS");
   });
 });
 

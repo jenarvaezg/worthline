@@ -136,9 +136,11 @@ describe("updateInvestmentAction wiring", () => {
     expect(await store.operations.readPriceCache(INVESTMENT_ID)).toBeNull();
   });
 
-  // #1743: la v70 le escribe al plan su código DGS, y la ficha —que solo sabe
-  // enseñar un ISIN— no puede tirarlo por el hecho de guardar. Es la regresión que
-  // dejaría al holding «sin clasificar» en cuanto #1744 re-clave el catálogo.
+  // #1743 lo conservaba con un parche —la ficha solo sabía enseñar un ISIN, así que
+  // guardar no podía tocar el código—; #1746 lo cierra por construcción: la ficha de
+  // un plan ENSEÑA su código DGS, lo envía y lo valida como tal. La regresión que se
+  // vigila es la misma: un guardado normal no puede dejar al holding «sin
+  // clasificar» en cuanto el catálogo esté re-clavado a `dgs:N####` (#1744).
   test("guardar la ficha de un plan NO borra su código DGS", async () => {
     await setupStore();
     await store.assets.createInvestmentAsset({
@@ -154,7 +156,15 @@ describe("updateInvestmentAction wiring", () => {
     const url = await catchRedirect(() =>
       updateInvestmentAction(
         INVESTMENT_ID,
-        fd({ isin: "", name: "MyInvestor Indexado S&P 500" }, "/inversiones"),
+        fd(
+          {
+            instrument: "pension_plan",
+            name: "MyInvestor Indexado S&P 500",
+            securityId: "N5394",
+            securityIdKind: "dgs",
+          },
+          "/inversiones",
+        ),
         store,
       ),
     );
@@ -165,7 +175,35 @@ describe("updateInvestmentAction wiring", () => {
     ).toEqual({ kind: "dgs", value: "N5394" });
   });
 
-  test("un ISIN en blanco sí borra el ISIN que había", async () => {
+  // El otro lado de la misma regla (#1746): la ficha de un instrumento SIN
+  // identificador no enseña campo, así que renombrarlo no puede tirar lo guardado.
+  // Es la regresión que el parche de #1743 evitaba a mano.
+  test("un envío sin el campo de identidad NO borra el identificador guardado", async () => {
+    await setupStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: INVESTMENT_ID,
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Bitcoin",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      securityId: { kind: "isin", value: "IE00B03HCZ61" },
+    });
+
+    await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ instrument: "crypto", name: "Bitcoin" }, "/inversiones"),
+        store,
+      ),
+    );
+
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.securityId,
+    ).toEqual({ kind: "isin", value: "IE00B03HCZ61" });
+  });
+
+  test("un identificador en blanco sí borra el que había", async () => {
     await setupStore();
     await store.assets.createInvestmentAsset({
       currency: "EUR",
@@ -179,7 +217,10 @@ describe("updateInvestmentAction wiring", () => {
     await catchRedirect(() =>
       updateInvestmentAction(
         INVESTMENT_ID,
-        fd({ isin: "", name: "Index Fund" }, "/inversiones"),
+        fd(
+          { name: "Index Fund", securityId: "", securityIdKind: "isin" },
+          "/inversiones",
+        ),
         store,
       ),
     );

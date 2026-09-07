@@ -5,23 +5,19 @@ import {
   resolveOkMessage,
 } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
-import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
   firstNonEmptyParam,
   selectedInstrumentFromAddHoldingState,
 } from "@web/patrimonio/anadir/search-state";
+import { SecurityIdField } from "@web/patrimonio/anadir/security-id-field";
 import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
-import {
-  defaultsFor,
-  INVESTMENT_PROFILE_INSTRUMENTS,
-  LIQUIDITY_TIER_LABELS,
-} from "@worthline/domain";
+import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import Link from "next/link";
 import { type CSSProperties, Suspense } from "react";
 
@@ -426,12 +422,13 @@ function MethodFields({
               autoComplete="off"
             />
           </label>
-          {/* Visible since #1489, and only where an ISIN exists: the domain's own set
-              of instruments that carry one, so this form and the health signal cannot
-              disagree about who is an orphan. */}
-          {INVESTMENT_PROFILE_INSTRUMENTS.has(id) ? (
-            <IsinField instrument={id} value={v("isin")} />
-          ) : null}
+          {/* Visible since #1489, per instrument since #1746: «Código DGS» for a
+              plan, «ISIN» for the rest, nothing for an instrument that carries no
+              identifier — derived from the domain's own map, so this form and the
+              health signal cannot disagree about who is an orphan. The manual
+              symbol box above is the way out that #1357 needs and the simple alta
+              no longer shows for a plan. */}
+          <SecurityIdField instrument={id} value={v("securityId")} />
           <label>
             Precio manual por unidad (EUR) <small>(opcional)</small>
             <input

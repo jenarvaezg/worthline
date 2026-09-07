@@ -81,6 +81,7 @@ export {
   parseInvestmentAssetCommandStrict,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
+  securityIdToWriteFromFicha,
 } from "./intake/investment";
 export {
   createStableId,
