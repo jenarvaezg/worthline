@@ -67,6 +67,7 @@ describe("statementFromTransactionsDocument", () => {
         kind: "buy",
         name: "ISHARES CORE S&P 500",
         pricePerUnit: "187.48",
+        securityId: { kind: "isin", value: SXR1 },
         units: "3",
       },
       {
@@ -76,6 +77,7 @@ describe("statementFromTransactionsDocument", () => {
         isin: SXR1,
         kind: "sell",
         pricePerUnit: "190",
+        securityId: { kind: "isin", value: SXR1 },
         units: "2",
       },
     ]);
@@ -88,7 +90,7 @@ describe("statementFromTransactionsDocument", () => {
     expect(read.statement.directionResolved).toBe(false);
   });
 
-  test("a row with no ISIN refuses the whole import and names the row", () => {
+  test("a row with no identifier refuses the whole import and names the row", () => {
     const read = statementFromTransactionsDocument({
       ...DOCUMENT,
       transactions: [
@@ -107,7 +109,7 @@ describe("statementFromTransactionsDocument", () => {
 
     expect(read.ok).toBe(false);
     if (read.ok) return;
-    expect(read.error).toBe("statement_rows_without_isin");
+    expect(read.error).toBe("statement_rows_without_identifier");
     expect(read.message).toContain("FONDO SIN ISIN");
   });
 
@@ -163,5 +165,41 @@ describe("brokerTransactionsInContext", () => {
     expect(brokerTransactionsInContext([first, second])?.transactions[0]?.units).toBe(
       "9",
     );
+  });
+});
+
+describe("statementFromTransactionsDocument — un plan se identifica por su DGS (#1748)", () => {
+  const PLAN_DOCUMENT: ExtractedBrokerTransactionsDocument = {
+    documentType: "broker_transactions",
+    transactions: [
+      {
+        amount: "1200",
+        currency: "EUR",
+        date: "2026-02-12",
+        dgsCode: "N5394",
+        kind: "buy" as const,
+        name: "MyInvestor Indexado S&P 500",
+        pricePerUnit: "35",
+        units: "34.2857",
+      },
+    ],
+    warnings: [],
+  };
+
+  test("el código DGS viaja como par tipado, no como ISIN ni como nombre", () => {
+    const read = statementFromTransactionsDocument(PLAN_DOCUMENT);
+    if (!read.ok) throw new Error(`expected ok, got ${read.error}`);
+
+    expect(read.statement.rows[0]).toMatchObject({
+      isin: null,
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    // El resumen de ISINs del extracto sigue siendo de ISINs: un plan no tiene.
+    expect(read.statement.isins).toEqual([]);
+  });
+
+  test("la puerta ya no pide un ISIN imposible: con el DGS entra", () => {
+    const read = statementFromTransactionsDocument(PLAN_DOCUMENT);
+    expect(read.ok).toBe(true);
   });
 });

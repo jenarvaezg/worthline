@@ -48,8 +48,6 @@ import {
   defaultsFor,
   findStatementTypeConflict,
   findUnresolvedStatementChoice,
-  isIsinShaped,
-  isinSecurityId,
   isProviderSymbolShaped,
   isStatementBroker,
   type OwnershipShare,
@@ -346,6 +344,7 @@ export async function confirmImportStatementAction(
 
       const investments = await readPortfolioInvestments(
         statementImportPreviewReadPort(store),
+        read.value,
       );
       const buckets = resolveStatementImportBuckets(read.value, investments, {
         replaceOpening: (group) => shouldReplaceOpening(formData, group.isin),
@@ -398,6 +397,11 @@ export async function confirmImportStatementAction(
             ),
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
+            // The identifier offer the user accepted by including the fund
+            // (#1748) — written inside the import's own transaction.
+            ...(fund.backfillSecurityId
+              ? { backfillSecurityId: fund.backfillSecurityId }
+              : {}),
             overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) =>
               statementRowToOverwrite({ operationId, row, source: "statement" }),
             ),
@@ -408,9 +412,11 @@ export async function confirmImportStatementAction(
           asset: {
             currency: fund.creation.currency,
             id: fund.creation.assetId,
-            // A plantilla identifier without ISIN shape (Finect code, CoinGecko
-            // id) lives in providerSymbol, never in the isin column (#695).
-            ...(isIsinShaped(fund.isin) ? { securityId: isinSecurityId(fund.isin) } : {}),
+            // The typed identity the group carries, when the chosen instrument can
+            // hold it (#1748): a plan is born declaring its código DGS. A
+            // plantilla key that identifies nothing (Finect slug, CoinGecko id)
+            // lives in providerSymbol and never here (#695).
+            ...(fund.securityId ? { securityId: fund.securityId } : {}),
             name: fund.creation.name,
             ownership: fund.creation.ownership,
             ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),

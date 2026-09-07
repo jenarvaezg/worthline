@@ -8,6 +8,8 @@
  * here, testable without a DOM.
  */
 
+import { SECURITY_ID_KIND_LABEL_INLINE, type SecurityIdKind } from "@worthline/domain";
+
 export type FundBucketKind = "matched" | "new";
 
 /** One fund row's form controls, as the island holds them. */
@@ -158,4 +160,20 @@ export function summarizeImportSelection(
 /** Spanish singular/plural count phrase, e.g. `pluralize(1, "fondo", "fondos")`. */
 export function pluralize(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * The offer a file makes when it brings an identifier the matched holding does
+ * not declare (#1748) — written once, printed by the two doors that show a
+ * statement preview (the import page and the assistant's proposal card), because
+ * a promise about what the confirm will write must read the same in both.
+ *
+ * It says what will happen, not what happened: the fill rides with the confirm,
+ * and excluding the fund leaves the ficha exactly as it is.
+ */
+export function identifierBackfillOfferNote(
+  identifier: string,
+  kind: SecurityIdKind,
+): string {
+  return `Este extracto trae el ${SECURITY_ID_KIND_LABEL_INLINE[kind]} ${identifier}; tu ficha no lo declara — al confirmar, se rellena.`;
 }

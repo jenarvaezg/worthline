@@ -970,3 +970,104 @@ describe("importar-extracto — la columna Divisa", () => {
     ).toBeUndefined();
   });
 });
+
+/**
+ * El enrutado por identificador tipado (#1748, enmienda a ADR 0055): un plan de
+ * pensiones no tiene ISIN — su identificador es el código DGS — así que la
+ * plantilla lo trae pelado (`N5394`) y el importador tiene que llevarlo al plan
+ * que lo declara, ofrecerlo al que no lo declara, y nacer con él cuando crea.
+ */
+describe("un plan enruta por su código DGS (#1748)", () => {
+  const PLAN_CSV = [
+    "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+    "05/01/2024;Plan de pensiones;N5394;Compra;34,2857;1200;;MyInvestor Indexado S&P 500",
+  ].join("\r\n");
+
+  async function seedPlan(
+    store: WorthlineStore,
+    securityId?: { kind: "dgs"; value: string },
+  ): Promise<void> {
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "plan_sp500",
+      instrument: "pension_plan",
+      liquidityTier: "market",
+      manualPricePerUnit: "35",
+      name: "MyInvestor Indexado S&P 500",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      ...(securityId ? { securityId } : {}),
+    });
+  }
+
+  test("el código pelado del fichero encuentra al plan que lo declara", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store, { kind: "dgs", value: "N5394" });
+
+    const result = await preview(uploadForm(PLAN_CSV), store);
+    const fund = matchedRow(result, "N5394");
+
+    expect(fund.existingName).toBe("MyInvestor Indexado S&P 500");
+    // Casó por el identificador: no hay nada que ofrecer.
+    expect(fund.offeredIdentifierKind).toBeUndefined();
+  });
+
+  test("al plan que no lo declara se le OFRECE, y confirmar lo escribe", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+
+    const result = await preview(uploadForm(PLAN_CSV), store);
+    const fund = matchedRow(result, "N5394");
+    expect(fund.existingName).toBe("MyInvestor Indexado S&P 500");
+    expect(fund.offeredIdentifierKind).toBe("dgs");
+
+    // Antes de confirmar, la ficha sigue sin identificador: es una oferta.
+    const before = await store.assets.readInvestmentAssetById("plan_sp500");
+    expect(before?.securityId).toBeUndefined();
+
+    const fd = uploadForm(PLAN_CSV);
+    fd.set("include_N5394", "on");
+    await confirm(fd, store);
+
+    const after = await store.assets.readInvestmentAssetById("plan_sp500");
+    expect(after?.securityId).toEqual({ kind: "dgs", value: "N5394" });
+    expect(await store.operations.readOperations("plan_sp500")).toHaveLength(1);
+  });
+
+  test("excluir el fondo deja la ficha exactamente como estaba", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+
+    const fd = uploadForm(PLAN_CSV); // sin include_N5394
+    await confirm(fd, store);
+
+    const after = await store.assets.readInvestmentAssetById("plan_sp500");
+    expect(after?.securityId).toBeUndefined();
+    expect(await store.operations.readOperations("plan_sp500")).toHaveLength(0);
+  });
+
+  test("un identificador ya declarado no se pisa: el fichero crea su propio plan", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store, { kind: "dgs", value: "N5396" });
+
+    const result = await preview(uploadForm(PLAN_CSV), store);
+    // El hueco está ocupado por OTRO código: ni casa ni se ofrece.
+    expect(newRow(result, "N5394")).toBeDefined();
+
+    const fd = uploadForm(PLAN_CSV);
+    fd.set("include_N5394", "on");
+    await confirm(fd, store);
+
+    expect(await store.assets.readInvestmentAssetById("plan_sp500")).toMatchObject({
+      securityId: { kind: "dgs", value: "N5396" },
+    });
+    const created = (await store.assets.readInvestmentAssetsWithMeta()).find(
+      (meta) => meta.securityId?.value === "N5394",
+    );
+    // El plan nuevo NACE declarando su código, no arrastrándolo en el nombre.
+    expect(created?.securityId).toEqual({ kind: "dgs", value: "N5394" });
+  });
+});

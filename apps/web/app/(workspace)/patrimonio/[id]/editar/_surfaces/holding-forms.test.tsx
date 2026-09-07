@@ -26,6 +26,7 @@ describe("AssetEditForm — investment settings", () => {
         investment={{
           currency: "EUR",
           id: "asset_fund",
+          instrument: "fund",
           liquidityTier: "market",
           name: "Vanguard Fund",
           ownership: [{ memberId: "m1", shareBps: 10000 }],
@@ -137,6 +138,7 @@ describe("AssetEditForm — the instrument picker (#1512)", () => {
         investment={{
           currency: "EUR",
           id: "asset_fund",
+          instrument: "fund",
           liquidityTier: "market",
           name: "Vanguard Fund",
           ownership: [{ memberId: "m1", shareBps: 10_000 }],

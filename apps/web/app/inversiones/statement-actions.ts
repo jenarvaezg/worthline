@@ -38,11 +38,10 @@ import type {
 } from "@worthline/domain";
 import {
   declaredSecurityId,
-  isinSecurityId,
   isStatementBroker,
   parseStatement,
   planStatementMerge,
-  resolvePerHoldingStatementIsinGuard,
+  resolvePerHoldingStatementIdentityGuard,
   SECURITY_ID_KIND_LABEL_INLINE,
 } from "@worthline/domain";
 import {
@@ -71,24 +70,25 @@ export type StatementPreviewState =
     };
 
 /**
- * The Spanish error shown when the file's ISIN does not match the holding's
- * identifier (S4). El archivo SIEMPRE trae ISINs —es un extracto de bróker— pero
- * lo que la posición tiene registrado puede ser un código DGS (#1743), y entonces
- * llamarlo «ISIN» sería exactamente el error de nomenclatura que originó #1741:
- * un plan de pensiones no tiene ISIN. La frase nombra cada mitad por lo que es.
+ * The Spanish error shown when the identifier the file carries is not the one
+ * this holding declares (S4, generalized by #1748). Neither half is called «el
+ * ISIN» any more: what the file brings may be a plan's código DGS, and what the
+ * position has registered may be one too (#1743) — calling either an ISIN would
+ * be exactly the naming error that originated #1741, since a plan de pensiones
+ * has none. The sentence names each half by what it is.
  */
 function identifierMismatchMessage(
-  fileIsin: string | string[] | null,
+  fileIdentifiers: string[],
   holdingSecurityId: StoredSecurityId | undefined,
 ): string {
-  const fileLabel = Array.isArray(fileIsin) ? fileIsin.join(", ") : (fileIsin ?? "—");
+  const fileLabel = fileIdentifiers.length > 0 ? fileIdentifiers.join(", ") : "—";
   const kind = holdingSecurityId?.kind;
   const holdingLabel = kind
     ? `su ${SECURITY_ID_KIND_LABEL_INLINE[kind]} (${holdingSecurityId.value})`
     : holdingSecurityId
       ? `lo que tiene registrado (${holdingSecurityId.value})`
       : "lo que tiene registrado";
-  return `El ISIN del archivo (${fileLabel}) no coincide con ${holdingLabel}. No se ha cargado nada.`;
+  return `El identificador del archivo (${fileLabel}) no coincide con ${holdingLabel}. No se ha cargado nada.`;
 }
 
 /** Count the sells among the rows a plan will actually write (created + overwritten). */
@@ -167,12 +167,15 @@ export async function previewStatementAction(
   const { rows, skipped } = read.value;
 
   return runActionWithStore(async (store) => {
-    // ISIN guard (S4): block a wrong-file slip before showing any summary.
+    // Identity guard (S4): block a wrong-file slip before showing any summary.
     const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
+    const guard = resolvePerHoldingStatementIdentityGuard(read.value, {
+      ...(asset ? { instrument: asset.instrument } : {}),
+      ...(asset?.securityId ? { securityId: asset.securityId } : {}),
+    });
     if (guard.status === "mismatch") {
       return {
-        message: identifierMismatchMessage(guard.fileIsins, asset?.securityId),
+        message: identifierMismatchMessage(guard.fileIdentifiers, asset?.securityId),
         status: "error",
       };
     }
@@ -245,33 +248,33 @@ export async function confirmStatementAction(
       const read = await readStatementFromForm(formData, testFxRatesOverride(_testArgs));
       if (!read.ok) return { error: read.message, ok: false };
 
-      // ISIN guard (S4): block a mismatch before any write; backfill an empty
-      // asset so a later upload to the same holding is guarded too.
+      // Identity guard (S4): block a mismatch before any write; fill an empty
+      // holding so a later upload to it is guarded too.
       const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-      const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.securityId);
+      const guard = resolvePerHoldingStatementIdentityGuard(read.value, {
+        ...(asset ? { instrument: asset.instrument } : {}),
+        ...(asset?.securityId ? { securityId: asset.securityId } : {}),
+      });
       if (guard.status === "mismatch") {
         return {
-          error: identifierMismatchMessage(guard.fileIsins, asset?.securityId),
+          error: identifierMismatchMessage(guard.fileIdentifiers, asset?.securityId),
           ok: false,
         };
       }
       if (guard.status === "backfill") {
-        await store.assets.backfillInvestmentSecurityId(routeAssetId, {
-          kind: "isin",
-          value: guard.isin,
-        });
+        await store.assets.backfillInvestmentSecurityId(routeAssetId, guard.securityId);
       }
 
       // The catalog identity to register once the merge commits (#1097). A
-      // statement is the path where an ISIN first attaches to a fund, so this is
-      // often the very first identity the holding has. No instrument here:
+      // statement is the path where an identifier first attaches to a holding, so
+      // this is often the very first identity it has. No instrument here:
       // `readInvestmentAssetById` is a market investment by construction and
       // supplies its own provider.
       const catalog: ExposureCatalogStubCandidate = {
         displayName: asset?.name ?? null,
         securityId:
           guard.status === "backfill"
-            ? isinSecurityId(guard.isin)
+            ? guard.securityId
             : declaredSecurityId(asset?.securityId),
         priceProvider: asset?.priceProvider ?? null,
         providerSymbol: asset?.providerSymbol ?? null,

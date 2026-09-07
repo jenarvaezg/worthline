@@ -1,7 +1,13 @@
 import type { Instrument } from "./instrument-catalog";
 
-/** Canonical security identifiers. A provider symbol is a price lookup, not one of these. */
-export type SecurityIdKind = "isin" | "dgs";
+/**
+ * Canonical security identifiers. A provider symbol is a price lookup, not one of
+ * these. The list is a VALUE because the boundaries need it: a parser that
+ * re-hydrates a persisted kind has to check it against something (#1748).
+ */
+export const SECURITY_ID_KINDS = ["isin", "dgs"] as const;
+
+export type SecurityIdKind = (typeof SECURITY_ID_KINDS)[number];
 
 export interface SecurityId {
   kind: SecurityIdKind;
@@ -149,6 +155,20 @@ export function securityIdFieldForInstrument(
     default:
       return null;
   }
+}
+
+/**
+ * Whether an instrument can legally carry an identifier of this kind — a fund an
+ * ISIN, a plan its DGS code. The write side of {@link securityIdFieldForInstrument}
+ * for the paths that do not render a field: never write what does not validate
+ * (#1453), and an unknown instrument validates nothing.
+ */
+export function instrumentCanCarrySecurityIdKind(
+  instrument: Instrument | null | undefined,
+  kind: SecurityIdKind,
+): boolean {
+  if (instrument == null) return false;
+  return securityIdFieldForInstrument(instrument)?.kind === kind;
 }
 
 /** The canonical ISIN used by classification, catalog registration and lookup. */

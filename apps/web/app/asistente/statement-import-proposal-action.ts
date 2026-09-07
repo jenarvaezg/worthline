@@ -17,8 +17,6 @@ import {
 import {
   buildStatementImportPlan,
   findStatementTypeConflict,
-  isIsinShaped,
-  isinSecurityId,
   type ParsedStatementRow,
   resolveStatementImportBuckets,
 } from "@worthline/domain";
@@ -78,7 +76,7 @@ export async function confirmStatementImportProposalAction(
         return { status: "error", message: preview.message };
       }
 
-      const investments = await readPortfolioInvestments(readPort);
+      const investments = await readPortfolioInvestments(readPort, statement);
       const buckets = resolveStatementImportBuckets(statement, investments);
       const conflict = findStatementTypeConflict(buckets);
       if (conflict) {
@@ -125,6 +123,11 @@ export async function confirmStatementImportProposalAction(
             ),
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
+            // Confirming the card accepts the identifier the document brought for
+            // a holding that declares none (#1748) — the card printed the offer.
+            ...(fund.backfillSecurityId
+              ? { backfillSecurityId: fund.backfillSecurityId }
+              : {}),
             overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) =>
               statementRowToOverwrite({ operationId, row, source: "agent" }),
             ),
@@ -135,7 +138,7 @@ export async function confirmStatementImportProposalAction(
           asset: {
             currency: fund.creation.currency,
             id: fund.creation.assetId,
-            ...(isIsinShaped(fund.isin) ? { securityId: isinSecurityId(fund.isin) } : {}),
+            ...(fund.securityId ? { securityId: fund.securityId } : {}),
             name: fund.creation.name,
             ownership: fund.creation.ownership,
             ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),

@@ -592,17 +592,25 @@ figure (it is derived).
 A file an external broker exports listing investment movements — one fund's or a
 whole account's (e.g. a MyInvestor orders export). The user uploads it and declares
 its broker; worthline reads it with a broker-specific parser, splits its rows by
-**ISIN**, maps each group to an existing **investment** — or offers to create the
-missing ones, prefilled by a live symbol lookup on the ISIN (the export carries no
-fund name) — and merges each group into that investment's **operations**: matched
-by date, the file winning where a date overlaps, operations whose date is absent
-from the file left untouched (never deleted). Only executed rows load; pending or
-rejected ones are skipped. The upload is previewed per fund — matched, new,
-ignored, or **pending a choice** (an ISIN identifies the instrument, not the
+**security id** — an **ISIN** or a plan's **Código DGS**, each in its own lane, with a
+raw identifier classified by shape and anything else routing as a **provider symbol**
+(ADR 0055 amendment #1748) — maps each group to an existing **investment** — or offers
+to create the missing ones, prefilled by a live symbol lookup on the identifier (the
+export carries no fund name) — and merges each group into that investment's
+**operations**: matched by date, the file winning where a date overlaps, operations
+whose date is absent from the file left untouched (never deleted). Only executed rows
+load; pending or rejected ones are skipped. The upload is previewed per fund — matched,
+new, ignored, or **pending a choice** (an identifier names the instrument, not the
 holding: when two investments carry it — the same fund at two brokers — the user
 names which one, and until then the fund stays out) — and applied all-or-nothing
-over the funds the user includes. Uploaded from the portfolio (any mix of ISINs)
-or from one holding, where every row must match that holding's ISIN. An investment
+over the funds the user includes. A fund whose identifier nobody carries can still
+match a holding by exact name and compatible **instrument** when that holding declares
+no identifier at all: the preview then **offers** to fill it («al confirmar, se
+rellena»), never overwriting one already declared and never writing what the
+instrument could not carry. An identifier that does not validate as the kind it
+declares matches nothing — it reads as «sin match» instead of finding the wrong
+holding. Uploaded from the portfolio (any mix of identifiers) or from one holding,
+where every row must carry that holding's identifier. An investment
 created without a **provider symbol** values at **cost basis** and carries an
 overrideable **warning** until one is set, unless its position is closed. Distinct from an **Import** (a one-shot full-workspace replace) and
 from a **connected source** (a live, read-only API mirror that owns its holdings):

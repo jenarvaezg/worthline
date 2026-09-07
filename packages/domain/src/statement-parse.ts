@@ -22,6 +22,7 @@ import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { OperationCapture } from "./investment-types";
 import type { CurrencyCode } from "./money";
+import type { SecurityId } from "./security-id";
 import {
   getStatementBrokerAdapter,
   type StatementBroker,
@@ -39,6 +40,14 @@ export interface ParsedStatementRow {
    * its historical name to spare every consumer a rename.
    */
   isin: string | null;
+  /**
+   * The TYPED identifier the row declares (#1748). Only a reading that KNOWS the
+   * register states it — the assistant's extraction contract does (`dgsCode` vs
+   * `isin`, #1747); a broker file does not, and there the raw {@link isin} column
+   * is classified by shape at the seam. It supersedes the column, and a pair whose
+   * value does not validate as its kind claims no identifier at all.
+   */
+  securityId?: SecurityId;
   /** The asset type declared by the row, when the format carries one (#695). */
   instrument?: Instrument;
   /** A display name carried by the row, used only to prefill creation (#695). */

@@ -251,21 +251,99 @@ module moved into the domain: an operation deleted on the ficha between drafting
 and confirming is enough to turn a curated ledger back into the 1-participación
 opening, and the apply lives in `packages/db`, where the web app is out of reach.
 
-## Nota (#1743): la columna cambió de nombre y de alcance
+## Amendment (#1748): a statement routes by TYPED identifier
 
-Desde la migración v70 la identidad del valor no vive en `investment_assets.isin`
-sino en el par `security_id` + `security_id_kind` (`'isin' | 'dgs'`), porque un plan
-de pensiones español no tiene ISIN: su identificador es el código DGS `N####`
-(PRD #1741). Nada de lo decidido arriba cambia con eso — un extracto de bróker
-sigue enrutando por ISIN, y la columna que se compara es ahora la mitad `'isin'`
-del par. **El enrutado tipado, con claves con namespace y su enmienda a esta ADR,
-es #1748**; hasta entonces un holding identificado por su código DGS simplemente
-ocupa el hueco: nunca casa con un ISIN del fichero, y el guard lo rechaza en vez de
-rellenarlo.
+Decision 1 above says "group by ISIN", and #695 had already widened that in practice
+to "or whatever key the plantilla carries". Both sentences hide the same assumption:
+that an identifier is a STRING, so two identifiers are the same when their characters
+are. A Spanish pension plan has no ISIN — its identifier is the código DGS `N####`
+(PRD #1741) — and under a flat space by value that code would meet the same five
+characters sitting in an ISIN column, or in a finect symbol, and match. Those are
+three different registers.
 
-Precisión tras #1747: lo que esa slice tipó es el **matcher del asistente**
-(`holding-matcher`, el reconcile de PRD #1103), no el enrutado del extracto. Un
-documento del chat ya puede nombrar un plan por su `N####` y casarlo con el holding
-que lo tiene registrado. El extracto de bróker de esta ADR sigue enrutando por la
-mitad `'isin'` del par y su enmienda sigue siendo #1748: son dos puertas, y la que
-esta ADR gobierna no se ha movido.
+So the routing key carries its **namespace** (`packages/domain/src/matching-keys.ts`,
+the module both doors already share, #1366):
+
+- **`isin:…`, `dgs:N####`, `sym:<símbolo>`.** A holding claims the key of the identifier
+  it DECLARES (the typed pair of #1743) plus one for its provider symbol; a document row
+  claims the key of its typed pair when the reading states one (#1747), else the key its
+  raw identifier is **classified into by shape at the seam** — an ISIN with its check
+  digit, a normalized `N####`, and everything else a symbol.
+- **A key only ever meets a key of its own lane.** A plantilla's bare `N5394` finds the
+  plan that declares that DGS code; the finect slug keeps routing as the pricing handle
+  it is; and a **mistyped** pair (a value that does not validate as its declared kind)
+  claims no key at all, so it surfaces as «sin match» — a question the user can answer —
+  instead of matching something else in silence.
+- **Ranking is untouched.** Every claimant of a key is still indexed and ranked, never
+  resolved (#1331/#1366 above): the namespace changes what "the same key" means, not who
+  decides which holding it is.
+- **Both doors read the keys from that one module**, which is the point of #1366 and the
+  acceptance test of this amendment: the same file resolves the same way through the
+  importer and through the assistant's matcher (`holding-matcher`, whose own typed lanes
+  arrived with #1747). Leaving the matcher on its private index would have meant two
+  readings of «the same key» again — the thing the shared module exists to prevent — so it
+  now builds its index from the same functions. One consequence is recorded here rather
+  than left to be discovered: a holding has **no bare identifier column** any more
+  (`MatchPortfolioHolding.isin` is gone; no projection ever filled it), because invariant 2
+  of PRD #1741 says one key per state — a holding is found by the pair it DECLARES or by
+  its provider symbol, and a value nobody could classify declares nothing.
+
+### The offered backfill: the weak arm this bucket never had
+
+A group whose identifier nobody claims may still be a holding the user already has —
+the one whose identifier hole was never filled, which is exactly what the health signal
+of #1745 complains about. When a typed group matches such a holding by **exact
+normalized name plus a compatible instrument** (`normalizeMatchName`, never fuzzy) and
+the hole is EMPTY, the group lands in _matched_ with a visible offer: «este extracto
+trae el código N5394; tu ficha no lo declara — al confirmar, se rellena».
+
+Four fences, and each is the reason the offer is safe:
+
+- **It is a proposal.** Including the fund is what accepts it; excluding it leaves the
+  ficha exactly as it was. The sentence is printed by the import page and by the
+  assistant's proposal card from one function, because a promise about what the confirm
+  writes must read the same in both.
+- **It never overwrites.** Only an empty hole is filled — a value nobody could classify
+  (`kind: null`, the #1416 import exemption) occupies it just as a declared identifier
+  does. Filling a hole cannot re-price a holding as another instrument; replacing an
+  identifier could hand a later statement the wrong ledger to overwrite (the #1349
+  asymmetry, verbatim).
+- **It is validated by type.** Nothing is written that the holding's instrument could
+  not carry — a plan takes no ISIN, a fund no plan code (#1453).
+- **It is atomic with the movements it came with.** The write travels in the import
+  command and lands inside its transaction (decision 4): an identity nobody confirmed
+  can never outlive a failed import.
+
+When two empty-hole namesakes claim the group, the offer does not resolve the choice: the
+row is _pending a choice_ like any other ambiguous identifier, neither surface prints the
+offer while it is retained, and the fill follows whichever holding the user names — never
+the default the preview happened to render first.
+
+The same generalization applies to the two places that spoke of "the ISIN" as if a file
+could only carry one:
+
+- **The per-holding guard** (`statement-identity-guard.ts`, renamed from
+  `statement-isin.ts`) compares the file's identifiers to the holding's typed pair
+  inside one lane, and its ADR 0018 backfill is now typed too: a plan learns its DGS
+  code from its own paper. Its Spanish refusal stopped calling either half «el ISIN».
+- **The assistant's all-or-nothing gate** for a transactions document refuses rows with
+  no **identifier** (ISIN *or* DGS) rather than rows with no ISIN — before #1748 that
+  gate asked a plan for a number it can never have (the other half of #1373).
+
+What a creation writes changes with it: a group that carries a typed identifier the
+chosen instrument can hold is born DECLARING it, so two people who import the same plan
+share one catalog ficha (the acceptance test of PRD #1741).
+
+### The one thing that no longer matches
+
+An ISIN in a file no longer reaches a holding that carries that ISIN as its **provider
+symbol**. That cross-lane hit was the flat space's doing, not a decision: an ISIN is not
+a quote route (no provider prices by ISIN — see `identifierAsSymbol`, #1330), so the
+holding it would find is one whose pricing handle was mis-filled. When such a holding's
+identifier hole is empty and its name matches, the backfill offer above is the honest
+path to the same place; when it is not, the fund reads as new and the user decides.
+
+Related: the column this ADR compares (`investment_assets.security_id` +
+`security_id_kind`, `'isin' | 'dgs'`) arrived with the v70 migration of #1743; the
+classifier and the canonical DGS shape live in `packages/domain/src/security-id.ts`
+(#1742).

@@ -14,6 +14,7 @@ import {
   defaultFundSelection,
   type FundSelectionFlags,
   type FundSelectionState,
+  identifierBackfillOfferNote,
   isFundChoicePending,
   pluralize,
   summarizeImportSelection,
@@ -391,7 +392,21 @@ export function ImportStatementPreview({
                                 </p>
                               </div>
                             ) : (
-                              <strong>{fund.existingName}</strong>
+                              <div className="stackForm">
+                                <strong>{fund.existingName}</strong>
+                                {fund.offeredIdentifierKind ? (
+                                  // The weak arm of #1748: this holding was found
+                                  // by name, and the file brings the identifier
+                                  // its ficha never declared. An offer, printed
+                                  // before the confirm that accepts it.
+                                  <p className="infoNote">
+                                    {identifierBackfillOfferNote(
+                                      fund.isin,
+                                      fund.offeredIdentifierKind,
+                                    )}
+                                  </p>
+                                ) : null}
+                              </div>
                             )
                           ) : (
                             <div className="stackForm">
