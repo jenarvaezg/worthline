@@ -2,7 +2,7 @@
  * El identificador de valor cruzando la puerta del documento de workspace
  * (#1743, resolución #1667 puntos 4 y 5).
  *
- * Dos lectores, una puerta (ADR 0071): el documento nuevo trae el par
+ * Dos lectores, una puerta (ADR 0104): el documento nuevo trae el par
  * `securityId` + `securityIdKind`, y el campo legacy `isin` se sigue aceptando
  * PARA SIEMPRE — un fichero escrito por cualquier versión pasada tiene que seguir
  * restaurando. Se descartó conservar `isin` como nombre de salida: perpetuarlo

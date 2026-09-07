@@ -426,7 +426,7 @@ const investmentMetaSchema = z.object({
   securityIdKind: z.enum(["isin", "dgs"]).optional(),
   /**
    * The pre-#1743 field name, accepted FOREVER — a document written by any past
-   * version must keep restoring (ADR 0071: one gate, two readers). Read only when
+   * version must keep restoring (ADR 0104: one gate, two readers). Read only when
    * `securityId` is absent; classified by the same shape rule.
    */
   isin: nonEmptyString.optional(),

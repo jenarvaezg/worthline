@@ -121,7 +121,7 @@ export function unvalidatedEvidenceClassFor(toolName: string): UnvalidatedEviden
  * whole boundary exists to prevent. Their route remains the deterministic one.
  *
  * These two have a deterministic route as well since #1406 gave the bank's schedule its
- * own reader behind the same door (ADR 0071), and that does not make this escape idle: a
+ * own reader behind the same door (ADR 0104), and that does not make this escape idle: a
  * person who has just been told their file cannot be read in bulk, and who answers by
  * typing the figures, is on the manual path in the surface they are already standing in.
  * What it does mean is that every refusal here can name the importer as an alternative —
@@ -308,7 +308,7 @@ export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =
  * two figures for the same date.
  *
  * The file route comes LAST and as an alternative, never as the fix: it exists since
- * #1406 gave the bank's schedule its own reader behind the same door (ADR 0071), so
+ * #1406 gave the bank's schedule its own reader behind the same door (ADR 0104), so
  * withholding it would be hiding a working path — but leading with it would be answering
  * «I could not read what you wrote» with «upload a file instead», which is the shrug the
  * whole ticket is about.

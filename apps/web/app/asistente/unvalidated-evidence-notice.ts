@@ -40,7 +40,7 @@ import { unreadableTypedSeriesRejected } from "./unvalidated-evidence-gate";
  *
  * It names BOTH ways out, in the order that costs the user least. First the door #1418
  * opened, because they are already standing in the chat and it needs no second upload.
- * Then the deterministic importer, by its two tabs (#1406, ADR 0071): «Operaciones» for
+ * Then the deterministic importer, by its two tabs (#1406, ADR 0104): «Operaciones» for
  * positions and movements, «Cuadro de amortización» for the bank's schedule. Naming the
  * tab matters — before #1406 that door only had the operations reader, so sending a
  * mortgage schedule there was sending someone to a door that did not open.
