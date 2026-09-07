@@ -313,9 +313,6 @@ async function resolveDestination(
   // del campo, la clase que validó lo tecleado y el tipo de la fila salen de una sola
   // derivación, así que no pueden discrepar.
   const instrument: Instrument = transferDestinationInstrument(params.origin);
-  // El par tipado no viaja suelto: la fila escrita y el stub del catálogo leen el
-  // MISMO, así que no pueden clavarse bajo identidades distintas.
-  const securityId = params.securityId;
 
   return {
     // Shaped here, WRITTEN by the gate (#1599): the row and the pair it exists for
@@ -328,13 +325,15 @@ async function resolveDestination(
       manualPricePerUnit: params.pricePerUnit,
       name: params.destination.name,
       ownership: params.origin.ownership,
-      ...(securityId ? { securityId } : {}),
+      // El par tipado no viaja suelto: la fila escrita y el stub del catálogo leen
+      // el MISMO, así que no pueden clavarse bajo identidades distintas.
+      ...(params.securityId ? { securityId: params.securityId } : {}),
     },
     assetId: id,
     created: {
       instrument,
       name: params.destination.name,
-      ...(securityId ? { securityId } : {}),
+      ...(params.securityId ? { securityId: params.securityId } : {}),
     },
   };
 }

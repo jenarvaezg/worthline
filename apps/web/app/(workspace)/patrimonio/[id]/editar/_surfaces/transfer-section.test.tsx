@@ -130,14 +130,35 @@ describe("TransferSection", () => {
     expect(plan).toContain('name="newDestinationSecurityId"');
     expect(plan).toContain('placeholder="N5394"');
     expect(plan).not.toContain("ISIN");
+    // The trap of the paper travels with the field, not just with the rejection: the
+    // extracto prints the FONDO's code next to the plan's, and this is the fourth
+    // surface that has to say so (`security-id-field-view.ts`).
+    expect(plan).toContain("F####");
   });
 
-  test("a fund still asks for an ISIN, with the words it had before", () => {
+  test("a fund still asks for an ISIN, and says what an ISIN is for", () => {
     const fund = render({ instrument: "fund" });
 
-    expect(fund).toContain("ISIN de la inversión de destino");
     expect(fund).toContain('name="newDestinationSecurityId"');
+    expect(fund).toContain('placeholder="IE00B52MJY50"');
+    expect(fund).toContain("un extracto de tu bróker");
     expect(fund).not.toContain("Código DGS");
+  });
+
+  test("the identifier box is named by what a sighted user reads on it", () => {
+    // WCAG 2.5.3: an `aria-label` that renames the control makes the announced name
+    // and the printed one disagree. Same shape as the ficha's own identity box, whose
+    // `aria-label` is its `fichaLabel` verbatim.
+    for (const [instrument, label] of [
+      ["pension_plan", "Código DGS del plan"],
+      ["fund", "ISIN"],
+    ] as const) {
+      const box = render({ instrument }).match(
+        /<input[^>]*name="newDestinationSecurityId"[^>]*\/>/,
+      )?.[0];
+
+      expect(box).toContain(`aria-label="${label}"`);
+    }
   });
 
   test("an instrument with no identifier renders no identifier box at all", () => {

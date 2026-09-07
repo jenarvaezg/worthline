@@ -194,6 +194,7 @@ export default function TransferSection({
 
   // Which identifier the «crear destino» pane asks for — the destination inherits the
   // origin's instrument, so the SAME derivation the server validates with (#1772).
+  // Null where that instrument has no identifier at all, and then there is no box.
   const securityIdField = newDestinationSecurityIdField(origin);
   const securityIdCopy = securityIdField
     ? securityIdFieldCopy(securityIdField.kind)
@@ -282,17 +283,25 @@ export default function TransferSection({
               inherited instrument admits (#1772). A plan is asked for its DGS code —
               it has no ISIN and never will (#1489) — and an instrument with no
               identifier at all renders nothing, from the same domain map the alta and
-              the ficha read. The words are the shared copy's, so the three surfaces
-              ask one question. */}
-          {securityIdField ? (
+              the ficha read.
+              WHOLE copy, `help` included, in the shape the ficha renders it
+              (`identityBoxFor`): that line is where the trap of the paper lives — the
+              extracto prints the FONDO's code (F####) next to the plan's — and
+              `security-id-field-view.ts` says in as many words that it is the sentence
+              which must not exist in only some of the surfaces. The write refuses an
+              `F####` by naming it; the field is what stops the partícipe from typing it
+              in the first place. */}
+          {securityIdField && securityIdCopy ? (
             <label>
-              {securityIdCopy?.altaLabel} <small>(opcional)</small>
+              {securityIdCopy.altaLabel} <small>(opcional)</small>
               <input
-                aria-label={`${securityIdField.label} de la inversión de destino`}
+                aria-label={securityIdCopy.altaLabel}
+                autoComplete="off"
                 defaultValue={initial.newDestinationSecurityId}
                 name="newDestinationSecurityId"
-                placeholder={securityIdCopy?.placeholder}
+                placeholder={securityIdCopy.placeholder}
               />
+              <small>{securityIdCopy.help}</small>
             </label>
           ) : null}
           <p className="opCaptureHint">
