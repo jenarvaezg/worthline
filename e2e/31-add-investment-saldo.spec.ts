@@ -117,7 +117,12 @@ test("viene traspasada de otra entidad: alta por traspaso externo, no por compra
   await openInvestmentGroup(page, "pension_plan");
 
   await page.locator('input[name="name_pension_plan"]').fill("Plan traspasado E2E");
-  await page.locator('input[name="symbol_pension_plan"]').fill("N5394-Myinvestor");
+  // El plan se nombra por su código DGS, que es lo que imprime el papel (#1746,
+  // variante A de #1669): el símbolo de Finect ya no es un campo visible, viaja
+  // prellenado al elegir candidato. Aquí no se elige ninguno a propósito — el alta
+  // no se bloquea por eso, y el plan nace «identificado, sin cotizar» (invariante 6
+  // del PRD #1741), que es un estado legítimo y ajeno a lo que mide este journey.
+  await page.locator('input[name="securityId_pension_plan"]').fill("N5394");
 
   await page
     .locator('label:has(input[name="invMode_pension_plan"][value="traspaso"])')

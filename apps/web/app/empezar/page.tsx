@@ -47,6 +47,11 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
   // (`blocking-prerender-current-time`) que llega a la consola del navegador y
   // tumba las jornadas 18 y 19. `connection()` dice lo que ya es cierto — si hay
   // workspace o no es exactamente lo que cambia entre una petición y la siguiente.
+  //
+  // Va AQUÍ y no en la costura del store (`requirePrincipal`), aunque el comentario
+  // de `bootstrapHealthcheck` invite a ello: declararlo en toda apertura de store
+  // saca también a las rutas de workspace del shell prerenderizado. Probado — les
+  // costó su presupuesto de streaming a las jornadas 37 y 54, que pasaron a fallar.
   await connection();
   const workspace = await withStore((store) => store.workspace.readWorkspace());
 
