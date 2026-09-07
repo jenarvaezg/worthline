@@ -11,7 +11,8 @@
  * card had no way to know: to the code it was a clean match.
  *
  * This module turns the contract into a boundary. The rows come from the validated
- * extraction — the model only SELECTS among them, by name or ISIN — so a row that is
+ * extraction — the model only SELECTS among them, by name or by the document's own
+ * identifier (ISIN, or a plan's DGS code, #1747) — so a row that is
  * not in a document worthline read cannot exist, and the values, the fidelity tiers
  * and the movements are the extractor's, never the model's prose.
  *
@@ -23,6 +24,7 @@ import type {
   ExtractedHolding,
   ExtractedPositionsMovementsDocument,
 } from "./attachment-extraction-contract";
+import { extractedSecurityIdKey } from "./attachment-extraction-contract";
 
 /**
  * What the model may say about a row: enough to POINT at one of the document's
@@ -33,6 +35,8 @@ import type {
 export interface ReconcileRowClaim {
   name?: string | undefined;
   isin?: string | undefined;
+  /** The DGS code of a plan — the strong key of a row that has no ISIN (#1747). */
+  dgsCode?: string | undefined;
   value?: number | undefined;
 }
 
@@ -143,8 +147,20 @@ function normalizeName(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function normalizeIsin(value: string): string {
-  return value.trim().toUpperCase();
+/**
+ * Every identifier a row or a claim WROTE DOWN, normalized only enough to compare
+ * (#1747). Deliberately not the typed reading: a claim whose ISIN is one character
+ * off types to nothing, and if «declares nothing» were the answer, the contradiction
+ * guard below would stop seeing the very slip it exists to catch — a model relaying
+ * the right name next to the wrong instrument's code.
+ */
+function declaredIdentifiers(row: {
+  isin?: string | undefined;
+  dgsCode?: string | undefined;
+}): string[] {
+  return [row.isin, row.dgsCode]
+    .map((value) => (value ?? "").trim().toUpperCase().replace(/[-\s]/g, ""))
+    .filter((value) => value !== "");
 }
 
 /**
@@ -154,33 +170,48 @@ function normalizeIsin(value: string): string {
  */
 const VALUE_TOLERANCE_EUR = 1;
 
-/** The document holding a claim points at, or `null` when it points at nothing. */
+/**
+ * The document holding a claim points at, or `null` when it points at nothing.
+ *
+ * The strong half compares TYPED identifiers (#1747) and not bare strings: an ISIN
+ * and a plan's DGS code are different registers, so «the same five characters» in
+ * two of them is a coincidence and never an identity. Everything else — which key
+ * wins, and when a key contradicts instead of matching — is unchanged.
+ */
 function findClaimedHolding(
   claim: ReconcileRowClaim,
   holdings: readonly ExtractedHolding[],
 ): ExtractedHolding | null {
-  const isin = claim.isin ? normalizeIsin(claim.isin) : null;
+  const identity = extractedSecurityIdKey(claim);
   const name = claim.name ? normalizeName(claim.name) : null;
-  const byIsin =
-    isin === null
+  const byIdentity =
+    identity === null
       ? undefined
-      : holdings.find((holding) => holding.isin && normalizeIsin(holding.isin) === isin);
+      : holdings.find((holding) => extractedSecurityIdKey(holding) === identity);
   const byName =
     name === null
       ? undefined
       : holdings.find((holding) => normalizeName(holding.name) === name);
   // Two identifiers that resolve to two different rows is a contradiction, not a
   // match to arbitrate: the batch would write one of them on the strength of half a
-  // claim. ISIN wins only when the name resolves to nothing — the ordinary case of a
-  // model relaying a name of its own next to the document's identifier.
-  if (byIsin && byName && byIsin !== byName) return null;
-  const found = byIsin ?? byName;
+  // claim. The identifier wins only when the name resolves to nothing — the ordinary
+  // case of a model relaying a name of its own next to the document's identifier.
+  if (byIdentity && byName && byIdentity !== byName) return null;
+  const found = byIdentity ?? byName;
   if (!found) return null;
   // And an identifier that resolves to nothing may still CONTRADICT the row it landed
-  // on: a name that matches while the ISIN beside it belongs to no row of the document
-  // and disagrees with this one's is the same slip as a fabricated value. A document
-  // row with no ISIN of its own cannot contradict anything.
-  if (isin !== null && found.isin && normalizeIsin(found.isin) !== isin) return null;
+  // on: a name that matches while the identifier beside it belongs to no row of the
+  // document and disagrees with this one's is the same slip as a fabricated value. A
+  // document row with no identifier of its own cannot contradict anything.
+  const claimed = declaredIdentifiers(claim);
+  const printed = declaredIdentifiers(found);
+  if (
+    claimed.length > 0 &&
+    printed.length > 0 &&
+    !claimed.some((value) => printed.includes(value))
+  ) {
+    return null;
+  }
   if (
     claim.value !== undefined &&
     Math.abs(claim.value - found.value) > VALUE_TOLERANCE_EUR
@@ -192,7 +223,8 @@ function findClaimedHolding(
 
 /** How a claim reads back to the model when it matched nothing. */
 function describeClaim(claim: ReconcileRowClaim): string {
-  const label = claim.name?.trim() || claim.isin?.trim() || "(sin nombre)";
+  const label =
+    claim.name?.trim() || claim.isin?.trim() || claim.dgsCode?.trim() || "(sin nombre)";
   return claim.value === undefined ? `«${label}»` : `«${label}» (${claim.value})`;
 }
 

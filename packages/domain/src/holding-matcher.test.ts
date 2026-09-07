@@ -562,3 +562,75 @@ describe("matchHoldings — batch", () => {
     expect(match.decision).toBe("create");
   });
 });
+
+/**
+ * El plan de pensiones no tiene ISIN: su identificador es el código DGS (#1742), y
+ * hasta #1747 el matcher no tenía dónde leerlo — un documento que nombraba el plan
+ * por su `N####` caía al nombre, que es exactamente el fallo de #1373.
+ */
+describe("matchHoldings — clave tipada: el código DGS de un plan (#1747)", () => {
+  const plan = holding({
+    holdingId: "asset-sp500",
+    instrument: "pension_plan",
+    name: "MyInvestor Indexado SP500",
+    securityId: { kind: "dgs", value: "N5394" },
+  });
+
+  test("un DGS que solo un plan reclama resuelve fuerte, como un ISIN", () => {
+    const [match] = matchHoldings(
+      [row({ rowId: "r1", securityId: { kind: "dgs", value: "N5394" } })],
+      [plan],
+    );
+
+    expect(match).toMatchObject({
+      confidence: "strong",
+      decision: "update",
+      key: "dgs",
+      target: "asset-sp500",
+    });
+  });
+
+  test("el guion y la minúscula del papel no rompen el match", () => {
+    const [match] = matchHoldings(
+      [row({ rowId: "r1", securityId: { kind: "dgs", value: "n-5394" } })],
+      [plan],
+    );
+
+    expect(match!.confidence).toBe("strong");
+    expect(match!.target).toBe("asset-sp500");
+  });
+
+  test("un DGS no cruza con un ISIN ni con un símbolo de proveedor", () => {
+    const [match] = matchHoldings(
+      [row({ rowId: "r1", securityId: { kind: "dgs", value: "N5394" } })],
+      [
+        holding({ holdingId: "a1", isin: "N5394", name: "Otro" }),
+        holding({ holdingId: "a2", name: "Otro más", providerSymbol: "N5394" }),
+      ],
+    );
+
+    expect(match!.decision).toBe("create");
+    expect(match!.key).toBe("none");
+  });
+
+  test("dos planes con el mismo DGS quedan ambiguos, nunca resueltos en silencio", () => {
+    const [match] = matchHoldings(
+      [row({ rowId: "r1", securityId: { kind: "dgs", value: "N5394" } })],
+      [plan, holding({ ...plan, holdingId: "asset-sp500-bis", name: "El mismo, otro" })],
+    );
+
+    expect(match!.ambiguous).toBe(true);
+    expect(match!.confidence).toBe("weak");
+    expect(countKeyClaimants(match!)).toBe(2);
+  });
+
+  test("un par tipado `isin` sigue entrando por la vía del ISIN", () => {
+    const [match] = matchHoldings(
+      [row({ rowId: "r1", securityId: { kind: "isin", value: "lu1681043599" } })],
+      [holding({ holdingId: "a1", isin: "LU1681043599", name: "Amundi" })],
+    );
+
+    expect(match!.key).toBe("isin");
+    expect(match!.confidence).toBe("strong");
+  });
+});

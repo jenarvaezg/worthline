@@ -248,3 +248,82 @@ describe("positions + movements spreadsheet extractor", () => {
     expect(result).toMatchObject({ reason: "rows", status: "out_of_limits" });
   });
 });
+
+/**
+ * The DGS column (#1747). A cartera sheet that holds a plan de pensiones has no ISIN
+ * to print for it — the plan's identifier is its DGS code — so until the column
+ * existed, the honest reading of that row was «name only».
+ */
+describe("la columna del código DGS", () => {
+  test("lee «Código DGS» y vincula el movimiento por él", () => {
+    const result = extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        csvBytes([
+          "Nombre;Tipo;Código DGS;Valor;Divisa",
+          "MYINVESTOR INDEXADO SP 500 PP;Plan de pensiones;N5394;5.508,68;EUR",
+        ]),
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.holdings[0]?.dgsCode).toBe("N5394");
+    expect(document.holdings[0]?.isin).toBeUndefined();
+  });
+
+  test("«dgs» y «codigo dgs» son la misma columna, y el guion se normaliza", () => {
+    const result = extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        csvBytes([
+          "Nombre;Tipo;dgs;Valor;Divisa",
+          "MYINVESTOR INDEXADO SP 500 PP;Plan de pensiones;n-5394;5.508,68;EUR",
+        ]),
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.holdings[0]?.dgsCode).toBe("N5394");
+  });
+
+  test("el código del FONDO se ignora en voz alta y la fila sobrevive", () => {
+    const result = extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        csvBytes([
+          "Nombre;Tipo;Código DGS;Valor;Divisa",
+          "MYINVESTOR INDEXADO SP 500 PP;Plan de pensiones;F2244;5.508,68;EUR",
+        ]),
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.holdings[0]?.dgsCode).toBeUndefined();
+    expect(document.holdings[0]?.uncertain).toBe(true);
+    expect(document.warnings.join(" ")).toContain("F2244");
+  });
+
+  test("un ISIN con el dígito de control mal ya no atraviesa la hoja", () => {
+    const result = extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        csvBytes([
+          "Nombre;Tipo;ISIN;Valor;Divisa",
+          "Amundi MSCI World;Fondo;LU1681043598;12.000,00;EUR",
+        ]),
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.holdings[0]?.isin).toBeUndefined();
+    expect(document.warnings.join(" ")).toContain("LU1681043598");
+  });
+});

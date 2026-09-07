@@ -94,6 +94,7 @@ function toReconcileDocument(
       currency: holding.currency,
       fidelity: holding.fidelity,
       ...(holding.isin ? { isin: holding.isin } : {}),
+      ...(holding.dgsCode ? { dgsCode: holding.dgsCode } : {}),
       ...(holding.declaredCost !== undefined
         ? { declaredCost: holding.declaredCost }
         : {}),
@@ -105,6 +106,7 @@ function toReconcileDocument(
       amount: movement.amount,
       currency: movement.currency,
       ...(movement.isin ? { isin: movement.isin } : {}),
+      ...(movement.dgsCode ? { dgsCode: movement.dgsCode } : {}),
       ...(movement.name ? { name: movement.name } : {}),
       ...(movement.units !== undefined ? { units: movement.units } : {}),
       ...(movement.uncertain ? { uncertain: true } : {}),

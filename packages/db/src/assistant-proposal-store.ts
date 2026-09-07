@@ -112,6 +112,8 @@ export interface ReconcileDocumentHolding {
   name: string;
   type: string;
   isin?: string;
+  /** The DGS code of a plan de pensiones — the identifier it has instead (#1747). */
+  dgsCode?: string;
   value: number;
   currency: string;
   declaredCost?: number;
@@ -123,6 +125,8 @@ export interface ReconcileDocumentMovement {
   date: string;
   kind: "buy" | "sell" | "contribution";
   isin?: string;
+  /** The DGS code of a plan de pensiones — the identifier it has instead (#1747). */
+  dgsCode?: string;
   name?: string;
   units?: number;
   amount: number;

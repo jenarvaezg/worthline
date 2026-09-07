@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  dgsCodeSchema,
   extractedNumberSchema,
+  extractedSecurityIdKey,
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
@@ -42,6 +44,8 @@ export const extractedHoldingSchema = z
     name: z.string().trim().min(1).max(240),
     type: z.string().trim().min(1).max(120),
     isin: isinSchema.optional(),
+    /** The plan's DGS code when the row is a plan de pensiones — {@link dgsCodeSchema}. */
+    dgsCode: dgsCodeSchema.optional(),
     value: extractedNumberSchema,
     currency: currencySchema,
     declaredCost: extractedNumberSchema.optional(),
@@ -52,15 +56,18 @@ export const extractedHoldingSchema = z
 
 /**
  * One dated movement (compra/venta/aportación) read from a portfolio sheet. It
- * links back to a holding by the strong key (ISIN) or the weak key (name); at
- * least one is required, or the movement could never be attributed. `units` is
- * present only for buys/sells that report a quantity.
+ * links back to a holding by a strong key (the ISIN, or the DGS code of a plan de
+ * pensiones — #1747) or by the weak key (name); at least one is required, or the
+ * movement could never be attributed. `units` is present only for buys/sells that
+ * report a quantity.
  */
 export const extractedMovementSchema = z
   .object({
     date: isoDateSchema,
     kind: z.enum(MOVEMENT_KINDS),
     isin: isinSchema.optional(),
+    /** The plan's DGS code — the strong key of a row with no ISIN ({@link dgsCodeSchema}). */
+    dgsCode: dgsCodeSchema.optional(),
     name: z.string().trim().min(1).max(240).optional(),
     units: extractedNumberSchema.optional(),
     amount: extractedNumberSchema,
@@ -69,8 +76,9 @@ export const extractedMovementSchema = z
   })
   .strict()
   .refine(
-    (movement) => Boolean(movement.isin) || Boolean(movement.name),
-    "Un movimiento necesita ISIN o nombre para vincularse a un holding.",
+    (movement) =>
+      Boolean(movement.isin) || Boolean(movement.dgsCode) || Boolean(movement.name),
+    "Un movimiento necesita ISIN, código DGS o nombre para vincularse a un holding.",
   );
 
 export type ExtractedHolding = z.infer<typeof extractedHoldingSchema>;
@@ -80,16 +88,23 @@ function normalizeHoldingName(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/** True when a movement attributes to a holding by ISIN (strong) or name (weak). */
+/**
+ * True when a movement attributes to a holding by its typed identifier (strong) or
+ * by name (weak). The strong half compares the PAIR and not a bare string (#1747):
+ * a plan's `N5394` and a fund's ISIN live in different registers, so a code that
+ * matched across them would be a coincidence read as an identity.
+ */
 export function movementLinksToHolding(
-  movement: Pick<ExtractedMovement, "isin" | "name">,
-  holding: Pick<ExtractedHolding, "isin" | "name">,
+  movement: Pick<ExtractedMovement, "isin" | "dgsCode" | "name">,
+  holding: Pick<ExtractedHolding, "isin" | "dgsCode" | "name">,
 ): boolean {
-  const isinMatch = Boolean(movement.isin) && movement.isin === holding.isin;
+  const movementKey = extractedSecurityIdKey(movement);
+  const identityMatch =
+    movementKey !== null && movementKey === extractedSecurityIdKey(holding);
   const nameMatch =
     Boolean(movement.name) &&
     normalizeHoldingName(movement.name ?? "") === normalizeHoldingName(holding.name);
-  return isinMatch || nameMatch;
+  return identityMatch || nameMatch;
 }
 
 /**
@@ -99,8 +114,8 @@ export function movementLinksToHolding(
  * (ADR 0048 — no tier is claimed without the movements or cost to back it).
  */
 export function resolveHoldingFidelity(
-  holding: Pick<ExtractedHolding, "isin" | "name" | "declaredCost">,
-  movements: readonly Pick<ExtractedMovement, "isin" | "name">[],
+  holding: Pick<ExtractedHolding, "isin" | "dgsCode" | "name" | "declaredCost">,
+  movements: readonly Pick<ExtractedMovement, "isin" | "dgsCode" | "name">[],
 ): HoldingFidelity {
   if (movements.some((movement) => movementLinksToHolding(movement, holding))) {
     return "movements";

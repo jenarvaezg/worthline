@@ -64,12 +64,15 @@ export {
   type AttachmentLimitReason,
   capExtractionWarnings,
   currencySchema,
+  DGS_CODE_FIELD_PROSE,
   type ExtractorFailureCode,
   type ExtractorFailureKind,
+  extractedSecurityId,
+  extractedSecurityIdKey,
   isIsoDay,
-  isValidIsin,
   normalizeExtractedNumber,
   type UnrecognizedReason,
+  validIsinOrNull,
 } from "./attachment-extraction-primitives";
 export {
   brokerTransactionsDocumentSchema,

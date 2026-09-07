@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  dgsCodeSchema,
   extractedNumberSchema,
   isinSchema,
   isoDateSchema,
@@ -111,6 +112,14 @@ const holdingEventSchema = z
      * that remains the agent's job with its read tools.
      */
     isin: isinSchema.optional(),
+    /**
+     * The same ink, for the paper that has no ISIN to print: the DGS code of the
+     * PLAN ({@link dgsCodeSchema}, which is where the N/F trap is written down). A
+     * plan de pensiones is identified by this code and by nothing else, so without
+     * the field a MyInvestor aportación confirmation could name its plan only in
+     * prose — the hole #1373 fell through (#1747).
+     */
+    dgsCode: dgsCodeSchema.optional(),
     units: extractedNumberSchema.optional(),
     pricePerUnit: observedMoneySchema.optional(),
     fees: observedMoneySchema.optional(),

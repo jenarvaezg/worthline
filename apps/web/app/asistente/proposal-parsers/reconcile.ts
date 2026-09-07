@@ -24,8 +24,9 @@ import type {
   MatchDecision,
   MatchKey,
   RowMatch,
+  SecurityId,
 } from "@worthline/domain";
-import { INSTRUMENTS } from "@worthline/domain";
+import { classifySecurityId, INSTRUMENTS } from "@worthline/domain";
 import {
   isNullableNumber,
   isOneOf,
@@ -39,6 +40,7 @@ import {
 } from "./shapes";
 
 const KEYS = vocabulary<MatchKey>({
+  dgs: true,
   isin: true,
   name: true,
   none: true,
@@ -82,6 +84,21 @@ function parseMatch(raw: unknown): RowMatch | null {
   };
 }
 
+/**
+ * The row's typed identifier as it comes back off the wire (#1747). Re-classified
+ * rather than trusted: the pair must still say what its VALUE says, so a client
+ * cannot hand back `{kind: "isin", value: "N5394"}` and route a plan down the ISIN
+ * lane. An identifier that will not classify is dropped — the row keeps its name and
+ * its match, and the surface degrades to what it can honestly show.
+ */
+function parseSecurityId(raw: unknown): SecurityId | undefined {
+  if (!isRecord(raw)) return undefined;
+  const { kind, value } = raw;
+  if (typeof value !== "string") return undefined;
+  const classified = classifySecurityId(value);
+  return classified && classified.kind === kind ? classified : undefined;
+}
+
 /** One movement the document attributes to a row — the evidence of what will be written. */
 function parseMovement(raw: unknown): ReconcileRowMovement | null {
   if (!isRecord(raw)) return null;
@@ -102,9 +119,10 @@ function parseMovement(raw: unknown): ReconcileRowMovement | null {
 function parseRow(raw: unknown): ReconcileRow | null {
   if (!isRecord(raw)) return null;
   const { currency, declaredCostMinor, excluded, fidelity, instrument } = raw;
-  const { isin, movementsDeltaMinor, name, rowId, uncertain, valueMinor } = raw;
+  const { movementsDeltaMinor, name, rowId, uncertain, valueMinor } = raw;
   if (typeof rowId !== "string" || typeof name !== "string") return null;
-  if (!isOptionalString(isin) || !isOptionalNumber(declaredCostMinor)) return null;
+  if (!isOptionalNumber(declaredCostMinor)) return null;
+  const securityId = parseSecurityId(raw.securityId);
   if (instrument !== null && !isOneOf(instrument, INSTRUMENTS)) return null;
   if (!isOneOf(fidelity, HOLDING_FIDELITY_TIERS)) return null;
   if (typeof valueMinor !== "number" || typeof currency !== "string") return null;
@@ -126,7 +144,7 @@ function parseRow(raw: unknown): ReconcileRow | null {
     uncertain,
     valueMinor,
     ...(declaredCostMinor === undefined ? {} : { declaredCostMinor }),
-    ...(isin === undefined ? {} : { isin }),
+    ...(securityId === undefined ? {} : { securityId }),
   };
 }
 

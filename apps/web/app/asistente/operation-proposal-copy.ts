@@ -18,6 +18,8 @@
  * Pure and I/O-free (`docs/interaction-patterns.md`, ADR 0036).
  */
 
+import type { SecurityId } from "@worthline/domain";
+
 import {
   currencyMark,
   formatDocumentMoney,
@@ -93,19 +95,22 @@ export function operationFactLine(fact: OperationFactLine): string {
  */
 export function operationDocumentLine(document: {
   label: string;
-  isin?: string;
+  securityId?: SecurityId;
 }): string {
-  return document.isin === undefined
+  // The identifier's VALUE, whichever register it is in (#1747): a plan's paper prints
+  // «N5394» and that is the string the user is comparing the card against.
+  return document.securityId === undefined
     ? document.label
-    : `${document.label} · ${document.isin}`;
+    : `${document.label} · ${document.securityId.value}`;
 }
 
-/** Where it lands: the holding's own name, and its ISIN when it has one registered. */
+/** Where it lands: the holding's own name, and its identifier when it has one. */
 export function operationDestinationLine(holding: {
   name: string;
-  isin?: string;
+  securityId?: SecurityId;
 }): string {
-  const identity = holding.isin === undefined ? "" : ` · ${holding.isin}`;
+  const identity =
+    holding.securityId === undefined ? "" : ` · ${holding.securityId.value}`;
   return `Anotar en «${holding.name}»${identity}`;
 }
 

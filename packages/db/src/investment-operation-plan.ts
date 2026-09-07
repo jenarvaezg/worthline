@@ -43,10 +43,17 @@ export interface InvestmentOperationPlan {
   currency: string;
   /**
    * The ISIN the document prints, when it prints one. Kept because the confirm
-   * re-checks it against the holding's registered ISIN: a paper about a different
-   * instrument must not land here just because a day passed.
+   * re-checks it against the holding's registered identifier: a paper about a
+   * different instrument must not land here just because a day passed.
    */
   isin?: string;
+  /**
+   * The other half of the same job, for the paper that has no ISIN to print: the DGS
+   * code of a PLAN de pensiones (#1747). Its own field rather than a widened `isin`
+   * so a stored draft keeps meaning what it meant, and so the re-check compares like
+   * with like — `N5394` in an ISIN slot would be a category error, not a match.
+   */
+  dgsCode?: string;
   /**
    * The commission the document PRINTS, integer minor units. Present means the
    * document printed one — including a printed zero, which the card shows as

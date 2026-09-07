@@ -10,7 +10,10 @@ import type { CreateInvestmentOperationInput, OwnershipShare } from "@worthline/
 import { defaultsFor } from "@worthline/domain";
 
 import type { ExtractedPositionsMovementsDocument } from "./attachment-extraction-contract";
-import { movementLinksToHolding } from "./attachment-extraction-contract";
+import {
+  extractedSecurityId,
+  movementLinksToHolding,
+} from "./attachment-extraction-contract";
 import {
   PROPOSAL_UNRECOGNIZED_MESSAGE,
   runProposalConfirm,
@@ -143,6 +146,7 @@ function resolveFunds(
 
     if (entry.decision === "create") {
       const assetId = createStableId("asset", `${holding.name}_${entry.rowId}`, fundSeed);
+      const identity = extractedSecurityId(holding);
       const movementOps = operationsFromMovements(document, holding, assetId, fundSeed);
       const creates =
         movementOps.length > 0
@@ -157,7 +161,11 @@ function resolveFunds(
           liquidityTier: defaults.rung,
           name: holding.name,
           ownership,
-          ...(holding.isin ? { isin: holding.isin } : {}),
+          // The document's typed identifier, ISIN or DGS code (#1747). It used to be
+          // written as a bare `isin`, a key `CreateInvestmentAssetInput` has not had
+          // since #1743 typed the pair — and a spread is invisible to the excess
+          // property check, so the identifier was being dropped on every alta here.
+          ...(identity ? { securityId: identity } : {}),
         },
         creates,
         kind: "new",

@@ -78,7 +78,7 @@ function reconcileProposal(ambiguous: boolean): ReconcileProposal {
         excluded: false,
         fidelity: "movements",
         instrument: "fund",
-        isin: "IE00B1G3DH73",
+        securityId: { kind: "isin", value: "IE00B1G3DH73" } as const,
         match: {
           candidates: ambiguous ? [LIVE, CLOSED] : [LIVE],
           confidence: ambiguous ? "weak" : "strong",

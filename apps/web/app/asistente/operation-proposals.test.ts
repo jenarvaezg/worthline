@@ -2,6 +2,7 @@
 // which the narrowed application store does not expose.
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
+import type { SecurityId } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
@@ -40,7 +41,7 @@ const APORTACION: ExtractedHoldingEvent = {
 };
 
 async function seedPortfolio(
-  overrides: { isin?: string | undefined; units?: string } = {},
+  overrides: { isin?: string | undefined; securityId?: SecurityId; units?: string } = {},
 ): Promise<WorthlineStore> {
   const store = await createInMemoryStore();
   await store.workspace.initializeWorkspace({
@@ -53,14 +54,16 @@ async function seedPortfolio(
     instrument: "pension_plan",
     name: "MyInvestor Indexado SP500",
     ownership: OWNERSHIP,
-    ...(overrides.isin === undefined && "isin" in overrides
-      ? {}
-      : {
-          securityId: {
-            kind: "isin" as const,
-            value: overrides.isin ?? PLAN_ISIN,
-          },
-        }),
+    ...(overrides.securityId
+      ? { securityId: overrides.securityId }
+      : overrides.isin === undefined && "isin" in overrides
+        ? {}
+        : {
+            securityId: {
+              kind: "isin" as const,
+              value: overrides.isin ?? PLAN_ISIN,
+            },
+          }),
   });
   await store.operations.recordOperation({
     assetId: "plan-sp500",
@@ -540,6 +543,92 @@ describe("buildOperationProposal (#1374) · a document with no participaciones",
     expect(Math.round(Number(written?.units) * Number(written?.pricePerUnit) * 100)).toBe(
       125_00,
     );
+    store.close();
+  });
+});
+
+/**
+ * The plan de pensiones as it really is (#1747): no ISIN anywhere, an identity that is
+ * its DGS code. Before the contract had a field for it, this lane's identity guard had
+ * literally nothing to compare on a plan — every paper passed it — and the card could
+ * only print a bare name where the paper printed «N5394».
+ */
+describe("buildOperationProposal · la identidad del plan es su código DGS (#1747)", () => {
+  const DGS_APORTACION: ExtractedHoldingEvent = {
+    ...APORTACION,
+    dgsCode: "N5394",
+    isin: undefined,
+  };
+
+  test("el código del papel y el del plan coinciden: la propuesta sale, y la línea lo dice", async () => {
+    const store = await seedPortfolio({
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    const built = await buildOperationProposal(
+      storeFor(store),
+      {
+        assetId: "plan-sp500",
+        kind: "contribution",
+        publicHoldingId: "wl_hld_plan",
+        source: { event: DGS_APORTACION, from: "document" },
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.document.line).toContain("· N5394");
+    expect(built.proposal.holding.destination).toBe(
+      "Anotar en «MyInvestor Indexado SP500» · N5394",
+    );
+    store.close();
+  });
+
+  test("el papel del OTRO plan se rechaza, como se rechaza un ISIN contradictorio", async () => {
+    // N5396 is the workspace's other plan — the very jump #1373 made invisible.
+    const store = await seedPortfolio({
+      securityId: { kind: "dgs", value: "N5396" },
+    });
+
+    const built = await buildOperationProposal(
+      storeFor(store),
+      {
+        assetId: "plan-sp500",
+        kind: "contribution",
+        publicHoldingId: "wl_hld_plan",
+        source: { event: DGS_APORTACION, from: "document" },
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("N5394");
+    expect(built.error).toContain("N5396");
+    expect(built.error).toContain("instrumentos distintos");
+    store.close();
+  });
+
+  test("un papel con ISIN sobre un plan identificado por DGS es otro instrumento", async () => {
+    const store = await seedPortfolio({
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    const built = await buildOperationProposal(
+      storeFor(store),
+      {
+        assetId: "plan-sp500",
+        kind: "contribution",
+        publicHoldingId: "wl_hld_plan",
+        source: { event: APORTACION, from: "document" },
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("instrumentos distintos");
     store.close();
   });
 });

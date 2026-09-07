@@ -20,6 +20,7 @@ import type {
   MatchCandidateRow,
   MatchPortfolioHolding,
   RowMatch,
+  SecurityId,
 } from "@worthline/domain";
 import { matchHoldings, reassignToCandidate, reassignToNew } from "@worthline/domain";
 import type {
@@ -27,7 +28,10 @@ import type {
   ExtractedPositionsMovementsDocument,
   HoldingFidelity,
 } from "./attachment-extraction-contract";
-import { movementLinksToHolding } from "./attachment-extraction-contract";
+import {
+  extractedSecurityId,
+  movementLinksToHolding,
+} from "./attachment-extraction-contract";
 import { mapReconcileTypeToInstrument } from "./reconcile-instrument-mapping";
 
 /**
@@ -84,7 +88,12 @@ export interface ReconcileRow {
   /** Stable id within the batch (`row-0`, `row-1`, …); edits key on it. */
   rowId: string;
   name: string;
-  isin?: string;
+  /**
+   * The identifier the DOCUMENT printed, as a typed pair (#1747) — an ISIN, or the
+   * DGS code of a plan de pensiones, which has no ISIN to print. It is what the card
+   * shows next to the name and the strong key the matcher routed on.
+   */
+  securityId?: SecurityId;
   /** The mapped instrument, or `null` when the label was unrecognized. */
   instrument: Instrument | null;
   fidelity: HoldingFidelity;
@@ -184,10 +193,11 @@ export function buildReconcileRows(
 ): ReconcileRow[] {
   const candidateRows: MatchCandidateRow[] = document.holdings.map((holding, index) => {
     const instrument = mapReconcileTypeToInstrument(holding.type);
+    const securityId = extractedSecurityId(holding);
     return {
       rowId: `row-${index}`,
       name: holding.name,
-      ...(holding.isin ? { isin: holding.isin } : {}),
+      ...(securityId ? { securityId } : {}),
       ...(instrument ? { instrument } : {}),
     };
   });
@@ -202,10 +212,11 @@ export function buildReconcileRows(
       .filter(isSummableMovement)
       .reduce((sum, movement) => sum + movement.signedAmountMinor, 0);
     const isEur = holding.currency.toUpperCase() === "EUR";
+    const securityId = extractedSecurityId(holding);
     return {
       rowId: `row-${index}`,
       name: holding.name,
-      ...(holding.isin ? { isin: holding.isin } : {}),
+      ...(securityId ? { securityId } : {}),
       instrument,
       fidelity: holding.fidelity,
       valueMinor: toMinor(holding.value),

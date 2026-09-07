@@ -8,7 +8,9 @@ import {
   extractedDocumentSchema,
   extractedHoldingSchema,
   extractedMovementSchema,
+  extractedSecurityId,
   holdingEventDocumentSchema,
+  movementLinksToHolding,
   normalizeExtractedNumber,
   parseExtractionResult,
   positionsDocumentSchema,
@@ -1040,5 +1042,129 @@ describe("brokerTransactionsDocumentSchema", () => {
         }).success,
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * A document can finally NAME a plan de pensiones (#1747, resolución #1668).
+ *
+ * The whole of #1373 in one line: the paper printed «Código DGS: N5394» and the
+ * contract threw it away, so the reading reached the reconcile with nothing but a
+ * name — and the model relayed the name of the OTHER plan in the portfolio.
+ */
+describe("el código DGS del plan en el contrato de extracción (#1747)", () => {
+  const plan = {
+    currency: "EUR",
+    fidelity: "value_only" as const,
+    name: "MYINVESTOR INDEXADO SP 500 PP",
+    type: "Plan de pensiones",
+    value: 5508.68,
+  };
+
+  test("«Código DGS: N5394» produce identidad tipada dgs", () => {
+    const parsed = extractedHoldingSchema.parse({ ...plan, dgsCode: "N5394" });
+
+    expect(parsed.dgsCode).toBe("N5394");
+    expect(extractedSecurityId(parsed)).toEqual({ kind: "dgs", value: "N5394" });
+  });
+
+  test("el guion y la minúscula del papel se normalizan", () => {
+    expect(extractedHoldingSchema.parse({ ...plan, dgsCode: " n-5394 " }).dgsCode).toBe(
+      "N5394",
+    );
+  });
+
+  test("F2244 —el código del FONDO— es irrepresentable en el campo", () => {
+    const rejected = extractedHoldingSchema.safeParse({ ...plan, dgsCode: "F2244" });
+
+    expect(rejected.success).toBe(false);
+    // The message names the trap, so the seam's warning can quote a real reason.
+    expect(rejected.error?.issues[0]?.message).toContain("N5394");
+  });
+
+  test("un movimiento se vincula por código DGS, sin nombre", () => {
+    const movement = extractedMovementSchema.parse({
+      amount: 125,
+      currency: "EUR",
+      date: "2026-08-05",
+      dgsCode: "N5394",
+      kind: "contribution",
+      units: 5.92,
+    });
+
+    expect(movementLinksToHolding(movement, { ...plan, dgsCode: "N5394" })).toBe(true);
+    // Two registers, never one: the same characters in an ISIN slot are a coincidence.
+    expect(movementLinksToHolding(movement, { ...plan, dgsCode: "N5396" })).toBe(false);
+  });
+
+  test("una transacción de bróker se vincula por código DGS", () => {
+    const parsed = brokerTransactionsDocumentSchema.parse({
+      documentType: "broker_transactions",
+      transactions: [
+        {
+          amount: "125",
+          currency: "EUR",
+          date: "2026-08-05",
+          dgsCode: "N5394",
+          kind: "buy",
+          pricePerUnit: "21.1149",
+          units: "5.92",
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(parsed.transactions[0]?.dgsCode).toBe("N5394");
+  });
+
+  test("un apunte fechado de un plan lleva su código", () => {
+    const parsed = holdingEventDocumentSchema.parse({
+      documentType: "holding_event",
+      event: {
+        amount: 125,
+        currency: "EUR",
+        date: "2026-08-05",
+        dgsCode: "N5394",
+        kind: "deposit",
+        label: "APORTACION P.P.",
+      },
+      warnings: [],
+    });
+
+    expect(parsed.event.dgsCode).toBe("N5394");
+  });
+});
+
+/**
+ * One definition of ISIN in the repo (#1747, resolución #1668 §4). The seam used to
+ * carry a shape-only regex, so an OCR misread of one character travelled all the way
+ * to a `null` look-through with no warning anywhere.
+ */
+describe("el ISIN del contrato lleva dígito de control (#1747)", () => {
+  const holding = {
+    currency: "EUR",
+    fidelity: "value_only" as const,
+    name: "Amundi MSCI World",
+    type: "Fondo",
+    value: 12_000,
+  };
+
+  test("un ISIN con checksum válido entra, en minúscula incluso", () => {
+    expect(extractedHoldingSchema.parse({ ...holding, isin: "lu1681043599" }).isin).toBe(
+      "LU1681043599",
+    );
+  });
+
+  test("un ISIN con la forma correcta y el dígito mal ya NO atraviesa", () => {
+    // The same twelve characters, last digit off by one: shape-valid, ISIN-invalid.
+    expect(
+      extractedHoldingSchema.safeParse({ ...holding, isin: "LU1681043598" }).success,
+    ).toBe(false);
+  });
+
+  test("un código DGS no cabe en el campo del ISIN", () => {
+    expect(extractedHoldingSchema.safeParse({ ...holding, isin: "N5394" }).success).toBe(
+      false,
+    );
   });
 });

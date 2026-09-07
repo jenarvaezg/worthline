@@ -19,11 +19,12 @@ import {
  */
 
 /**
- * The plan's own ISIN as the EXTRACTOR can carry it. The DGS code the paper prints
- * («N5394») is not a valid ISIN, so the contract's `isinSchema` refuses it — which is
- * itself part of why the real case had nothing but a name to go on.
+ * The plan as the paper of #1373 actually named it: «Código DGS: N5394». It is not an
+ * ISIN and never was — a plan de pensiones has none — and until #1747 the contract
+ * had no field to put it in, which is why the real case had nothing but a name to go
+ * on. The fixture used to carry a made-up ISIN instead; this is the real thing.
  */
-const SP500 = "ES0173516115";
+const SP500 = { dgsCode: "N5394" } as const;
 
 const DOCUMENT: ExtractedPositionsMovementsDocument = {
   documentType: "positions_movements",
@@ -31,7 +32,7 @@ const DOCUMENT: ExtractedPositionsMovementsDocument = {
     {
       name: "MYINVESTOR INDEXADO SP 500 PP",
       type: "Plan de pensiones",
-      isin: SP500,
+      ...SP500,
       value: 5508.68,
       currency: "EUR",
       fidelity: "movements",
@@ -49,7 +50,7 @@ const DOCUMENT: ExtractedPositionsMovementsDocument = {
     {
       date: "2026-08-05",
       kind: "contribution",
-      isin: SP500,
+      ...SP500,
       units: 5.92,
       amount: 125,
       currency: "EUR",
@@ -166,15 +167,32 @@ describe("resolveReconcileDocument", () => {
     expect(result.document.movements).toEqual(DOCUMENT.movements);
   });
 
-  it("matches by ISIN when the model relays a name of its own", () => {
+  it("matches by identifier when the model relays a name of its own", () => {
     const result = resolveReconcileDocument(
-      [{ name: "Plan de pensiones MyInvestor", isin: "es0173516115" }],
+      [{ dgsCode: "n-5394", name: "Plan de pensiones MyInvestor" }],
       DOCUMENT,
     );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.document.holdings[0]!.name).toBe("MYINVESTOR INDEXADO SP 500 PP");
+  });
+
+  it("un DGS y un ISIN no se cruzan aunque compartan los caracteres (#1747)", () => {
+    // The plan's code written into the ISIN slot points at nothing: they are two
+    // registers, so «the same five characters» is a coincidence and not an identity.
+    expect(resolveReconcileDocument([{ isin: "N5394" }], DOCUMENT).ok).toBe(false);
+  });
+
+  it("el código del FONDO no identifica al plan (#1747)", () => {
+    // `F2244` is the pension fund's code, not the plan's. The claim declares an
+    // identifier that no row prints, so the row it landed on contradicts it.
+    expect(
+      resolveReconcileDocument(
+        [{ dgsCode: "F2244", name: "MYINVESTOR INDEXADO SP 500 PP" }],
+        DOCUMENT,
+      ).ok,
+    ).toBe(false);
   });
 
   it("rejects two identifiers that point at two different rows", () => {
@@ -193,6 +211,17 @@ describe("resolveReconcileDocument", () => {
     expect(
       resolveReconcileDocument(
         [{ name: "MYINVESTOR INDEXADO SP 500 PP", isin: "IE00B3RBWM25" }],
+        DOCUMENT,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("un ISIN mal leído sigue contradiciendo, no se vuelve ausencia (#1747)", () => {
+    // One character off, so it types to nothing. If «declares no identifier» were
+    // the reading, the guard above would stop seeing the slip it exists to catch.
+    expect(
+      resolveReconcileDocument(
+        [{ isin: "IE00B3RBWM24", name: "MYINVESTOR INDEXADO SP 500 PP" }],
         DOCUMENT,
       ).ok,
     ).toBe(false);

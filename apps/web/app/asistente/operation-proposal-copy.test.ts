@@ -95,19 +95,30 @@ describe("operationDocumentLine / operationDestinationLine", () => {
    * before confirming instead of producing a card that agrees with itself.
    */
   it("separates what the document says from where it will be written", () => {
+    // The real MyInvestor case: the plan is named by its DGS code, which is the only
+    // identifier it has and the one printed on the paper (#1747).
     expect(
       operationDocumentLine({
-        isin: "ES0173516115",
         label: "APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP",
+        securityId: { kind: "dgs", value: "N5394" },
       }),
-    ).toBe("APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP · ES0173516115");
+    ).toBe("APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP · N5394");
 
     expect(
       operationDestinationLine({
-        isin: "ES0173516115",
         name: "MyInvestor Indexado SP500",
+        securityId: { kind: "dgs", value: "N5394" },
       }),
-    ).toBe("Anotar en «MyInvestor Indexado SP500» · ES0173516115");
+    ).toBe("Anotar en «MyInvestor Indexado SP500» · N5394");
+  });
+
+  it("un ISIN se imprime igual: la línea muestra el valor, no el registro", () => {
+    expect(
+      operationDestinationLine({
+        name: "Amundi MSCI World",
+        securityId: { kind: "isin", value: "LU1681043599" },
+      }),
+    ).toBe("Anotar en «Amundi MSCI World» · LU1681043599");
   });
 
   it("prints only what exists: no ISIN, no dash standing in for one", () => {
