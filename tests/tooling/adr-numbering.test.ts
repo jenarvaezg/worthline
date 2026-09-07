@@ -10,6 +10,9 @@ import { describe, expect, test } from "vitest";
  * resolve to exactly one file. Four ADRs once shared 0096 and two shared 0071,
  * which made every one of those citations ambiguous. This guard fails the gate
  * the moment a new ADR reuses a number already taken.
+ *
+ * Both assertions collect offenders and compare against `[]` so the report
+ * names what is wrong instead of growing one case per ADR on disk.
  */
 const ADR_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../docs/adr");
 
@@ -25,15 +28,23 @@ describe("ADR numbering (#1704)", () => {
     expect(adrFiles.length).toBeGreaterThan(0);
   });
 
-  test.each(adrFiles)("%s is named NNNN-kebab-case-title.md", (name) => {
-    expect(name).toMatch(ADR_FILENAME);
+  test("every ADR is named NNNN-kebab-case-title.md", () => {
+    const misnamed = adrFiles.filter((name) => !ADR_FILENAME.test(name));
+
+    expect(misnamed).toEqual([]);
   });
 
   test("no two ADRs share a number", () => {
     const byNumber = new Map<string, string[]>();
     for (const name of adrFiles) {
-      const number = name.slice(0, 4);
-      byNumber.set(number, [...(byNumber.get(number) ?? []), name]);
+      // The filename regex is the single source of what the number is; a file
+      // that does not match is already reported by the test above.
+      const number = ADR_FILENAME.exec(name)?.[1];
+      if (number === undefined) continue;
+
+      const taken = byNumber.get(number);
+      if (taken === undefined) byNumber.set(number, [name]);
+      else taken.push(name);
     }
 
     const collisions = [...byNumber.entries()]
