@@ -280,11 +280,45 @@ function validDgsCodeOrUndefined(raw: string): string | undefined {
 }
 
 /**
+ * Why a row ended up with fewer identifiers than it printed, in the sentences a
+ * warning appends to. Shared by both readers so «a cell that will not read is lost out
+ * loud» is one rule and not two that drift (#1747).
+ */
+function identifiersLost(cells: {
+  rawIsin: string;
+  isin: string | undefined;
+  rawDgsCode: string;
+  dgsCode: string | undefined;
+  contradictory: boolean;
+}): string[] {
+  const lost: string[] = [];
+  if (cells.rawIsin && !cells.isin) {
+    lost.push(`el ISIN «${cells.rawIsin}» no es válido y se ha ignorado.`);
+  }
+  if (cells.rawDgsCode && !cells.dgsCode) {
+    lost.push(
+      `«${cells.rawDgsCode}» no es el código DGS de un plan (N seguida de cuatro cifras) y se ha ignorado.`,
+    );
+  }
+  if (cells.contradictory) {
+    lost.push(
+      "lleva ISIN y código DGS a la vez, y son instrumentos distintos: no me quedo con ninguno.",
+    );
+  }
+  return lost;
+}
+
+/**
  * Read the movements table leniently. An arbitrary Excel is not a broker statement,
  * so a row we cannot confidently read (unknown operation, unparseable date/amount,
  * no link key) is **skipped with a warning**, never invented and never a dead-end —
  * the remaining rows still extract and the skipped rows are visible. A holding whose
  * only movement was skipped simply keeps a lower, honest fidelity tier.
+ *
+ * An identifier cell that will not read costs the movement its strong key but not its
+ * row, and is warned about like the holdings reader warns (#1747): silence there was
+ * the one place a `F####` or a mistyped ISIN could downgrade a link to the weak name
+ * key with nobody told.
  */
 function readMovements(sheet: MovementsSheet): {
   movements: ExtractedMovement[];
@@ -307,17 +341,31 @@ function readMovements(sheet: MovementsSheet): {
       skip(index, "la fecha no es una fecha válida");
       continue;
     }
-    const isin = validIsinOrUndefined(cell(row, sheet.columns.isin));
-    const dgsCode = validDgsCodeOrUndefined(cell(row, sheet.columns.dgsCode));
+    const rawIsin = cell(row, sheet.columns.isin);
+    const isin = validIsinOrUndefined(rawIsin);
+    const rawDgsCode = cell(row, sheet.columns.dgsCode);
+    const dgsCode = validDgsCodeOrUndefined(rawDgsCode);
     const nameCell = cell(row, sheet.columns.name);
+    // Both registers at once name two instruments; keeping either would be a guess,
+    // so the movement keeps neither and links by name.
+    const contradictory = isin !== undefined && dgsCode !== undefined;
+    for (const lost of identifiersLost({
+      contradictory,
+      dgsCode,
+      isin,
+      rawDgsCode,
+      rawIsin,
+    })) {
+      warnings.push(`Fila ${index + 2} de movimientos: ${lost}`);
+    }
     const unitsCell = cell(row, sheet.columns.units);
     const candidate = {
       amount: normalizeExtractedNumber(cell(row, sheet.columns.amount)),
       currency: cell(row, sheet.columns.currency).toUpperCase(),
       date: isoDate,
       kind,
-      ...(isin ? { isin } : {}),
-      ...(dgsCode ? { dgsCode } : {}),
+      ...(contradictory || !isin ? {} : { isin }),
+      ...(contradictory || !dgsCode ? {} : { dgsCode }),
       ...(nameCell ? { name: nameCell } : {}),
       ...(unitsCell ? { units: normalizeExtractedNumber(unitsCell) } : {}),
     };
@@ -353,19 +401,19 @@ function readHoldings(
     const declaredCost = rawCost ? normalizeExtractedNumber(rawCost) : null;
 
     let uncertain = false;
-    if (rawIsin && !validIsin) {
+    // What did not read is lost out loud. A bad DGS cell is nearly always the pension
+    // FUND's `F####` printed where the PLAN's code goes — a different instrument, so
+    // it is dropped by name rather than nailed to this row.
+    const contradictory = validIsin !== undefined && validDgsCode !== undefined;
+    for (const lost of identifiersLost({
+      contradictory,
+      dgsCode: validDgsCode,
+      isin: validIsin,
+      rawDgsCode,
+      rawIsin,
+    })) {
       uncertain = true;
-      warnings.push(
-        `Fila ${index + 2}: el ISIN «${rawIsin}» no es válido y se ha ignorado.`,
-      );
-    }
-    // Nearly always the pension FUND's `F####` printed where the PLAN's code goes: a
-    // different instrument, so it is dropped by name rather than nailed to this row.
-    if (rawDgsCode && !validDgsCode) {
-      uncertain = true;
-      warnings.push(
-        `Fila ${index + 2}: «${rawDgsCode}» no es el código DGS de un plan (N seguida de cuatro cifras) y se ha ignorado.`,
-      );
+      warnings.push(`Fila ${index + 2}: ${lost}`);
     }
     if (rawCost && declaredCost === null) {
       uncertain = true;
@@ -379,16 +427,15 @@ function readHoldings(
       name: cell(row, sheet.columns.name),
       type: cell(row, sheet.columns.type),
       value: normalizeExtractedNumber(cell(row, sheet.columns.value)),
-      ...(validIsin ? { isin: validIsin } : {}),
-      ...(validDgsCode ? { dgsCode: validDgsCode } : {}),
+      ...(contradictory || !validIsin ? {} : { isin: validIsin }),
+      ...(contradictory || !validDgsCode ? {} : { dgsCode: validDgsCode }),
       ...(declaredCost !== null ? { declaredCost } : {}),
       ...(uncertain ? { uncertain: true } : {}),
     };
     const fidelity = resolveHoldingFidelity(
       {
         declaredCost: declaredCost ?? undefined,
-        dgsCode: validDgsCode,
-        isin: validIsin,
+        ...(contradictory ? {} : { dgsCode: validDgsCode, isin: validIsin }),
         name: base.name,
       },
       movements,

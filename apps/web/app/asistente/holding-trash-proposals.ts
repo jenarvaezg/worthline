@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import { publicIdMap } from "@web/agent-view/scope-resolution";
 import type { AgentViewReadStore, AssistantProposalStore } from "@worthline/db";
 import {
+  declaredSecurityId,
   formatMoneyMinor,
   type Instrument,
   type Liability,
@@ -24,7 +25,6 @@ import {
   type MatchPortfolioHolding,
   matchHoldings,
   reassignToNew,
-  storedIsinOrNull,
 } from "@worthline/domain";
 import {
   connectedSourceRemovalRejection,
@@ -77,13 +77,15 @@ async function projectLiveHoldings(
   const meta = await store.agentView.readInvestmentAssetsWithMeta();
   const metaBy = new Map(meta.map((row) => [row.id, row]));
   const assetHoldings: MatchPortfolioHolding[] = assets.map((asset) => {
-    const isin = storedIsinOrNull(metaBy.get(asset.id)?.securityId);
+    // El par tipado entero (#1747): leer solo la mitad ISIN dejaba sin clave fuerte
+    // a todo plan de pensiones, que se identifica por su código DGS.
+    const securityId = declaredSecurityId(metaBy.get(asset.id)?.securityId);
     const providerSymbol = asset.providerSymbol ?? metaBy.get(asset.id)?.providerSymbol;
     return {
       holdingId: asset.id,
       name: asset.name,
       ...(asset.instrument ? { instrument: asset.instrument } : {}),
-      ...(isin ? { isin } : {}),
+      ...(securityId ? { securityId } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     };
   });

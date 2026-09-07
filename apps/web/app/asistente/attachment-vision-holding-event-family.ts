@@ -171,6 +171,14 @@ export const DROPPED_ISIN_WARNING =
  */
 export const DROPPED_DGS_CODE_WARNING =
   "El código DGS del documento no se lee como el código de un plan (N seguida de cuatro cifras); no se recoge.";
+/**
+ * The reading claimed BOTH registers at once, which CONTEXT.md calls impossible: an
+ * ISIN and a DGS code name different instruments, so one of them is about another
+ * paper. There is no principled winner, so neither is kept — the fact survives and is
+ * attributed by its label, which is the honest outcome of a contradiction.
+ */
+export const DROPPED_BOTH_IDENTIFIERS_WARNING =
+  "El documento se ha leído con ISIN y con código DGS a la vez, y son instrumentos distintos; no recojo ninguno de los dos.";
 export const DROPPED_PRICE_PER_UNIT_WARNING =
   "El precio por título no traía importe y divisa completos; no se recoge.";
 export const DROPPED_FEES_WARNING =
@@ -274,6 +282,10 @@ function usableEvent(event: VisionHoldingEvent): {
   const readDgsCode = dgsCode === undefined ? null : normalizeDgsCode(dgsCode);
   if (dgsCode !== undefined && readDgsCode === null)
     warnings.push(DROPPED_DGS_CODE_WARNING);
+  // Both registers at once is a contradiction the contract refuses outright, so it is
+  // resolved HERE — into neither — rather than sinking the whole capture at the parse.
+  const bothRead = readIsin !== null && readDgsCode !== null;
+  if (bothRead) warnings.push(DROPPED_BOTH_IDENTIFIERS_WARNING);
   const price = usableMoney(pricePerUnit);
   if (price.dropped) warnings.push(DROPPED_PRICE_PER_UNIT_WARNING);
   const fee = usableMoney(fees);
@@ -289,8 +301,8 @@ function usableEvent(event: VisionHoldingEvent): {
     event: {
       ...rest,
       ...(readUnits === undefined ? {} : { units: readUnits }),
-      ...(readIsin === null ? {} : { isin: readIsin }),
-      ...(readDgsCode === null ? {} : { dgsCode: readDgsCode }),
+      ...(bothRead || readIsin === null ? {} : { isin: readIsin }),
+      ...(bothRead || readDgsCode === null ? {} : { dgsCode: readDgsCode }),
       ...(price.money === undefined ? {} : { pricePerUnit: price.money }),
       ...(fee.money === undefined ? {} : { fees: fee.money }),
       ...(keptEffect === undefined ? {} : { declaredEffect: keptEffect }),

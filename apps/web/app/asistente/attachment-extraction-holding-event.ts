@@ -3,11 +3,13 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  declaresOneIdentifierAtMost,
   dgsCodeSchema,
   extractedNumberSchema,
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
+  TWO_IDENTIFIERS_MESSAGE,
 } from "./attachment-extraction-primitives";
 
 /**
@@ -127,7 +129,8 @@ const holdingEventSchema = z
     nextInstalment: nextInstalmentSchema.optional(),
     uncertain: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(declaresOneIdentifierAtMost, TWO_IDENTIFIERS_MESSAGE);
 
 /**
  * The holding-event document: exactly ONE observed fact, deliberately not a list.

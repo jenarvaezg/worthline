@@ -466,4 +466,38 @@ describe("confirmReconcileProposalAction · el alta conserva el identificador (#
     expect(created?.securityId).toEqual({ kind: "dgs", value: "N5394" });
     store.close();
   });
+
+  /**
+   * Invariante 3 del PRD #1741: «toda escritura interactiva valida por instrumento».
+   * A sheet with a «DGS» column filled on a fondo row is the sheet's mistake, and
+   * stamping `kind:"dgs"` on a non-plan would make it a permanent one — the store
+   * checks the value against its kind, never the kind against the instrument.
+   */
+  test("un código DGS sobre un fondo no se registra: la clase la manda el instrumento", async () => {
+    const store = await seedWorkspace();
+    const proposal = await draftFrom(store, [
+      {
+        currency: "EUR",
+        dgsCode: "N5394",
+        fidelity: "value_only",
+        name: "Un fondo con la columna equivocada",
+        type: "Fondo",
+        value: 1000,
+      },
+    ]);
+
+    const result = await confirmReconcileProposalAction(
+      proposal.draft,
+      [{ decision: "create", rowId: "row-0" }] satisfies ReconcileCuration[],
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("applied");
+    const [created] = await store.assets.readInvestmentAssetsWithMeta();
+    // The row is still created — the batch is not held hostage by a bad column — it
+    // just arrives without an identifier it was never entitled to.
+    expect(created?.securityId).toBeUndefined();
+    store.close();
+  });
 });

@@ -321,8 +321,11 @@ function duplicateOf(
     rowId: "alta",
     instrument: plan.instrument,
     name: plan.name,
-    ...(plan.family === "investment" && plan.securityId?.kind === "isin"
-      ? { isin: plan.securityId.value }
+    // The whole pair, not its ISIN half (#1747): an alta of a plan de pensiones
+    // carries a DGS code, and narrowing to `isin` meant the duplicate warning could
+    // never fire on the one family whose identifier is never an ISIN.
+    ...(plan.family === "investment" && plan.securityId
+      ? { securityId: plan.securityId }
       : {}),
     ...(plan.family === "investment" && plan.providerSymbol
       ? { providerSymbol: plan.providerSymbol }

@@ -1525,6 +1525,60 @@ describe("vision attachment extractor · the broker transactions ledger (#1487)"
     expect(result.data.warnings.join(" ")).toContain("FONDO SIN CIFRAS");
   });
 
+  /**
+   * The ledger lane used to lose an identifier in silence, and the checksum makes that
+   * sharper rather than softer (#1747): the typical vision error is one misread
+   * character, so a row that used to travel with a shape-valid ISIN now travels with
+   * none — and doing that quietly is the degradation the single definition ends.
+   */
+  test("an unreadable identifier is dropped OUT LOUD, and the row survives", async () => {
+    const result = await readingOf({
+      transactions: [{ ...READ_ROWS.transactions[0], isin: "IE00B5BMR088" }],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.isin).toBeUndefined();
+    expect(result.data.transactions[0]?.name).toBe("ISHARES CORE S&P 500");
+    expect(result.data.warnings.join(" ")).toContain("IE00B5BMR088");
+  });
+
+  test("a plan's DGS code reaches the ledger, normalized", async () => {
+    const result = await readingOf({
+      transactions: [
+        {
+          ...READ_ROWS.transactions[0],
+          dgsCode: "n-5394",
+          isin: undefined,
+          name: "MYINVESTOR INDEXADO SP 500 PP",
+        },
+      ],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.dgsCode).toBe("N5394");
+    expect(result.data.warnings).toEqual([]);
+  });
+
+  test("both registers at once leave neither, and the row says so", async () => {
+    const result = await readingOf({
+      transactions: [{ ...READ_ROWS.transactions[0], dgsCode: "N5394" }],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.isin).toBeUndefined();
+    expect(result.data.transactions[0]?.dgsCode).toBeUndefined();
+    expect(result.data.warnings.join(" ")).toContain("instrumentos distintos");
+  });
+
   test("a ledger with no readable row is empty_reading, not the descriptive drain", async () => {
     const result = await readingOf({ transactions: [], warnings: [] });
 

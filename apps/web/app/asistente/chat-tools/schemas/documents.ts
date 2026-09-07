@@ -145,9 +145,10 @@ export const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
           value: { type: "number" },
           currency: { type: "string" },
           declaredCost: { type: "number" },
-          // Tolerated and thrown away like its neighbours, so its enum was floor paid
-          // on every turn to validate a value nothing reads (#1747 needed the room).
-          fidelity: { type: "string" },
+          fidelity: {
+            enum: ["movements", "declared_cost", "value_only"],
+            type: "string",
+          },
           uncertain: { type: "boolean" },
         },
         required: ["name"],

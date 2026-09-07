@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { ReconcileImpact, ReconcileRow } from "./reconcile-plan";
 import {
-  reconcileAmbiguityMark,
   reconcileDestinationLabel,
   reconcileDocumentLine,
   reconcileImpactCaption,
+  reconcileMatchCaveat,
   reconcileMovementLine,
 } from "./reconcile-row-copy";
 
@@ -192,7 +192,7 @@ describe("reconcileImpactCaption", () => {
  * and the card presented a confident destination — and until now the review mark
  * appeared only when SEVERAL holdings shared the name. One is the dangerous case.
  */
-describe("reconcileAmbiguityMark — el match por nombre se declara (#1747)", () => {
+describe("reconcileMatchCaveat — el match por nombre se declara (#1747)", () => {
   const byName = (over: Partial<ReconcileRow["match"]> = {}): ReconcileRow =>
     row({
       match: {
@@ -209,7 +209,7 @@ describe("reconcileAmbiguityMark — el match por nombre se declara (#1747)", ()
     });
 
   it("marca un match por nombre de un solo candidato", () => {
-    expect(reconcileAmbiguityMark(byName())).toBe(
+    expect(reconcileMatchCaveat(byName())).toBe(
       " · emparejado solo por nombre — revisa el destino",
     );
   });
@@ -223,18 +223,18 @@ describe("reconcileAmbiguityMark — el match por nombre se declara (#1747)", ()
       ],
     });
 
-    expect(reconcileAmbiguityMark(several)).toBe(
+    expect(reconcileMatchCaveat(several)).toBe(
       " · 2 holdings con el mismo nombre: revisa cuál actualizas",
     );
   });
 
   it("un match fuerte por identificador no lleva marca", () => {
-    expect(reconcileAmbiguityMark(row())).toBe("");
+    expect(reconcileMatchCaveat(row())).toBe("");
   });
 
   it("una fila descartada no pide revisar nada", () => {
-    expect(reconcileAmbiguityMark(byName())).not.toBe("");
-    expect(reconcileAmbiguityMark({ ...byName(), excluded: true })).toBe("");
+    expect(reconcileMatchCaveat(byName())).not.toBe("");
+    expect(reconcileMatchCaveat({ ...byName(), excluded: true })).toBe("");
   });
 });
 

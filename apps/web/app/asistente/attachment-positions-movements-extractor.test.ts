@@ -327,3 +327,82 @@ describe("la columna del código DGS", () => {
     expect(document.warnings.join(" ")).toContain("LU1681043598");
   });
 });
+
+/**
+ * Nothing an identifier column printed is lost in silence (#1747). The holdings reader
+ * always warned; the movements reader did not, which is where a mistyped ISIN could
+ * quietly downgrade a strong link to the weak name key with nobody told.
+ */
+describe("un identificador que no se lee se pierde en voz alta", () => {
+  /** A two-sheet workbook whose movements row carries the two identifier cells. */
+  function movementsSheet(isinCell: string, dgsCell: string) {
+    const holdings = sheetXml(
+      `<row r="1">${inlineCell("A1", "Nombre")}${inlineCell("B1", "Tipo")}${inlineCell("C1", "Valor")}${inlineCell("D1", "Divisa")}</row>
+<row r="2">${inlineCell("A2", "MYINVESTOR INDEXADO SP 500 PP")}${inlineCell("B2", "Plan de pensiones")}${numericCell("C2", "5508.68")}${inlineCell("D2", "EUR")}</row>`,
+    );
+    const movements = sheetXml(
+      `<row r="1">${inlineCell("A1", "Fecha")}${inlineCell("B1", "Operación")}${inlineCell("C1", "ISIN")}${inlineCell("D1", "Código DGS")}${inlineCell("E1", "Nombre")}${inlineCell("F1", "Importe")}${inlineCell("G1", "Divisa")}</row>
+<row r="2">${inlineCell("A2", "2026-08-05")}${inlineCell("B2", "Aportación")}${inlineCell("C2", isinCell)}${inlineCell("D2", dgsCell)}${inlineCell("E2", "MYINVESTOR INDEXADO SP 500 PP")}${numericCell("F2", "125")}${inlineCell("G2", "EUR")}</row>`,
+    );
+    const workbook = `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Posiciones" sheetId="1" r:id="rId1"/><sheet name="Movimientos" sheetId="2" r:id="rId2"/></sheets></workbook>`;
+    const rels = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`;
+    const bytes = zipSync({
+      "xl/_rels/workbook.xml.rels": strToU8(rels),
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/worksheets/sheet1.xml": strToU8(holdings),
+      "xl/worksheets/sheet2.xml": strToU8(movements),
+    });
+    return extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        bytes,
+        "cartera.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    );
+  }
+
+  test("el movimiento sobrevive por nombre y el aviso nombra el código malo", () => {
+    const result = movementsSheet("", "F2244");
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.movements[0]?.dgsCode).toBeUndefined();
+    expect(document.movements[0]?.name).toBe("MYINVESTOR INDEXADO SP 500 PP");
+    expect(document.warnings.join(" ")).toContain("F2244");
+    expect(document.warnings.join(" ")).toContain("movimientos");
+  });
+
+  test("los dos registros a la vez no dejan ninguno, y se dice", () => {
+    const result = movementsSheet("LU1681043599", "N5394");
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.movements[0]?.isin).toBeUndefined();
+    expect(document.movements[0]?.dgsCode).toBeUndefined();
+    expect(document.warnings.join(" ")).toContain("instrumentos distintos");
+  });
+
+  test("y en la tabla de posiciones, igual: la fila queda sin identidad, marcada", () => {
+    const result = extractPositionsAndMovementsFromSpreadsheet(
+      input(
+        csvBytes([
+          "Nombre;Tipo;ISIN;Código DGS;Valor;Divisa",
+          "Un imposible;Plan de pensiones;LU1681043599;N5394;5.508,68;EUR",
+        ]),
+      ),
+    );
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") return;
+    const document = result.data;
+    if (document.documentType !== "positions_movements") throw new Error("wrong type");
+    expect(document.holdings[0]?.isin).toBeUndefined();
+    expect(document.holdings[0]?.dgsCode).toBeUndefined();
+    expect(document.holdings[0]?.uncertain).toBe(true);
+    expect(document.warnings.join(" ")).toContain("instrumentos distintos");
+  });
+});

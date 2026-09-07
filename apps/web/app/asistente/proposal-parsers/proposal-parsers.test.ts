@@ -268,6 +268,40 @@ describe("parseReconcileProposal (#1108)", () => {
       parseReconcileProposal(reconcileOutput({ netWorthBeforeMinor: "140.000 €" })),
     ).toBeNull();
   });
+
+  /**
+   * A proposal drafted before the typed pair persisted a bare `isin` (#1747). A
+   * pending one must re-hydrate with the identifier it was drafted with, or the card
+   * quietly stops printing the ISIN it printed yesterday.
+   */
+  it("re-hydrata un borrador antiguo que guardó un `isin` suelto", () => {
+    const rows = [{ ...reconcileRow(), isin: "LU1681043599" }];
+    const parsed = parseReconcileProposal(reconcileOutput({ rows }));
+
+    expect(parsed?.rows[0]?.securityId).toEqual({
+      kind: "isin",
+      value: "LU1681043599",
+    });
+  });
+
+  it("el par tipado gana sobre el `isin` legacy, y un par que miente se descarta", () => {
+    const both = [
+      {
+        ...reconcileRow(),
+        isin: "LU1681043599",
+        securityId: { kind: "dgs", value: "N5394" },
+      },
+    ];
+    expect(
+      parseReconcileProposal(reconcileOutput({ rows: both }))?.rows[0]?.securityId,
+    ).toEqual({ kind: "dgs", value: "N5394" });
+
+    // A client cannot route a plan down the ISIN lane by mislabelling the pair.
+    const lying = [{ ...reconcileRow(), securityId: { kind: "isin", value: "N5394" } }];
+    expect(
+      parseReconcileProposal(reconcileOutput({ rows: lying }))?.rows[0]?.securityId,
+    ).toBeUndefined();
+  });
 });
 
 describe("parseStatementImportProposal (#933)", () => {

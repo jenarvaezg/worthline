@@ -3,12 +3,14 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  declaresOneIdentifierAtMost,
   dgsCodeSchema,
   extractedNumberSchema,
   extractedSecurityIdKey,
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
+  TWO_IDENTIFIERS_MESSAGE,
 } from "./attachment-extraction-primitives";
 
 /** How the operations of a portfolio movement read (buy / sell / contribution). */
@@ -52,7 +54,8 @@ export const extractedHoldingSchema = z
     fidelity: z.enum(HOLDING_FIDELITY_TIERS),
     uncertain: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(declaresOneIdentifierAtMost, TWO_IDENTIFIERS_MESSAGE);
 
 /**
  * One dated movement (compra/venta/aportación) read from a portfolio sheet. It
@@ -79,7 +82,8 @@ export const extractedMovementSchema = z
     (movement) =>
       Boolean(movement.isin) || Boolean(movement.dgsCode) || Boolean(movement.name),
     "Un movimiento necesita ISIN, código DGS o nombre para vincularse a un holding.",
-  );
+  )
+  .refine(declaresOneIdentifierAtMost, TWO_IDENTIFIERS_MESSAGE);
 
 export type ExtractedHolding = z.infer<typeof extractedHoldingSchema>;
 export type ExtractedMovement = z.infer<typeof extractedMovementSchema>;

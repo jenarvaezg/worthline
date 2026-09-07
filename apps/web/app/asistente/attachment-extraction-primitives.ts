@@ -186,17 +186,43 @@ export const DGS_CODE_FIELD_PROSE =
   "el código DGS del PLAN, el que empieza por N (por ejemplo, N5394); el papel imprime también el del FONDO de pensiones, que empieza por F — ése no";
 
 /**
- * The typed identity a reading declares (#1742), or null when it declares none.
- *
- * One row, at most one identity: both fields are already validated by shape when
- * they get here, so the ISIN wins when a document somehow printed both — it is the
- * more specific claim, and this returns the PAIR rather than a bare string precisely
- * so nothing downstream has to guess which register a five-character code belongs to.
+ * The two identifier fields a reading may carry. Named because they travel together
+ * through every lane of the contract, and because what is legal about them is a rule
+ * about the PAIR, not about either field: see {@link declaresOneIdentifierAtMost}.
  */
-export function extractedSecurityId(row: {
+export interface ExtractedIdentifiers {
   isin?: string | undefined;
   dgsCode?: string | undefined;
-}): SecurityId | null {
+}
+
+/**
+ * A reading declares AT MOST ONE identifier — CONTEXT.md, «Security id»: an ISIN or a
+ * Código DGS, «mutually exclusive, never both at once».
+ *
+ * A row carrying both is not a richer reading, it is a contradictory one: the two name
+ * different registers, so one of them is about another instrument. There is no
+ * principled winner to pick, and picking either would be the guess ADR 0048 forbids —
+ * so the contract refuses the pair and the seams drop BOTH with a warning, leaving the
+ * row to be attributed by name. Refused here rather than downstream so the illegal
+ * state has no way through the boundary.
+ */
+export function declaresOneIdentifierAtMost(row: ExtractedIdentifiers): boolean {
+  return !(row.isin && row.dgsCode);
+}
+
+/** What the contract says when a reading claims two registers at once. */
+export const TWO_IDENTIFIERS_MESSAGE =
+  "Una fila lleva ISIN o código DGS, nunca los dos: identifican instrumentos distintos.";
+
+/**
+ * The typed identity a reading declares (#1742), or null when it declares none.
+ *
+ * The pair is validated by {@link declaresOneIdentifierAtMost} before it gets here, so
+ * there is nothing to arbitrate: at most one field is set. It returns the PAIR rather
+ * than a bare string precisely so nothing downstream has to guess which register a
+ * five-character code belongs to.
+ */
+export function extractedSecurityId(row: ExtractedIdentifiers): SecurityId | null {
   const isin = validIsinOrNull(row.isin);
   if (isin) return { kind: "isin", value: isin };
   const dgs = row.dgsCode ? normalizeDgsCode(row.dgsCode) : null;
@@ -204,10 +230,7 @@ export function extractedSecurityId(row: {
 }
 
 /** The identity two readings must share to be the same instrument, or null. */
-export function extractedSecurityIdKey(row: {
-  isin?: string | undefined;
-  dgsCode?: string | undefined;
-}): string | null {
+export function extractedSecurityIdKey(row: ExtractedIdentifiers): string | null {
   const identity = extractedSecurityId(row);
   return identity && `${identity.kind}:${identity.value}`;
 }

@@ -3,11 +3,13 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  declaresOneIdentifierAtMost,
   dgsCodeSchema,
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
   positiveDecimalStringSchema,
+  TWO_IDENTIFIERS_MESSAGE,
 } from "./attachment-extraction-primitives";
 
 /** What a broker transactions row can be: the ledger prints trades, nothing else. */
@@ -55,7 +57,8 @@ export const extractedTransactionSchema = z
       Boolean(transaction.dgsCode) ||
       Boolean(transaction.name),
     "Una transacción necesita ISIN, código DGS o nombre para vincularse a una inversión.",
-  );
+  )
+  .refine(declaresOneIdentifierAtMost, TWO_IDENTIFIERS_MESSAGE);
 
 export type ExtractedTransaction = z.infer<typeof extractedTransactionSchema>;
 

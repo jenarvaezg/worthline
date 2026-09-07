@@ -109,7 +109,10 @@ export function reconcileDestinationLabel(row: ReconcileRow): string {
 }
 
 /**
- * The es-ES review mark of a match that has not really resolved.
+ * The es-ES caveat of a match that has not really resolved — named for what it says
+ * rather than for the one case it used to cover: since #1747 it also speaks for a row
+ * matched by name with a SINGLE candidate, which is not ambiguous at all and is the
+ * more dangerous of the two.
  *
  * Two cases, one sentence's worth of honesty each:
  *
@@ -123,7 +126,7 @@ export function reconcileDestinationLabel(row: ReconcileRow): string {
  *   mark does not block — the confirmation was always explicit — it just stops the
  *   weak match from dressing as a strong one.
  */
-export function reconcileAmbiguityMark(row: ReconcileRow): string {
+export function reconcileMatchCaveat(row: ReconcileRow): string {
   if (effectiveDecision(row) !== "update") return "";
   if (row.match.ambiguous) {
     const shared =

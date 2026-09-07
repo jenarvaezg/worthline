@@ -9,6 +9,7 @@ import {
   extractedHoldingSchema,
   extractedMovementSchema,
   extractedSecurityId,
+  extractedTransactionSchema,
   holdingEventDocumentSchema,
   movementLinksToHolding,
   normalizeExtractedNumber,
@@ -1166,5 +1167,66 @@ describe("el ISIN del contrato lleva dígito de control (#1747)", () => {
     expect(extractedHoldingSchema.safeParse({ ...holding, isin: "N5394" }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * CONTEXT.md, «Security id»: an ISIN or a Código DGS, «mutually exclusive, never both
+ * at once». A reading that claims both is contradictory, not rich — so the boundary
+ * refuses it rather than letting a downstream tiebreak decide which paper it was.
+ */
+describe("una lectura declara un identificador como mucho (#1747)", () => {
+  const both = { dgsCode: "N5394", isin: "LU1681043599" };
+
+  test("un holding con ISIN y DGS a la vez no pasa el contrato", () => {
+    const rejected = extractedHoldingSchema.safeParse({
+      ...both,
+      currency: "EUR",
+      fidelity: "value_only",
+      name: "Imposible",
+      type: "Plan de pensiones",
+      value: 1,
+    });
+
+    expect(rejected.success).toBe(false);
+  });
+
+  test("tampoco un movimiento, ni una transacción, ni un apunte fechado", () => {
+    expect(
+      extractedMovementSchema.safeParse({
+        ...both,
+        amount: 125,
+        currency: "EUR",
+        date: "2026-08-05",
+        kind: "contribution",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      extractedTransactionSchema.safeParse({
+        ...both,
+        amount: "125",
+        currency: "EUR",
+        date: "2026-08-05",
+        kind: "buy",
+        pricePerUnit: "21.1149",
+        units: "5.92",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      holdingEventDocumentSchema.safeParse({
+        documentType: "holding_event",
+        event: {
+          ...both,
+          amount: 125,
+          currency: "EUR",
+          date: "2026-08-05",
+          kind: "deposit",
+          label: "APORTACION P.P.",
+        },
+        warnings: [],
+      }).success,
+    ).toBe(false);
   });
 });

@@ -128,10 +128,14 @@ function printedDecimal(value: string | undefined): string | null {
  * printed price and an unprinted price from amount ÷ units — the definition of each, and
  * the same derivation the deterministic reader makes — while a row with neither, with no
  * instrument to attribute it to, or with an unreadable date is dropped and warned about.
+ *
+ * A row that IS usable may still have lost a decoration on the way in, so the result
+ * carries its own warnings (#1747): an identifier the seam could not read is dropped
+ * out loud, exactly as the holding-event lane drops one, and never in silence.
  */
 function usableTransaction(
   transaction: VisionTransaction,
-): { transaction: ExtractedTransaction } | { warning: string } {
+): { transaction: ExtractedTransaction; warnings: string[] } | { warning: string } {
   const label = transaction.name?.trim() || transaction.isin?.trim() || transaction.date;
   const dropped = {
     warning: `No he podido leer la operación «${label}»; la he dejado fuera.`,
@@ -147,10 +151,29 @@ function usableTransaction(
   const pricePerUnit =
     printedPrice ?? divideUnits(amount, units, PRICE_READBACK_DECIMALS);
 
+  // An identifier that will not read is lost OUT LOUD, per row (#1747). It used to
+  // vanish, and the checksum makes that worse rather than better: the typical vision
+  // error is one misread character, so what used to travel as a shape-valid ISIN now
+  // disappears — and a row surviving on its name alone, with no warning, is precisely
+  // the silent degradation the single ISIN definition exists to end.
   const isin = validIsinOrNull(transaction.isin);
   const dgsCode = transaction.dgsCode ? normalizeDgsCode(transaction.dgsCode) : null;
   const name = transaction.name?.trim() ?? "";
   if (isin === null && dgsCode === null && name === "") return dropped;
+  const lost: string[] = [];
+  if (transaction.isin?.trim() && isin === null) {
+    lost.push(`el ISIN «${transaction.isin.trim()}» no se lee como un ISIN válido`);
+  }
+  if (transaction.dgsCode?.trim() && dgsCode === null) {
+    lost.push(
+      `el código DGS «${transaction.dgsCode.trim()}» no es el código de un plan (N y cuatro cifras)`,
+    );
+  }
+  // Both registers at once name two instruments, so neither is kept: the row stays,
+  // attributed by name, and says so.
+  const bothRead = isin !== null && dgsCode !== null;
+  if (bothRead)
+    lost.push("trae ISIN y código DGS a la vez, y son instrumentos distintos");
 
   const fees = printedDecimal(transaction.fees);
   const parsed = extractedTransactionSchema.safeParse({
@@ -160,8 +183,8 @@ function usableTransaction(
     kind: transaction.kind,
     pricePerUnit,
     units,
-    ...(isin === null ? {} : { isin }),
-    ...(dgsCode === null ? {} : { dgsCode }),
+    ...(bothRead || isin === null ? {} : { isin }),
+    ...(bothRead || dgsCode === null ? {} : { dgsCode }),
     ...(name === "" ? {} : { name }),
     // Through the decimal seam, exactly as the deterministic reader does it: two lanes
     // this slice declares equivalent must not reach minor units by two roundings
@@ -169,7 +192,13 @@ function usableTransaction(
     ...(fees === null ? {} : { feesMinor: multiplyToMinor(fees, "1") }),
     ...(transaction.uncertain ? { uncertain: true } : {}),
   });
-  return parsed.success ? { transaction: parsed.data } : dropped;
+  if (!parsed.success) return dropped;
+  return {
+    transaction: parsed.data,
+    warnings: lost.map(
+      (reason) => `En la operación «${label}», ${reason}; no lo recojo.`,
+    ),
+  };
 }
 
 /**
@@ -187,6 +216,7 @@ function brokerTransactionsFrom(detail: VisionTransactions): AttachmentExtractio
       continue;
     }
     transactions.push(usable.transaction);
+    warnings.push(...usable.warnings);
   }
   if (transactions.length === 0) {
     return {
