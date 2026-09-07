@@ -3,6 +3,7 @@ import { parseFormError } from "@web/intake";
 import LegalLinks from "@web/legal/legal-links";
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { initHogarAction, initSoloAction } from "./actions";
 
 /**
@@ -39,6 +40,14 @@ interface EmpezarPageProps {
  * on validation error so nothing the user typed is silently lost.
  */
 export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
+  // Esta ruta abre el store SIN pasar por `resolvePageShell`, que es donde el resto
+  // de la app declara su lectura como dato de petición (`bootstrapHealthcheck`,
+  // `store.ts`). Y abrirlo puede disparar las re-ondas post-migración, que leen el
+  // reloj: bajo Cache Components (#1229) un `new Date()` en prerender es un error
+  // (`blocking-prerender-current-time`) que llega a la consola del navegador y
+  // tumba las jornadas 18 y 19. `connection()` dice lo que ya es cierto — si hay
+  // workspace o no es exactamente lo que cambia entre una petición y la siguiente.
+  await connection();
   const workspace = await withStore((store) => store.workspace.readWorkspace());
 
   if (workspace) {
