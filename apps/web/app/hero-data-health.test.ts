@@ -321,6 +321,14 @@ describe("selectHeroHealth", () => {
         severity: "low",
         affected: { id: "h1", label: "Fondo", object: "holding" },
       }),
+      // Un identificador que nadie supo leer (#1745) es el mismo hueco latente por
+      // el otro lado: el holding cotiza por su símbolo y hoy vale lo que dice.
+      signal({
+        category: "missing_configuration",
+        code: "UNCLASSIFIED_SECURITY_ID",
+        severity: "low",
+        affected: { id: "h2", label: "Plan", object: "holding" },
+      }),
     ];
     const view = selectHeroHealth(nonFigure, [], publicIds, portfolioPublicIds);
     expect(view.impact).toBe("clean");

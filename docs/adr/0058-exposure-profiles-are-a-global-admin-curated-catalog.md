@@ -9,11 +9,13 @@
 > profile never falls back to the provider profile. This supersedes the
 > `isin ?? providerSymbol` rule below for typed inputs.
 >
-> #1742 supplies the pure domain contract. Legacy callers keep their validated
-> ISIN/provider behavior until workspace migration #1743, catalog migration
-> #1744 and typed exposure wiring #1745 adopt that contract. The two migrations
-> follow the catalog-first choreography in #1667; there is no reading fallback
-> to mask an incomplete conversion.
+> #1742 supplies the pure domain contract; #1743 (workspace migration), #1744
+> (catalog migration) and #1745 (typed exposure wiring) have adopted it, so every
+> look-through and catalog feed now declares the typed pair. The two migrations
+> followed the catalog-first choreography in #1667; there is no reading fallback
+> to mask an incomplete conversion. The legacy validated ISIN/provider input
+> survives only for the statement and assistant paths still being typed
+> (#1747/#1748), and dies with them.
 
 An exposure profile describes what a security _holds underneath_ — its geography, underlying-currency and asset-class breakdowns, plus TER, tracked index and hedged flag — keyed by `isin ?? providerSymbol`. That composition is a property of the **security identity**, not of any one holder: two workspaces that both hold `IE00B4L5Y983` share the same MSCI World underneath. So the profile is **global reference data**, and asking every workspace to hand-enter (or agent-fill) the same breakdown was the wrong scope. ADR 0039 shipped it per-workspace as the pragmatic v1; this ADR moves it to where the data belongs.
 

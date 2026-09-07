@@ -49,6 +49,11 @@ export const MISSING_INVESTMENT_ISIN_CODE = "MISSING_INVESTMENT_ISIN";
  * The value is therefore real data somebody typed once, and the repair is a reading,
  * not a deletion: what the look-through needs is a kind, so until one is declared
  * the holding keys by its provider symbol and inherits no catalog profile.
+ *
+ * The repair surface is the ficha, and typing the right ISIN there works today.
+ * What does NOT hold yet is saving the ficha WITHOUT touching the field: that
+ * silently drops the preserved value (#1770). Until it lands, this signal can lose
+ * the very pointer it is asking the user to read.
  */
 export const UNCLASSIFIED_SECURITY_ID_CODE = "UNCLASSIFIED_SECURITY_ID";
 
@@ -95,15 +100,25 @@ export const collectInstrumentIdentitySignals: DataQualityCollector<
     // The instrument decides WHICH identifier is asked for (decision 9 del mapa,
     // #1742): a pension plan can only ever have a DGS code, a fund/ETF/stock an
     // ISIN. Asking a plan for an ISIN was the impossible task of #1489.
+    // Totalidad, no rama viva: la puerta de arriba ya dejó pasar solo la familia
+    // que TIENE identificador, y es la misma que este mapa cubre. Si las dos listas
+    // se separaran alguna vez, aquí se calla en vez de inventar una etiqueta.
     const field = securityIdFieldForInstrument(instrumentOfAsset(asset));
     if (!field) {
       continue;
     }
     const identifier = SECURITY_ID_KIND_LABEL_INLINE[field.kind];
 
-    // Three states, one signal each, and the third is silence: no pair at all is a
-    // missing identifier; a pair whose kind is null is an unread one; a typed pair
-    // is identity, and says nothing.
+    // Tres estados, y el tercero es silencio: sin par no hay identificador; un par
+    // con la clase a null es un identificador que nadie supo leer; un par tipado es
+    // identidad y no dice nada.
+    //
+    // Queda un cuarto estado sin señal a propósito: la clase declarada que NO le
+    // corresponde al instrumento (un plan con `kind:"isin"`, que la ficha de hoy
+    // todavía produce porque solo sabe enseñar el campo ISIN). Avisarlo aquí sería
+    // un aviso que el usuario no puede seguir —no hay dónde teclear el código DGS
+    // hasta que la ficha valide por instrumento (#1746)—, y un aviso sin salida se
+    // aprende a ignorar. Es #1746 quien cierra ese estado en la escritura.
     if (!asset.securityId) {
       signals.push(
         identitySignal({
@@ -142,7 +157,7 @@ export const collectInstrumentIdentitySignals: DataQualityCollector<
 function identitySignal(input: {
   asset: ManualAsset;
   baseLabel: string;
-  code: string;
+  code: typeof MISSING_INVESTMENT_ISIN_CODE | typeof UNCLASSIFIED_SECURITY_ID_CODE;
   overrideable: boolean;
   overriddenKeys: ReadonlySet<string>;
 }): DataQualitySignal {

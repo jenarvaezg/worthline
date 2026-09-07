@@ -481,8 +481,8 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         'still held). So ANSWER AN ENUMERATION QUESTION FROM THIS READ — "list every fund with its ISIN and ' +
         'participaciones" is ONE call with holdingLimit raised (up to 100), NEVER one get_holding_detail per ' +
         "holding. A field is ABSENT when the holding has no such fact: no isin means none is registered on that " +
-        "holding, and the same goes for a plan's dgsCode " +
-        "holding (never conclude the workspace has none), and absent units means no operation is recorded there " +
+        "holding (never conclude the workspace has none), and the same goes for a plan's dgsCode; absent units " +
+        "means no operation is recorded there " +
         "(a sync-owned rung reports its units in get_connected_source_positions).",
       inputSchema: {
         additionalProperties: false,
