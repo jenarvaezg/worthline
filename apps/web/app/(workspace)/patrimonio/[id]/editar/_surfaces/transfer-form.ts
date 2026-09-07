@@ -1,5 +1,5 @@
 import { mapDomainViolation, type StrictParseResult } from "@web/intake";
-import { parseOptionalIsin } from "@web/intake/investment";
+import { parseOptionalSecurityId } from "@web/intake/investment";
 import {
   normalizeNonNegativeDecimalString,
   parseMoneyMinor,
@@ -7,8 +7,11 @@ import {
 import type {
   CurrencyCode,
   DecimalString,
+  Instrument,
   InvestmentOperation,
   ManualAsset,
+  SecurityId,
+  SecurityIdKind,
   TransferPortion,
 } from "@worthline/domain";
 import {
@@ -16,6 +19,7 @@ import {
   keepsAnOperationLedger,
   operationsUpTo,
   planTransfer,
+  securityIdFieldForInstrument,
 } from "@worthline/domain";
 
 /**
@@ -59,7 +63,7 @@ const NEW_DESTINATION_PREVIEW_ID = "__new_destination_preview__";
 export const TRANSFER_FORM_FIELDS = [
   "destinationAssetId",
   "newDestinationName",
-  "newDestinationIsin",
+  "newDestinationSecurityId",
   "executedAt",
   "portion",
   "amount",
@@ -91,7 +95,13 @@ export interface TransferFormValues {
   /** An existing holding's id, or {@link NEW_DESTINATION}. */
   destinationAssetId: string;
   newDestinationName: string;
-  newDestinationIsin: string;
+  /**
+   * The identifier a destination created by this submit is born with, in whatever
+   * class its inherited instrument admits (#1772) — an ISIN for a fund, a plan's DGS
+   * code for a plan. Raw as typed: only {@link parseNewDestinationSecurityId}, which
+   * knows the instrument, may turn it into a typed pair.
+   */
+  newDestinationSecurityId: string;
   executedAt: string;
   /** `"all"` for «todo»; anything else reads as an importe. */
   portion: string;
@@ -108,10 +118,17 @@ export interface TransferFormValues {
   destinationAmount: string;
 }
 
-/** Where the participaciones land: a holding this book already has, or a new one. */
+/**
+ * Where the participaciones land: a holding this book already has, or a new one.
+ *
+ * A new destination carries only its NAME. Its identifier is not here because it is
+ * not the form's to classify: which class the box asks for is decided by the
+ * instrument the destination inherits from the origin, and the origin lives in the
+ * store (#1772) — see {@link parseNewDestinationSecurityId}.
+ */
 export type TransferDestination =
   | { kind: "existing"; assetId: string }
-  | { kind: "new"; name: string; isin?: string };
+  | { kind: "new"; name: string };
 
 /**
  * One traspaso as the form states it — everything but the ids and the origin, which
@@ -240,7 +257,7 @@ export function readTransferFormValues(formData: FormData): TransferFormValues {
     destinationPricePerUnit: read("destinationPricePerUnit"),
     destinationUnits: read("destinationUnits"),
     executedAt: read("executedAt"),
-    newDestinationIsin: read("newDestinationIsin"),
+    newDestinationSecurityId: read("newDestinationSecurityId"),
     newDestinationName: read("newDestinationName"),
     originPricePerUnit: read("originPricePerUnit"),
     originUnits: read("originUnits"),
@@ -268,7 +285,11 @@ export function transferReading(values: TransferFormValues): TransferReading {
  * same holding twice) are not here: they belong to `planTransfer`, which both this
  * module's preview and the gate run. What is here is what a plan cannot see — a
  * field left blank, a destination not chosen, a name missing on a destination that
- * has to be created first, an ISIN that fails its check digit (#1489).
+ * has to be created first.
+ *
+ * Nor is the new destination's IDENTIFIER here (#1772): the class it must validate
+ * as comes from the instrument the destination inherits, which only the store knows.
+ * {@link parseNewDestinationSecurityId} is that boundary.
  */
 export function parseTransferForm(
   values: TransferFormValues,
@@ -475,13 +496,78 @@ function parseDestination(
     return { ok: false, error: "El nombre de la inversión de destino es obligatorio." };
   }
 
-  const isin = parseOptionalIsin(values.newDestinationIsin);
-  if (!isin.ok) return isin;
+  return { destination: { kind: "new", name }, ok: true };
+}
 
-  return {
-    destination: { kind: "new", name, ...(isin.isin ? { isin: isin.isin } : {}) },
-    ok: true,
-  };
+/** The origin, as the destination's identity reads it: the instrument it inherits. */
+export interface TransferOriginInstrument {
+  instrument?: Instrument | undefined;
+}
+
+/**
+ * The instrument a destination created by this traspaso is born with: the origin's,
+ * because the capital only moved (`resolveDestination`). `fund` when the origin
+ * carries none, which is the class the field asked for before #1772.
+ *
+ * It lives here, exported, so the screen's label and the write's validation read ONE
+ * derivation. Two would let the box say «Código DGS del plan» while the rule behind
+ * it still accepted an ISIN — the very disagreement #1489 was.
+ */
+export function transferDestinationInstrument(
+  origin: TransferOriginInstrument,
+): Instrument {
+  return origin.instrument ?? "fund";
+}
+
+/**
+ * The identifier field the «crear destino» pane renders, or null when the inherited
+ * instrument has no identifier at all (crypto) — the same domain map the alta, the
+ * ficha and the health signal read, so the question and the warning cannot disagree.
+ */
+export function newDestinationSecurityIdField(
+  origin: TransferOriginInstrument,
+): { kind: SecurityIdKind; label: string } | null {
+  return securityIdFieldForInstrument(transferDestinationInstrument(origin));
+}
+
+/**
+ * The typed identifier a created destination is BORN with (#1772), validated against
+ * the instrument it inherits instead of against the ISIN this field used to assume.
+ *
+ * The bug it closes: traspasar a plan to a plan asked for «ISIN del destino» — an
+ * identifier that product cannot have (#1489 again) — and anything that passed the
+ * check digit was written as `kind: 'isin'`, the fourth state #1746 declared
+ * impossible in every interactive write (invariante 3 del PRD #1741). The ficha could
+ * SEE it afterwards; nothing stopped it being born.
+ *
+ * Why it is not part of {@link parseTransferForm}: the class comes from the origin's
+ * instrument, and only the store knows it — a posted instrument would put the
+ * invariant in the client's hands. So the pair is built on the server, beside the row
+ * it will be written on, and a refusal still lands on the form as a message because
+ * nothing has been created at that point.
+ *
+ * Blank stays blank: the identifier is optional (invariante 6 del PRD #1741), and a
+ * partícipe without the paper in hand is a legitimate state.
+ */
+export function parseNewDestinationSecurityId({
+  destination,
+  origin,
+  values,
+}: {
+  destination: TransferDestination;
+  origin: TransferOriginInstrument;
+  values: TransferFormValues;
+}): { ok: true; securityId?: SecurityId } | { ok: false; error: string } {
+  // The «crear destino» pane is hidden with CSS, not removed, so its box is still
+  // posted when the user went on to pick an existing holding. Reading it there would
+  // refuse a perfectly good traspaso over a value nobody meant to submit — the same
+  // trap the two readings avoid by never sniffing the other one's fields.
+  if (destination.kind !== "new") return { ok: true };
+
+  const field = newDestinationSecurityIdField(origin);
+  if (!field) return { ok: true };
+
+  return parseOptionalSecurityId(field.kind, values.newDestinationSecurityId);
 }
 
 /**

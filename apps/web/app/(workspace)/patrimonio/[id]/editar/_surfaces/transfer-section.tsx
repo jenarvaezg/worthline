@@ -25,7 +25,8 @@
 
 import { formatIsoDayEs } from "@web/asistente/iso-day-es";
 import type { FormErrorContext } from "@web/intake";
-import type { CurrencyCode } from "@worthline/domain";
+import { securityIdFieldCopy } from "@web/security-id-field-view";
+import type { CurrencyCode, Instrument } from "@worthline/domain";
 import {
   derivePosition,
   formatMoneyMinorPrivacy,
@@ -37,6 +38,7 @@ import { type FormEvent, useRef, useState, useTransition } from "react";
 
 import {
   NEW_DESTINATION,
+  newDestinationSecurityIdField,
   previewTransfer,
   readTransferFormValues,
   stampTransferSubmission,
@@ -96,7 +98,15 @@ export default function TransferSection({
    * would be today's, and a backdated traspaso would preview figures the gate then
    * refuses (#1438).
    */
-  origin: TransferPreviewOrigin & { pricePerUnit?: string };
+  origin: TransferPreviewOrigin & {
+    /**
+     * What the origin IS. It travels for one reason: a created destination inherits
+     * it, so it decides WHICH identifier the «crear destino» pane asks for (#1772).
+     * Absent reads as `fund`, the class the field asked for before it was opened.
+     */
+    instrument?: Instrument | undefined;
+    pricePerUnit?: string;
+  };
   originName: string;
   privacyMode?: boolean;
   /** Demo: the write guard refuses, so the submit is disabled rather than lying (§10). */
@@ -112,7 +122,7 @@ export default function TransferSection({
     destinationPricePerUnit: roundTripped["destinationPricePerUnit"] ?? "",
     destinationUnits: roundTripped["destinationUnits"] ?? "",
     executedAt: roundTripped["executedAt"] ?? today,
-    newDestinationIsin: roundTripped["newDestinationIsin"] ?? "",
+    newDestinationSecurityId: roundTripped["newDestinationSecurityId"] ?? "",
     newDestinationName: roundTripped["newDestinationName"] ?? "",
     originPricePerUnit:
       roundTripped["originPricePerUnit"] ??
@@ -181,6 +191,13 @@ export default function TransferSection({
     // prefill would be invisible to the live figures until the next keypress.
     if (select.form) readForm(select.form);
   };
+
+  // Which identifier the «crear destino» pane asks for — the destination inherits the
+  // origin's instrument, so the SAME derivation the server validates with (#1772).
+  const securityIdField = newDestinationSecurityIdField(origin);
+  const securityIdCopy = securityIdField
+    ? securityIdFieldCopy(securityIdField.kind)
+    : null;
 
   const shown = destinations.filter(
     (option) =>
@@ -261,15 +278,23 @@ export default function TransferSection({
               placeholder="Cartera Permanente PP"
             />
           </label>
-          <label>
-            ISIN del destino <small>(opcional)</small>
-            <input
-              aria-label="ISIN de la inversión de destino"
-              defaultValue={initial.newDestinationIsin}
-              name="newDestinationIsin"
-              placeholder="ES0173894017"
-            />
-          </label>
+          {/* The identifier the destination will be BORN with, in the class its
+              inherited instrument admits (#1772). A plan is asked for its DGS code —
+              it has no ISIN and never will (#1489) — and an instrument with no
+              identifier at all renders nothing, from the same domain map the alta and
+              the ficha read. The words are the shared copy's, so the three surfaces
+              ask one question. */}
+          {securityIdField ? (
+            <label>
+              {securityIdCopy?.altaLabel} <small>(opcional)</small>
+              <input
+                aria-label={`${securityIdField.label} de la inversión de destino`}
+                defaultValue={initial.newDestinationSecurityId}
+                name="newDestinationSecurityId"
+                placeholder={securityIdCopy?.placeholder}
+              />
+            </label>
+          ) : null}
           <p className="opCaptureHint">
             La crearemos con los mismos dueños y el mismo tipo de producto que{" "}
             {originName}, y con el valor liquidativo del traspaso como precio: el que

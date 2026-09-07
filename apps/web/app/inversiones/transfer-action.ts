@@ -11,19 +11,20 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import {
+  parseNewDestinationSecurityId,
   parseTransferForm,
   previewTransfer,
   readTransferFormValues,
   TRANSFER_FORM_FIELDS,
   type TransferDestination,
   type TransferDraft,
+  transferDestinationInstrument,
 } from "@web/patrimonio/[id]/editar/_surfaces/transfer-form";
 import type { WorthlineStore } from "@web/store";
 import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type { DecimalString, Instrument, ManualAsset } from "@worthline/domain";
 import {
   defaultsFor,
-  isinSecurityId,
   netUnitsFromOperations,
   type SecurityId,
   unitsReadAsClosed,
@@ -46,11 +47,12 @@ interface CreatedDestination {
  *   opened is the ordinary case — Jorge did it three times in 2026 — and sending
  *   them to «Añadir holding» first would lose the form they had half filled in. So
  *   the holding is shaped HERE, from the two things the flow already knows (the
- *   origin's instrument and its owners: the capital only moved) plus a name and an
- *   optional ISIN — and WRITTEN by the gate, inside the same transaction as the pair
- *   (#1599), so a traspaso that is refused or fails halfway never leaves an empty
- *   holding behind. The pre-check below still runs first, so the ordinary refusal
- *   never reaches the gate at all.
+ *   origin's instrument and its owners: the capital only moved) plus a name and the
+ *   identifier THAT instrument admits (#1772: a plan's DGS code, never an ISIN) — and
+ *   WRITTEN by the gate, inside the same transaction as the pair (#1599), so a
+ *   traspaso that is refused or fails halfway never leaves an empty holding behind.
+ *   The pre-check below still runs first, so the ordinary refusal never reaches the
+ *   gate at all.
  * - **Idempotency (#1394).** The three ids — the pair's `transferId`, both operation
  *   ids and, for a new destination, the holding's own id — are seeded off the
  *   client's submission key, so a double click resolves to the same ids, finds its
@@ -123,6 +125,21 @@ export async function recordTransferAction(
         return { ok: true, value: { created: null, originTrashed: false } };
       }
 
+      // The identifier a created destination is born with, in the class its INHERITED
+      // instrument admits (#1772). Judged here, and not at parse, because the class
+      // comes from the origin — which is the row just read, not a field the client
+      // posted. Before the figures, as the old ISIN check was, and before anything is
+      // created: a plan asked for an ISIN is #1489, and one that STORED it would be
+      // the fourth state invariante 3 del PRD #1741 forbids.
+      const destinationSecurityId = parseNewDestinationSecurityId({
+        destination: parsed.destination,
+        origin,
+        values,
+      });
+      if (!destinationSecurityId.ok) {
+        return { ok: false, error: destinationSecurityId.error };
+      }
+
       // Check the figures BEFORE creating anything, with the function the SCREEN
       // previews with — which is `planTransfer`, the gate's own arithmetic, over the
       // ledger folded at the transfer date. The gate would refuse them too (it is the
@@ -149,6 +166,9 @@ export async function recordTransferAction(
       const destination = await resolveDestination(store, {
         destination: parsed.destination,
         origin,
+        ...(destinationSecurityId.securityId
+          ? { securityId: destinationSecurityId.securityId }
+          : {}),
         // The VL a brand-new destination is born priced at is the one the pair will be
         // WRITTEN at — which in the `units` reading is derived, not typed (#1544).
         pricePerUnit: preview.inPricePerUnit,
@@ -268,6 +288,8 @@ async function resolveDestination(
     origin: ManualAsset;
     pricePerUnit: DecimalString;
     seed: number | string;
+    /** El par tipado del identificador, ya validado contra el instrumento (#1772). */
+    securityId?: SecurityId;
   },
 ): Promise<{
   assetId: string;
@@ -287,14 +309,13 @@ async function resolveDestination(
     return { asset: null, assetId: id, created: null };
   }
 
-  const instrument: Instrument = params.origin.instrument ?? "fund";
-  // El formulario del traspaso solo pide ISIN todavía (#1772 lo abre por instrumento,
-  // como #1746 hizo con el alta y la ficha);
-  // lo que ya no hace es viajar suelto: la fila escrita y el stub del catálogo leen el
-  // MISMO par tipado, así que no pueden clavarse bajo identidades distintas.
-  const securityId = params.destination.isin
-    ? isinSecurityId(params.destination.isin)
-    : undefined;
+  // El MISMO instrumento que decidió qué identificador se pedía (#1772): la etiqueta
+  // del campo, la clase que validó lo tecleado y el tipo de la fila salen de una sola
+  // derivación, así que no pueden discrepar.
+  const instrument: Instrument = transferDestinationInstrument(params.origin);
+  // El par tipado no viaja suelto: la fila escrita y el stub del catálogo leen el
+  // MISMO, así que no pueden clavarse bajo identidades distintas.
+  const securityId = params.securityId;
 
   return {
     // Shaped here, WRITTEN by the gate (#1599): the row and the pair it exists for

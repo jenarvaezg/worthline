@@ -12,6 +12,7 @@
  * the destination's name obligatory is the server.
  */
 
+import type { Instrument } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -47,6 +48,7 @@ function render(
   over: {
     destinations?: TransferDestinationOption[];
     formError?: Parameters<typeof TransferSection>[0]["formError"];
+    instrument?: Instrument;
     readOnly?: boolean;
   } = {},
 ) {
@@ -55,7 +57,7 @@ function render(
       currentUrl="/patrimonio/h-origen/editar"
       destinations={over.destinations ?? DESTINATIONS}
       formError={over.formError ?? null}
-      origin={ORIGIN}
+      origin={over.instrument ? { ...ORIGIN, instrument: over.instrument } : ORIGIN}
       originName="Indexado PP"
       readOnly={over.readOnly ?? false}
       recordAction={noop}
@@ -117,6 +119,31 @@ describe("TransferSection", () => {
     expect(html).toMatch(/name="reading" checked="" value="units"/);
     expect(html).toContain('name="originUnits"');
     expect(html).toContain('name="destinationUnits"');
+  });
+
+  test("the new destination is asked for the identifier ITS instrument admits (#1772)", () => {
+    // A plan has no ISIN and never will (#1489): the destination inherits the origin's
+    // instrument, so the box asks the plan's own question, with the plan's example.
+    const plan = render({ instrument: "pension_plan" });
+
+    expect(plan).toContain("Código DGS del plan");
+    expect(plan).toContain('name="newDestinationSecurityId"');
+    expect(plan).toContain('placeholder="N5394"');
+    expect(plan).not.toContain("ISIN");
+  });
+
+  test("a fund still asks for an ISIN, with the words it had before", () => {
+    const fund = render({ instrument: "fund" });
+
+    expect(fund).toContain("ISIN de la inversión de destino");
+    expect(fund).toContain('name="newDestinationSecurityId"');
+    expect(fund).not.toContain("Código DGS");
+  });
+
+  test("an instrument with no identifier renders no identifier box at all", () => {
+    expect(render({ instrument: "crypto" })).not.toContain(
+      'name="newDestinationSecurityId"',
+    );
   });
 
   test("a rejected submit round-trips its message and its typed values", () => {
