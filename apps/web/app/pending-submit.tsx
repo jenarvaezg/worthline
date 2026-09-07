@@ -18,6 +18,8 @@ export function PendingSubmit({
   pendingLabel,
   className,
   disabled = false,
+  name,
+  value,
 }: {
   children: ReactNode;
   /**
@@ -29,6 +31,14 @@ export function PendingSubmit({
   className?: string;
   /** Extra disable gate (e.g. demo read-only, §10). */
   disabled?: boolean;
+  /**
+   * The field/value pair this button POSTs, when the form has more than one thing
+   * to ask of the same action — e.g. the plan's «búscame el símbolo» retry beside
+   * «Guardar cambios» (#1746). A submit button submits its own name/value, which is
+   * how one action can tell WHICH button sent it without a second form.
+   */
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -36,7 +46,9 @@ export function PendingSubmit({
       aria-busy={pending}
       className={className}
       disabled={pending || disabled}
+      {...(name === undefined ? {} : { name })}
       type="submit"
+      {...(value === undefined ? {} : { value })}
     >
       {pending ? (pendingLabel ?? children) : children}
     </button>

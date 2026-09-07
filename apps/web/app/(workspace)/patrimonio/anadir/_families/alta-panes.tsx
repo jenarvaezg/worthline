@@ -12,6 +12,7 @@
  * {@link altaRevealCss}'s business.
  */
 
+import type { PlanSearchState } from "@web/patrimonio/anadir/plan-search";
 import type { Instrument } from "@worthline/domain";
 import type { Drawer } from "./alta-drawers";
 import { DebtPane } from "./debt-pane";
@@ -30,6 +31,8 @@ export interface AltaPaneContext {
   hasPrimaryResidence: boolean;
   /** The picked symbol's live unit price, when there is one (investment). */
   livePrice: string | null;
+  /** What a plan's DGS code resolved to, when the alta searched one (#1746). */
+  planSearch: PlanSearchState | null;
   /** The resolved search params — the investment group's search state (#597). */
   resolvedParams: Record<string, string | string[] | undefined>;
   /** The investment group the URL or the round-trip selected. */
@@ -55,6 +58,7 @@ export function AltaDrawerPane({
       return (
         <InvestmentPane
           livePrice={ctx.livePrice}
+          planSearch={ctx.planSearch}
           resolvedParams={ctx.resolvedParams}
           selectedInstrument={ctx.selectedInstrument}
           today={ctx.today}

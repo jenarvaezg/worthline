@@ -288,7 +288,8 @@ async function resolveDestination(
   }
 
   const instrument: Instrument = params.origin.instrument ?? "fund";
-  // El formulario del traspaso solo pide ISIN todavía (#1746 lo abre por instrumento);
+  // El formulario del traspaso solo pide ISIN todavía (#1772 lo abre por instrumento,
+  // como #1746 hizo con el alta y la ficha);
   // lo que ya no hace es viajar suelto: la fila escrita y el stub del catálogo leen el
   // MISMO par tipado, así que no pueden clavarse bajo identidades distintas.
   const securityId = params.destination.isin

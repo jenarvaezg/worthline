@@ -694,7 +694,7 @@ describe("createHoldingAction — derived investments", () => {
         instrument: "fund",
         name_fund: "Vanguard Global",
         symbol_fund: "0P0001CLDK.F",
-        isin_fund: "IE00BYX5NX33",
+        securityId_fund: "IE00BYX5NX33",
         ownershipPreset: "scope",
         scopeMemberId: "mJ",
       }),

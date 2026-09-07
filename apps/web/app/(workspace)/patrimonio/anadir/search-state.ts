@@ -1,4 +1,5 @@
 import type { Instrument } from "@worthline/domain";
+import { securityIdFieldForInstrument } from "@worthline/domain";
 
 export type AddHoldingSearchParams = Record<string, string | string[] | undefined>;
 
@@ -24,7 +25,9 @@ const ADD_HOLDING_FIELD_KEYS = [
   "name",
   "value",
   "symbol",
-  "isin",
+  // The instrument's own identifier (#1746): «securityId» whatever the kind, so the
+  // key that survives a pick navigation does not have to name the ISIN half of it.
+  "securityId",
   "price",
   "acqDate",
   "acqValue",
@@ -114,7 +117,14 @@ export function addHoldingFieldValue({
     if (pickedSymbol) return pickedSymbol;
   }
 
-  if (field === "isin") {
+  // A candidate's ISIN prefills the identifier field ONLY where the instrument's
+  // identifier IS an ISIN (#1746). A pension plan is identified by its DGS code, and
+  // the code the user typed is what the alta must store: a Finect hit that happened
+  // to carry an ISIN must never overwrite it.
+  if (
+    field === "securityId" &&
+    securityIdFieldForInstrument(instrument)?.kind === "isin"
+  ) {
     const pickedIsin = firstNonEmptyParam(searchParams["pfIsin"]);
     if (pickedIsin) return pickedIsin;
   }

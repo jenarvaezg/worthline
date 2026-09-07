@@ -5139,6 +5139,18 @@ p.muted {
   min-width: 0;
 }
 
+/* El identificador que siembra la búsqueda (#1746) lleva la misma fila dentro de un
+   `.simpleField`, cuyo `span` es el micro-rótulo en versales. La fila NO es un
+   rótulo: recupera el texto normal para que el botón diga «Buscar plan» y no
+   «BUSCAR PLAN». El alto lo iguala el propio flex con el input de 44px. */
+.simpleField .symbolSearchRow {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .symbolSearchResults {
   display: flex;
   flex-direction: column;

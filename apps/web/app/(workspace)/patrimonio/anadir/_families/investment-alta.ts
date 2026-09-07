@@ -43,7 +43,11 @@ import type {
   InvestmentOperation,
   LiquidityTier,
 } from "@worthline/domain";
-import { checkOwnershipSplit, createInvestmentOperationSafe } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  createInvestmentOperationSafe,
+  securityIdFieldForInstrument,
+} from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
 import {
   carry,
@@ -56,7 +60,7 @@ import {
 export const INVESTMENT_REFILL_FIELDS: readonly string[] = [
   ...SHARED_REFILL_FIELDS,
   "symbol",
-  "isin",
+  "securityId",
   "price",
   // The simple drawer's capture fields (#597) and the mode that selects them.
   "invMode",
@@ -101,7 +105,14 @@ function scopedInvestmentForm(ctx: AltaContext, spec: InvestmentAltaSpec): FormD
   const scoped = new FormData();
   carry(ctx.formData, scoped, `name_${ctx.instrument}`, "name");
   carry(ctx.formData, scoped, `symbol_${ctx.instrument}`, "providerSymbol");
-  carry(ctx.formData, scoped, `isin_${ctx.instrument}`, "isin");
+  // The identifier and the KIND the pane asked for (#1746): the instrument decides
+  // which identifier this field holds, so the write validates a plan's code as a
+  // DGS code and never as the ISIN it can never have.
+  carry(ctx.formData, scoped, `securityId_${ctx.instrument}`, "securityId");
+  const securityIdField = securityIdFieldForInstrument(ctx.instrument);
+  if (securityIdField) {
+    scoped.set("securityIdKind", securityIdField.kind);
+  }
   carry(ctx.formData, scoped, `price_${ctx.instrument}`, "manualPricePerUnit");
   scoped.set("liquidityTier", spec.rung);
   if (spec.priceProvider) {

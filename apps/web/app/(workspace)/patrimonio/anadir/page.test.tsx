@@ -118,27 +118,31 @@ describe('"Importar extracto" wizard entry point (S3, #674)', () => {
   });
 });
 
-describe("the ISIN is asked for, never left empty in silence (#1489)", () => {
-  function isinInputs(html: string): string[] {
-    return (html.match(/<input[^>]*name="isin_[a-z_]+"[^>]*>/g) ?? []).filter(Boolean);
+describe("the identifier is asked for, per instrument (#1489, #1746)", () => {
+  function identifierInputs(html: string): string[] {
+    return (html.match(/<input[^>]*name="securityId_[a-z_]+"[^>]*>/g) ?? []).filter(
+      Boolean,
+    );
   }
 
-  test("the groups that HAVE an ISIN carry a visible field for it", async () => {
-    const inputs = isinInputs(await renderedHtml());
+  test("the groups that HAVE an identifier carry a visible field for it", async () => {
+    const inputs = identifierInputs(await renderedHtml());
 
     // fund and pension_plan — never hidden: a field the user never sees is how a
-    // position was created without an ISIN and became an orphan for the statement
-    // merge, the exposure catalog, and the assistant.
+    // position was created without an identifier and became an orphan for the
+    // statement merge, the exposure catalog, and the assistant.
     expect(inputs).toHaveLength(2);
     for (const input of inputs) {
       expect(input, input).not.toContain('type="hidden"');
     }
-    expect(inputs.join()).toContain('name="isin_fund"');
-    expect(inputs.join()).toContain('name="isin_pension_plan"');
+    expect(inputs.join()).toContain('name="securityId_fund"');
+    expect(inputs.join()).toContain('name="securityId_pension_plan"');
   });
 
-  test("crypto is not asked for an ISIN it cannot have", async () => {
-    expect(isinInputs(await renderedHtml()).join()).not.toContain("isin_crypto");
+  test("crypto is not asked for an identifier it cannot have", async () => {
+    expect(identifierInputs(await renderedHtml()).join()).not.toContain(
+      "securityId_crypto",
+    );
   });
 
   test("the field says what the ISIN is FOR, not just its name", async () => {
@@ -148,6 +152,36 @@ describe("the ISIN is asked for, never left empty in silence (#1489)", () => {
     // The reason it matters, in the user's words: it is what lets a statement find
     // this position later.
     expect(html).toContain("un extracto de tu bróker reconoce");
+  });
+
+  test("the plan is asked for its DGS code, and warned about the fondo's (#1746)", async () => {
+    const html = await renderedHtml();
+
+    expect(html).toContain("Código DGS del plan");
+    // The trap of the paper: it prints the fondo's code (F####) next to the plan's.
+    expect(html).toContain("F####");
+  });
+
+  test("the plan's code seeds the search — «Buscar plan», and no symbol box", async () => {
+    const html = await renderedHtml();
+
+    // Variante A de #1669: one box. The GET sub-form recipe of the symbol search.
+    expect(html).toContain("Buscar plan");
+    // The Finect slug is not something anybody has printed anywhere, so the simple
+    // alta does not ask for it: it travels prefilled from the picked candidate.
+    const planSymbol = (html.match(/<input[^>]*name="symbol_pension_plan"[^>]*>/) ??
+      [])[0];
+    expect(planSymbol).toBeDefined();
+    expect(planSymbol).toContain('type="hidden"');
+    expect(html).not.toContain("Código Finect");
+  });
+
+  test("the fund group is unchanged: it still types its own provider symbol", async () => {
+    const html = await renderedHtml();
+    const fundSymbol = (html.match(/<input[^>]*name="symbol_fund"[^>]*>/) ?? [])[0];
+
+    expect(fundSymbol).toBeDefined();
+    expect(fundSymbol).not.toContain('type="hidden"');
   });
 });
 

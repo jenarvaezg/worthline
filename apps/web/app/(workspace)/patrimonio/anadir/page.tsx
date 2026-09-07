@@ -12,7 +12,10 @@ import {
   AltaDrawerPane,
   type AltaPaneContext,
 } from "@web/patrimonio/anadir/_families/alta-panes";
-import { loadInvestmentLivePrice } from "@web/patrimonio/anadir/_families/investment-pane";
+import {
+  loadInvestmentLivePrice,
+  loadPlanSearch,
+} from "@web/patrimonio/anadir/_families/investment-pane";
 import { altaStepLabel, altaSteps } from "@web/patrimonio/anadir/alta-steps";
 import { OwnershipInputs } from "@web/patrimonio/anadir/ownership-inputs";
 import {
@@ -104,14 +107,19 @@ export async function AnadirHoldingContent({
   // Everything the five panes read, resolved once (ADR 0095, applied to the alta):
   // the page assembles the context and places whatever each drawer's family
   // renders — it never asks which instrument this is.
-  const paneContext: AltaPaneContext = {
-    hasPrimaryResidence,
-    livePrice: await loadInvestmentLivePrice({
+  const [livePrice, planSearch] = await Promise.all([
+    loadInvestmentLivePrice({
       resolvedParams,
       selectedDrawer,
       selectedInstrument,
       values,
     }),
+    loadPlanSearch({ resolvedParams, selectedDrawer, selectedInstrument }),
+  ]);
+  const paneContext: AltaPaneContext = {
+    hasPrimaryResidence,
+    livePrice,
+    planSearch,
     resolvedParams,
     selectedInstrument,
     today,

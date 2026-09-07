@@ -1214,9 +1214,9 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
     expect(result.command.manualPricePerUnit).toBeUndefined();
   });
 
-  test("omits symbol and isin when blank", () => {
+  test("omits symbol and identifier when blank", () => {
     const result = parseInvestmentAssetCommandStrict(
-      form({ name: "ACME", unitSymbol: "", isin: "" }),
+      form({ name: "ACME", unitSymbol: "", securityId: "" }),
       members,
       1,
     );
@@ -1247,7 +1247,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
 
   test("normalizes a hand-typed ISIN to the shape the identity key uses (#1489)", () => {
     const result = parseInvestmentAssetCommandStrict(
-      form({ name: "ACME", isin: " ie00b52mjy50 " }),
+      form({ name: "ACME", securityId: " ie00b52mjy50 " }),
       members,
       1,
     );
@@ -1261,7 +1261,7 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
 
   test("rejects an ISIN that fails its own checksum instead of storing a typo", () => {
     const result = parseInvestmentAssetCommandStrict(
-      form({ name: "ACME", isin: "IE00B52MJY51" }),
+      form({ name: "ACME", securityId: "IE00B52MJY51" }),
       members,
       1,
     );
@@ -1271,10 +1271,10 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
   });
 });
 
-describe("parseUpdateInvestmentCommand — the ficha applies the same ISIN rule (#1489)", () => {
-  test("normalizes what the ficha's ISIN field carries", () => {
+describe("parseUpdateInvestmentCommand — the ficha applies the same identity rule (#1489)", () => {
+  test("normalizes what the ficha's identifier field carries", () => {
     const result = parseUpdateInvestmentCommand(
-      form({ name: "ACME", isin: "ie00b52mjy50" }),
+      form({ name: "ACME", securityId: "ie00b52mjy50" }),
       "asset_acme",
     );
 
@@ -1285,7 +1285,7 @@ describe("parseUpdateInvestmentCommand — the ficha applies the same ISIN rule 
 
   test("rejects an invalid ISIN", () => {
     const result = parseUpdateInvestmentCommand(
-      form({ name: "ACME", isin: "NO-ES-UN-ISIN" }),
+      form({ name: "ACME", securityId: "NO-ES-UN-ISIN" }),
       "asset_acme",
     );
 
@@ -1532,7 +1532,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
       form({
         name: "ACME Updated",
         unitSymbol: "acme.us",
-        isin: "US0231351067",
+        securityId: "US0231351067",
         manualPricePerUnit: "15,00",
       }),
       "asset_acme",
@@ -1563,7 +1563,7 @@ describe("parseUpdateInvestmentCommand — edit investment fields", () => {
 
   test("omits optional fields when blank", () => {
     const result = parseUpdateInvestmentCommand(
-      form({ name: "ACME", unitSymbol: "", isin: "", manualPricePerUnit: "" }),
+      form({ name: "ACME", unitSymbol: "", securityId: "", manualPricePerUnit: "" }),
       "asset_acme",
     );
     expect(result.ok).toBe(true);

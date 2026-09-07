@@ -13,14 +13,18 @@ import type {
   Member,
   OperationKind,
   SecurityId,
+  SecurityIdKind,
 } from "@worthline/domain";
 import {
+  instrumentLabelEs,
   isAssignableInstrumentForShape,
   isCaptureCurrency,
   isInstrument,
   isInvestmentPriceProvider,
-  isinSecurityId,
   isValidIsin,
+  normalizedSecurityIdColumnValue,
+  SECURITY_ID_KIND_LABEL_INLINE,
+  securityIdFieldForInstrument,
 } from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
 
@@ -69,13 +73,16 @@ export function parseInvestmentAssetCommandStrict(
   }
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
-  const isin = parseOptionalIsin(formData.get("isin"));
+  const securityId = parseOptionalSecurityId(
+    declaredSecurityIdKind(formData) ?? "isin",
+    formData.get("securityId"),
+  );
   const liquidityTier = parseCreateInvestmentLiquidityTier(formData.get("liquidityTier"));
   const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
   const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
 
-  if (!isin.ok) {
-    return { ok: false, error: isin.error };
+  if (!securityId.ok) {
+    return { ok: false, error: securityId.error };
   }
 
   if (!liquidityTier) {
@@ -96,7 +103,7 @@ export function parseInvestmentAssetCommandStrict(
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
+      ...(securityId.securityId ? { securityId: securityId.securityId } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
@@ -141,6 +148,46 @@ export function parseOptionalIsin(
   }
 
   return { ok: true, isin: normalized };
+}
+
+/**
+ * The identifier field's write boundary, per instrument (#1746, decisión 9).
+ *
+ * One field, two vocabularies: a pension plan is identified by its DGS code
+ * (`N5394`), everything else that HAS an identity by its ISIN. Which one is asked
+ * for is the instrument's business (`securityIdFieldForInstrument`), so the box in
+ * front of the user and the rule that accepts what he typed can never disagree —
+ * the disagreement was #1489's impossible task, and the plan that stored its code
+ * as an ISIN was the state #1745 could see but not warn about.
+ *
+ * Validation is the DOMAIN's per-kind boundary, the same call the assistant's fill
+ * makes (#1349), so every door refuses with the same words — including the `F####`
+ * guidance a partícipe reading the wrong line of their paper needs.
+ *
+ * Blank stays blank: the identifier is optional by design and «identificado, sin
+ * cotizar» is a legitimate state (invariante 6 del PRD #1741). What is never
+ * legitimate is a value stored under a kind it does not belong to.
+ */
+export function parseOptionalSecurityId(
+  kind: SecurityIdKind,
+  value: FormDataEntryValue | null,
+): { ok: true; securityId?: SecurityId } | { ok: false; error: string } {
+  try {
+    const normalized = normalizedSecurityIdColumnValue(kind, String(value ?? ""));
+
+    return normalized === null
+      ? { ok: true }
+      : { ok: true, securityId: { kind, value: normalized } };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** The kind the FORM was rendered with, when it says so (a hidden declaration). */
+function declaredSecurityIdKind(formData: FormData): SecurityIdKind | null {
+  const raw = String(formData.get("securityIdKind") ?? "").trim();
+
+  return raw === "isin" || raw === "dgs" ? raw : null;
 }
 
 /**
@@ -285,13 +332,13 @@ export function parseUpdateInvestmentCommand(
   }
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
-  const isin = parseOptionalIsin(formData.get("isin"));
+  const securityId = parseFichaSecurityId(formData, instrument);
   const liquidityTier = parseUpdateInvestmentLiquidityTier(formData.get("liquidityTier"));
   const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
   const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
 
-  if (!isin.ok) {
-    return { ok: false, error: isin.error };
+  if (!securityId.ok) {
+    return { ok: false, error: securityId.error };
   }
 
   if (liquidityTier === null) {
@@ -311,10 +358,50 @@ export function parseUpdateInvestmentCommand(
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin.isin ? { securityId: isinSecurityId(isin.isin) } : {}),
+      ...(securityId.securityId ? { securityId: securityId.securityId } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
+  };
+}
+
+/**
+ * The ficha's identifier field, validated against the instrument being SAVED —
+ * which is not always the one the form was rendered with: the picker may be
+ * correcting it in the same submit (#1512). A reclassification into a plan
+ * therefore refuses the ISIN still sitting in the box, and says why, instead of
+ * storing an identifier that identifies nothing (invariante 3 del PRD #1741).
+ *
+ * An instrument with NO identifier (crypto) ignores the field rather than
+ * validating it: there is no box for it on that ficha, and an empty string is not
+ * a declaration.
+ */
+function parseFichaSecurityId(
+  formData: FormData,
+  instrument: Instrument | undefined,
+): { ok: true; securityId?: SecurityId } | { ok: false; error: string } {
+  const declared = declaredSecurityIdKind(formData);
+  const field = instrument ? securityIdFieldForInstrument(instrument) : null;
+
+  if (instrument && !field) {
+    return { ok: true };
+  }
+
+  const kind = field?.kind ?? declared ?? "isin";
+  const parsed = parseOptionalSecurityId(kind, formData.get("securityId"));
+
+  if (parsed.ok || !declared || declared === kind || !instrument) {
+    return parsed;
+  }
+
+  // The box says one thing, the picker another: name the change that moved the
+  // goalposts, or the refusal reads as the app forgetting what an ISIN is.
+  return {
+    ok: false,
+    error:
+      `Al reclasificarlo como ${instrumentLabelEs(instrument).toLowerCase()}, su ` +
+      `identificador es el ${SECURITY_ID_KIND_LABEL_INLINE[kind]} y no el ` +
+      `${SECURITY_ID_KIND_LABEL_INLINE[declared]}. ${parsed.error}`,
   };
 }
 

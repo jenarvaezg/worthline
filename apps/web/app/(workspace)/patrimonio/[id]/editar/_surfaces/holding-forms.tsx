@@ -18,8 +18,19 @@ import {
 } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
+import {
+  priceSymbolProvenance,
+  securityIdFieldCopy,
+  securityIdFieldState,
+} from "@web/security-id-field-copy";
 import type { InvestmentAssetFull } from "@worthline/db";
-import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
+import type {
+  Instrument,
+  Liability,
+  ManualAsset,
+  Member,
+  ValuationMethod,
+} from "@worthline/domain";
 import {
   formatMoneyInput,
   formatMoneyMinorPrivacy,
@@ -27,7 +38,7 @@ import {
   isRetiredInvestmentPriceProvider,
   keepsKnownPartialOwnership,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
-  storedIsinOrNull,
+  securityIdFieldForInstrument,
   VALUE_ONLY_ACK_LABEL,
   type ValueOnlyOpening,
   valueOnlySymbolFormNotice,
@@ -37,6 +48,41 @@ import Link from "next/link";
 import { InstrumentPicker } from "./instrument-picker";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
+
+/**
+ * El campo de identidad de la ficha, entero o nada (#1746): la clase que le
+ * corresponde al instrumento, las palabras de esa clase y lo que la caja enseña.
+ * Se resuelve de una vez para que los tres no puedan discrepar —una copia de ISIN
+ * sobre un campo de código DGS es exactamente el defecto que #1489 dejó abierto— y
+ * para que el JSX no tenga que afirmar que existen tres cosas por separado.
+ */
+function identityBoxFor({
+  currentInstrument,
+  investment,
+  values,
+}: {
+  currentInstrument: Instrument;
+  investment: InvestmentAssetFull;
+  values: Record<string, string>;
+}): {
+  field: NonNullable<ReturnType<typeof securityIdFieldForInstrument>>;
+  copy: ReturnType<typeof securityIdFieldCopy>;
+  state: ReturnType<typeof securityIdFieldState>;
+} | null {
+  const field = securityIdFieldForInstrument(currentInstrument);
+
+  if (!field) return null;
+
+  return {
+    copy: securityIdFieldCopy(field.kind),
+    field,
+    state: securityIdFieldState({
+      kind: field.kind,
+      stored: investment.securityId,
+      typed: values["securityId"],
+    }),
+  };
+}
 
 export function AssetEditForm({
   asset,
@@ -123,6 +169,20 @@ export function AssetEditForm({
   }
 
   if (isInvestment && investment && updateInvestmentAction) {
+    // Which identifier this holding can carry, what its box says and what it shows —
+    // resolved from the instrument the ficha is showing, which is also the default of
+    // the picker that may correct it. Null together: an instrument with no identifier
+    // has no box, no copy and nothing to explain.
+    const identity = identityBoxFor({ currentInstrument, investment, values });
+    // «Identificado, sin cotizar» (invariante 6 del PRD #1741) con salida: el plan
+    // tiene código y nadie le ha puesto símbolo, porque Finect no contestó en el
+    // alta. Solo un plan, y solo si su código está guardado — es el dato con el que
+    // se busca.
+    const canSeedPlanSymbol =
+      identity?.field.kind === "dgs" &&
+      investment.securityId?.kind === "dgs" &&
+      !investment.providerSymbol;
+
     return (
       <>
         <form action={updateInvestmentAction} className="stackForm">
@@ -189,6 +249,16 @@ export function AssetEditForm({
               defaultValue={values["providerSymbol"] ?? investment.providerSymbol ?? ""}
               name="providerSymbol"
             />
+            {/* #1746: dos campos donde antes había uno, y uno derivado del otro. Sin
+                decir de dónde sale cada cual se leen como el mismo dato repetido. */}
+            {identity ? (
+              <small>
+                {priceSymbolProvenance({
+                  kind: identity.field.kind,
+                  providerLabel: priceSourceLabel(investment.priceProvider),
+                })}
+              </small>
+            ) : null}
           </label>
 
           {/* #1329: la posición nacida «por valor total» avisa ANTES de que el
@@ -208,17 +278,50 @@ export function AssetEditForm({
             </div>
           ) : null}
 
-          <label>
-            ISIN <small>(opcional)</small>
-            <input
-              aria-label="ISIN"
-              autoComplete="off"
-              defaultValue={
-                values["isin"] ?? storedIsinOrNull(investment.securityId) ?? ""
-              }
-              name="isin"
-            />
-          </label>
+          {/* El identificador que el instrumento PUEDE tener (#1746, decisión 9): el
+              código DGS de un plan, el ISIN del resto, nada en lo que no lleva
+              ninguno. La clase declarada viaja con el envío porque el selector de
+              arriba puede estar reclasificándolo en el mismo guardado (#1512), y
+              entonces el rechazo tiene que poder nombrar el cambio. */}
+          {identity ? (
+            <>
+              <input name="securityIdKind" type="hidden" value={identity.field.kind} />
+              <label>
+                {identity.copy.fichaLabel}{" "}
+                <small>· {identity.copy.provenance} (opcional)</small>
+                <input
+                  aria-label={identity.copy.fichaLabel}
+                  autoComplete="off"
+                  defaultValue={identity.state.value}
+                  name="securityId"
+                  placeholder={identity.copy.placeholder}
+                />
+                <small>{identity.copy.help}</small>
+              </label>
+              {identity.state.mismatch ? (
+                <p className="warningBand">{identity.state.mismatch}</p>
+              ) : null}
+            </>
+          ) : null}
+
+          {/* El reintento que promete la señal de salud: un gesto, el MISMO envío de
+              la ficha, así que el símbolo que siembre pasa por las mismas guardas que
+              uno tecleado a mano (el símbolo que no resuelve, y #1329). */}
+          {canSeedPlanSymbol ? (
+            <div className="warningBand">
+              <span>
+                Este plan está identificado por su código DGS pero no cotiza: nadie le ha
+                puesto símbolo de precio. Podemos pedírselo a Finect con el código.
+              </span>
+              <PendingSubmit
+                name="seedPlanSymbol"
+                pendingLabel="Buscando en Finect…"
+                value="1"
+              >
+                Buscar el símbolo por su código DGS
+              </PendingSubmit>
+            </div>
+          ) : null}
 
           <label>
             Precio manual por unidad (EUR) <small>(opcional)</small>

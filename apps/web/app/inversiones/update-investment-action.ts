@@ -1,8 +1,15 @@
 "use server";
 
 /**
- * The investment's own ficha — name, liquidity rung, unit symbol, ISIN and price
- * configuration (#1606: its own surface, apart from the operations ledger).
+ * The investment's own ficha — name, liquidity rung, unit symbol, identifier and
+ * price configuration (#1606: its own surface, apart from the operations ledger).
+ *
+ * Since #1746 the identifier field is the instrument's own (ISIN, or a plan's DGS
+ * code) and it is validated as such: an interactive write never stores a value
+ * under a kind it does not belong to (invariante 3 del PRD #1741). The same submit
+ * also carries the plan's retry — «búscame el símbolo por el código DGS» — so a
+ * plan born «identificado, sin cotizar» because Finect was down has one gesture
+ * that finishes the job, and it goes through every guard the manual symbol does.
  */
 
 import {
@@ -18,6 +25,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
+import { resolvePlanSymbolFromDgs } from "@web/inversiones/plan-symbol-seed";
 import { validateInvestmentProviderSymbol } from "@web/inversiones/provider-symbol-check";
 import { currentUrlOf } from "@web/inversiones/return-url";
 import {
@@ -35,7 +43,7 @@ const EDIT_INVESTMENT_FIELDS = [
   "instrument",
   "liquidityTier",
   "unitSymbol",
-  "isin",
+  "securityId",
   "priceProvider",
   "providerSymbol",
   "manualPricePerUnit",
@@ -70,11 +78,19 @@ export async function updateInvestmentAction(
     (store) => store.assets.readInvestmentAssetById(routeAssetId),
     _store,
   );
-  const nextLiquidityTier =
-    parsed.command.liquidityTier ?? existing?.liquidityTier ?? "market";
+
+  // El reintento del plan (#1746): el botón «Buscar el símbolo…» es el MISMO envío
+  // de la ficha con una marca, así que lo que se siembra pasa por la comprobación
+  // del símbolo y por la guarda de #1329 igual que si lo hubiera teclado el usuario.
+  // Sin código no hay nada que resolver, y un Finect callado se dice — no se guarda
+  // a medias: «identificado, sin cotizar» sigue siendo el estado, y se puede
+  // reintentar más tarde.
+  const command = await seedPlanSymbolIfAsked(parsed.command, formData, editErrorUrl);
+
+  const nextLiquidityTier = command.liquidityTier ?? existing?.liquidityTier ?? "market";
   const nextPriceProvider =
-    parsed.command.priceProvider ?? defaultInvestmentPriceProvider(nextLiquidityTier);
-  const nextProviderSymbol = parsed.command.providerSymbol;
+    command.priceProvider ?? defaultInvestmentPriceProvider(nextLiquidityTier);
+  const nextProviderSymbol = command.providerSymbol;
   const priceConfigChanged = Boolean(
     existing &&
       (existing.priceProvider !== nextPriceProvider ||
@@ -86,7 +102,7 @@ export async function updateInvestmentAction(
     liquidityTier: nextLiquidityTier,
     nowIso: _clock.now(),
     priceProvider: nextPriceProvider,
-    providerSymbol: parsed.command.providerSymbol,
+    providerSymbol: nextProviderSymbol,
   });
 
   if (!symbolCheck.ok) {
@@ -120,19 +136,6 @@ export async function updateInvestmentAction(
     }
   }
 
-  // #1743: la ficha solo sabe enseñar un campo de identidad, y ese campo es el
-  // ISIN. Un envío sin ISIN declara «este holding no tiene ISIN» y NUNCA «este
-  // plan ya no tiene código DGS»: el código del plan no está en el formulario, así
-  // que el guardado no puede borrarlo. Sin esto, abrir y guardar la ficha de un
-  // plan tiraría el identificador que la v70 acababa de escribirle, y una vez
-  // #1744 re-clave el catálogo a `dgs:N####` el holding se quedaría «sin
-  // clasificar» sin que nada avisara. Cuando el campo sea por instrumento (#1746)
-  // esta línea sobra y se va.
-  const command =
-    parsed.command.securityId === undefined && existing?.securityId?.kind === "dgs"
-      ? { ...parsed.command, securityId: existing.securityId }
-      : parsed.command;
-
   await runActionWithStore(async (store) => {
     await store.assets.updateInvestmentAsset(command);
     if (priceConfigChanged) {
@@ -140,4 +143,50 @@ export async function updateInvestmentAction(
     }
   }, _store);
   redirect(successRedirectUrl(returnUrl, "saved"));
+}
+
+type EditInvestmentCommand = Extract<
+  ReturnType<typeof parseUpdateInvestmentCommand>,
+  { ok: true }
+>["command"];
+
+/**
+ * The plan's «Buscar el símbolo en Finect por su código DGS» retry, resolved into
+ * the command the ordinary save is about to write.
+ *
+ * It refuses out loud rather than saving half of it: without a DGS code there is
+ * nothing to resolve, and a Finect that does not answer leaves the holding exactly
+ * as it was — identified, not quoting, retryable. The symbol it seeds is not
+ * trusted either: it travels on through `validateInvestmentProviderSymbol` and the
+ * #1329 value-only guard like any hand-typed one.
+ */
+async function seedPlanSymbolIfAsked(
+  command: EditInvestmentCommand,
+  formData: FormData,
+  editErrorUrl: (message: string) => string,
+): Promise<EditInvestmentCommand> {
+  if (String(formData.get("seedPlanSymbol") ?? "").trim() === "") {
+    return command;
+  }
+
+  if (command.securityId?.kind !== "dgs") {
+    redirect(
+      editErrorUrl(
+        "Para buscar el símbolo hace falta el código DGS del plan (N seguida de cuatro cifras). Escríbelo y vuelve a intentarlo.",
+      ),
+    );
+  }
+
+  const code = command.securityId.value;
+  const symbol = await resolvePlanSymbolFromDgs(code);
+
+  if (!symbol) {
+    redirect(
+      editErrorUrl(
+        `Finect no ha reconocido ${code} ahora mismo. Revisa el código de tu extracto o vuelve a intentarlo más tarde: el plan sigue identificado por su código, solo sin cotizar.`,
+      ),
+    );
+  }
+
+  return { ...command, priceProvider: "finect", providerSymbol: symbol };
 }

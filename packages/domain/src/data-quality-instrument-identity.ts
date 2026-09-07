@@ -114,11 +114,13 @@ export const collectInstrumentIdentitySignals: DataQualityCollector<
     // identidad y no dice nada.
     //
     // Queda un cuarto estado sin señal a propósito: la clase declarada que NO le
-    // corresponde al instrumento (un plan con `kind:"isin"`, que la ficha de hoy
-    // todavía produce porque solo sabe enseñar el campo ISIN). Avisarlo aquí sería
-    // un aviso que el usuario no puede seguir —no hay dónde teclear el código DGS
-    // hasta que la ficha valide por instrumento (#1746)—, y un aviso sin salida se
-    // aprende a ignorar. Es #1746 quien cierra ese estado en la escritura.
+    // corresponde al instrumento (un plan con `kind:"isin"`). El alta y la ficha ya
+    // no lo producen —el campo es por instrumento y valida por su clase (#1746)— y
+    // la ficha del plan enseña el valor guardado que no le sirve en una línea que se
+    // puede seguir, que es donde se arregla. La puerta que todavía lo produce es el
+    // destino nuevo de un traspaso, que pide ISIN sea cual sea el instrumento
+    // heredado (#1772); cuando se cierre, este estado solo podrá venir de filas
+    // antiguas.
     if (!asset.securityId) {
       signals.push(
         identitySignal({

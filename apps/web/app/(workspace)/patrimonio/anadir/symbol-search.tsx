@@ -4,6 +4,7 @@ import { searchSymbols } from "@worthline/pricing";
 import Link from "next/link";
 
 import { buildSymbolSearchCurrentParams } from "./search-state";
+import { symbolPrefillHref } from "./symbol-prefill";
 
 /**
  * Symbol search for the investment forms — no client JS, matching the app's
@@ -31,31 +32,6 @@ export default async function SymbolSearch({
   const trimmed = query?.trim() ?? "";
   const candidates = trimmed ? await searchSymbols(trimmed, instrument) : [];
   const preservedParams = buildSymbolSearchCurrentParams(currentParams);
-
-  function prefillHref(
-    symbol: string,
-    name: string,
-    provider: string,
-    isin?: string,
-  ): string {
-    const params = new URLSearchParams();
-    // Copy current params to preserve selected instrument and typed values
-    for (const [key, value] of Object.entries(preservedParams)) {
-      if (value !== undefined) {
-        if (Array.isArray(value)) {
-          value.forEach((v) => params.append(key, v));
-        } else {
-          params.set(key, value);
-        }
-      }
-    }
-    params.set("symbolq", trimmed);
-    params.set("pfName", name);
-    params.set("pfSymbol", symbol);
-    params.set("pfProvider", provider);
-    if (isin) params.set("pfIsin", isin);
-    return `${basePath}?${params.toString()}`;
-  }
 
   return (
     <div className="symbolSearch">
@@ -86,7 +62,12 @@ export default async function SymbolSearch({
                 <li key={`${c.provider}:${c.symbol}`}>
                   <Link
                     className={`symbolResult${isPicked ? " symbolResultPicked" : ""}`}
-                    href={prefillHref(c.symbol, c.name, c.provider, c.isin)}
+                    href={symbolPrefillHref({
+                      basePath,
+                      candidate: c,
+                      preservedParams,
+                      query: trimmed,
+                    })}
                   >
                     <span className="symbolResultSymbol">{c.symbol}</span>
                     <span className="symbolResultName">{c.name}</span>

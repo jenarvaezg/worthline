@@ -120,13 +120,11 @@ export type InvestmentGroupInstrument = Extract<
  * fine ETF/acción/índice label is editable in the ficha — ADR 0014); the search
  * is scoped to each group's provider, which sidesteps cross-provider noise (#304).
  */
-export interface InvestmentGroup {
+interface InvestmentGroupBase {
   instrument: InvestmentGroupInstrument;
   label: string;
   hint: string;
   providerLabel: string;
-  searchPlaceholder: string;
-  symbolLabel: string;
   symbolHint?: string;
   /**
    * Whether this group's «tengo el extracto» pane also offers the ACCOUNT-level
@@ -136,6 +134,23 @@ export interface InvestmentGroup {
    */
   accountLevelImport?: true;
 }
+
+/**
+ * How a group gets its price symbol — the one structural difference between the
+ * three, and a union rather than a boolean so the pane cannot read a label that
+ * this group does not have.
+ *
+ * `identitySeedsSearch` is variante A de #1669: the plan's DGS code seeds the
+ * Finect search and the resolved slug travels prefilled, so the simple alta shows
+ * NO symbol box. Nobody has a Finect slug printed on any paper — asking for it was
+ * asking the user to invent it. The manual way out did not disappear (#1357): it
+ * lives in the advanced alta and on the ficha.
+ */
+type InvestmentGroupSymbolSource =
+  | { identitySeedsSearch: true; searchPlaceholder?: undefined; symbolLabel?: undefined }
+  | { identitySeedsSearch?: undefined; searchPlaceholder: string; symbolLabel: string };
+
+export type InvestmentGroup = InvestmentGroupBase & InvestmentGroupSymbolSource;
 
 export const INVESTMENT_GROUPS: readonly InvestmentGroup[] = [
   {
@@ -150,10 +165,9 @@ export const INVESTMENT_GROUPS: readonly InvestmentGroup[] = [
   {
     instrument: "pension_plan",
     label: "Plan de pensiones",
-    hint: "Tu plan, por su código de Finect.",
+    hint: "Tu plan, por su código DGS.",
     providerLabel: "Finect",
-    searchPlaceholder: "N5394-Myinvestor",
-    symbolLabel: "Código Finect",
+    identitySeedsSearch: true,
   },
   {
     instrument: "crypto",
