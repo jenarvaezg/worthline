@@ -1279,6 +1279,150 @@ describe("collectDataQualitySignals — MISSING_INVESTMENT_ISIN (#1489)", () => 
       signals.find((signal) => signal.code === "MISSING_INVESTMENT_ISIN")?.label,
     ).toContain("marcado como intencional");
   });
+  test("un plan de pensiones pide su código DGS, nunca un ISIN (#1745)", () => {
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [
+          fund("plan1", {
+            instrument: "pension_plan",
+            name: "Plan S&P 500",
+            providerSymbol: "N5394-Myinvestor",
+          }),
+        ],
+      }),
+    );
+    const orphan = signals.find((signal) => signal.code === "MISSING_INVESTMENT_ISIN");
+
+    expect(orphan?.label).toContain("código DGS");
+    expect(orphan?.label).not.toContain("ISIN");
+  });
+
+  test("un plan con su código DGS puesto está callado (#1745)", () => {
+    expect(
+      codes([
+        fund("plan1", {
+          instrument: "pension_plan",
+          securityId: { kind: "dgs", value: "N5394" },
+        }),
+      ]),
+    ).not.toContain("MISSING_INVESTMENT_ISIN");
+  });
+
+  test("un identificador preservado sin clasificar cuenta como puesto (#1745)", () => {
+    expect(
+      codes([fund("inv1", { securityId: { kind: null, value: "LU-CUALQUIERA" } })]),
+    ).not.toContain("MISSING_INVESTMENT_ISIN");
+  });
+});
+
+describe("collectDataQualitySignals — UNCLASSIFIED_SECURITY_ID (#1745)", () => {
+  const { asset, input } = fixture();
+
+  const fund = (id: string, overrides: Partial<CreateManualAssetInput> = {}) =>
+    asset({
+      id,
+      instrument: "etf",
+      name: `Fondo ${id}`,
+      providerSymbol: "SXR1.DE",
+      type: "investment",
+      ...overrides,
+    });
+
+  const codes = (
+    assets: ReturnType<typeof asset>[],
+    overrides: Partial<CollectDataQualitySignalsInput> = {},
+  ): string[] =>
+    collectDataQualitySignals(input({ assets, ...overrides })).map(
+      (signal) => signal.code,
+    );
+
+  test("un valor preservado que ningún clasificador reconoció se señala", () => {
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [fund("inv1", { securityId: { kind: null, value: "LU-CUALQUIERA" } })],
+      }),
+    );
+    const unclassified = signals.find(
+      (signal) => signal.code === "UNCLASSIFIED_SECURITY_ID",
+    );
+
+    expect(unclassified).toMatchObject({
+      affected: { id: "inv1", label: "Fondo inv1", object: "holding" },
+      category: "missing_configuration",
+      fixable: true,
+      severity: "low",
+    });
+    expect(unclassified?.label).toContain("LU-CUALQUIERA");
+    expect(unclassified?.label).toContain("ISIN");
+  });
+
+  test("el plan sin clasificar pide su código DGS", () => {
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [
+          fund("plan1", {
+            instrument: "pension_plan",
+            securityId: { kind: null, value: "N-5394-raro" },
+          }),
+        ],
+      }),
+    );
+
+    expect(
+      signals.find((signal) => signal.code === "UNCLASSIFIED_SECURITY_ID")?.label,
+    ).toContain("código DGS");
+  });
+
+  test("un identificador tipado está callado, sea ISIN o DGS", () => {
+    expect(
+      codes([
+        fund("inv1", { securityId: { kind: "isin", value: "IE00B52MJY50" } }),
+        fund("plan1", {
+          instrument: "pension_plan",
+          securityId: { kind: "dgs", value: "N5394" },
+        }),
+      ]),
+    ).not.toContain("UNCLASSIFIED_SECURITY_ID");
+  });
+
+  test("sin identificador ninguno manda MISSING_INVESTMENT_ISIN, no esta", () => {
+    const emitted = codes([fund("inv1")]);
+
+    expect(emitted).toContain("MISSING_INVESTMENT_ISIN");
+    expect(emitted).not.toContain("UNCLASSIFIED_SECURITY_ID");
+  });
+
+  test("una posición vendida está callada, como toda señal de identidad", () => {
+    expect(
+      codes([fund("inv1", { securityId: { kind: null, value: "raro" } })], {
+        netUnitsByAssetId: new Map([["inv1", "0"]]),
+      }),
+    ).not.toContain("UNCLASSIFIED_SECURITY_ID");
+  });
+
+  test("una fuente conectada está callada: su identidad es la de la fuente", () => {
+    expect(
+      codes([
+        fund("inv1", {
+          connectedSourceId: "src_binance",
+          securityId: { kind: null, value: "raro" },
+        }),
+      ]),
+    ).not.toContain("UNCLASSIFIED_SECURITY_ID");
+  });
+
+  test("un holding a mano no tiene identidad de instrumento que clasificar", () => {
+    expect(
+      codes([
+        asset({
+          id: "a1",
+          name: "Cuenta",
+          securityId: { kind: null, value: "raro" },
+          type: "cash",
+        }),
+      ]),
+    ).not.toContain("UNCLASSIFIED_SECURITY_ID");
+  });
 });
 
 describe("collectDataQualitySignals — DEBT_MISSING_FROM_HISTORY (#1438)", () => {

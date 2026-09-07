@@ -201,7 +201,7 @@ function matchField(holding: SearchableHolding, query: string): MatchedField | n
 
   // The SAME identity the match will report, so a hit can never be on a field the
   // answer does not carry.
-  const { isin, providerSymbol } = resolveHoldingIdentity({
+  const { dgsCode, isin, providerSymbol } = resolveHoldingIdentity({
     asset: holding.asset,
     meta: holding.meta,
   });
@@ -211,6 +211,11 @@ function matchField(holding: SearchableHolding, query: string): MatchedField | n
   }
   if (isin && normalizeSearchText(isin).includes(query)) {
     return "isin";
+  }
+  // El código de un plan se busca igual que un ISIN: es lo que trae impreso el
+  // papel que el usuario tiene delante (#1745).
+  if (dgsCode && normalizeSearchText(dgsCode).includes(query)) {
+    return "dgsCode";
   }
   return null;
 }

@@ -71,10 +71,15 @@ export interface AgentViewHoldingProvenance {
 }
 
 /**
- * What a holding IS, as it travels on the row (#1346): its ISIN, its
- * provider symbol, and the net units still held. Shared by the compact
- * context row, a `find_holdings` match, and `get_holding_detail`, so the three
- * reads can never quote different identities for the same holding.
+ * What a holding IS, as it travels on the row (#1346): its national security
+ * identifier, its provider symbol, and the net units still held. Shared by the
+ * compact context row, a `find_holdings` match, and `get_holding_detail`, so the
+ * three reads can never quote different identities for the same holding.
+ *
+ * The identifier is TYPED (#1745): `isin` for a fund/ETF/stock, `dgsCode` for a
+ * Spanish pension plan, which has no ISIN and never will — its identifier is the
+ * DGSFP register code (`N####`). They are mutually exclusive by construction: a
+ * holding declares one kind or none, so a row never carries both.
  *
  * Every field is OPTIONAL and ABSENT when there is no fact for it — a missing
  * `isin` means "none registered on this holding", never "this holding has none";
@@ -82,11 +87,17 @@ export interface AgentViewHoldingProvenance {
  * connected-source rung whose units live in `get_connected_source_positions`),
  * while a position that sold out honestly reports `"0"`.
  *
- * The glossary reserves "identity" for `isin ?? providerSymbol`, which names the
- * INSTRUMENT; `units` is a quantity of the holding and rides along because the
- * question this exists for asks for all three in one breath.
+ * The glossary reserves "identity" for the declared identifier, falling back to
+ * `providerSymbol`, which names the INSTRUMENT; `units` is a quantity of the
+ * holding and rides along because the question this exists for asks for all three
+ * in one breath.
  */
 export interface AgentViewHoldingIdentity {
+  /**
+   * The pension plan's DGS code (`N####`), when one is registered — the
+   * identifier a Spanish plan has INSTEAD of an ISIN (#1745).
+   */
+  dgsCode?: string;
   /** The security's ISIN, when one is registered on the investment asset. */
   isin?: string;
   /** The price-provider lookup key (ADR 0011), when the holding has one. */
@@ -125,7 +136,7 @@ export interface AgentViewHoldingSummary extends AgentViewHoldingIdentity {
 /**
  * One holding matched by name/symbol lookup (`find_holdings`). Deliberately
  * narrow: the identity a write needs (public id), what it is (instrument plus the
- * `isin`/`providerSymbol`/`units` of #1346), what it is worth, where it came from,
+ * `isin`/`dgsCode`/`providerSymbol`/`units` of #1346), what it is worth, where it came from,
  * and WHY it matched — never the whole context row. It is the
  * only read that reaches a holding the compact context drops: a holding at 0 €
  * sorts last there and falls outside the default cap, which is precisely the
@@ -139,7 +150,7 @@ export interface AgentViewHoldingMatch extends AgentViewHoldingIdentity {
   instrument: string;
   currentValue: AgentViewMoney;
   /** Which field the query hit, so the caller can judge the match. */
-  matchedOn: "label" | "providerSymbol" | "isin";
+  matchedOn: "label" | "providerSymbol" | "isin" | "dgsCode";
   /** Present only when a connected source materializes this holding. */
   connectedSource?: AgentViewHoldingProvenance;
   /**

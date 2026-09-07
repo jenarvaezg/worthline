@@ -41,10 +41,11 @@ export interface NamedHoldingCandidate {
   id: string;
   label: string;
   /**
-   * Which field the query hit. A hit on the ISIN or the price symbol is an
-   * identifier, not a fragment of prose, so it is not held to the word rule.
+   * Which field the query hit. A hit on the ISIN, a plan's DGS code (#1745) or the
+   * price symbol is an identifier, not a fragment of prose, so it is not held to
+   * the word rule.
    */
-  matchedOn?: "label" | "providerSymbol" | "isin";
+  matchedOn?: "label" | "providerSymbol" | "isin" | "dgsCode";
 }
 
 /**

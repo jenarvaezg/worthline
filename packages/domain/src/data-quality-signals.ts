@@ -109,7 +109,10 @@ export {
   DEBT_MISSING_FROM_HISTORY_CODE,
   SPARSE_SNAPSHOT_THRESHOLD,
 } from "./data-quality-history-coverage";
-export { MISSING_INVESTMENT_ISIN_CODE } from "./data-quality-instrument-identity";
+export {
+  MISSING_INVESTMENT_ISIN_CODE,
+  UNCLASSIFIED_SECURITY_ID_CODE,
+} from "./data-quality-instrument-identity";
 export {
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,

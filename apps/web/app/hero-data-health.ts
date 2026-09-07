@@ -25,6 +25,7 @@ import {
   type DataQualitySignal,
   isOverrideableSignalCode,
   MISSING_INVESTMENT_ISIN_CODE,
+  UNCLASSIFIED_SECURITY_ID_CODE,
   type WarningOverride,
 } from "@worthline/domain";
 
@@ -151,6 +152,10 @@ const NON_FIGURE_CODES: ReadonlySet<string> = new Set([
   // the exposure profile that is never inherited — so it stays in the shared inventory
   // (the assistant reads it) and never pushes a real doubt about today off the hero.
   MISSING_INVESTMENT_ISIN_CODE,
+  // Un identificador que nadie sabe leer (#1745) es el mismo hueco latente visto por
+  // el otro lado: el holding cotiza por su símbolo y la cifra de hoy es exacta; lo
+  // que no ocurre es el enrutado del próximo extracto ni la herencia de la ficha.
+  UNCLASSIFIED_SECURITY_ID_CODE,
   // A cost nobody declared (#1505) is latent in exactly the same way: the holding
   // is valued by its price, so today's headline is right to the cent. What is
   // un-knowable is its RETURN, and the ficha already says so beside the figure it
@@ -234,8 +239,9 @@ function fixSurface(
       // ya una tarjeta-resumen, y el aviso apunta a donde se repara.
       return { href: "/ajustes/conexiones", label: "Ver fuentes" };
     case "missing_configuration": {
-      // Only MISSING_DEBT_MODEL reaches the hero — MISSING_FIRE_CONFIG is
-      // filtered out upstream (it does not bear on today's figure).
+      // Only MISSING_DEBT_MODEL reaches the hero — MISSING_FIRE_CONFIG and the two
+      // identity signals (#1489, #1745) are filtered out upstream (none of them
+      // bears on today's figure).
       const href = fichaHref();
       return href ? { href, label: "Ver deuda" } : null;
     }

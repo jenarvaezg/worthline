@@ -475,10 +475,13 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         "The managedPortfolios block names each cartera gestionada (ADR 0085) with its member holdings: a group " +
         "of funds the owner reads as ONE balance in his manager's app — the members keep summing into net worth " +
         "as themselves, so never add the portfolio's name as an extra row. " +
-        "Every investment row also carries its instrument identity: isin, providerSymbol and units (net units " +
+        "Every investment row also carries its instrument identity: isin — or dgsCode for a Spanish pension " +
+        "plan, which has no ISIN and is identified by its DGS register code (N####) — plus providerSymbol and " +
+        "units (net units " +
         'still held). So ANSWER AN ENUMERATION QUESTION FROM THIS READ — "list every fund with its ISIN and ' +
         'participaciones" is ONE call with holdingLimit raised (up to 100), NEVER one get_holding_detail per ' +
         "holding. A field is ABSENT when the holding has no such fact: no isin means none is registered on that " +
+        "holding, and the same goes for a plan's dgsCode " +
         "holding (never conclude the workspace has none), and absent units means no operation is recorded there " +
         "(a sync-owned rung reports its units in get_connected_source_positions).",
       inputSchema: {
@@ -619,13 +622,13 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     find_holdings: {
       description:
-        "Find a scope's LIVE holdings by name, price symbol, or ISIN (defaults to the household scope): " +
+        "Find a scope's LIVE holdings by name, price symbol, ISIN or a pension plan's DGS code (defaults to the household scope): " +
         "case- and accent-insensitive substring match over EVERY holding in the scope — including holdings " +
         "worth 0, which get_financial_context sorts last and normally leaves outside its cut. Use it whenever " +
         'the user names a holding you have not seen in a read ("the fund at 0 €", a ticker, part of a label): ' +
         "it returns the public id (wl_hld_…) a correction or a baja needs, the label, direction, instrument, " +
-        "current value, which field matched (label | providerSymbol | isin), the instrument identity when known " +
-        "(isin, providerSymbol, units still held), and connectedSource {adapter, label} " +
+        "current value, which field matched (label | providerSymbol | isin | dgsCode), the instrument identity " +
+        "when known (isin or dgsCode, providerSymbol, units still held), and connectedSource {adapter, label} " +
         "when a sync owns the holding (never write to those). A member of a managed portfolio (cartera " +
         "gestionada) also carries managedPortfolio {id (wl_prt_…), label} — these fondos son uno: group them " +
         "and never treat the portfolio as a holding itself. Ranked by absolute value descending and capped " +
@@ -655,7 +658,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_holding_detail: {
       description:
-        "Get one holding's full detail by its public ID: value, ownership, instrument, its identity (isin, providerSymbol, units still held), valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). A member of a managed portfolio (cartera gestionada) also carries managedPortfolio {id, label}. Missing or unsupported facts are flagged in the quality summary, never guessed. This is a ONE-holding read: for a LIST (every fund, every ISIN, every units count) use get_financial_context with holdingLimit raised, or find_holdings — never a call per holding.",
+        "Get one holding's full detail by its public ID: value, ownership, instrument, its identity (isin or, for a pension plan, dgsCode; providerSymbol; units still held), valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). A member of a managed portfolio (cartera gestionada) also carries managedPortfolio {id, label}. Missing or unsupported facts are flagged in the quality summary, never guessed. This is a ONE-holding read: for a LIST (every fund, every ISIN, every units count) use get_financial_context with holdingLimit raised, or find_holdings — never a call per holding.",
       inputSchema: {
         additionalProperties: false,
         properties: {

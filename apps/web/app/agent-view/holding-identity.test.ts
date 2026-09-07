@@ -353,3 +353,89 @@ describe("buildHoldingSearch · net units per match (#1346)", () => {
     });
   });
 });
+
+describe("la identidad tipada del plan de pensiones (#1745)", () => {
+  test("un plan viaja con su código DGS, no con un ISIN que no puede tener", () => {
+    expect(
+      resolveHoldingIdentity({
+        meta: {
+          providerSymbol: "N5394-Myinvestor",
+          securityId: { kind: "dgs", value: "N5394" },
+        },
+      }),
+    ).toEqual({ dgsCode: "N5394", providerSymbol: "N5394-Myinvestor" });
+  });
+
+  test("un identificador preservado sin clasificar no viaja como ninguno de los dos", () => {
+    // `kind: null` (#1416) es un valor guardado que nadie supo leer: decirlo `isin`
+    // sería afirmar una identidad que el sistema no tiene. Salud de datos lo reclama.
+    expect(
+      resolveHoldingIdentity({
+        meta: { providerSymbol: "X", securityId: { kind: null, value: "raro" } },
+      }),
+    ).toEqual({ providerSymbol: "X" });
+  });
+
+  test("la ficha y la fila del contexto dicen el mismo código DGS", async () => {
+    const store = await seed();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "plan-a",
+      instrument: "pension_plan",
+      name: "Plan S&P 500",
+      ownership: SOLO,
+      providerSymbol: "N5394-Myinvestor",
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    await store.operations.recordOperation({
+      assetId: "plan-a",
+      currency: "EUR",
+      executedAt: "2026-01-01T10:00:00.000Z",
+      id: "plan-a-op",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    const row = (await contextOf(store)).holdings.items[0];
+    const detail = await buildHoldingDetail(
+      store.agentView,
+      await publicIdOf(store, "plan-a"),
+      {
+        readExposureCatalog: async () => ({
+          reason: "read_failed",
+          status: "unavailable",
+        }),
+      },
+    );
+
+    expect(row).toMatchObject({ dgsCode: "N5394", units: "10" });
+    expect(row && "isin" in row).toBe(false);
+    expect(detail).toMatchObject({ dgsCode: "N5394" });
+  });
+
+  test("buscar por el código DGS encuentra el plan y lo dice", async () => {
+    const store = await seed();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "plan-a",
+      instrument: "pension_plan",
+      name: "Plan S&P 500",
+      ownership: SOLO,
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+
+    const scopes = await listAgentViewScopes(store.agentView);
+    const scopeId = (scopes.find((scope) => scope.isDefault) ?? scopes[0])?.id ?? "";
+    const page = await buildHoldingSearch(bindScope(store.agentView, scopeId), {
+      asOf: AS_OF,
+      limit: 10,
+      query: "n5394",
+    });
+
+    expect(page.matches[0]).toMatchObject({
+      dgsCode: "N5394",
+      matchedOn: "dgsCode",
+    });
+  });
+});
