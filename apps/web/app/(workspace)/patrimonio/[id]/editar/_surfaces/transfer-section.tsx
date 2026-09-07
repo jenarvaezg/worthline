@@ -293,7 +293,13 @@ export default function TransferSection({
               in the first place. */}
           {securityIdField && securityIdCopy ? (
             <label>
-              {securityIdCopy.altaLabel} <small>(opcional)</small>
+              {securityIdCopy.altaLabel}{" "}
+              {/* WHOSE identifier, in the ficha's own shape (`{label} · {aside}`): the
+                  kind's name is the shared copy's and says nothing about the
+                  destination, and this field asked «del destino» before #1772 opened
+                  it. Kept there, in the aside, so the plan's label is the acceptance's
+                  «Código DGS del plan» and the fund's still says what it belongs to. */}
+              <small>· del destino (opcional)</small>
               <input
                 aria-label={securityIdCopy.altaLabel}
                 autoComplete="off"

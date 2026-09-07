@@ -166,13 +166,11 @@ export async function recordTransferAction(
       const destination = await resolveDestination(store, {
         destination: parsed.destination,
         origin,
-        ...(destinationSecurityId.securityId
-          ? { securityId: destinationSecurityId.securityId }
-          : {}),
         // The VL a brand-new destination is born priced at is the one the pair will be
         // WRITTEN at — which in the `units` reading is derived, not typed (#1544).
         pricePerUnit: preview.inPricePerUnit,
         seed,
+        securityId: destinationSecurityId.securityId,
       });
 
       const inOperationId = createStableId(
@@ -288,8 +286,13 @@ async function resolveDestination(
     origin: ManualAsset;
     pricePerUnit: DecimalString;
     seed: number | string;
-    /** El par tipado del identificador, ya validado contra el instrumento (#1772). */
-    securityId?: SecurityId;
+    /**
+     * El par tipado del identificador, ya validado contra el instrumento (#1772).
+     * REQUERIDO aunque pueda ser `undefined`: esta es la única puerta que crea un
+     * destino, así que el tipo obliga a pasar por `parseNewDestinationSecurityId` en
+     * vez de dejar que un llamador futuro lo olvide y la fila vuelva a nacer mal.
+     */
+    securityId: SecurityId | undefined;
   },
 ): Promise<{
   assetId: string;

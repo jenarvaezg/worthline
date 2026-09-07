@@ -126,7 +126,9 @@ describe("TransferSection", () => {
     // instrument, so the box asks the plan's own question, with the plan's example.
     const plan = render({ instrument: "pension_plan" });
 
-    expect(plan).toContain("Código DGS del plan");
+    // The VISIBLE label, not the accessible name: asserting the latter is how the
+    // fund's own wording regressed unnoticed once.
+    expect(plan).toContain("Código DGS del plan <small>· del destino (opcional)</small>");
     expect(plan).toContain('name="newDestinationSecurityId"');
     expect(plan).toContain('placeholder="N5394"');
     expect(plan).not.toContain("ISIN");
@@ -136,9 +138,12 @@ describe("TransferSection", () => {
     expect(plan).toContain("F####");
   });
 
-  test("a fund still asks for an ISIN, and says what an ISIN is for", () => {
+  test("a fund still asks for an ISIN, and still says whose it is", () => {
     const fund = render({ instrument: "fund" });
 
+    // «Conducta de hoy, sin cambios» (aceptación de #1772): the box said «del destino»
+    // before the field was opened per instrument, and it still does.
+    expect(fund).toContain("ISIN <small>· del destino (opcional)</small>");
     expect(fund).toContain('name="newDestinationSecurityId"');
     expect(fund).toContain('placeholder="IE00B52MJY50"');
     expect(fund).toContain("un extracto de tu bróker");
