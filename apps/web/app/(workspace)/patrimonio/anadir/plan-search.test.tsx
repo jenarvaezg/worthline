@@ -45,6 +45,39 @@ describe("loadPlanSearch — la llamada la paga la página, y solo cuando hay c�
     expect(pricing.searchSymbols).toHaveBeenCalledWith("N5394", "pension_plan");
   });
 
+  test("busca por el código canónico, aunque el papel lo imprima con guion", async () => {
+    pricing.searchSymbols.mockResolvedValue([CANDIDATE]);
+
+    const state = await loadPlanSearch({
+      resolvedParams: { securityId_pension_plan: "n-5394" },
+      selectedDrawer: "inversion",
+      selectedInstrument: "pension_plan",
+    });
+
+    // El lector de Finect distingue código de slug por la forma: «n-5394» no casa
+    // con ninguna de las dos, y sin normalizar la búsqueda no encontraba nada.
+    expect(pricing.searchSymbols).toHaveBeenCalledWith("N5394", "pension_plan");
+    // Lo que se enseña sigue siendo lo que el usuario escribió.
+    expect(state?.code).toBe("n-5394");
+  });
+
+  test("lo que no es un código viaja tal cual: un slug o una URL de Finect lo son", async () => {
+    pricing.searchSymbols.mockResolvedValue([CANDIDATE]);
+
+    await loadPlanSearch({
+      resolvedParams: {
+        securityId_pension_plan: "N5394-Myinvestor_indexado_sp_500_pp",
+      },
+      selectedDrawer: "inversion",
+      selectedInstrument: "pension_plan",
+    });
+
+    expect(pricing.searchSymbols).toHaveBeenCalledWith(
+      "N5394-Myinvestor_indexado_sp_500_pp",
+      "pension_plan",
+    );
+  });
+
   test("un render cualquiera del alta no paga red: sin código no hay búsqueda", async () => {
     const state = await loadPlanSearch({
       resolvedParams: {},

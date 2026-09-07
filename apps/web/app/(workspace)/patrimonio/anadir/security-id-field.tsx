@@ -32,7 +32,7 @@
  * advanced form leave it in its own bare-label layout.
  */
 
-import { securityIdFieldCopy } from "@web/security-id-field-copy";
+import { securityIdFieldCopy } from "@web/security-id-field-view";
 import type { Instrument } from "@worthline/domain";
 import { securityIdFieldForInstrument } from "@worthline/domain";
 
@@ -44,7 +44,7 @@ export function securityIdFieldName(instrument: Instrument): string {
 export function SecurityIdField({
   className,
   instrument,
-  search,
+  searchBasePath,
   value,
 }: {
   /** The wrapper class of the surrounding form's fields, when it has one. */
@@ -54,9 +54,10 @@ export function SecurityIdField({
   /**
    * Where the «buscar» button submits, when this identifier seeds the search
    * (variante A, #1669). A GET on the alta's own path: the server resolves the code
-   * and renders the candidate, and picking it is a plain navigation.
+   * and renders the candidate, and picking it is a plain navigation. The button's
+   * words are the kind's, not the caller's.
    */
-  search?: { basePath: string; label: string } | undefined;
+  searchBasePath?: string | undefined;
   /** The identifier already in hand: the search's prefill, or the user's own entry. */
   value: string | undefined;
 }) {
@@ -74,14 +75,16 @@ export function SecurityIdField({
     />
   );
 
+  const searching = searchBasePath && copy.searchLabel;
+
   return (
     <label className={className}>
       <span>{copy.altaLabel} (opcional)</span>
-      {search ? (
+      {searching ? (
         <span className="symbolSearchRow">
           {input}
-          <button formAction={search.basePath} formMethod="get">
-            {search.label}
+          <button formAction={searchBasePath} formMethod="get">
+            {copy.searchLabel}
           </button>
         </span>
       ) : (

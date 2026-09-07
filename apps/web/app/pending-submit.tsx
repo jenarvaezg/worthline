@@ -46,9 +46,9 @@ export function PendingSubmit({
       aria-busy={pending}
       className={className}
       disabled={pending || disabled}
-      {...(name === undefined ? {} : { name })}
+      name={name}
       type="submit"
-      {...(value === undefined ? {} : { value })}
+      value={value}
     >
       {pending ? (pendingLabel ?? children) : children}
     </button>

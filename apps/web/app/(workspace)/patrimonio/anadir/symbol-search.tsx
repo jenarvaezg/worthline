@@ -1,9 +1,8 @@
-import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument } from "@worthline/domain";
 import { searchSymbols } from "@worthline/pricing";
-import Link from "next/link";
 
 import { buildSymbolSearchCurrentParams } from "./search-state";
+import { SymbolCandidateRow } from "./symbol-candidate-row";
 import { symbolPrefillHref } from "./symbol-prefill";
 
 /**
@@ -56,30 +55,19 @@ export default async function SymbolSearch({
       {trimmed ? (
         candidates.length > 0 ? (
           <ul className="symbolSearchResults" aria-label="Resultados de búsqueda">
-            {candidates.map((c) => {
-              const isPicked = pickedSymbol === c.symbol;
-              return (
-                <li key={`${c.provider}:${c.symbol}`}>
-                  <Link
-                    className={`symbolResult${isPicked ? " symbolResultPicked" : ""}`}
-                    href={symbolPrefillHref({
-                      basePath,
-                      candidate: c,
-                      preservedParams,
-                      query: trimmed,
-                    })}
-                  >
-                    <span className="symbolResultSymbol">{c.symbol}</span>
-                    <span className="symbolResultName">{c.name}</span>
-                    <span className="symbolResultMeta">
-                      {[priceSourceLabel(c.provider), c.quoteType, c.exchange, c.currency]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
+            {candidates.map((candidate) => (
+              <SymbolCandidateRow
+                candidate={candidate}
+                href={symbolPrefillHref({
+                  basePath,
+                  candidate,
+                  preservedParams,
+                  query: trimmed,
+                })}
+                key={`${candidate.provider}:${candidate.symbol}`}
+                picked={pickedSymbol === candidate.symbol}
+              />
+            ))}
           </ul>
         ) : (
           <p className="emptyLine">

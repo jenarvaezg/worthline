@@ -26,7 +26,7 @@ import {
 } from "@web/patrimonio/anadir/security-id-field";
 import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import type { Instrument } from "@worthline/domain";
-import { defaultsFor } from "@worthline/domain";
+import { defaultsFor, normalizeDgsCode } from "@worthline/domain";
 import { fetchPriceNow, isRegisteredSource, searchSymbols } from "@worthline/pricing";
 import Link from "next/link";
 import type { DrawerId } from "./alta-drawers";
@@ -81,7 +81,16 @@ export async function loadPlanSearch({
 
   if (!code) return null;
 
-  const candidates = await searchSymbols(code, group.instrument);
+  // Lo que busca Finect es el código CANÓNICO: su lector distingue código de slug
+  // por la forma (`N5394`), y `n-5394` —como lo imprime más de un extracto— no casa
+  // con ninguna de las dos. Se normaliza antes de preguntar, y lo que se enseña si
+  // no hay candidato sigue siendo lo que el usuario escribió. Un valor que no es un
+  // código pasa tal cual: puede ser un slug completo o una URL de Finect, que su
+  // lector sí entiende.
+  const candidates = await searchSymbols(
+    normalizeDgsCode(code) ?? code,
+    group.instrument,
+  );
 
   return { candidate: candidates[0] ?? null, code };
 }
@@ -232,45 +241,79 @@ function InvestmentGroupPane({
     isSelected && typeof resolvedParams["pfSymbol"] === "string"
       ? resolvedParams["pfSymbol"]
       : undefined;
+  const currentParams = buildSymbolSearchCurrentParams(
+    resolvedParams,
+    selectedInstrument,
+  );
+
+  const symbolSource = group.identitySeedsSearch
+    ? {
+        above: (
+          <>
+            <SecurityIdField
+              className="simpleField"
+              instrument={id}
+              searchBasePath={ALTA_BASE_PATH}
+              value={v("securityId")}
+            />
+            {isSelected && planSearch ? (
+              <PlanSearchResult
+                basePath={ALTA_BASE_PATH}
+                currentParams={currentParams}
+                pickedSymbol={pickedSymbol}
+                state={planSearch}
+              />
+            ) : null}
+          </>
+        ),
+        // Sin candidato el símbolo viaja vacío, y el plan nace «identificado, sin
+        // cotizar» — legítimo, con señal de salud y reintento desde la ficha.
+        below: <input name={`symbol_${id}`} type="hidden" value={v("symbol") ?? ""} />,
+      }
+    : {
+        above: (
+          <SymbolSearch
+            basePath={ALTA_BASE_PATH}
+            currentParams={currentParams}
+            instrument={id}
+            pickedSymbol={pickedSymbol}
+            query={isSelected ? firstNonEmptyParam(resolvedParams["symbolq"]) : undefined}
+          />
+        ),
+        below: (
+          <>
+            <Field label={group.symbolLabel}>
+              <input
+                autoComplete="off"
+                defaultValue={v("symbol")}
+                name={`symbol_${id}`}
+                placeholder={group.searchPlaceholder}
+              />
+            </Field>
+            {/* Crypto has no identifier to ask for: the field derives that from the
+                same domain map the health signal reads, so the question and the
+                warning can never disagree — it renders nothing at all there. */}
+            <SecurityIdField
+              className="simpleField"
+              instrument={id}
+              value={v("securityId")}
+            />
+          </>
+        ),
+      };
 
   return (
     <div {...groupPaneProps(id)}>
-      {/* Variante A (#1669): un plan se busca por su código, no por un slug que
-          nadie tiene impreso, así que el identificador ES la caja de búsqueda y el
-          símbolo viaja prellenado. Los demás grupos buscan por nombre/ISIN y
-          teclean el símbolo si hace falta. La diferencia la declara la tabla. */}
-      {group.identitySeedsSearch ? (
-        <>
-          <SecurityIdField
-            className="simpleField"
-            instrument={id}
-            search={{ basePath: ALTA_BASE_PATH, label: "Buscar plan" }}
-            value={v("securityId")}
-          />
-          {isSelected && planSearch ? (
-            <PlanSearchResult
-              basePath={ALTA_BASE_PATH}
-              currentParams={buildSymbolSearchCurrentParams(
-                resolvedParams,
-                selectedInstrument,
-              )}
-              pickedSymbol={pickedSymbol}
-              state={planSearch}
-            />
-          ) : null}
-        </>
-      ) : (
-        <SymbolSearch
-          basePath={ALTA_BASE_PATH}
-          instrument={id}
-          pickedSymbol={pickedSymbol}
-          query={isSelected ? firstNonEmptyParam(resolvedParams["symbolq"]) : undefined}
-          currentParams={buildSymbolSearchCurrentParams(
-            resolvedParams,
-            selectedInstrument,
-          )}
-        />
-      )}
+      {/* Cómo llega el símbolo es LA diferencia entre los grupos, y son dos
+          bloques que van uno a cada lado del nombre — así que se deciden juntos,
+          en la única rama sobre la tabla que hay aquí (ADR 0095):
+
+          - variante A (#1669): el identificador ES la caja de búsqueda, y el
+            símbolo viaja prellenado del candidato elegido. Un plan se busca por su
+            código; nadie tiene impreso un slug de Finect.
+          - los demás: buscan por nombre/ISIN, teclean el símbolo si hace falta, y
+            el identificador es un campo más. */}
+      {symbolSource.above}
 
       <Field label="Nombre">
         <input
@@ -280,31 +323,7 @@ function InvestmentGroupPane({
           placeholder="Mi inversión"
         />
       </Field>
-      {group.identitySeedsSearch ? (
-        // El símbolo del plan no se teclea aquí: viaja prellenado del candidato
-        // elegido. Sin candidato viaja vacío, y el plan nace «identificado, sin
-        // cotizar» — legítimo, con señal de salud y reintento desde la ficha.
-        <input name={`symbol_${id}`} type="hidden" value={v("symbol") ?? ""} />
-      ) : (
-        <>
-          <Field label={group.symbolLabel}>
-            <input
-              autoComplete="off"
-              defaultValue={v("symbol")}
-              name={`symbol_${id}`}
-              placeholder={group.searchPlaceholder}
-            />
-          </Field>
-          {/* Crypto has no identifier to ask for: the field derives that from the
-              same domain map the health signal reads, so the question and the
-              warning can never disagree — it renders nothing at all there. */}
-          <SecurityIdField
-            className="simpleField"
-            instrument={id}
-            value={v("securityId")}
-          />
-        </>
-      )}
+      {symbolSource.below}
 
       <fieldset className="simpleChoiceGroup">
         <legend>¿Cómo lo registramos?</legend>

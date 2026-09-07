@@ -17,11 +17,7 @@ import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
-import {
-  defaultsFor,
-  INVESTMENT_PROFILE_INSTRUMENTS,
-  LIQUIDITY_TIER_LABELS,
-} from "@worthline/domain";
+import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import Link from "next/link";
 import { type CSSProperties, Suspense } from "react";
 

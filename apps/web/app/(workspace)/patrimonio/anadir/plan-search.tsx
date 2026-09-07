@@ -18,10 +18,9 @@
  * quien puede pagar la llamada de red una sola vez.
  */
 
-import { priceSourceLabel } from "@web/price-source-label";
 import type { SymbolCandidate } from "@worthline/pricing";
-import Link from "next/link";
 import type { AddHoldingSearchParams } from "./search-state";
+import { SymbolCandidateRow } from "./symbol-candidate-row";
 import { symbolPrefillHref } from "./symbol-prefill";
 
 /** What the plan search resolved for the code the user typed. */
@@ -55,32 +54,18 @@ export function PlanSearchResult({
   }
 
   const candidate = state.candidate;
-  const isPicked = pickedSymbol === candidate.symbol;
 
   return (
     <ul className="symbolSearchResults" aria-label="Plan encontrado">
-      <li>
-        <Link
-          className={`symbolResult${isPicked ? " symbolResultPicked" : ""}`}
-          href={symbolPrefillHref({
-            basePath,
-            candidate,
-            preservedParams: currentParams,
-          })}
-        >
-          <span className="symbolResultSymbol">{candidate.symbol}</span>
-          <span className="symbolResultName">{candidate.name}</span>
-          <span className="symbolResultMeta">
-            {[
-              priceSourceLabel(candidate.provider),
-              candidate.quoteType,
-              candidate.currency,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </Link>
-      </li>
+      <SymbolCandidateRow
+        candidate={candidate}
+        href={symbolPrefillHref({
+          basePath,
+          candidate,
+          preservedParams: currentParams,
+        })}
+        picked={pickedSymbol === candidate.symbol}
+      />
     </ul>
   );
 }

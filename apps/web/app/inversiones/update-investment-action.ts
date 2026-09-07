@@ -23,6 +23,7 @@ import {
   errorRedirectUrl,
   parseUpdateInvestmentCommand,
   preserveFields,
+  securityIdToWriteFromFicha,
   successRedirectUrl,
 } from "@web/intake";
 import { resolvePlanSymbolFromDgs } from "@web/inversiones/plan-symbol-seed";
@@ -85,7 +86,19 @@ export async function updateInvestmentAction(
   // Sin código no hay nada que resolver, y un Finect callado se dice — no se guarda
   // a medias: «identificado, sin cotizar» sigue siendo el estado, y se puede
   // reintentar más tarde.
-  const command = await seedPlanSymbolIfAsked(parsed.command, formData, editErrorUrl);
+  // El identificador que este formulario NO pudo enseñar no se toca (ver
+  // `securityIdToWriteFromFicha`): un instrumento sin identificador no tiene campo,
+  // y un valor guardado de otra clase se enseña en una línea, no en la caja.
+  const securityId = securityIdToWriteFromFicha({
+    formData,
+    stored: existing?.securityId,
+    submitted: parsed.command.securityId,
+  });
+  const command = await seedPlanSymbolIfAsked(
+    securityId ? { ...parsed.command, securityId } : parsed.command,
+    formData,
+    editErrorUrl,
+  );
 
   const nextLiquidityTier = command.liquidityTier ?? existing?.liquidityTier ?? "market";
   const nextPriceProvider =

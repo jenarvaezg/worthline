@@ -10,6 +10,7 @@ import {
   parseInvestmentAssetCommandStrict,
   parseOptionalSecurityId,
   parseUpdateInvestmentCommand,
+  securityIdToWriteFromFicha,
 } from "./investment";
 
 const members = [{ id: "member_jose", name: "Jose" }];
@@ -139,5 +140,59 @@ describe("the ficha validates by the instrument it is SAVING", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.securityId).toBeUndefined();
+  });
+});
+
+describe("un guardado no contesta por el campo que su formulario no enseñó", () => {
+  test("sin campo (un instrumento sin identificador), lo guardado se conserva", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ instrument: "crypto", name: "Bitcoin" }),
+        stored: { kind: "isin", value: "IE00B52MJY50" },
+        submitted: undefined,
+      }),
+    ).toEqual({ kind: "isin", value: "IE00B52MJY50" });
+  });
+
+  test("una caja de OTRA clase en blanco tampoco es una respuesta sobre lo guardado", () => {
+    // El plan enseña una caja de código DGS y, al lado, la línea que cita el ISIN
+    // guardado. Guardar sin teclear no puede ser «bórralo».
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "dgs" }),
+        stored: { kind: "isin", value: "IE00B52MJY50" },
+        submitted: undefined,
+      }),
+    ).toEqual({ kind: "isin", value: "IE00B52MJY50" });
+  });
+
+  test("la caja de SU clase en blanco sí borra: eso lo declaró el usuario", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "dgs" }),
+        stored: { kind: "dgs", value: "N5394" },
+        submitted: undefined,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("lo tecleado manda siempre", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "dgs" }),
+        stored: { kind: "dgs", value: "N5394" },
+        submitted: { kind: "dgs", value: "N5396" },
+      }),
+    ).toEqual({ kind: "dgs", value: "N5396" });
+  });
+
+  test("un valor preservado sin clase no puede viajar: la escritura solo acepta par tipado (#1770)", () => {
+    expect(
+      securityIdToWriteFromFicha({
+        formData: form({ securityIdKind: "isin" }),
+        stored: { kind: null, value: "LU-1234" },
+        submitted: undefined,
+      }),
+    ).toBeUndefined();
   });
 });

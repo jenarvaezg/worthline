@@ -3,7 +3,7 @@ import {
   priceSymbolProvenance,
   securityIdFieldCopy,
   securityIdFieldState,
-} from "./security-id-field-copy";
+} from "./security-id-field-view";
 
 describe("securityIdFieldCopy — the field asks the instrument's own question", () => {
   test("the plan's field names the DGS code and the trap of the paper", () => {

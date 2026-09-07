@@ -14,8 +14,10 @@ import type {
   OperationKind,
   SecurityId,
   SecurityIdKind,
+  StoredSecurityId,
 } from "@worthline/domain";
 import {
+  declaredSecurityId,
   instrumentLabelEs,
   isAssignableInstrumentForShape,
   isCaptureCurrency,
@@ -181,6 +183,48 @@ export function parseOptionalSecurityId(
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/**
+ * What a ficha save must NOT delete: the identifier its form could not show.
+ *
+ * `updateInvestmentAsset` is form-shaped — it nulls every metadata column it is not
+ * given — so «the field was absent» and «the user cleared the field» reach the store
+ * as the same thing. They are not the same thing, and #1743 already paid for the
+ * confusion with a stopgap: the ficha only knew how to show an ISIN, so saving a
+ * plan's ficha would drop the DGS code the v70 migration had just written it, and
+ * nothing would say so.
+ *
+ * The rule is «a form that did not ask cannot answer», in three cases:
+ *
+ * - the box was rendered for THIS kind and came back blank → the user cleared it,
+ *   and the identifier goes;
+ * - no box at all (an instrument that carries no identifier, so the form declared
+ *   no kind) → whatever is stored rides through untouched;
+ * - a box of ANOTHER kind (a plan whose row still holds an ISIN) → it was rendered
+ *   empty next to a line quoting the stored value, so a blank submit is not an
+ *   answer about it either.
+ *
+ * A stored value the import preserved with NO kind (#1416) cannot ride through: the
+ * store's update input only accepts a typed pair, which is the missing half of
+ * #1770. It is reported by salud de datos and repaired by typing the right one.
+ */
+export function securityIdToWriteFromFicha({
+  formData,
+  stored,
+  submitted,
+}: {
+  formData: FormData;
+  stored: StoredSecurityId | undefined;
+  /** What the form's own field parsed to, when it carried one. */
+  submitted: SecurityId | undefined;
+}): SecurityId | undefined {
+  if (submitted) return submitted;
+
+  const declared = declaredSecurityIdKind(formData);
+  const preserved = declaredSecurityId(stored);
+
+  return preserved && preserved.kind !== declared ? preserved : undefined;
 }
 
 /** The kind the FORM was rendered with, when it says so (a hidden declaration). */
@@ -389,19 +433,21 @@ function parseFichaSecurityId(
 
   const kind = field?.kind ?? declared ?? "isin";
   const parsed = parseOptionalSecurityId(kind, formData.get("securityId"));
+  // The box was rendered for one kind and the picker is saving another, so the
+  // value in it was never meant for this rule. Naming the change is what keeps the
+  // refusal from reading as the app forgetting what an ISIN is.
+  const reclassified = Boolean(instrument) && declared !== null && declared !== kind;
 
-  if (parsed.ok || !declared || declared === kind || !instrument) {
+  if (parsed.ok || !reclassified) {
     return parsed;
   }
 
-  // The box says one thing, the picker another: name the change that moved the
-  // goalposts, or the refusal reads as the app forgetting what an ISIN is.
   return {
     ok: false,
     error:
-      `Al reclasificarlo como ${instrumentLabelEs(instrument).toLowerCase()}, su ` +
+      `Al reclasificarlo como ${instrumentLabelEs(instrument!).toLowerCase()}, su ` +
       `identificador es el ${SECURITY_ID_KIND_LABEL_INLINE[kind]} y no el ` +
-      `${SECURITY_ID_KIND_LABEL_INLINE[declared]}. ${parsed.error}`,
+      `${SECURITY_ID_KIND_LABEL_INLINE[declared!]}. ${parsed.error}`,
   };
 }
 

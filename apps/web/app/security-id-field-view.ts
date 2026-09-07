@@ -1,5 +1,6 @@
 /**
- * The words the identifier field uses, per kind (#1746, decisión 9 del mapa #1454).
+ * How the identifier field READS, per kind (#1746, decisión 9 del mapa #1454): its
+ * words, and what its box shows for a given stored value.
  *
  * One field asks two different questions. A fund/ETF/stock is identified by its
  * ISIN; a Spanish pension plan has no ISIN at all — its identifier is the DGS code
@@ -23,6 +24,12 @@ import {
 } from "@worthline/domain";
 
 export interface SecurityIdFieldCopy {
+  /**
+   * The button that turns this identifier into a search, where it seeds one
+   * (variante A de #1669). Null where nothing is searched by identifier: the
+   * ISIN's own search box asks by name/ISIN and is a different control.
+   */
+  searchLabel: string | null;
   /** The field's own label — the alta's, which names the instrument it belongs to. */
   altaLabel: string;
   /** The ficha's label: the identifier's name, with no «del plan» to disambiguate. */
@@ -37,6 +44,7 @@ export interface SecurityIdFieldCopy {
 
 const COPY: Record<SecurityIdKind, SecurityIdFieldCopy> = {
   dgs: {
+    searchLabel: "Buscar plan",
     altaLabel: `${SECURITY_ID_KIND_LABEL.dgs} del plan`,
     fichaLabel: SECURITY_ID_KIND_LABEL.dgs,
     placeholder: "N5394",
@@ -47,6 +55,7 @@ const COPY: Record<SecurityIdKind, SecurityIdFieldCopy> = {
     provenance: "identifica el producto",
   },
   isin: {
+    searchLabel: null,
     altaLabel: SECURITY_ID_KIND_LABEL.isin,
     fichaLabel: SECURITY_ID_KIND_LABEL.isin,
     placeholder: "IE00B52MJY50",

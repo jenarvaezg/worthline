@@ -8,15 +8,18 @@
  * lives here rather than in whichever of them was written first.
  */
 
+import type { SymbolCandidate } from "@worthline/pricing";
 import type { AddHoldingSearchParams } from "./search-state";
 
-/** What a picked candidate prefills. `provider` is the price source, not an id. */
-export interface SymbolPrefillCandidate {
-  symbol: string;
-  name: string;
-  provider: string;
-  isin?: string | undefined;
-}
+/**
+ * What a picked candidate prefills — the candidate's own fields, narrowed rather
+ * than restated: `provider` stays the price-source union, so a widened `string`
+ * cannot smuggle a name no registry knows into `pfProvider`.
+ */
+export type SymbolPrefillCandidate = Pick<
+  SymbolCandidate,
+  "isin" | "name" | "provider" | "symbol"
+>;
 
 export function symbolPrefillHref({
   basePath,

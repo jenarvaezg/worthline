@@ -175,6 +175,34 @@ describe("updateInvestmentAction wiring", () => {
     ).toEqual({ kind: "dgs", value: "N5394" });
   });
 
+  // El otro lado de la misma regla (#1746): la ficha de un instrumento SIN
+  // identificador no enseña campo, así que renombrarlo no puede tirar lo guardado.
+  // Es la regresión que el parche de #1743 evitaba a mano.
+  test("un envío sin el campo de identidad NO borra el identificador guardado", async () => {
+    await setupStore();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: INVESTMENT_ID,
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Bitcoin",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      securityId: { kind: "isin", value: "IE00B03HCZ61" },
+    });
+
+    await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd({ instrument: "crypto", name: "Bitcoin" }, "/inversiones"),
+        store,
+      ),
+    );
+
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.securityId,
+    ).toEqual({ kind: "isin", value: "IE00B03HCZ61" });
+  });
+
   test("un identificador en blanco sí borra el que había", async () => {
     await setupStore();
     await store.assets.createInvestmentAsset({

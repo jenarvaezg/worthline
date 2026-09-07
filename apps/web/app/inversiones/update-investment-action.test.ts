@@ -33,6 +33,9 @@ function fichaForm(fields: Record<string, string>): FormData {
   data.set("liquidityTier", "term-locked");
   data.set("priceProvider", "finect");
   data.set("providerSymbol", "");
+  // Lo que la ficha de un plan renderiza: la clase del campo viaja declarada, y es
+  // lo que distingue «lo he borrado» de «no había campo».
+  data.set("securityIdKind", "dgs");
   for (const [key, value] of Object.entries(fields)) {
     data.set(key, value);
   }
@@ -121,6 +124,66 @@ describe("el campo de identidad de la ficha es el del instrumento (#1746)", () =
 
     const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
     expect(saved?.securityId).toBeUndefined();
+  });
+});
+
+describe("guardar la ficha no borra el identificador que no enseñó", () => {
+  let store: WorthlineStore;
+
+  beforeEach(async () => {
+    seed.resolvePlanSymbolFromDgs.mockReset();
+    store = await createInMemoryStore();
+  });
+
+  test("una ficha sin campo de identidad (cripto) conserva lo guardado", async () => {
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: PLAN_ID,
+      instrument: "crypto",
+      liquidityTier: "market",
+      name: "Bitcoin",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      priceProvider: "coingecko",
+      providerSymbol: "bitcoin",
+      securityId: { kind: "isin", value: "IE00B52MJY50" },
+    });
+
+    const data = new FormData();
+    data.set("currentUrl", "/patrimonio/wl_hld_plan");
+    data.set("instrument", "crypto");
+    data.set("name", "Bitcoin renombrado");
+    data.set("liquidityTier", "market");
+    data.set("priceProvider", "coingecko");
+    data.set("providerSymbol", "bitcoin");
+
+    await run(store, data);
+
+    const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
+    expect(saved?.name).toBe("Bitcoin renombrado");
+    // Renombrar no puede tirar una identidad que el formulario no llegó a mostrar.
+    expect(saved?.securityId).toEqual({ kind: "isin", value: "IE00B52MJY50" });
+  });
+
+  test("un plan que guarda un ISIN conserva el valor mientras no se teclee el código", async () => {
+    await seedPlan(store);
+    await store.assets.updateInvestmentAsset({
+      id: PLAN_ID,
+      liquidityTier: "term-locked",
+      name: "MyInvestor S&P 500 PP",
+      priceProvider: "finect",
+      securityId: { kind: "isin", value: "IE00B52MJY50" },
+    });
+
+    await run(store, fichaForm({ securityId: "" }));
+
+    const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
+    // La caja del código DGS salió vacía porque lo guardado no es un código DGS: la
+    // ficha lo cita en una línea, y guardar sin teclear no lo borra.
+    expect(saved?.securityId).toEqual({ kind: "isin", value: "IE00B52MJY50" });
   });
 });
 

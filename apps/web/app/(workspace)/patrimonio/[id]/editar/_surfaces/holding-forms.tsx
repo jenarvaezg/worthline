@@ -22,7 +22,7 @@ import {
   priceSymbolProvenance,
   securityIdFieldCopy,
   securityIdFieldState,
-} from "@web/security-id-field-copy";
+} from "@web/security-id-field-view";
 import type { InvestmentAssetFull } from "@worthline/db";
 import type {
   Instrument,
@@ -241,10 +241,13 @@ export function AssetEditForm({
             </select>
           </label>
 
+          {/* «Símbolo de precio», no «del proveedor» (#1746): en la ficha vive al
+              lado del identificador, y lo que hay que leer de un vistazo es qué
+              hace cada uno — este cotiza, el otro identifica (ADR 0011). */}
           <label>
-            Símbolo del proveedor
+            Símbolo de precio
             <input
-              aria-label="Símbolo del proveedor"
+              aria-label="Símbolo de precio"
               autoComplete="off"
               defaultValue={values["providerSymbol"] ?? investment.providerSymbol ?? ""}
               name="providerSymbol"
@@ -313,13 +316,17 @@ export function AssetEditForm({
                 Este plan está identificado por su código DGS pero no cotiza: nadie le ha
                 puesto símbolo de precio. Podemos pedírselo a Finect con el código.
               </span>
-              <PendingSubmit
-                name="seedPlanSymbol"
-                pendingLabel="Buscando en Finect…"
-                value="1"
-              >
-                Buscar el símbolo por su código DGS
-              </PendingSubmit>
+              {/* En su propia fila: la banda es una rejilla, y un botón suelto
+                  dentro se estiraría de lado a lado. */}
+              <div className="formActions">
+                <PendingSubmit
+                  name="seedPlanSymbol"
+                  pendingLabel="Buscando en Finect…"
+                  value="1"
+                >
+                  Buscar el símbolo por su código DGS
+                </PendingSubmit>
+              </div>
             </div>
           ) : null}
 

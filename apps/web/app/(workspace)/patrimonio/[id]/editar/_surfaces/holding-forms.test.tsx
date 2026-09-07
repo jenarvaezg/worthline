@@ -41,7 +41,7 @@ describe("AssetEditForm — investment settings", () => {
       />,
     );
 
-    expect(markup).toContain("Símbolo del proveedor");
+    expect(markup).toContain("Símbolo de precio");
     expect(markup).toContain('name="providerSymbol"');
     expect(markup).toContain('value="0P00000RN9.F"');
     expect(markup).toContain("Yahoo Finance");
