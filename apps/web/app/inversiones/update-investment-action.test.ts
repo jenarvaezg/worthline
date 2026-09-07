@@ -218,6 +218,55 @@ describe("guardar la ficha no borra el identificador que no enseñó", () => {
     const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
     expect(saved?.securityId).toEqual({ kind: "dgs", value: "N5396" });
   });
+
+  // El mismo par de estados en la ficha de un FONDO, que es la que enseña caja de
+  // ISIN: el arreglo no puede depender de qué instrumento sea el que llegó roto.
+  test("en un fondo, la caja de ISIN conserva el valor sin clase y lo re-tipa al teclearlo (#1770)", async () => {
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: PLAN_ID,
+      instrument: "fund",
+      liquidityTier: "market",
+      name: "Fondo raro",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.assets.updateInvestmentAsset({
+      id: PLAN_ID,
+      liquidityTier: "market",
+      name: "Fondo raro",
+      securityId: { kind: null, value: "LU-1234" },
+    });
+
+    const fundForm = (securityId: string): FormData => {
+      const data = new FormData();
+      data.set("currentUrl", "/patrimonio/wl_hld_fondo");
+      data.set("name", "Fondo raro");
+      data.set("instrument", "fund");
+      data.set("liquidityTier", "market");
+      data.set("providerSymbol", "");
+      data.set("securityIdKind", "isin");
+      data.set("securityId", securityId);
+      return data;
+    };
+
+    await run(store, fundForm(""));
+
+    expect((await store.assets.readInvestmentAssetById(PLAN_ID))?.securityId).toEqual({
+      kind: null,
+      value: "LU-1234",
+    });
+
+    await run(store, fundForm("IE00B52MJY50"));
+
+    expect((await store.assets.readInvestmentAssetById(PLAN_ID))?.securityId).toEqual({
+      kind: "isin",
+      value: "IE00B52MJY50",
+    });
+  });
 });
 
 describe("el reintento del plan: «búscame el símbolo por el código DGS»", () => {

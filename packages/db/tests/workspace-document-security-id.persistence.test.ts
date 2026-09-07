@@ -120,6 +120,36 @@ describe("el identificador de valor en el documento de workspace (#1743)", () =>
     }
   });
 
+  // #1770: nacido aquí, tiene que sobrevivir a la pantalla que lo enseña. La ficha
+  // devuelve el par que su campo no supo enseñar y la escritura lo acepta; antes no
+  // podía, y guardar la ficha borraba la única pista que el usuario tenía.
+  test("nacido del import, sobrevive a un guardado de ficha que lo devuelve (#1770)", async () => {
+    const store = await createInMemoryStore();
+    try {
+      await store.workspace.importWorkspace(
+        documentWithInvestment({ isin: "esto-no-es-un-identificador" }),
+      );
+      const born = (await store.assets.readInvestmentAssetById("a1"))?.securityId;
+      expect(born).toEqual({ kind: null, value: "esto-no-es-un-identificador" });
+      if (!born) return;
+
+      // Lo que hace la acción de la ficha: devolver tal cual lo que no pudo enseñar.
+      await store.assets.updateInvestmentAsset({
+        id: "a1",
+        liquidityTier: "term-locked",
+        name: "Plan de pensiones",
+        securityId: born,
+      });
+
+      expect((await store.assets.readInvestmentAssetById("a1"))?.securityId).toEqual({
+        kind: null,
+        value: "esto-no-es-un-identificador",
+      });
+    } finally {
+      store.close();
+    }
+  });
+
   test("un valor preservado sin clase sobrevive la ida y la vuelta completa", async () => {
     const store = await createInMemoryStore();
     try {
