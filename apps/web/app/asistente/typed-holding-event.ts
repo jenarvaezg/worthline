@@ -41,8 +41,8 @@ import type { UIMessage } from "ai";
 
 import {
   type ExtractedHoldingEvent,
-  isValidIsin,
   normalizeExtractedNumber,
+  validIsinOrNull,
 } from "./attachment-extraction-contract";
 import type { OperationKindClaim } from "./operation-document-frontier";
 import {
@@ -451,8 +451,9 @@ function derivedAmount(units: string, price: number, fees: number | undefined): 
 function isinIn(text: string): { isin?: string; rest: string } {
   let isin: string | undefined;
   const rest = text.replace(ISIN_TOKEN, (token) => {
-    if (!isValidIsin(token)) return token;
-    isin ??= token.toUpperCase();
+    const read = validIsinOrNull(token);
+    if (read === null) return token;
+    isin ??= read;
     return " ";
   });
   return { rest, ...(isin === undefined ? {} : { isin }) };

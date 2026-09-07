@@ -6,11 +6,19 @@ import type {
   ReconcileDocument,
   StatementImportCommand,
 } from "@worthline/db";
-import type { CreateInvestmentOperationInput, OwnershipShare } from "@worthline/domain";
-import { defaultsFor } from "@worthline/domain";
+import type {
+  CreateInvestmentOperationInput,
+  Instrument,
+  OwnershipShare,
+  SecurityId,
+} from "@worthline/domain";
+import { defaultsFor, securityIdFieldForInstrument } from "@worthline/domain";
 
 import type { ExtractedPositionsMovementsDocument } from "./attachment-extraction-contract";
-import { movementLinksToHolding } from "./attachment-extraction-contract";
+import {
+  extractedSecurityId,
+  movementLinksToHolding,
+} from "./attachment-extraction-contract";
 import {
   PROPOSAL_UNRECOGNIZED_MESSAGE,
   runProposalConfirm,
@@ -45,6 +53,21 @@ function reconcileDocumentOf(proposal: AssistantProposal): ReconcileDocument | n
     .flatMap((document) => document.facts)
     .find((item) => item.kind === "holding_reconcile");
   return fact && fact.kind === "holding_reconcile" ? fact.row : null;
+}
+
+/**
+ * The document's identity, but only when the instrument the row maps to may carry
+ * that kind (`securityIdFieldForInstrument`, #1742). A plan takes a DGS code, a fund
+ * an ISIN; anything else takes neither.
+ */
+function identityForInstrument(
+  identity: SecurityId | null,
+  instrument: Instrument,
+): SecurityId | null {
+  if (identity === null) return null;
+  return securityIdFieldForInstrument(instrument)?.kind === identity.kind
+    ? identity
+    : null;
 }
 
 /** The row index a `row-N` id points at, or null when it is not a batch id. */
@@ -143,6 +166,13 @@ function resolveFunds(
 
     if (entry.decision === "create") {
       const assetId = createStableId("asset", `${holding.name}_${entry.rowId}`, fundSeed);
+      // Invariante 3 del PRD #1741: «toda escritura interactiva valida por
+      // instrumento». A «DGS» column filled on a fondo row is the sheet's mistake, not
+      // a new kind of fund — nailing `kind:"dgs"` onto a non-plan would make it a
+      // permanent one, and the store only checks the value against its kind, never the
+      // kind against the instrument. The row is still created; it just arrives without
+      // an identifier it was never entitled to.
+      const identity = identityForInstrument(extractedSecurityId(holding), instrument);
       const movementOps = operationsFromMovements(document, holding, assetId, fundSeed);
       const creates =
         movementOps.length > 0
@@ -157,7 +187,11 @@ function resolveFunds(
           liquidityTier: defaults.rung,
           name: holding.name,
           ownership,
-          ...(holding.isin ? { isin: holding.isin } : {}),
+          // The document's typed identifier, ISIN or DGS code (#1747). It used to be
+          // written as a bare `isin`, a key `CreateInvestmentAssetInput` has not had
+          // since #1743 typed the pair — and a spread is invisible to the excess
+          // property check, so the identifier was being dropped on every alta here.
+          ...(identity ? { securityId: identity } : {}),
         },
         creates,
         kind: "new",

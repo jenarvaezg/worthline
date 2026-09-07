@@ -51,6 +51,7 @@ export { EMPTY_BALANCE_SERIES_MESSAGE } from "./attachment-vision-balance-series
 // The published surface, unchanged: callers and tests import these from here.
 export {
   DROPPED_DECLARED_EFFECT_WARNING,
+  DROPPED_DGS_CODE_WARNING,
   DROPPED_FEES_WARNING,
   DROPPED_ISIN_WARNING,
   DROPPED_NEXT_INSTALMENT_WARNING,

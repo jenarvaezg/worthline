@@ -5,6 +5,7 @@ import {
   reconcileDestinationLabel,
   reconcileDocumentLine,
   reconcileImpactCaption,
+  reconcileMatchCaveat,
   reconcileMovementLine,
 } from "./reconcile-row-copy";
 
@@ -33,7 +34,6 @@ function row(overrides: Partial<ReconcileRow> = {}): ReconcileRow {
     excluded: false,
     fidelity: "movements",
     instrument: "pension_plan",
-    isin: "ES0173516115",
     match: {
       candidates: [
         { holdingId: "asset-sp500", name: "MyInvestor Indexado SP500", key: "isin" },
@@ -48,6 +48,7 @@ function row(overrides: Partial<ReconcileRow> = {}): ReconcileRow {
     movementsDeltaMinor: 0,
     name: "MYINVESTOR INDEXADO SP 500 PP",
     rowId: "row-0",
+    securityId: { kind: "isin", value: "ES0173516115" },
     uncertain: false,
     valueMinor: 550_868,
     ...overrides,
@@ -182,5 +183,73 @@ describe("reconcileImpactCaption", () => {
 
   it("says nothing at all when there is nothing to qualify", () => {
     expect(reconcileImpactCaption(impact())).toBe("");
+  });
+});
+
+/**
+ * The weak match stops disguising itself as a strong one (#1747). A row matched only
+ * by name is the failure mode of #1373 in its purest form — the model relayed a name
+ * and the card presented a confident destination — and until now the review mark
+ * appeared only when SEVERAL holdings shared the name. One is the dangerous case.
+ */
+describe("reconcileMatchCaveat — el match por nombre se declara (#1747)", () => {
+  const byName = (over: Partial<ReconcileRow["match"]> = {}): ReconcileRow =>
+    row({
+      match: {
+        candidates: [
+          { confidence: "weak", holdingId: "asset-otro", key: "name", name: "El otro" },
+        ],
+        confidence: "weak",
+        decision: "update",
+        key: "name",
+        rowId: "row-0",
+        target: "asset-otro",
+        ...over,
+      } as ReconcileRow["match"],
+    });
+
+  it("marca un match por nombre de un solo candidato", () => {
+    expect(reconcileMatchCaveat(byName())).toBe(
+      " · emparejado solo por nombre — revisa el destino",
+    );
+  });
+
+  it("cuando varios comparten el nombre, dice cuántos", () => {
+    const several = byName({
+      ambiguous: true,
+      candidates: [
+        { confidence: "weak", holdingId: "asset-otro", key: "name", name: "El otro" },
+        { confidence: "weak", holdingId: "asset-mas", key: "name", name: "El otro" },
+      ],
+    });
+
+    expect(reconcileMatchCaveat(several)).toBe(
+      " · 2 holdings con el mismo nombre: revisa cuál actualizas",
+    );
+  });
+
+  it("un match fuerte por identificador no lleva marca", () => {
+    expect(reconcileMatchCaveat(row())).toBe("");
+  });
+
+  it("una fila descartada no pide revisar nada", () => {
+    expect(reconcileMatchCaveat(byName())).not.toBe("");
+    expect(reconcileMatchCaveat({ ...byName(), excluded: true })).toBe("");
+  });
+});
+
+/** El plan de pensiones se nombra por su código DGS, no por un ISIN (#1747). */
+describe("reconcileDocumentLine — el identificador tipado", () => {
+  it("imprime el código DGS de un plan igual que imprimiría un ISIN", () => {
+    expect(
+      reconcileDocumentLine(row({ securityId: { kind: "dgs", value: "N5394" } })),
+    ).toBe("MYINVESTOR INDEXADO SP 500 PP · N5394");
+  });
+
+  it("sin identificador, solo el nombre", () => {
+    const { securityId: _omitted, ...bare } = row();
+    expect(reconcileDocumentLine(bare as ReconcileRow)).toBe(
+      "MYINVESTOR INDEXADO SP 500 PP",
+    );
   });
 });

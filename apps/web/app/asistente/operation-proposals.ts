@@ -37,15 +37,18 @@ import {
   addUnits,
   compareUnits,
   type DecimalString,
+  declaredSecurityId,
   formatUnits,
   multiplyToMinor,
   netUnitsFromOperations,
   normalizeDecimal,
-  storedIsinOrNull,
+  SECURITY_ID_KIND_LABEL_INLINE,
+  type SecurityId,
   subtractUnits,
 } from "@worthline/domain";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
+import { extractedSecurityId } from "./attachment-extraction-contract";
 import {
   connectedSourceValueRejection,
   readConnectedSourceOwners,
@@ -108,8 +111,8 @@ export interface OperationArgs {
 export interface OperationWrite {
   kind: OperationKindClaim;
   terms: OperationTerms;
-  /** The ISIN the document prints, when it prints one. */
-  documentIsin?: string;
+  /** The identifier the document prints, typed (#1747): an ISIN, or a plan's DGS code. */
+  documentSecurityId?: SecurityId;
 }
 
 /**
@@ -129,7 +132,7 @@ const NOT_AN_INVESTMENT =
 
 export interface ProjectedOperation {
   ok: true;
-  holding: { id: string; name: string; currency: string; isin?: string };
+  holding: { id: string; name: string; currency: string; securityId?: SecurityId };
   unitsBefore: DecimalString;
   unitsAfter: DecimalString;
 }
@@ -177,23 +180,32 @@ export async function projectOperationWrite(
     };
   }
 
-  // The identity contradiction (#1331/#1366's lesson): an ISIN printed on the paper
-  // that disagrees with the one registered on the holding means the paper is about a
-  // DIFFERENT instrument, and this lane's whole reason to exist is that a jump of
-  // holding used to be invisible. A holding with no ISIN registered contradicts
-  // nothing — the card prints both lines and the user sees what is being matched.
-  const documentIsin = write.documentIsin?.toUpperCase();
-  // El contrato de extracción todavía habla solo de ISIN (#1747): un plan
-  // identificado por su código DGS no contradice a un papel con ISIN, y quien
-  // decide esa frontera es esa slice, no esta.
-  const holdingIsin = storedIsinOrNull(holding.securityId);
-  if (documentIsin && holdingIsin && holdingIsin.toUpperCase() !== documentIsin) {
+  // The identity contradiction (#1331/#1366's lesson): an identifier printed on the
+  // paper that disagrees with the one registered on the holding means the paper is
+  // about a DIFFERENT instrument, and this lane's whole reason to exist is that a jump
+  // of holding used to be invisible. A holding with no identifier registered
+  // contradicts nothing — the card prints both lines and the user sees the match.
+  //
+  // Compared as the TYPED pair (#1747), which is what lets a plan de pensiones take
+  // part at all: its paper prints a DGS code and never an ISIN, so before the pair the
+  // guard simply had nothing to compare and every plan slipped through it. Two
+  // different kinds contradict too — an ISIN paper does not belong on a plan.
+  const documentId = write.documentSecurityId;
+  const holdingId = declaredSecurityId(holding.securityId);
+  if (
+    documentId &&
+    holdingId &&
+    (documentId.kind !== holdingId.kind || documentId.value !== holdingId.value)
+  ) {
+    const printed = SECURITY_ID_KIND_LABEL_INLINE[documentId.kind];
+    const registered = SECURITY_ID_KIND_LABEL_INLINE[holdingId.kind];
     return {
       ok: false as const,
       error:
-        `La operación es del ISIN ${write.documentIsin} y «${holding.name}» tiene registrado ` +
-        `${holdingIsin}: son instrumentos distintos, así que no anoto la operación ahí. Busca ` +
-        "la posición de ese ISIN en la cartera, y si no existe, dala de alta.",
+        `La operación es del ${printed} ${documentId.value} y «${holding.name}» tiene ` +
+        `registrado el ${registered} ${holdingId.value}: son instrumentos distintos, así ` +
+        "que no anoto la operación ahí. Busca la posición de ese identificador en la " +
+        "cartera, y si no existe, dala de alta.",
     };
   }
 
@@ -243,7 +255,7 @@ export async function projectOperationWrite(
       currency: holding.currency,
       id: holding.id,
       name: holding.name,
-      ...(holdingIsin === null ? {} : { isin: holdingIsin }),
+      ...(holdingId === null ? {} : { securityId: holdingId }),
     },
     ok: true as const,
     unitsAfter,
@@ -269,6 +281,7 @@ export function operationPlanFromProposal(
  * get written.
  */
 export function operationWriteFromPlan(plan: InvestmentOperationPlan): OperationWrite {
+  const planIdentity = extractedSecurityId(plan);
   return {
     kind: plan.kind,
     terms: {
@@ -280,7 +293,7 @@ export function operationWriteFromPlan(plan: InvestmentOperationPlan): Operation
       units: plan.units,
       ...(plan.feesMinor === undefined ? {} : { feesMinor: plan.feesMinor }),
     },
-    ...(plan.isin === undefined ? {} : { documentIsin: plan.isin }),
+    ...(planIdentity === null ? {} : { documentSecurityId: planIdentity }),
   };
 }
 
@@ -307,10 +320,11 @@ export async function buildOperationProposal(
     };
   }
 
+  const documentIdentity = extractedSecurityId(event);
   const write: OperationWrite = {
     kind: args.kind,
     terms,
-    ...(event.isin === undefined ? {} : { documentIsin: event.isin }),
+    ...(documentIdentity === null ? {} : { documentSecurityId: documentIdentity }),
   };
   const projected = await projectOperationWrite(store, args.assetId, write);
   if (!projected.ok) return projected;
@@ -347,6 +361,7 @@ export async function buildOperationProposal(
     units: terms.units,
     ...(terms.feesMinor === undefined ? {} : { feesMinor: terms.feesMinor }),
     ...(event.isin === undefined ? {} : { isin: event.isin }),
+    ...(event.dgsCode === undefined ? {} : { dgsCode: event.dgsCode }),
   };
 
   const proposal = await store.assistantProposals.create({
@@ -384,7 +399,7 @@ export async function buildOperationProposal(
           dictated === null
             ? operationDocumentLine({
                 label: event.label,
-                ...(event.isin === undefined ? {} : { isin: event.isin }),
+                ...(documentIdentity === null ? {} : { securityId: documentIdentity }),
               })
             : operationDictatedLine(dictated, terms.currency),
       },

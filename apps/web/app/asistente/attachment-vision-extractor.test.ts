@@ -8,6 +8,7 @@ import {
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
 import {
   DROPPED_DECLARED_EFFECT_WARNING,
+  DROPPED_DGS_CODE_WARNING,
   DROPPED_FEES_WARNING,
   DROPPED_ISIN_WARNING,
   DROPPED_NEXT_INSTALMENT_WARNING,
@@ -1524,6 +1525,60 @@ describe("vision attachment extractor · the broker transactions ledger (#1487)"
     expect(result.data.warnings.join(" ")).toContain("FONDO SIN CIFRAS");
   });
 
+  /**
+   * The ledger lane used to lose an identifier in silence, and the checksum makes that
+   * sharper rather than softer (#1747): the typical vision error is one misread
+   * character, so a row that used to travel with a shape-valid ISIN now travels with
+   * none — and doing that quietly is the degradation the single definition ends.
+   */
+  test("an unreadable identifier is dropped OUT LOUD, and the row survives", async () => {
+    const result = await readingOf({
+      transactions: [{ ...READ_ROWS.transactions[0], isin: "IE00B5BMR088" }],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.isin).toBeUndefined();
+    expect(result.data.transactions[0]?.name).toBe("ISHARES CORE S&P 500");
+    expect(result.data.warnings.join(" ")).toContain("IE00B5BMR088");
+  });
+
+  test("a plan's DGS code reaches the ledger, normalized", async () => {
+    const result = await readingOf({
+      transactions: [
+        {
+          ...READ_ROWS.transactions[0],
+          dgsCode: "n-5394",
+          isin: undefined,
+          name: "MYINVESTOR INDEXADO SP 500 PP",
+        },
+      ],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.dgsCode).toBe("N5394");
+    expect(result.data.warnings).toEqual([]);
+  });
+
+  test("both registers at once leave neither, and the row says so", async () => {
+    const result = await readingOf({
+      transactions: [{ ...READ_ROWS.transactions[0], dgsCode: "N5394" }],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions[0]?.isin).toBeUndefined();
+    expect(result.data.transactions[0]?.dgsCode).toBeUndefined();
+    expect(result.data.warnings.join(" ")).toContain("instrumentos distintos");
+  });
+
   test("a ledger with no readable row is empty_reading, not the descriptive drain", async () => {
     const result = await readingOf({ transactions: [], warnings: [] });
 
@@ -1668,6 +1723,68 @@ describe("vision attachment extractor · the securities trade confirmation (#131
     // whole capture — so the field is checked here and lost with a warning instead.
     const result = await readingOf({
       events: [{ ...TRADE_READING, isin: "VWCE" }],
+      warnings: [],
+    });
+
+    const { isin: _dropped, ...withoutIsin } = TRADE_EVENT;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: withoutIsin,
+        warnings: [DROPPED_ISIN_WARNING],
+      },
+      status: "valid",
+    });
+  });
+
+  /**
+   * The plan's code, dropped by the same rule (#1747). What lands here wrong is
+   * almost always the pension FUND's `F####`, and that is a DIFFERENT instrument, so
+   * keeping it would nail two things to one identity — the failure the shape of the
+   * field exists to make impossible.
+   */
+  test("drops an F#### code and keeps the rest of the reading", async () => {
+    const result = await readingOf({
+      events: [{ ...TRADE_READING, dgsCode: "F2244", isin: undefined }],
+      warnings: [],
+    });
+
+    const { isin: _dropped, ...withoutIsin } = TRADE_EVENT;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: withoutIsin,
+        warnings: [DROPPED_DGS_CODE_WARNING],
+      },
+      status: "valid",
+    });
+  });
+
+  test("keeps a plan's DGS code, normalized", async () => {
+    const result = await readingOf({
+      events: [{ ...TRADE_READING, dgsCode: "n-5394", isin: undefined }],
+      warnings: [],
+    });
+
+    const { isin: _dropped, ...withoutIsin } = TRADE_EVENT;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: { ...withoutIsin, dgsCode: "N5394" },
+        warnings: [],
+      },
+      status: "valid",
+    });
+  });
+
+  /**
+   * The checksum, now that there is one definition of ISIN (#1747). A misread
+   * character is vision's characteristic error; before this it produced a shape-valid
+   * ISIN that resolved to nothing downstream, silently.
+   */
+  test("drops an ISIN whose check digit does not add up", async () => {
+    const result = await readingOf({
+      events: [{ ...TRADE_READING, isin: "LU1681043598" }],
       warnings: [],
     });
 

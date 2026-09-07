@@ -406,3 +406,98 @@ describe("confirmReconcileProposalAction (#1108) · atomicity (todo o nada)", ()
     store.close();
   });
 });
+
+/**
+ * The identifier the document printed has to land ON the holding the confirm creates
+ * (#1747). It stopped landing when #1743 typed the pair: the call site still wrote a
+ * bare `isin`, a key `CreateInvestmentAssetInput` no longer has — and because it was
+ * written through a spread, the excess-property check never saw it. Every alta out of
+ * a reconcile has been silently identity-less since.
+ */
+describe("confirmReconcileProposalAction · el alta conserva el identificador (#1747)", () => {
+  test("un ISIN del documento queda registrado en el holding creado", async () => {
+    const store = await seedWorkspace();
+    const proposal = await draftFrom(store, [
+      {
+        currency: "EUR",
+        fidelity: "value_only",
+        isin: AMUNDI,
+        name: "Amundi MSCI World",
+        type: "Fondo",
+        value: 12_000,
+      },
+    ]);
+
+    const result = await confirmReconcileProposalAction(
+      proposal.draft,
+      [{ decision: "create", rowId: "row-0" }] satisfies ReconcileCuration[],
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("applied");
+    const [created] = await store.assets.readInvestmentAssetsWithMeta();
+    expect(created?.securityId).toEqual({ kind: "isin", value: AMUNDI });
+    store.close();
+  });
+
+  test("y el código DGS de un plan también, que es el identificador que tiene", async () => {
+    const store = await seedWorkspace();
+    const proposal = await draftFrom(store, [
+      {
+        currency: "EUR",
+        dgsCode: "N5394",
+        fidelity: "value_only",
+        name: "MYINVESTOR INDEXADO SP 500 PP",
+        type: "Plan de pensiones",
+        value: 5508.68,
+      },
+    ]);
+
+    const result = await confirmReconcileProposalAction(
+      proposal.draft,
+      [{ decision: "create", rowId: "row-0" }] satisfies ReconcileCuration[],
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("applied");
+    const [created] = await store.assets.readInvestmentAssetsWithMeta();
+    expect(created?.securityId).toEqual({ kind: "dgs", value: "N5394" });
+    store.close();
+  });
+
+  /**
+   * Invariante 3 del PRD #1741: «toda escritura interactiva valida por instrumento».
+   * A sheet with a «DGS» column filled on a fondo row is the sheet's mistake, and
+   * stamping `kind:"dgs"` on a non-plan would make it a permanent one — the store
+   * checks the value against its kind, never the kind against the instrument.
+   */
+  test("un código DGS sobre un fondo no se registra: la clase la manda el instrumento", async () => {
+    const store = await seedWorkspace();
+    const proposal = await draftFrom(store, [
+      {
+        currency: "EUR",
+        dgsCode: "N5394",
+        fidelity: "value_only",
+        name: "Un fondo con la columna equivocada",
+        type: "Fondo",
+        value: 1000,
+      },
+    ]);
+
+    const result = await confirmReconcileProposalAction(
+      proposal.draft,
+      [{ decision: "create", rowId: "row-0" }] satisfies ReconcileCuration[],
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("applied");
+    const [created] = await store.assets.readInvestmentAssetsWithMeta();
+    // The row is still created — the batch is not held hostage by a bad column — it
+    // just arrives without an identifier it was never entitled to.
+    expect(created?.securityId).toBeUndefined();
+    store.close();
+  });
+});

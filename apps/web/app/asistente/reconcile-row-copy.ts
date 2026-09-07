@@ -92,7 +92,11 @@ export function reconcileFidelityMark(fidelity: ReconcileRow["fidelity"]): strin
  * «Actualizar «…»» button read the same and the jump was invisible.
  */
 export function reconcileDocumentLine(row: ReconcileRow): string {
-  return row.isin === undefined ? row.name : `${row.name} · ${row.isin}`;
+  // The identifier's VALUE and not its kind: `N5394` beside a plan's name reads as
+  // the code the paper prints, which is what the user is comparing against (#1747).
+  return row.securityId === undefined
+    ? row.name
+    : `${row.name} · ${row.securityId.value}`;
 }
 
 /** The es-ES destination line: what this row will do, and to which holding. */
@@ -105,15 +109,33 @@ export function reconcileDestinationLabel(row: ReconcileRow): string {
 }
 
 /**
- * The es-ES review mark of an ambiguous match (#1331): the key names the instrument
- * but not the holding — the same fondo at two brokers, or two holdings with el mismo
- * nombre — so the row says how many it is choosing between instead of presenting a
- * confident target. Empty once the user picks one (the pick resolves the ambiguity).
+ * The es-ES caveat of a match that has not really resolved — named for what it says
+ * rather than for the one case it used to cover: since #1747 it also speaks for a row
+ * matched by name with a SINGLE candidate, which is not ambiguous at all and is the
+ * more dangerous of the two.
+ *
+ * Two cases, one sentence's worth of honesty each:
+ *
+ * - **Ambiguous** (#1331) — the key names the instrument but not the holding (the
+ *   same fondo at two brokers, or two holdings with el mismo nombre), so the row says
+ *   how many it is choosing between. Empty once the user picks (the pick IS the
+ *   review).
+ * - **Matched only by name** (#1747) — one candidate, no identifier behind it. That
+ *   is the shape of #1373 exactly: the model relayed a name, the name happened to
+ *   land, and the card presented «Actualizar «…»» as confidently as an ISIN hit. The
+ *   mark does not block — the confirmation was always explicit — it just stops the
+ *   weak match from dressing as a strong one.
  */
-export function reconcileAmbiguityMark(row: ReconcileRow): string {
-  if (!row.match.ambiguous || effectiveDecision(row) !== "update") return "";
-  const shared = row.match.key === "name" ? "el mismo nombre" : "el mismo identificador";
-  return ` · ${countKeyClaimants(row.match)} holdings con ${shared}: revisa cuál actualizas`;
+export function reconcileMatchCaveat(row: ReconcileRow): string {
+  if (effectiveDecision(row) !== "update") return "";
+  if (row.match.ambiguous) {
+    const shared =
+      row.match.key === "name" ? "el mismo nombre" : "el mismo identificador";
+    return ` · ${countKeyClaimants(row.match)} holdings con ${shared}: revisa cuál actualizas`;
+  }
+  if (row.match.key === "name")
+    return " · emparejado solo por nombre — revisa el destino";
+  return "";
 }
 
 /**

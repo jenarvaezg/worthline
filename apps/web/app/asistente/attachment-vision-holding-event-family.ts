@@ -1,3 +1,4 @@
+import { normalizeDgsCode } from "@worthline/domain";
 import { Output } from "ai";
 import { z } from "zod";
 
@@ -6,8 +7,9 @@ import {
   type AttachmentExtractionResult,
   currencySchema,
   DECLARED_EFFECT_KINDS,
+  DGS_CODE_FIELD_PROSE,
   isIsoDay,
-  isValidIsin,
+  validIsinOrNull,
 } from "./attachment-extraction-contract";
 import type { VisionDetailCall, VisionDocumentFamily } from "./attachment-vision-family";
 import {
@@ -78,6 +80,8 @@ const visionEventDetailRequestSchema = z
              * that is otherwise complete.
              */
             isin: z.string().trim().min(1).max(64).optional(),
+            /** Loose here for the reason `isin` is: the seam drops what will not read. */
+            dgsCode: z.string().trim().min(1).max(64).optional(),
             units: visionPrintedNumberSchema.optional(),
             pricePerUnit: visionMoneySchema.optional(),
             fees: visionMoneySchema.optional(),
@@ -130,6 +134,7 @@ const VISION_EVENT_DETAIL_INSTRUCTIONS = [
   "Cada evento necesita SU PROPIA fecha, leída de la pantalla junto a ese importe. Si el hecho no lleva fecha, NO uses la de la próxima cuota ni ninguna otra ni la de hoy: entonces deja events vacío.",
   'Rellena declaredEffect solo si la pantalla DICE el efecto ("tu última cuota se reducirá en…"); si das su importe, da también su divisa. Rellena nextInstalment solo si la pantalla muestra la próxima cuota con su fecha. Nunca infieras capital, plazo, tipo de interés, saldo resultante ni a qué producto pertenece.',
   "Si el documento es una confirmación de compra o venta de valores, rellena isin, units, pricePerUnit y fees SOLO con lo que esté impreso (ISIN, número de títulos, precio unitario, comisión), y cada importe con su divisa. No los calcules ni los deduzcas del importe total: si el precio unitario o la comisión no aparecen impresos, deja el campo vacío.",
+  `Si el documento es de un plan de pensiones, rellena dgsCode con ${DGS_CODE_FIELD_PROSE}.`,
   'Escribe units, pricePerUnit.amount y fees.amount como TEXTO con la cifra tal cual está impresa ("3", "54,545"), sin ceros de relleno.',
   "No inventes valores, importes, símbolos, fechas ni divisas. Marca uncertain (en el hecho si la duda es de ese hecho, en el documento si dudas de la lectura completa) y añade un warning concreto ante cualquier duda.",
 ].join(" ");
@@ -158,6 +163,22 @@ export const DROPPED_NEXT_INSTALMENT_WARNING =
  */
 export const DROPPED_ISIN_WARNING =
   "El ISIN del documento no se lee como un ISIN válido; no se recoge.";
+/**
+ * The DGS code the paper printed did not read as a PLAN code (#1747). Almost always
+ * the `F####` of the pension fund, which the field cannot hold on purpose: it names a
+ * different thing, so keeping it would nail two instruments to one identity. Dropped
+ * out loud like every other decoration — the capture survives.
+ */
+export const DROPPED_DGS_CODE_WARNING =
+  "El código DGS del documento no se lee como el código de un plan (N seguida de cuatro cifras); no se recoge.";
+/**
+ * The reading claimed BOTH registers at once, which CONTEXT.md calls impossible: an
+ * ISIN and a DGS code name different instruments, so one of them is about another
+ * paper. There is no principled winner, so neither is kept — the fact survives and is
+ * attributed by its label, which is the honest outcome of a contradiction.
+ */
+export const DROPPED_BOTH_IDENTIFIERS_WARNING =
+  "El documento se ha leído con ISIN y con código DGS a la vez, y son instrumentos distintos; no recojo ninguno de los dos.";
 export const DROPPED_PRICE_PER_UNIT_WARNING =
   "El precio por título no traía importe y divisa completos; no se recoge.";
 export const DROPPED_FEES_WARNING =
@@ -217,8 +238,16 @@ function usableEvent(event: VisionHoldingEvent): {
   event: ContractHoldingEvent;
   warnings: string[];
 } {
-  const { declaredEffect, fees, isin, nextInstalment, pricePerUnit, units, ...rest } =
-    event;
+  const {
+    declaredEffect,
+    dgsCode,
+    fees,
+    isin,
+    nextInstalment,
+    pricePerUnit,
+    units,
+    ...rest
+  } = event;
   const warnings: string[] = [];
 
   // Only the direction that LOSES a figure gets a warning. The contract wants the
@@ -242,9 +271,21 @@ function usableEvent(event: VisionHoldingEvent): {
       : declaredEffect;
 
   // A ticker or a mistyped code written into `isin` would sink the whole capture at
-  // the contract, so it is checked here and dropped like any other decoration.
-  const isinReads = isin === undefined || isValidIsin(isin);
+  // the contract, so it is checked here and dropped like any other decoration. The
+  // check digit is part of that reading (#1747): a misread character is vision's
+  // characteristic error, and an ISIN that only fails downstream fails in silence.
+  const readIsin = isin === undefined ? null : validIsinOrNull(isin);
+  const isinReads = isin === undefined || readIsin !== null;
   if (!isinReads) warnings.push(DROPPED_ISIN_WARNING);
+  // The plan's code, dropped by the same rule and for a sharper reason: what does not
+  // read here is nearly always the FUND's `F####`, a different instrument entirely.
+  const readDgsCode = dgsCode === undefined ? null : normalizeDgsCode(dgsCode);
+  if (dgsCode !== undefined && readDgsCode === null)
+    warnings.push(DROPPED_DGS_CODE_WARNING);
+  // Both registers at once is a contradiction the contract refuses outright, so it is
+  // resolved HERE — into neither — rather than sinking the whole capture at the parse.
+  const bothRead = readIsin !== null && readDgsCode !== null;
+  if (bothRead) warnings.push(DROPPED_BOTH_IDENTIFIERS_WARNING);
   const price = usableMoney(pricePerUnit);
   if (price.dropped) warnings.push(DROPPED_PRICE_PER_UNIT_WARNING);
   const fee = usableMoney(fees);
@@ -260,7 +301,8 @@ function usableEvent(event: VisionHoldingEvent): {
     event: {
       ...rest,
       ...(readUnits === undefined ? {} : { units: readUnits }),
-      ...(isinReads && isin !== undefined ? { isin } : {}),
+      ...(bothRead || readIsin === null ? {} : { isin: readIsin }),
+      ...(bothRead || readDgsCode === null ? {} : { dgsCode: readDgsCode }),
       ...(price.money === undefined ? {} : { pricePerUnit: price.money }),
       ...(fee.money === undefined ? {} : { fees: fee.money }),
       ...(keptEffect === undefined ? {} : { declaredEffect: keptEffect }),

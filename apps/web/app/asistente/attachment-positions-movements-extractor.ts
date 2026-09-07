@@ -5,6 +5,7 @@ import {
   toIsoDate,
 } from "@web/spreadsheet-grid";
 import type { WorkbookSheet } from "@web/spreadsheet-text";
+import { normalizeDgsCode } from "@worthline/domain";
 import {
   type AttachmentExtractionResult,
   capExtractionWarnings,
@@ -13,18 +14,19 @@ import {
   type ExtractedMovement,
   extractedHoldingSchema,
   extractedMovementSchema,
-  isValidIsin,
   type MovementKind,
   normalizeExtractedNumber,
   parseExtractionResult,
   resolveHoldingFidelity,
+  validIsinOrNull,
 } from "./attachment-extraction-contract";
 
 /**
  * Deterministic extractor for the **positions + movements** document (PRD #1103
  * S4, ADR 0063). It reads an arbitrary portfolio spreadsheet into the shared
- * contract: a holdings table (name, type, ISIN, value, currency, optional declared
- * cost) plus an optional dated movements table (buys/sells/contributions). From
+ * contract: a holdings table (name, type, the national identifier — ISIN or the DGS
+ * code of a plan, #1747 —, value, currency, optional declared cost) plus an optional
+ * dated movements table (buys/sells/contributions). From
  * those it derives each holding's **honest cost-basis tier** — never inventing one
  * (ADR 0048): movements → real cost basis, a declared cost → declared, only a value
  * → the "sin coste real" mark.
@@ -41,20 +43,37 @@ export type PositionsMovementsExtractionInput = SpreadsheetGridInput & {
   mimeType: string;
 };
 
-type HoldingColumn = "name" | "type" | "isin" | "value" | "currency" | "declaredCost";
+type HoldingColumn =
+  | "name"
+  | "type"
+  | "isin"
+  | "dgsCode"
+  | "value"
+  | "currency"
+  | "declaredCost";
 type MovementColumn =
   | "date"
   | "operation"
   | "isin"
+  | "dgsCode"
   | "name"
   | "units"
   | "amount"
   | "currency";
 
+/**
+ * How a sheet names the column that carries a plan's DGS code (#1747). Its own
+ * column and never a second reading of the ISIN one: the two identifiers live in
+ * different registers, so a header that says «DGS» is the only thing that may put a
+ * value in the DGS lane.
+ */
+const DGS_CODE_ALIASES = ["dgs", "código dgs", "codigo dgs"] as const;
+
 const HOLDING_ALIASES: Record<HoldingColumn, readonly string[]> = {
   name: ["nombre", "name", "descripción", "descripcion", "instrumento", "producto"],
   type: ["tipo", "type", "categoría", "categoria", "clase"],
   isin: ["isin", "código isin", "codigo isin"],
+  dgsCode: DGS_CODE_ALIASES,
   value: [
     "valor",
     "value",
@@ -87,6 +106,7 @@ const MOVEMENT_ALIASES: Record<MovementColumn, readonly string[]> = {
     "tipo operación",
   ],
   isin: ["isin", "código isin", "codigo isin"],
+  dgsCode: DGS_CODE_ALIASES,
   name: ["nombre", "name", "instrumento", "producto", "descripción", "descripcion"],
   units: ["unidades", "units", "participaciones", "títulos", "titulos", "cantidad"],
   amount: ["importe", "amount", "total", "efectivo", "importe efectivo"],
@@ -116,14 +136,14 @@ const OPERATION_KINDS: Record<MovementKind, readonly string[]> = {
 };
 
 const HOLDING_REQUIRED: readonly HoldingColumn[] = ["name", "type", "value", "currency"];
-const HOLDING_OPTIONAL: readonly HoldingColumn[] = ["isin", "declaredCost"];
+const HOLDING_OPTIONAL: readonly HoldingColumn[] = ["isin", "dgsCode", "declaredCost"];
 const MOVEMENT_REQUIRED: readonly MovementColumn[] = [
   "date",
   "operation",
   "amount",
   "currency",
 ];
-const MOVEMENT_OPTIONAL: readonly MovementColumn[] = ["isin", "name", "units"];
+const MOVEMENT_OPTIONAL: readonly MovementColumn[] = ["isin", "dgsCode", "name", "units"];
 
 function aliasSets<Column extends string>(
   aliases: Record<Column, readonly string[]>,
@@ -222,9 +242,15 @@ function classifySheets(sheets: readonly WorkbookSheet[]): {
         MOVEMENT_OPTIONAL,
         MOVEMENT_ALIAS_SETS,
       );
-      // A movements sheet must also carry a link key (ISIN or name) — without one
-      // no movement could ever attribute to a holding, so treat it as not-movements.
-      if (columns && (columns.isin !== undefined || columns.name !== undefined)) {
+      // A movements sheet must also carry a link key (an identifier or a name) —
+      // without one no movement could ever attribute to a holding, so treat it as
+      // not-movements.
+      if (
+        columns &&
+        (columns.isin !== undefined ||
+          columns.dgsCode !== undefined ||
+          columns.name !== undefined)
+      ) {
         movements = { body: parsed.body, columns };
         continue;
       }
@@ -245,7 +271,41 @@ function classifySheets(sheets: readonly WorkbookSheet[]): {
 
 /** A non-empty ISIN cell that is a real ISIN once uppercased, else undefined. */
 function validIsinOrUndefined(raw: string): string | undefined {
-  return raw && isValidIsin(raw) ? raw.trim().toUpperCase() : undefined;
+  return validIsinOrNull(raw) ?? undefined;
+}
+
+/** A DGS cell that reads as a PLAN code (`N####`), else undefined (#1747). */
+function validDgsCodeOrUndefined(raw: string): string | undefined {
+  return (raw && normalizeDgsCode(raw)) || undefined;
+}
+
+/**
+ * Why a row ended up with fewer identifiers than it printed, in the sentences a
+ * warning appends to. Shared by both readers so «a cell that will not read is lost out
+ * loud» is one rule and not two that drift (#1747).
+ */
+function identifiersLost(cells: {
+  rawIsin: string;
+  isin: string | undefined;
+  rawDgsCode: string;
+  dgsCode: string | undefined;
+  contradictory: boolean;
+}): string[] {
+  const lost: string[] = [];
+  if (cells.rawIsin && !cells.isin) {
+    lost.push(`el ISIN «${cells.rawIsin}» no es válido y se ha ignorado.`);
+  }
+  if (cells.rawDgsCode && !cells.dgsCode) {
+    lost.push(
+      `«${cells.rawDgsCode}» no es el código DGS de un plan (N seguida de cuatro cifras) y se ha ignorado.`,
+    );
+  }
+  if (cells.contradictory) {
+    lost.push(
+      "lleva ISIN y código DGS a la vez, y son instrumentos distintos: no me quedo con ninguno.",
+    );
+  }
+  return lost;
 }
 
 /**
@@ -254,6 +314,11 @@ function validIsinOrUndefined(raw: string): string | undefined {
  * no link key) is **skipped with a warning**, never invented and never a dead-end —
  * the remaining rows still extract and the skipped rows are visible. A holding whose
  * only movement was skipped simply keeps a lower, honest fidelity tier.
+ *
+ * An identifier cell that will not read costs the movement its strong key but not its
+ * row, and is warned about like the holdings reader warns (#1747): silence there was
+ * the one place a `F####` or a mistyped ISIN could downgrade a link to the weak name
+ * key with nobody told.
  */
 function readMovements(sheet: MovementsSheet): {
   movements: ExtractedMovement[];
@@ -276,15 +341,31 @@ function readMovements(sheet: MovementsSheet): {
       skip(index, "la fecha no es una fecha válida");
       continue;
     }
-    const isin = validIsinOrUndefined(cell(row, sheet.columns.isin));
+    const rawIsin = cell(row, sheet.columns.isin);
+    const isin = validIsinOrUndefined(rawIsin);
+    const rawDgsCode = cell(row, sheet.columns.dgsCode);
+    const dgsCode = validDgsCodeOrUndefined(rawDgsCode);
     const nameCell = cell(row, sheet.columns.name);
+    // Both registers at once name two instruments; keeping either would be a guess,
+    // so the movement keeps neither and links by name.
+    const contradictory = isin !== undefined && dgsCode !== undefined;
+    for (const lost of identifiersLost({
+      contradictory,
+      dgsCode,
+      isin,
+      rawDgsCode,
+      rawIsin,
+    })) {
+      warnings.push(`Fila ${index + 2} de movimientos: ${lost}`);
+    }
     const unitsCell = cell(row, sheet.columns.units);
     const candidate = {
       amount: normalizeExtractedNumber(cell(row, sheet.columns.amount)),
       currency: cell(row, sheet.columns.currency).toUpperCase(),
       date: isoDate,
       kind,
-      ...(isin ? { isin } : {}),
+      ...(contradictory || !isin ? {} : { isin }),
+      ...(contradictory || !dgsCode ? {} : { dgsCode }),
       ...(nameCell ? { name: nameCell } : {}),
       ...(unitsCell ? { units: normalizeExtractedNumber(unitsCell) } : {}),
     };
@@ -314,15 +395,25 @@ function readHoldings(
   for (const [index, row] of sheet.body.entries()) {
     const rawIsin = cell(row, sheet.columns.isin);
     const validIsin = validIsinOrUndefined(rawIsin);
+    const rawDgsCode = cell(row, sheet.columns.dgsCode);
+    const validDgsCode = validDgsCodeOrUndefined(rawDgsCode);
     const rawCost = cell(row, sheet.columns.declaredCost);
     const declaredCost = rawCost ? normalizeExtractedNumber(rawCost) : null;
 
     let uncertain = false;
-    if (rawIsin && !validIsin) {
+    // What did not read is lost out loud. A bad DGS cell is nearly always the pension
+    // FUND's `F####` printed where the PLAN's code goes — a different instrument, so
+    // it is dropped by name rather than nailed to this row.
+    const contradictory = validIsin !== undefined && validDgsCode !== undefined;
+    for (const lost of identifiersLost({
+      contradictory,
+      dgsCode: validDgsCode,
+      isin: validIsin,
+      rawDgsCode,
+      rawIsin,
+    })) {
       uncertain = true;
-      warnings.push(
-        `Fila ${index + 2}: el ISIN «${rawIsin}» no es válido y se ha ignorado.`,
-      );
+      warnings.push(`Fila ${index + 2}: ${lost}`);
     }
     if (rawCost && declaredCost === null) {
       uncertain = true;
@@ -336,12 +427,17 @@ function readHoldings(
       name: cell(row, sheet.columns.name),
       type: cell(row, sheet.columns.type),
       value: normalizeExtractedNumber(cell(row, sheet.columns.value)),
-      ...(validIsin ? { isin: validIsin } : {}),
+      ...(contradictory || !validIsin ? {} : { isin: validIsin }),
+      ...(contradictory || !validDgsCode ? {} : { dgsCode: validDgsCode }),
       ...(declaredCost !== null ? { declaredCost } : {}),
       ...(uncertain ? { uncertain: true } : {}),
     };
     const fidelity = resolveHoldingFidelity(
-      { declaredCost: declaredCost ?? undefined, isin: validIsin, name: base.name },
+      {
+        declaredCost: declaredCost ?? undefined,
+        ...(contradictory ? {} : { dgsCode: validDgsCode, isin: validIsin }),
+        name: base.name,
+      },
       movements,
     );
     const parsed = extractedHoldingSchema.safeParse({ ...base, fidelity });

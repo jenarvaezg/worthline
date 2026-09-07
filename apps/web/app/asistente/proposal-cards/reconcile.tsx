@@ -23,11 +23,11 @@ import {
   reconcileFolio,
 } from "@web/asistente/reconcile-proposal-contract";
 import {
-  reconcileAmbiguityMark,
   reconcileDestinationLabel,
   reconcileDocumentLine,
   reconcileFidelityMark,
   reconcileImpactCaption,
+  reconcileMatchCaveat,
   reconcileMovementLine,
 } from "@web/asistente/reconcile-row-copy";
 import { useState } from "react";
@@ -163,7 +163,7 @@ export function ReconcileProposalCard({
             </span>
             <span>
               {reconcileDestinationLabel(row)}
-              {reconcileAmbiguityMark(row)}
+              {reconcileMatchCaveat(row)}
               {!row.excluded && !isRowWritable(row) ? " · fuera de alcance" : ""}
             </span>
             {/* The evidence, line by line: what confirm will write on this holding. */}

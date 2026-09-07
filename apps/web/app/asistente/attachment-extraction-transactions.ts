@@ -3,10 +3,13 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   currencySchema,
+  declaresOneIdentifierAtMost,
+  dgsCodeSchema,
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
   positiveDecimalStringSchema,
+  TWO_IDENTIFIERS_MESSAGE,
 } from "./attachment-extraction-primitives";
 
 /** What a broker transactions row can be: the ledger prints trades, nothing else. */
@@ -22,15 +25,18 @@ export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
  * gross amount, the unit price, the costs the broker charged, and the order reference
  * that lets a re-import recognize the same trade (#1488).
  *
- * `isin` or `name` is required for the same reason a movement needs one: a trade that
- * cannot be attributed to an instrument could never become an operation. The ISIN is the
- * strong key and the one a real export prints (ADR 0055 routes by it).
+ * An identifier or a `name` is required for the same reason a movement needs one: a
+ * trade that cannot be attributed to an instrument could never become an operation. The
+ * national identifier is the strong key and the one a real export prints (ADR 0055
+ * routes by it) — the ISIN for a security, the DGS code for a plan de pensiones (#1747).
  */
 export const extractedTransactionSchema = z
   .object({
     date: isoDateSchema,
     kind: z.enum(TRANSACTION_KINDS),
     isin: isinSchema.optional(),
+    /** The plan's DGS code when the traded product is a plan ({@link dgsCodeSchema}). */
+    dgsCode: dgsCodeSchema.optional(),
     name: z.string().trim().min(1).max(240).optional(),
     units: positiveDecimalStringSchema,
     /** The gross amount of the trade, fees EXCLUDED, in `currency`. */
@@ -46,9 +52,13 @@ export const extractedTransactionSchema = z
   })
   .strict()
   .refine(
-    (transaction) => Boolean(transaction.isin) || Boolean(transaction.name),
-    "Una transacción necesita ISIN o nombre para vincularse a una inversión.",
-  );
+    (transaction) =>
+      Boolean(transaction.isin) ||
+      Boolean(transaction.dgsCode) ||
+      Boolean(transaction.name),
+    "Una transacción necesita ISIN, código DGS o nombre para vincularse a una inversión.",
+  )
+  .refine(declaresOneIdentifierAtMost, TWO_IDENTIFIERS_MESSAGE);
 
 export type ExtractedTransaction = z.infer<typeof extractedTransactionSchema>;
 

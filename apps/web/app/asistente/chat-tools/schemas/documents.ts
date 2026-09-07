@@ -114,7 +114,8 @@ export const MIXED_DOCUMENT_PROPOSAL_SCHEMA = jsonSchema<{
 /**
  * A reconcile is a SELECTION over a document worthline validated, not a batch of
  * rows the model writes (#1373). So `holdings` only has to point at rows — a name
- * and/or an ISIN — and every figure comes from the extraction.
+ * and/or the identifier the document printed (an ISIN, or `dgsCode` for a plan de
+ * pensiones, #1747) — and every figure comes from the extraction.
  *
  * What the fields that are still accepted are doing here: `value` used to be
  * MANDATORY, which is what pushed a model holding an aportación confirmation (a
@@ -140,6 +141,7 @@ export const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
           name: { type: "string" },
           type: { type: "string" },
           isin: { type: "string" },
+          dgsCode: { type: "string" },
           value: { type: "number" },
           currency: { type: "string" },
           declaredCost: { type: "number" },

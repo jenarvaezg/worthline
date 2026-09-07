@@ -205,11 +205,12 @@ describe("buildReconcileRows — el mismo fondo en dos brokers (#1331)", () => {
  * The MyInvestor aportación of #1373: ONE holding already in the portfolio, ONE
  * movement of 125,00 € (5,92 participaciones), and a header that read `+0 €`.
  *
- * The ISIN is the plan's real one, not the DGS code the paper prints («N5394», which
- * is what the workspace happens to have stored): the extraction contract refuses a
- * non-ISIN, so a document can only ever identify the plan by this.
+ * The plan is named as the paper names it — «Código DGS: N5394» — which is also what
+ * the workspace has stored. It used to be a made-up ISIN here, on the grounds that
+ * the extraction contract refused anything else; #1747 gave the code its own field,
+ * so the fixture can finally be the real case instead of a stand-in for it.
  */
-const SP500 = "ES0173516115";
+const SP500 = { dgsCode: "N5394" } as const;
 
 function aportacionDocument(): ExtractedPositionsMovementsDocument {
   return doc({
@@ -217,7 +218,7 @@ function aportacionDocument(): ExtractedPositionsMovementsDocument {
       {
         name: "MYINVESTOR INDEXADO SP 500 PP",
         type: "Plan de pensiones",
-        isin: SP500,
+        ...SP500,
         value: 5508.68,
         currency: "EUR",
         fidelity: "movements",
@@ -227,7 +228,7 @@ function aportacionDocument(): ExtractedPositionsMovementsDocument {
       {
         date: "2026-08-05",
         kind: "contribution",
-        isin: SP500,
+        ...SP500,
         units: 5.92,
         amount: 125,
         currency: "EUR",
@@ -240,12 +241,29 @@ const SP500_PORTFOLIO: MatchPortfolioHolding[] = [
   {
     holdingId: "asset-sp500",
     name: "MyInvestor Indexado SP500",
-    isin: SP500,
+    securityId: { kind: "dgs", value: SP500.dgsCode },
     instrument: "pension_plan",
   },
 ];
 
 describe("buildReconcileRows — la evidencia viaja en la fila (#1373)", () => {
+  /**
+   * The self-cure of #1373 (#1747): the paper always printed «N5394», and it was the
+   * contract that threw it away. With a field to carry it, the plan resolves on its
+   * own identifier — no name in the loop at all — and the row prints that code.
+   */
+  it("el plan resuelve fuerte por su código DGS, no por el nombre", () => {
+    const [row] = buildReconcileRows(aportacionDocument(), SP500_PORTFOLIO);
+
+    expect(row!.securityId).toEqual({ kind: "dgs", value: "N5394" });
+    expect(row!.match).toMatchObject({
+      confidence: "strong",
+      decision: "update",
+      key: "dgs",
+      target: "asset-sp500",
+    });
+  });
+
   it("carries date, kind, units, unit price and signed amount of each movement", () => {
     const [row] = buildReconcileRows(aportacionDocument(), SP500_PORTFOLIO);
 

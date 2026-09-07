@@ -79,12 +79,12 @@ function aportacionProposal(): ReconcileProposal {
         excluded: false,
         fidelity: "movements",
         instrument: "pension_plan",
-        isin: "ES0173516115",
+        securityId: { kind: "dgs", value: "N5394" } as const,
         match: {
           candidates: [SP500_TARGET],
           confidence: "strong",
           decision: "update",
-          key: "isin",
+          key: "dgs",
           rowId: "row-0",
           target: "asset-sp500",
         },
@@ -139,7 +139,7 @@ describe("ReconcileProposalCard · la aportación de 125 € (#1373)", () => {
 
     // Both readable at a glance: this is what makes «MYINVESTOR … SP 500 PP» vs
     // «N5396 - … Global PP» visible without opening anything.
-    expect(html).toContain("MYINVESTOR INDEXADO SP 500 PP · ES0173516115");
+    expect(html).toContain("MYINVESTOR INDEXADO SP 500 PP · N5394");
     expect(html).toContain("Actualizar «MyInvestor Indexado SP500»");
   });
 

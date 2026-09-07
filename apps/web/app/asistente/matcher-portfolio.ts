@@ -21,9 +21,9 @@ import type {
 } from "@worthline/db";
 import type { MatchPortfolioHolding } from "@worthline/domain";
 import {
+  declaredSecurityId,
   isClosedPosition,
   netUnitsByAsset,
-  storedIsinOrNull,
   valuationMethodOfAsset,
 } from "@worthline/domain";
 
@@ -79,14 +79,15 @@ export async function projectMatcherPortfolio(
 
   const assetHoldings: MatchPortfolioHolding[] = assets.map((asset) => {
     const meta = metaById.get(asset.id);
-    // El matcher del asistente enruta por ISIN (#1747 abre su contrato al par).
-    const isin = storedIsinOrNull(meta?.securityId);
+    // El par tipado entero (#1747): un plan de pensiones se identifica por su código
+    // DGS, así que leer solo la mitad ISIN dejaba su fila sin clave fuerte.
+    const securityId = declaredSecurityId(meta?.securityId);
     return {
       holdingId: asset.id,
       name: asset.name,
       ...(isClosedPosition(asset, netUnitsByAssetId) ? { closed: true } : {}),
       ...(asset.instrument ? { instrument: asset.instrument } : {}),
-      ...(isin ? { isin } : {}),
+      ...(securityId ? { securityId } : {}),
       ...((asset.providerSymbol ?? meta?.providerSymbol)
         ? { providerSymbol: asset.providerSymbol ?? meta?.providerSymbol ?? null }
         : {}),

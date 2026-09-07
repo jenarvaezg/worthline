@@ -262,3 +262,10 @@ del par. **El enrutado tipado, con claves con namespace y su enmienda a esta ADR
 es #1748**; hasta entonces un holding identificado por su código DGS simplemente
 ocupa el hueco: nunca casa con un ISIN del fichero, y el guard lo rechaza en vez de
 rellenarlo.
+
+Precisión tras #1747: lo que esa slice tipó es el **matcher del asistente**
+(`holding-matcher`, el reconcile de PRD #1103), no el enrutado del extracto. Un
+documento del chat ya puede nombrar un plan por su `N####` y casarlo con el holding
+que lo tiene registrado. El extracto de bróker de esta ADR sigue enrutando por la
+mitad `'isin'` del par y su enmienda sigue siendo #1748: son dos puertas, y la que
+esta ADR gobierna no se ha movido.

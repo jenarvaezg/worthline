@@ -23,7 +23,7 @@ export function reconcileProposalTools(turn: ChatToolTurn): ToolSet {
   return {
     propose_reconcile: tool({
       description:
-        "Prepara UNA propuesta de RECONCILE de cartera SOBRE un documento «posiciones + movimientos» que worthline ya haya extraído y validado (documentType positions_movements en los DATOS ESTRUCTURADOS). Solo SELECCIONAS filas de ese documento: en holdings pasa el nombre (y el ISIN si lo trae) TAL CUAL los diga el documento, o no pases ninguna para llevarlas todas. Los importes, los tiers de fidelidad y los movimientos los toma la app del documento, así que no los recalcules ni los rellenes con cifras de la cartera. Si no hay documento validado, o si una fila no está en él, la app RECHAZA la llamada: una operación puntual sobre una inversión que ya existe no se anota por aquí. La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; para otras familias usa el alta por chat (propose_holding), no ésta.",
+        "Prepara UNA propuesta de RECONCILE de cartera SOBRE un documento «posiciones + movimientos» que worthline ya haya extraído y validado (documentType positions_movements en los DATOS ESTRUCTURADOS). Solo SELECCIONAS filas de ese documento: en holdings pasa el nombre y el identificador (isin o dgsCode) TAL CUAL los diga el documento, o no pases ninguna para llevarlas todas. Los importes, los tiers de fidelidad y los movimientos los toma la app del documento: no los recalcules ni los rellenes con cifras de la cartera. Si no hay documento validado, o si una fila no está en él, la app RECHAZA la llamada: una operación puntual sobre una inversión que ya existe no se anota por aquí. La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; para otras familias usa el alta por chat (propose_holding), no ésta.",
       inputSchema: RECONCILE_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
@@ -36,6 +36,9 @@ export function reconcileProposalTools(turn: ChatToolTurn): ToolSet {
           (args.holdings ?? []).map((holding) => ({
             ...(typeof holding.name === "string" ? { name: holding.name } : {}),
             ...(typeof holding.isin === "string" ? { isin: holding.isin } : {}),
+            ...(typeof holding.dgsCode === "string" ? { dgsCode: holding.dgsCode } : {}),
+            // The movements the model may still relay are ignored, as they always
+            // were: the app has the extractor's own rows.
             ...(typeof holding.value === "number" ? { value: holding.value } : {}),
           })),
           positionsMovementsInContext(documents),
