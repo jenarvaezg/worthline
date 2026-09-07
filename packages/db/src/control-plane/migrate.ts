@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
+import { createMaintainerAlertLog } from "./maintainer-alert-log";
 
-export const CP_SCHEMA_VERSION = 8;
+export const CP_SCHEMA_VERSION = 9;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -10,7 +12,9 @@ function isTursoRejectedStatement(err: unknown): boolean {
   return /SQL_PARSE_ERROR|not allowed statement/i.test(message);
 }
 
-export async function readControlPlaneSchemaVersion(client: Client): Promise<number> {
+export async function readControlPlaneSchemaVersion(
+  client: Pick<Client, "execute">,
+): Promise<number> {
   try {
     const result = await client.execute("SELECT version FROM cp_schema_meta LIMIT 1");
     if (result.rows.length > 0) {
@@ -25,7 +29,7 @@ export async function readControlPlaneSchemaVersion(client: Client): Promise<num
 }
 
 export async function writeControlPlaneSchemaVersion(
-  client: Client,
+  client: Pick<Client, "execute">,
   version: number,
 ): Promise<void> {
   await client.execute(SCHEMA_META_TABLE);
@@ -41,6 +45,34 @@ export async function writeControlPlaneSchemaVersion(
       throw err;
     }
   }
+}
+
+/** Registration may name a stub; any vector, metadata or provenance is authored data. */
+function hasCuratedCatalogContent(row: Record<string, unknown>): boolean {
+  let hasBreakdowns: boolean;
+  try {
+    const breakdowns = JSON.parse(String(row.breakdowns_json)) as Record<string, unknown>;
+    hasBreakdowns = Object.values(breakdowns).some(
+      (dimension) =>
+        dimension != null &&
+        typeof dimension === "object" &&
+        Object.keys(dimension).length > 0,
+    );
+  } catch {
+    // Migration preserves legacy data verbatim; unreadable content is never a stub.
+    hasBreakdowns = true;
+  }
+  return (
+    hasBreakdowns ||
+    [
+      "ter",
+      "tracked_index",
+      "hedged_to_currency",
+      "confidence",
+      "as_of_date",
+      "sources",
+    ].some((column) => row[column] != null && String(row[column]).trim() !== "")
+  );
 }
 
 export async function migrateControlPlane(client: Client): Promise<void> {
@@ -257,5 +289,78 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       }
     }
     await writeControlPlaneSchemaVersion(client, 8);
+  }
+  if (version < 9) {
+    const tx = await client.transaction("write");
+    try {
+      // Another opener may have completed v9 while this one awaited the lock.
+      if ((await readControlPlaneSchemaVersion(tx)) < 9) {
+        const tables = await tx.execute(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'global_exposure_profiles'",
+        );
+        // Synthetic version-only fixtures may lack the catalog altogether.
+        if (tables.rows.length > 0) {
+          try {
+            await tx.execute(
+              "ALTER TABLE global_exposure_profiles ADD COLUMN dgs_code TEXT",
+            );
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!/duplicate column name:\s*dgs_code/i.test(message)) throw err;
+          }
+          await tx.execute(`CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_dgs
+            ON global_exposure_profiles(dgs_code) WHERE dgs_code IS NOT NULL`);
+          const candidates = await tx.execute(`SELECT * FROM global_exposure_profiles
+            WHERE identity_kind = 'provider' AND price_provider = 'finect' ORDER BY rowid`);
+          // Stable sort keeps the first curated row canonical and leaves every
+          // displaced stub under its original provider identity, with no data loss.
+          const plans = candidates.rows.filter((row) =>
+            /^N\d{4}$/.test(String(row.provider_symbol).split("-", 1)[0]!),
+          );
+          plans.sort(
+            (left, right) =>
+              Number(hasCuratedCatalogContent(right)) -
+              Number(hasCuratedCatalogContent(left)),
+          );
+          for (const row of plans) {
+            const code = String(row.provider_symbol).split("-", 1)[0]!;
+            const canonical = await tx.execute({
+              sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+              args: [`dgs:${code}`],
+            });
+            if (canonical.rows.length > 0) {
+              if (
+                hasCuratedCatalogContent(row) &&
+                hasCuratedCatalogContent(canonical.rows[0]!)
+              ) {
+                await createMaintainerAlertLog(tx, randomUUID).raiseMaintainerAlert({
+                  category: "catalog_identity_collision",
+                  workspaceId: "catalog",
+                  holdingId: `dgs:${code}`,
+                  payload: {
+                    category: "catalog_identity_collision",
+                    dgsCode: code,
+                    canonicalIdentityKey: `dgs:${code}`,
+                    retainedProviderIdentityKey: String(row.identity_key),
+                    reason:
+                      "Dos fichas con contenido comparten el mismo código DGS. Se conservan ambas para su revisión.",
+                  },
+                });
+              }
+              continue;
+            }
+            await tx.execute({
+              sql: `UPDATE global_exposure_profiles SET identity_key = ?, identity_kind = 'dgs',
+                dgs_code = ?, isin = NULL, price_provider = NULL, provider_symbol = NULL WHERE identity_key = ?`,
+              args: [`dgs:${code}`, code, String(row.identity_key)],
+            });
+          }
+        }
+        await writeControlPlaneSchemaVersion(tx, 9);
+      }
+      await tx.commit();
+    } finally {
+      tx.close();
+    }
   }
 }

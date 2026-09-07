@@ -57,6 +57,28 @@ describe("ensureExposureCatalogStubs (#1097)", () => {
     expect(mocks.ensureGlobalExposureProfileStub).toHaveBeenCalledTimes(1);
   });
 
+  test("typed pension plans with different price slugs register one DGS stub", async () => {
+    await ensureExposureCatalogStubs([
+      {
+        displayName: "Plan",
+        instrument: "pension_plan",
+        securityId: { kind: "dgs", value: "N5394" },
+        providerSymbol: "N5394-Myinvestor",
+      },
+      {
+        instrument: "pension_plan",
+        securityId: { kind: "dgs", value: "n-5394" },
+        providerSymbol: "N5394-Nuevo-slug",
+      },
+    ]);
+
+    expect(mocks.ensureGlobalExposureProfileStub).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureGlobalExposureProfileStub).toHaveBeenCalledWith(
+      { kind: "dgs", code: "N5394" },
+      "Plan",
+    );
+  });
+
   test("skips non-market holdings entirely (never opens a store)", async () => {
     await ensureExposureCatalogStubs([
       { instrument: "property", isin: VWRL_ISIN },

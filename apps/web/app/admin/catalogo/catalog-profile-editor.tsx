@@ -43,12 +43,13 @@ const IDLE: CatalogActionResult = { status: "idle" };
 
 /** The raw identity fields of an existing profile, for hidden-field assembly. */
 function identityFields(profile: GlobalExposureProfile): {
-  isin: string;
+  securityId: string;
   priceProvider: string;
   providerSymbol: string;
 } {
   return {
-    isin: profile.identity.kind === "isin" ? profile.identity.isin : "",
+    securityId:
+      profile.identity.kind === "provider" ? "" : identityText(profile.identity),
     priceProvider:
       profile.identity.kind === "provider" ? profile.identity.priceProvider : "",
     providerSymbol:
@@ -61,7 +62,7 @@ function IdentityHiddenFields({ profile }: { profile: GlobalExposureProfile }) {
   const fields = identityFields(profile);
   return (
     <>
-      <input name="isin" type="hidden" value={fields.isin} />
+      <input name="securityId" type="hidden" value={fields.securityId} />
       <input name="priceProvider" type="hidden" value={fields.priceProvider} />
       <input name="providerSymbol" type="hidden" value={fields.providerSymbol} />
     </>
@@ -104,7 +105,7 @@ interface EditorDraft {
   sector: Record<string, string>;
   currency: CurrencyRow[];
   currencyNotApplicable: string;
-  isin: string;
+  securityId: string;
   priceProvider: string;
   providerSymbol: string;
 }
@@ -127,7 +128,7 @@ function draftFromProfile(profile: GlobalExposureProfile | null): EditorDraft {
       .map(([code, weight], index) => ({ id: index, code, weight })),
     currencyNotApplicable:
       profile?.breakdowns.currency?.[CURRENCY_NOT_APPLICABLE_KEY] ?? "",
-    isin: profile?.identity.kind === "isin" ? profile.identity.isin : "",
+    securityId: profile ? identityFields(profile).securityId : "",
     priceProvider:
       profile?.identity.kind === "provider" ? profile.identity.priceProvider : "",
     providerSymbol:
@@ -283,17 +284,17 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
         {isCreate ? (
           <>
             <p className="catalogHint">
-              Un ISIN válido (con checksum) o, si no lo hay, proveedor + símbolo. La
-              identidad solo se fija al crear; luego cambia por «Rekey».
+              Un ISIN válido o un código DGS de plan; si no lo hay, proveedor + símbolo.
+              La identidad solo se fija al crear; luego cambia por «Rekey».
             </p>
             <label>
-              ISIN
+              ISIN o código DGS
               <input
                 autoComplete="off"
-                name="isin"
-                onChange={(e) => setDraft({ ...draft, isin: e.target.value })}
-                placeholder="IE00B4L5Y983"
-                value={draft.isin}
+                name="securityId"
+                onChange={(e) => setDraft({ ...draft, securityId: e.target.value })}
+                placeholder="IE00B4L5Y983 o N5394"
+                value={draft.securityId}
               />
             </label>
             <div className="catalogTwoCol">
@@ -649,7 +650,7 @@ interface RekeyFormProps {
 
 export function CatalogRekeyForm({ profile, onResult }: RekeyFormProps) {
   const [open, setOpen] = useState(false);
-  const [isin, setIsin] = useState("");
+  const [securityId, setSecurityId] = useState("");
   const [priceProvider, setPriceProvider] = useState("");
   const [providerSymbol, setProviderSymbol] = useState("");
   const [state, dispatch, pending] = useActionState(rekeyCatalogProfileAction, IDLE);
@@ -681,7 +682,7 @@ export function CatalogRekeyForm({ profile, onResult }: RekeyFormProps) {
 
   return (
     <form className="catalogForm stackForm catalogRekey" onSubmit={submit}>
-      <input name="from-isin" type="hidden" value={from.isin} />
+      <input name="from-securityId" type="hidden" value={from.securityId} />
       <input name="from-priceProvider" type="hidden" value={from.priceProvider} />
       <input name="from-providerSymbol" type="hidden" value={from.providerSymbol} />
       <p className="catalogHint">
@@ -689,13 +690,13 @@ export function CatalogRekeyForm({ profile, onResult }: RekeyFormProps) {
         nueva identidad.
       </p>
       <label>
-        Nuevo ISIN
+        Nuevo ISIN o código DGS
         <input
           autoComplete="off"
-          name="to-isin"
-          onChange={(e) => setIsin(e.target.value)}
-          placeholder="IE00B4L5Y983"
-          value={isin}
+          name="to-securityId"
+          onChange={(e) => setSecurityId(e.target.value)}
+          placeholder="IE00B4L5Y983 o N5394"
+          value={securityId}
         />
       </label>
       <div className="catalogTwoCol">

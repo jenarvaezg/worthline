@@ -208,7 +208,7 @@ export async function persistHoldingCreation(
   const catalog: ExposureCatalogStubCandidate = {
     displayName: plan.name,
     instrument: plan.instrument,
-    isin: plan.securityId?.kind === "isin" ? plan.securityId.value : null,
+    securityId: plan.securityId ?? null,
     priceProvider: defaults.priceProvider ?? null,
     providerSymbol: plan.providerSymbol ?? null,
   };

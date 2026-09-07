@@ -9,6 +9,7 @@ import type {
   RawGlobalExposureProfileIdentityInput,
 } from "@worthline/domain";
 import {
+  classifySecurityId,
   globalExposureProfileIdentityKey,
   resolveGlobalExposureProfileIdentity,
 } from "@worthline/domain";
@@ -38,7 +39,16 @@ function readIdentity(
   formData: FormData,
   prefix = "",
 ): RawGlobalExposureProfileIdentityInput {
+  const rawSecurityId = formData.get(`${prefix}securityId`);
+  const value = String(rawSecurityId ?? "").trim();
+  const securityId = classifySecurityId(value);
+  if (value && !securityId) {
+    throw new Error(
+      "Introduce un ISIN válido o un código DGS de plan (N seguida de cuatro cifras).",
+    );
+  }
   return {
+    ...(rawSecurityId === null ? {} : { securityId }),
     isin: String(formData.get(`${prefix}isin`) ?? ""),
     priceProvider: String(formData.get(`${prefix}priceProvider`) ?? ""),
     providerSymbol: String(formData.get(`${prefix}providerSymbol`) ?? ""),

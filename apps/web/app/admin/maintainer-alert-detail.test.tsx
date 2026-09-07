@@ -115,6 +115,69 @@ function alert(
 }
 
 describe("MaintainerAlertDetail", () => {
+  test("explains a catalog collision and links both preserved profiles", () => {
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "catalog_identity_collision",
+          workspaceId: "catalog",
+          holdingId: "dgs:N5394",
+          occurrences: [
+            {
+              id: "collision-1",
+              occurredAt: "2026-09-06T00:00:00.000Z",
+              payload: {
+                category: "catalog_identity_collision",
+                dgsCode: "N5394",
+                canonicalIdentityKey: "dgs:N5394",
+                retainedProviderIdentityKey: "p:finect:N5394-Second",
+                reason: "Two curated exposure profiles share a DGS code.",
+              },
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Colisión de identidad del catálogo");
+    expect(html).toContain("catálogo compartido · dgs:N5394");
+    expect(html).toContain("Two curated exposure profiles share a DGS code.");
+    expect(html).toContain("Identidad canónica");
+    expect(html).toContain("Identidad de proveedor conservada");
+    expect(html).toContain('href="/admin/catalogo?perfil=dgs%3AN5394"');
+    expect(html).toContain('href="/admin/catalogo?perfil=p%3Afinect%3AN5394-Second"');
+    expect(html).not.toContain("Sin traza de cálculo");
+    expect(html).not.toContain("workspace catalog");
+    expect(html).not.toContain("holding dgs:");
+  });
+
+  test.each([
+    null,
+    { reason: { invalid: true }, dgsCode: "N5394" },
+  ])("keeps malformed collision evidence readable without breaking the alert: %j", (payload) => {
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "catalog_identity_collision",
+          workspaceId: "catalog",
+          holdingId: "dgs:N5394",
+          occurrences: [
+            {
+              id: "collision-1",
+              occurredAt: "2026-09-06T00:00:00.000Z",
+              payload,
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Datos de colisión incompletos");
+    expect(html).not.toContain("perfil=undefined");
+    expect(html).not.toContain("Sin traza de cálculo");
+    if (payload) expect(html).toContain("N5394");
+  });
+
   test("tabulates the trace and declared-vs-computed on paper, with the close form", () => {
     const html = renderToStaticMarkup(MaintainerAlertDetail({ alert: alert() }));
 

@@ -37,12 +37,13 @@ import type {
   StoredSecurityId,
 } from "@worthline/domain";
 import {
+  declaredSecurityId,
+  isinSecurityId,
   isStatementBroker,
   parseStatement,
   planStatementMerge,
   resolvePerHoldingStatementIsinGuard,
   SECURITY_ID_KIND_LABEL_INLINE,
-  storedIsinOrNull,
 } from "@worthline/domain";
 import {
   type ConvertCapturedOperationsOptions,
@@ -268,8 +269,10 @@ export async function confirmStatementAction(
       // supplies its own provider.
       const catalog: ExposureCatalogStubCandidate = {
         displayName: asset?.name ?? null,
-        isin:
-          guard.status === "backfill" ? guard.isin : storedIsinOrNull(asset?.securityId),
+        securityId:
+          guard.status === "backfill"
+            ? isinSecurityId(guard.isin)
+            : declaredSecurityId(asset?.securityId),
         priceProvider: asset?.priceProvider ?? null,
         providerSymbol: asset?.providerSymbol ?? null,
       };

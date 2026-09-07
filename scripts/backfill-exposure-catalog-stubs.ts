@@ -34,6 +34,7 @@ import {
 } from "@worthline/db";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import {
+  declaredSecurityId,
   deriveExposureCatalogIdentity,
   type GlobalExposureProfileIdentity,
   globalExposureProfileIdentityKey,
@@ -86,7 +87,7 @@ async function stubsForWorkspace(
       // market investments, so the caller vouches for the market set and supplies
       // the asset's own provider (mirrors the statement-confirm path).
       const identity = deriveExposureCatalogIdentity({
-        isin: asset.isin ?? null,
+        securityId: declaredSecurityId(asset.securityId),
         priceProvider: asset.priceProvider,
         providerSymbol: asset.providerSymbol ?? null,
       });

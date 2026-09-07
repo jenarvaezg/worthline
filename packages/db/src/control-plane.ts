@@ -170,8 +170,9 @@ async function buildControlPlaneStore(
   client: Client,
   newId: () => string,
 ): Promise<AdminControlPlaneStore> {
-  await client.executeMultiple(SCHEMA);
+  // Upgrade legacy tables before bootstrap indexes reference newly added columns.
   await migrateControlPlane(client);
+  await client.executeMultiple(SCHEMA);
 
   return {
     ...createTenancyDirectory(client, newId),

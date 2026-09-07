@@ -20,7 +20,7 @@ vi.mock("@web/read-exposure-catalog", () => ({
 
 import { guardAdmin } from "@web/admin/guard-admin";
 import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
-
+import { CatalogSaveForm } from "./catalog-profile-editor";
 import AdminCatalogPage from "./page";
 
 const UNCOVERED: GlobalExposureProfile = {
@@ -160,6 +160,31 @@ describe("AdminCatalogPage", () => {
     expect(html).toContain("Rekey (cambiar identidad)");
     expect(html).toContain("Sin región");
     expect(html).toContain("Sin divisa");
+  });
+
+  test("a DGS deep link displays the plan identity and preserves it for update and delete", async () => {
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([{ ...UNCOVERED, identity: { kind: "dgs", code: "N5394" } }]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage({ perfil: "dgs:N5394" }));
+
+    expect(html).toContain("N5394");
+    expect(html).toContain("Guardar cambios");
+    expect(
+      html.match(
+        /<input(?=[^>]*name="securityId")(?=[^>]*type="hidden")(?=[^>]*value="N5394")[^>]*>/g,
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("a new catalog profile accepts either an ISIN or a DGS code", () => {
+    const html = renderToStaticMarkup(
+      <CatalogSaveForm mode="create" profile={null} onResult={() => {}} />,
+    );
+
+    expect(html).toContain("ISIN o código DGS");
+    expect(html).toContain('name="securityId"');
   });
 
   test("edits the sector vector as % of equity with a derived defensive lens (S4)", async () => {

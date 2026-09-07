@@ -5,14 +5,13 @@ import {
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
 } from "@db/control-plane";
-import { createExposureProfileCatalog } from "@db/control-plane/exposure-profile-catalog";
 import {
   CP_SCHEMA_VERSION,
   migrateControlPlane,
   readControlPlaneSchemaVersion,
 } from "@db/control-plane/migrate";
 import { openLibsqlClient } from "@db/libsql-client";
-import { afterAll, describe, expect, test, vi } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
 
 const VWRL_ISIN = "IE00B3RBWM25";
 const tempDirs: string[] = [];
@@ -114,6 +113,7 @@ describe("control-plane exposure catalog provenance migration (#1508)", () => {
         "confidence",
         "as_of_date",
         "sources",
+        "dgs_code",
       ]);
       expect(await readControlPlaneSchemaVersion(client)).toBe(CP_SCHEMA_VERSION);
       client.close();
@@ -169,6 +169,7 @@ describe("control-plane global exposure profile migration (#1010)", () => {
         "confidence",
         "as_of_date",
         "sources",
+        "dgs_code",
       ]);
       expect(await readControlPlaneSchemaVersion(openLibsqlClient({ url }))).toBe(
         CP_SCHEMA_VERSION,
@@ -402,18 +403,23 @@ describe("control-plane global exposure profile store (#1010)", () => {
 });
 
 describe("control-plane exposure profile stub registration (#1097)", () => {
-  test("rejects DGS persistence before SQL until the catalog migration (#1744)", async () => {
-    const client = openLibsqlClient({ url: "file::memory:" });
-    const execute = vi.spyOn(client, "execute");
+  test("registers and reads an idempotent DGS stub", async () => {
+    const cp = await createInMemoryControlPlaneStore();
     try {
-      const catalog = createExposureProfileCatalog(client);
-      await expect(
-        catalog.ensureGlobalExposureProfileStub({ kind: "dgs", code: "N5394" }),
-      ).rejects.toThrow("DGS catalog persistence requires migration #1744.");
-      expect(execute).not.toHaveBeenCalled();
+      await cp.ensureGlobalExposureProfileStub({ kind: "dgs", code: "N5394" }, "Plan");
+      await cp.ensureGlobalExposureProfileStub({ kind: "dgs", code: "N5394" }, "Renamed");
+      expect(
+        await cp.readGlobalExposureProfile({
+          securityId: { kind: "dgs", value: "N5394" },
+        }),
+      ).toMatchObject({
+        identity: { kind: "dgs", code: "N5394" },
+        displayName: "Plan",
+        breakdowns: {},
+      });
+      expect(await cp.readGlobalExposureProfiles()).toHaveLength(1);
     } finally {
-      execute.mockRestore();
-      client.close();
+      cp.close();
     }
   });
 

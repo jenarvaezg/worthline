@@ -251,6 +251,36 @@ describe("saveCatalogProfileAction", () => {
 });
 
 describe("rekeyCatalogProfileAction", () => {
+  it("rekeys a provider profile to a normalized DGS identity", async () => {
+    asAdmin();
+    const profile: GlobalExposureProfile = {
+      ...sampleProfile(),
+      identity: { kind: "dgs", code: "N5394" },
+    };
+    storeSpies.rekey.mockResolvedValueOnce(profile);
+    const fd = new FormData();
+    fd.set("from-securityId", "");
+    fd.set("from-priceProvider", "finect");
+    fd.set("from-providerSymbol", "N5394-Myinvestor");
+    fd.set("to-securityId", " n-5394 ");
+
+    const result = await rekeyCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(storeSpies.rekey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        securityId: null,
+        priceProvider: "finect",
+        providerSymbol: "N5394-Myinvestor",
+      }),
+      expect.objectContaining({ securityId: { kind: "dgs", value: "N5394" } }),
+    );
+    expect(result).toEqual({
+      status: "saved",
+      profile,
+      previousKey: "p:finect:N5394-Myinvestor",
+    });
+  });
+
   it("rekeys and returns the old key so the client can follow the selection", async () => {
     asAdmin();
     storeSpies.rekey.mockResolvedValueOnce({
@@ -269,6 +299,32 @@ describe("rekeyCatalogProfileAction", () => {
 });
 
 describe("deleteCatalogProfileAction", () => {
+  it("deletes an existing DGS profile under its canonical key", async () => {
+    asAdmin();
+    const fd = new FormData();
+    fd.set("securityId", "N5394");
+
+    const result = await deleteCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(storeSpies.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ securityId: { kind: "dgs", value: "N5394" } }),
+    );
+    expect(result).toEqual({ status: "deleted", identityKey: "dgs:N5394" });
+  });
+
+  it("rejects a malformed declared identifier without falling back to its provider", async () => {
+    asAdmin();
+    const fd = new FormData();
+    fd.set("securityId", "F5394");
+    fd.set("priceProvider", "finect");
+    fd.set("providerSymbol", "N5394-Myinvestor");
+
+    const result = await deleteCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(result).toMatchObject({ status: "error" });
+    expect(withControlPlaneStore).not.toHaveBeenCalled();
+  });
+
   it("deletes and returns the removed identity key", async () => {
     asAdmin();
     storeSpies.delete.mockResolvedValueOnce(undefined);
