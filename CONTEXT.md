@@ -609,7 +609,7 @@ from a **connected source** (a live, read-only API mirror that owns its holdings
 a statement is a manual, file-based feed of operations, and each holding's value
 still derives from its **price provider**. UI labels: "Cargar movimientos" (one
 holding), "Importar extracto" (portfolio) — which is one door with two readers
-(ADR 0071): the "Operaciones" tab reads this, the "Cuadro de amortización" tab
+(ADR 0104): the "Operaciones" tab reads this, the "Cuadro de amortización" tab
 reads an **amortization schedule**.
 _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's refresh).
 
@@ -730,7 +730,7 @@ the same document declares, within the shared tolerance (ADR 0070), and the
 verdict is shown before anything is saved. A stretch already covered by a
 **balance re-baseline** stays governed by it (ADR 0056) — the schedule
 reconstructs only the years the re-baselines do not cover, and retires none of
-them. Enters by "Importar extracto", tab "Cuadro de amortización" (ADR 0071).
+them. Enters by "Importar extracto", tab "Cuadro de amortización" (ADR 0104).
 _Avoid_: extracto (the movements lane of the same door), cuadro alone when the
 **amortization plan** is meant, or for the **computed schedule** below (the
 bank's document is an input; worthline's is an output).

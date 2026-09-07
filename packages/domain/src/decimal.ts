@@ -208,7 +208,7 @@ export interface WeightedDestination {
  * is deterministic). When the weights sum to 1 the parts add back up to
  * `amountMinor` exactly — no cent is invented, none evaporates.
  *
- * The app's ONE cent split (#1610, ADR 0096). «¿Cuánto de este holding es
+ * The app's ONE cent split (#1610, ADR 0105). «¿Cuánto de este holding es
  * renta variable?» has a single answer in céntimos, and two surfaces ask it: the
  * exposure look-through and the per-asset-class rentabilidad. A second spelling — the
  * weight rounded to basis points and multiplied part by part — answers the same

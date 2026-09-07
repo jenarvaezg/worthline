@@ -717,7 +717,7 @@ export const OTHER_BUCKET_KEY = "other";
  * The destinations a stored breakdown splits a holding across: its declared
  * buckets, plus whatever it leaves undeclared, in `other`.
  *
- * Exported because the per-asset-class rentabilidad (#1610, ADR 0096) reads a
+ * Exported because the per-asset-class rentabilidad (#1610, ADR 0105) reads a
  * holding's class vector through this very function. «¿Cuánto de este holding es
  * renta variable?» is one question, so the two surfaces must agree on WHICH buckets
  * exist and what each weighs before {@link splitMinorByWeights} even turns the

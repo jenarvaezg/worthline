@@ -38,7 +38,7 @@ import { subsetReturns } from "./returns-subset";
  * Value allocation is the look-through's OWN split, not a parallel one: the class
  * destinations come from `breakdownDestinations` and the céntimos from
  * `splitMinorByWeights`, the same two functions `lookThroughExposure` calls
- * (#1610, ADR 0096). Over the SAME holding value, a class `value` therefore
+ * (#1610, ADR 0105). Over the SAME holding value, a class `value` therefore
  * equals the matching `exposure.assetClass` slice to the céntimo, not merely at
  * display granularity — «¿cuánto de este holding es renta variable?» has one
  * answer, and the surface that asks it does not change it.

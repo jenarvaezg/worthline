@@ -37,6 +37,14 @@ Multi-context repo:
         |-- docs/adr/
 ```
 
+## An ADR number is an address
+
+Files are `NNNN-kebab-case-title.md`, and the number is cited from code comments,
+tests, `CONTEXT.md` and other ADRs — so it must resolve to exactly one file. When
+you write a new ADR, take the next number no file on disk uses; never reuse one
+(#1704 renumbered four ADRs that all claimed 0096). The gate enforces this in
+`tests/tooling/adr-numbering.test.ts`.
+
 ## Use the glossary's vocabulary
 
 When your output names a domain concept in an issue title, refactor proposal, hypothesis, or test name, use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.

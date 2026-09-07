@@ -10,7 +10,7 @@ ADR 0019 decided WHAT an amortizable debt's curve is: a two-date French schedule
 whose boundaries are dated from the first payment, flat across the
 disbursement→first-payment stub. ADR 0031 added how the balance moves BETWEEN two
 boundaries (step or interpolated), ADR 0056 which schedule governs a date when a
-balance re-baseline exists, and ADR 0071 how a bank's own cuadro is read as
+balance re-baseline exists, and ADR 0104 how a bank's own cuadro is read as
 events written over an existing plan.
 
 None of them said where the **rows** come from. So `amortization.ts` grew two
@@ -96,6 +96,6 @@ keeps the interest/principal split of each payment cycle it already computes, an
   cold) is unchanged and still there. Capping it would move every figure in every
   historical snapshot, so it is a decision of its own, not a side effect of this
   one.
-- The schedule import (ADR 0071) is unaffected: it reads a bank's document into
+- The schedule import (ADR 0104) is unaffected: it reads a bank's document into
   events and never simulated the francesa. It remains the only other thing
   called a cuadro, and CONTEXT.md now distinguishes the two.
