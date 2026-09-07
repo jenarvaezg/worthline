@@ -1,3 +1,4 @@
+import type { AgentViewHoldingMatch } from "@web/agent-view/contract";
 import { normalizeSearchText } from "@web/agent-view/holding-search";
 
 /**
@@ -41,10 +42,12 @@ export interface NamedHoldingCandidate {
   id: string;
   label: string;
   /**
-   * Which field the query hit. A hit on the ISIN or the price symbol is an
-   * identifier, not a fragment of prose, so it is not held to the word rule.
+   * Which field the query hit — el vocabulario del propio match, derivado y nunca
+   * copiado: un identificador nuevo (el código DGS de un plan, #1745) llega aquí
+   * solo. Un acierto por identificador no es un fragmento de prosa, así que no
+   * pasa por la regla de palabra.
    */
-  matchedOn?: "label" | "providerSymbol" | "isin";
+  matchedOn?: AgentViewHoldingMatch["matchedOn"];
 }
 
 /**

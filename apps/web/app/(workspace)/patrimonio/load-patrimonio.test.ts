@@ -253,4 +253,64 @@ describe("loadPatrimonio — exposure look-through", () => {
 
     store.close();
   });
+
+  test("el plan del S&P 500 no pierde su ficha curada por el camino (#1745)", async () => {
+    // El caso real de Jorge: un plan de pensiones no tiene ISIN — su identificador es
+    // el código DGS. La ficha del catálogo vive bajo `dgs:N5394`, y el tablero tiene
+    // que llegar a ella desde el par tipado del holding, nunca desde el slug del
+    // comercializador (que cambia de una entidad a otra).
+    const store = await createInMemoryStore();
+    const workspace = await makeWorkspace(store);
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_plan",
+      instrument: "pension_plan",
+      name: "Plan S&P 500",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      providerSymbol: "N5394-Myinvestor",
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_plan",
+      currency: "EUR",
+      executedAt: "2026-06-01T10:00:00.000Z",
+      id: "op_plan",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+
+    const profiles: ExposureProfile[] = [
+      {
+        breakdowns: {
+          assetClass: { equity: "1" },
+          geography: { other: "0.05", us: "0.95" },
+        },
+        declaredAt: null,
+        hedged: false,
+        key: "dgs:N5394",
+        source: "user",
+        ter: "0.0038",
+      },
+    ];
+
+    const result = await loadPatrimonio({
+      store,
+      workspace,
+      selectedScope: householdScope(workspace),
+      today: TODAY,
+      selectedGroup: "direction",
+    });
+    const derived = deriveExposureAndReturns(result.exposureContext, profiles);
+
+    expect(derived.exposureFull.assetClass.coverage.unknown.amountMinor).toBe(0);
+    expect(
+      derived.exposureFull.assetClass.coverage.classified.amountMinor,
+    ).toBeGreaterThan(0);
+    expect(derived.exposureFull.geography.slices).toContainEqual(
+      expect.objectContaining({ key: "us", weight: "0.95" }),
+    );
+
+    store.close();
+  });
 });

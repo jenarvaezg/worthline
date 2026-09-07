@@ -14,9 +14,10 @@ export { isValidIsin, validIsinOrNull } from "./security-id";
 /**
  * The identity of an exposure-catalog row (#940, #1097, ADR 0058): a security is
  * identified by its typed security id (ISIN or DGS), or its price provider +
- * symbol when unidentified. Legacy callers retain validated ISIN/provider
- * behavior until #1743/#1745. This module owns catalog and lookup keys;
- * security-id owns identifier validation.
+ * symbol when unidentified. Every look-through and catalog feed now declares the
+ * typed pair (#1745); the legacy `isin` input survives only for the statement and
+ * assistant paths still being typed (#1747/#1748). This module owns catalog and
+ * lookup keys; security-id owns identifier validation.
  */
 export type GlobalExposureProfileIdentity =
   | { kind: "isin"; isin: string }

@@ -334,6 +334,7 @@ export {
   sourceFreshnessStatus,
   TRANSFER_PAIR_BROKEN_CODE,
   TRASHED_WITH_BALANCE_CODE,
+  UNCLASSIFIED_SECURITY_ID_CODE,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export {

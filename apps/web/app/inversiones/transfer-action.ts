@@ -25,6 +25,7 @@ import {
   defaultsFor,
   isinSecurityId,
   netUnitsFromOperations,
+  type SecurityId,
   unitsReadAsClosed,
 } from "@worthline/domain";
 
@@ -32,7 +33,8 @@ import {
 interface CreatedDestination {
   name: string;
   instrument: Instrument;
-  isin?: string;
+  /** El par tipado (#1745): el stub del catálogo se clava por estado, sin fallback. */
+  securityId?: SecurityId;
 }
 
 /**
@@ -203,7 +205,9 @@ export async function recordTransferAction(
           // The instrument is known here (inherited from the origin), so the catalog
           // row is born with its provenance rather than blank (#1097/#1508).
           instrument: created.instrument,
-          isin: created.isin ?? null,
+          // Explícito: `null` selecciona el símbolo, nunca la vieja cadena
+          // «ISIN válido o símbolo» que un plan de pensiones no puede recorrer.
+          securityId: created.securityId ?? null,
           priceProvider: null,
           providerSymbol: null,
         },
@@ -284,6 +288,12 @@ async function resolveDestination(
   }
 
   const instrument: Instrument = params.origin.instrument ?? "fund";
+  // El formulario del traspaso solo pide ISIN todavía (#1746 lo abre por instrumento);
+  // lo que ya no hace es viajar suelto: la fila escrita y el stub del catálogo leen el
+  // MISMO par tipado, así que no pueden clavarse bajo identidades distintas.
+  const securityId = params.destination.isin
+    ? isinSecurityId(params.destination.isin)
+    : undefined;
 
   return {
     // Shaped here, WRITTEN by the gate (#1599): the row and the pair it exists for
@@ -296,15 +306,13 @@ async function resolveDestination(
       manualPricePerUnit: params.pricePerUnit,
       name: params.destination.name,
       ownership: params.origin.ownership,
-      ...(params.destination.isin
-        ? { securityId: isinSecurityId(params.destination.isin) }
-        : {}),
+      ...(securityId ? { securityId } : {}),
     },
     assetId: id,
     created: {
       instrument,
       name: params.destination.name,
-      ...(params.destination.isin ? { isin: params.destination.isin } : {}),
+      ...(securityId ? { securityId } : {}),
     },
   };
 }

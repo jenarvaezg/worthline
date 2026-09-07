@@ -1,6 +1,7 @@
 /**
- * The instrument identity that travels ON a holding row (#1346): its ISIN, its
- * provider symbol, and the net units still held.
+ * The instrument identity that travels ON a holding row (#1346): its typed
+ * national identifier (ISIN, or a plan's DGS code — #1745), its provider symbol,
+ * and the net units still held.
  *
  * Derived in ONE place so the three reads that carry it — the compact context row,
  * a `find_holdings` match, and the `get_holding_detail` identity block — can never
@@ -15,7 +16,7 @@
  */
 
 import type { InvestmentOperation, StoredSecurityId } from "@worthline/domain";
-import { netUnitsFromOperations, storedIsinOrNull } from "@worthline/domain";
+import { declaredSecurityId, netUnitsFromOperations } from "@worthline/domain";
 
 import type { AgentViewHoldingIdentity } from "./contract";
 
@@ -25,8 +26,7 @@ export interface HoldingIdentityInput {
   /** The investment reference row (`readInvestmentAssetsWithMeta`), when it exists. */
   meta?:
     | {
-        /** El par tipado (#1743). El contrato del agent-view sigue hablando de ISIN
-         *  hasta #1745, así que un código DGS todavía no viaja por esta fila. */
+        /** El par tipado (#1743), que el contrato reporta por su clase (#1745). */
         securityId?: StoredSecurityId | undefined;
         providerSymbol?: string | undefined;
       }
@@ -49,12 +49,15 @@ export interface HoldingIdentityInput {
 export function resolveHoldingIdentity(
   input: HoldingIdentityInput,
 ): AgentViewHoldingIdentity {
-  const isin = storedIsinOrNull(input.meta?.securityId);
+  // Una clase por estado (#1667): un par sin clasificar (`kind: null`, #1416) no
+  // declara ninguna, y decirlo `isin` afirmaría una identidad que nadie ha leído.
+  const declared = declaredSecurityId(input.meta?.securityId);
   const providerSymbol = input.asset?.providerSymbol ?? input.meta?.providerSymbol;
   const operations = input.operations;
 
   return {
-    ...(isin ? { isin } : {}),
+    ...(declared?.kind === "dgs" ? { dgsCode: declared.value } : {}),
+    ...(declared?.kind === "isin" ? { isin: declared.value } : {}),
     ...(providerSymbol ? { providerSymbol } : {}),
     ...(operations && operations.length > 0
       ? { units: netUnitsFromOperations(operations) }
@@ -72,6 +75,7 @@ export function pickHoldingIdentity(
   row: AgentViewHoldingIdentity,
 ): AgentViewHoldingIdentity {
   return {
+    ...(row.dgsCode === undefined ? {} : { dgsCode: row.dgsCode }),
     ...(row.isin === undefined ? {} : { isin: row.isin }),
     ...(row.providerSymbol === undefined ? {} : { providerSymbol: row.providerSymbol }),
     ...(row.units === undefined ? {} : { units: row.units }),

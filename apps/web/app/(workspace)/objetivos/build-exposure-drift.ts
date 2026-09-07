@@ -11,6 +11,7 @@ import type {
 } from "@worthline/domain";
 import {
   assembleExposureDriftHoldings,
+  type ExposureDriftHoldingMeta,
   type ExposureProfile,
   holdingAnnualReturnByIdForProjection,
   projectExposureDrift,
@@ -21,11 +22,7 @@ export interface BuildExposureDriftInput {
   scope: ScopeOption;
   assets: ManualAsset[];
   liabilities: Liability[];
-  investmentMeta: Array<{
-    id: string;
-    isin?: string | null;
-    providerSymbol?: string | null;
-  }>;
+  investmentMeta: readonly ExposureDriftHoldingMeta[];
   exposureProfiles: ExposureProfile[];
   contributionPlan: ContributionPlan;
   growthAssumption: FireGrowthAssumption;
