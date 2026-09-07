@@ -4,7 +4,7 @@ import { multiplyToMinor } from "./decimal";
 import { isIsinShaped } from "./matching-keys";
 import {
   findStatementTypeConflict,
-  groupStatementRowsByIsin,
+  groupStatementRowsByIdentifier,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 import { parseStatement } from "./statement-parse";
@@ -241,7 +241,7 @@ describe("statement grouping and matching with plantilla identifiers", () => {
   });
 
   test("a group carries its rows' instrument, and a two-type identifier is a conflict", () => {
-    const clean = groupStatementRowsByIsin(
+    const clean = groupStatementRowsByIdentifier(
       parsedOk(
         [
           HEADER,
@@ -253,7 +253,7 @@ describe("statement grouping and matching with plantilla identifiers", () => {
     expect(clean[0]!.instrument).toBe("crypto");
     expect(findStatementTypeConflict(clean)).toBeNull();
 
-    const mixed = groupStatementRowsByIsin(
+    const mixed = groupStatementRowsByIdentifier(
       parsedOk(
         [
           HEADER,

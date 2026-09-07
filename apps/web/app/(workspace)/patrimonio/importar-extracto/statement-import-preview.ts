@@ -12,6 +12,7 @@ import type {
   MatchedStatementFund,
   ParsedStatement,
   ParsedStatementRow,
+  SecurityIdKind,
   StatementFundClaimant,
   StatementImportBucket,
   StatementMergePlan,
@@ -31,7 +32,7 @@ import {
   resolveStatementImportBuckets,
   type StatementBroker,
   type StoredSecurityId,
-  storedIsinOrNull,
+  statementClaimantAssetIds,
 } from "@worthline/domain";
 import { type SymbolCandidate, searchSymbols } from "@worthline/pricing";
 
@@ -111,6 +112,13 @@ export type FundPreviewRow = {
        */
       ambiguous: boolean;
       choices: FundMatchChoice[];
+      /**
+       * The file brings an identifier the matched holding does not declare, and
+       * confirming fills it (#1748). Only the KIND travels — the value is
+       * {@link isin}, the identifier this very row is about — and its presence is
+       * what tells the preview to print the offer.
+       */
+      offeredIdentifierKind?: SecurityIdKind;
     }
   | {
       bucket: "new";
@@ -269,10 +277,12 @@ export interface StatementImportPreviewReadPort {
   readInvestmentAssetsWithMeta: () => Promise<
     Array<{
       id: string;
-      /** El par tipado (#1743); el extracto enruta por ISIN hasta #1748. */
+      /** El par tipado (#1743): el enrutado usa la mitad declarada (#1748). */
       securityId?: StoredSecurityId;
       name: string;
       providerSymbol?: string;
+      /** Lo que la inversión ES (ADR 0014) — la otra mitad de la clave débil. */
+      instrument: Instrument;
     }>
   >;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
@@ -287,19 +297,41 @@ export function statementImportPreviewReadPort(
   };
 }
 
+/**
+ * The holdings THIS statement could route to, each with its ledger.
+ *
+ * Two phases on purpose (#1748). Which holdings a file can reach is decided by
+ * the identity columns alone — the identifier it declares, its provider symbol,
+ * and (for the backfill offer) its name and instrument with an empty identifier
+ * hole — so the whole portfolio is read as identity first, and only the claimants'
+ * operations are read after. Reading every holding's operations to answer that
+ * question was already more than the preview needed, and the offer's arm, which
+ * can reach a holding with no identifier at all, would have widened it to all of
+ * them.
+ *
+ * Holdings the file cannot reach are left out entirely rather than handed over
+ * with an empty ledger: a shape that lies about its operations is one refactor
+ * away from being believed.
+ */
 export async function readPortfolioInvestments(
   store: StatementImportPreviewReadPort,
+  statement: ParsedStatement,
 ): Promise<StatementPortfolioInvestment[]> {
   const metas = await store.readInvestmentAssetsWithMeta();
+  const candidates = metas.map((meta) => ({
+    assetId: meta.id,
+    instrument: meta.instrument,
+    name: meta.name,
+    providerSymbol: meta.providerSymbol ?? null,
+    securityId: meta.securityId ?? null,
+  }));
+  const claimed = new Set(statementClaimantAssetIds(statement, candidates));
   return Promise.all(
-    metas
-      .filter((meta) => storedIsinOrNull(meta.securityId) || meta.providerSymbol)
-      .map(async (meta) => ({
-        assetId: meta.id,
-        isin: storedIsinOrNull(meta.securityId),
-        name: meta.name,
-        operations: await store.readOperations(meta.id),
-        providerSymbol: meta.providerSymbol ?? null,
+    candidates
+      .filter((candidate) => claimed.has(candidate.assetId))
+      .map(async (candidate) => ({
+        ...candidate,
+        operations: await store.readOperations(candidate.assetId),
       })),
   );
 }
@@ -360,6 +392,9 @@ async function bucketToPreviewRow(
       ...(best.openingKeptPositionImpact
         ? { openingKeptPositionImpact: best.openingKeptPositionImpact }
         : {}),
+      ...(bucket.offeredSecurityId
+        ? { offeredIdentifierKind: bucket.offeredSecurityId.kind }
+        : {}),
       positionImpact: best.positionImpact,
       skippedCount: bucket.skipped.length,
       toCreateCount: best.toCreateCount,
@@ -408,7 +443,7 @@ export async function buildStatementImportPreview(
   | { ok: false; message: string }
   | { ok: true; buckets: StatementImportBucket[]; funds: FundPreviewRow[] }
 > {
-  const investments = await readPortfolioInvestments(store);
+  const investments = await readPortfolioInvestments(store, statement);
   const buckets = resolveStatementImportBuckets(
     statement,
     investments,

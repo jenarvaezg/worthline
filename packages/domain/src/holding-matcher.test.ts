@@ -10,6 +10,7 @@ import {
   reassignToCandidate,
   reassignToNew,
 } from "./holding-matcher";
+import { isinSecurityId } from "./security-id";
 
 /**
  * Multi-key editable holding matcher (PRD #1103 S1).
@@ -19,11 +20,21 @@ import {
  * user reassign without ever silently rewriting the wrong holding?
  */
 
-const holding = (
-  over: Partial<MatchPortfolioHolding> & { holdingId: string },
-): MatchPortfolioHolding => ({
+/**
+ * A portfolio holding. `isin` is a test convenience for the typed pair every
+ * production projection passes (#1748): a holding is identified by its declared
+ * pair or by its provider symbol — there is no bare identifier column to read.
+ */
+const holding = ({
+  isin,
+  ...over
+}: Partial<MatchPortfolioHolding> & {
+  holdingId: string;
+  isin?: string;
+}): MatchPortfolioHolding => ({
   name: "Holding",
   ...over,
+  ...(isin ? { securityId: isinSecurityId(isin) } : {}),
 });
 
 const row = (
@@ -604,6 +615,8 @@ describe("matchHoldings — clave tipada: el código DGS de un plan (#1747)", ()
     const [match] = matchHoldings(
       [row({ rowId: "r1", securityId: { kind: "dgs", value: "N5394" } })],
       [
+        // Un par mal tipado: `isin` con un código de plan dentro. No reclama
+        // ninguna clave, así que se delata como «sin match» (#1748).
         holding({ holdingId: "a1", isin: "N5394", name: "Otro" }),
         holding({ holdingId: "a2", name: "Otro más", providerSymbol: "N5394" }),
       ],

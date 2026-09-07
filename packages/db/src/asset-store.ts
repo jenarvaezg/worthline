@@ -31,6 +31,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { CLASSIFIABLE_ASSET_COLUMNS, instrumentOfRow } from "./asset-classification";
 import { hardDeleteAssetTx, readAssets } from "./asset-reads";
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
@@ -81,6 +82,12 @@ export interface InvestmentAssetMeta {
   name: string;
   currency: string;
   liquidityTier: LiquidityTier;
+  /**
+   * What the holding IS, derived as ADR 0014 derives it (#1680) — never null. The
+   * statement router reads it to know which identifier kind the holding could
+   * carry before offering to fill it (#1748).
+   */
+  instrument: Instrument;
   priceProvider: InvestmentPriceProvider;
   /** The stored identifier pair (#1743); `kind: null` is a preserved import. */
   securityId?: StoredSecurityId;
@@ -95,6 +102,8 @@ export interface InvestmentAssetFull {
   name: string;
   currency: string;
   liquidityTier: LiquidityTier;
+  /** What the holding IS, derived as ADR 0014 derives it (#1680) — never null. */
+  instrument: Instrument;
   ownership: OwnershipShare[];
   unitSymbol?: string;
   /** The stored identifier pair (#1743); `kind: null` is a preserved import. */
@@ -1120,6 +1129,7 @@ async function readInvestmentAssetById(
       name: assets.name,
       currency: assets.currency,
       liquidityTier: assets.liquidityTier,
+      ...CLASSIFIABLE_ASSET_COLUMNS,
     })
     .from(assets)
     .where(eq(assets.id, assetId))
@@ -1158,6 +1168,7 @@ async function readInvestmentAssetById(
     name: row.name,
     currency: row.currency,
     liquidityTier: row.liquidityTier,
+    instrument: instrumentOfRow(row),
     ownership: ownershipRows,
     priceProvider:
       investRow.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
@@ -1181,6 +1192,7 @@ async function readInvestmentAssetsWithMeta(
       name: assets.name,
       currency: assets.currency,
       liquidityTier: assets.liquidityTier,
+      ...CLASSIFIABLE_ASSET_COLUMNS,
       priceProvider: investmentAssets.priceProvider,
       securityId: investmentAssets.securityId,
       securityIdKind: investmentAssets.securityIdKind,
@@ -1198,6 +1210,7 @@ async function readInvestmentAssetsWithMeta(
     name: row.name,
     currency: row.currency,
     liquidityTier: row.liquidityTier,
+    instrument: instrumentOfRow(row),
     priceProvider: row.priceProvider ?? defaultInvestmentPriceProvider(row.liquidityTier),
     benchmarkDistributing: row.benchmarkDistributing === 1,
     ...storedSecurityIdField(row),

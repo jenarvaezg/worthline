@@ -33,7 +33,7 @@ import type {
   PositionImpactFlag,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
 import type { DebtSnapshotMembership } from "@worthline/domain";
-import { INVESTMENT_PRICE_PROVIDERS } from "@worthline/domain";
+import { INVESTMENT_PRICE_PROVIDERS, SECURITY_ID_KINDS } from "@worthline/domain";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -397,6 +397,12 @@ export function parseFundPreviewRow(raw: unknown): FundPreviewRow | null {
     if (parsedChoices === null) return null;
     const keptImpact = parseOptional(openingKeptPositionImpact, parsePositionImpact);
     if (keptImpact === null) return null;
+    // The offered identifier's KIND (#1748) — its value is the row's own
+    // identifier. An unknown kind is dropped rather than printed: a card must not
+    // promise a fill in a register nobody named.
+    const offeredIdentifierKind = isOneOf(raw.offeredIdentifierKind, SECURITY_ID_KINDS)
+      ? raw.offeredIdentifierKind
+      : undefined;
     return {
       ...common,
       ambiguous,
@@ -408,6 +414,7 @@ export function parseFundPreviewRow(raw: unknown): FundPreviewRow | null {
       toDeleteCount,
       toOverwriteCount,
       ...(keptImpact === undefined ? {} : { openingKeptPositionImpact: keptImpact }),
+      ...(offeredIdentifierKind === undefined ? {} : { offeredIdentifierKind }),
     };
   }
 

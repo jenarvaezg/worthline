@@ -420,3 +420,88 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     expect(await store.operations.readOperations(created!.id)).toHaveLength(1);
   });
 });
+
+/**
+ * El par tipado en la puerta del chat (#1748). Una fila leída de un documento
+ * declara su registro — `dgsCode` o `isin` (#1747) — y ese par tiene que
+ * sobrevivir al viaje por el store para que el enrutado use lo que la lectura
+ * dijo, no lo que la forma del texto sugiera.
+ */
+describe("una fila con código DGS enruta al plan por la puerta del chat (#1748)", () => {
+  async function seedPlan(store: WorthlineStore): Promise<void> {
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "plan_sp500",
+      instrument: "pension_plan",
+      liquidityTier: "market",
+      manualPricePerUnit: "35",
+      name: "MyInvestor Indexado S&P 500",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+  }
+
+  test("el par viaja por el store y llega al plan que declara ese código", async () => {
+    const { confirmStatementImportProposalAction } = await import(
+      "./statement-import-proposal-action"
+    );
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+    const proposal = await store.assistantProposals.create({ kind: "statement_import" });
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: { name: "plan.pdf", provenance: "agent", sha256: "9".repeat(64) },
+      facts: [
+        {
+          currency: "EUR",
+          dateKey: "2026-01-05",
+          feesMinor: 0,
+          // Un plan no tiene ISIN: la fila solo lleva el par tipado.
+          isin: null,
+          kind: "buy",
+          pricePerUnit: "35",
+          securityId: { kind: "dgs", value: "N5394" },
+          units: "34.2857",
+        },
+      ],
+    });
+
+    expect(
+      await confirmStatementImportProposalAction({ proposalId: proposal.id }, store),
+    ).toEqual({ created: 0, included: 1, status: "applied" });
+    expect(await store.operations.readOperations("plan_sp500")).toHaveLength(1);
+  });
+
+  test("un par mal tipado no se guarda: la fila sigue enrutando por su columna", async () => {
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+    const proposal = await store.assistantProposals.create({ kind: "statement_import" });
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: { name: "raro.pdf", provenance: "agent", sha256: "7".repeat(64) },
+      facts: [
+        {
+          currency: "EUR",
+          dateKey: "2026-01-05",
+          feesMinor: 0,
+          isin: "ES00WL000009",
+          kind: "buy",
+          pricePerUnit: "35",
+          // Un ISIN declarado como código DGS: no valida como su clase, así que el
+          // store lo descarta en vez de dejar una fila que nada sabe enrutar.
+          securityId: { kind: "dgs", value: "ES00WL000009" },
+          units: "1",
+        },
+      ],
+    });
+
+    const stored = await store.assistantProposals.read(proposal.id);
+    expect(stored?.documents[0]?.facts[0]).toMatchObject({
+      kind: "statement_operation",
+      row: { isin: "ES00WL000009" },
+    });
+    expect(stored?.documents[0]?.facts[0]).not.toHaveProperty("row.securityId");
+  });
+});

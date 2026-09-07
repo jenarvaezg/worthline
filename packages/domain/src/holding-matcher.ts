@@ -32,8 +32,16 @@
  */
 
 import type { Instrument } from "./instrument-catalog";
-import { normalizeMatchKey, normalizeMatchName } from "./matching-keys";
-import { normalizeDgsCode, type SecurityId } from "./security-id";
+import {
+  instrumentsCompatible,
+  matchKeyNamespace,
+  normalizeMatchName,
+  providerSymbolMatchKey,
+  rowMatchKey,
+  securityIdMatchKey,
+  symbolMatchKeyVariant,
+} from "./matching-keys";
+import type { SecurityId } from "./security-id";
 
 /** Which key produced a match. `none` is a row that matched nothing. */
 export type MatchKey = "isin" | "dgs" | "provider_symbol" | "name" | "none";
@@ -84,8 +92,13 @@ export interface MatchPortfolioHolding {
   holdingId: string;
   /** Display name, used for the weak key and to label candidates in the preview. */
   name: string;
-  isin?: string | null;
-  /** The holding's typed national identifier (#1742); supersedes {@link isin}. */
+  /**
+   * The holding's typed national identifier (#1742) — an ISIN or a plan's DGS
+   * code. There is deliberately NO bare identifier column beside it (#1748): one
+   * key per state (invariant 2 of PRD #1741), so a holding is found by the pair it
+   * DECLARES or by its provider symbol, and a value nobody could classify
+   * (`kind: null`) declares nothing rather than half-declaring an ISIN.
+   */
   securityId?: SecurityId | null;
   providerSymbol?: string | null;
   instrument?: Instrument | null;
@@ -154,53 +167,17 @@ export interface RowMatch {
   ambiguous?: boolean;
 }
 
-/**
- * Whether a row and a holding declare compatible instruments for a weak match.
- * When both declare one and they differ, they are NOT a match — this is the guard
- * that stops a coincidental name from rewriting the wrong holding. When either
- * side omits its instrument, name alone carries the weak match.
- */
-function instrumentsCompatible(
-  a: Instrument | null | undefined,
-  b: Instrument | null | undefined,
-): boolean {
-  if (a == null || b == null) return true;
-  return a === b;
-}
-
-interface StrongIndex {
-  byKey: Map<string, MatchPortfolioHolding[]>;
-  /** The DGS lane, kept apart so `N5394` as a code never meets `N5394` as a symbol. */
-  byDgs: Map<string, MatchPortfolioHolding[]>;
-  /** Lowercased provider-symbol index so "Bitcoin" finds "bitcoin" (#695). */
-  bySymbolLower: Map<string, MatchPortfolioHolding[]>;
-}
+/** The strong keys of the portfolio, namespaced (#1748): `isin:` / `dgs:` / `sym:`. */
+type StrongIndex = Map<string, MatchPortfolioHolding[]>;
 
 /**
- * What either side offers on the ISIN lane. A typed `isin` pair wins over the bare
- * column, and a bare column with no pair keeps its legacy reading: this lane has
- * always indexed whatever the caller put there, and narrowing it to a checksummed
- * ISIN here would silently unmatch rows the matcher resolves today.
+ * Which {@link MatchKey} a namespaced key reports as. Every key here comes from
+ * the builders of `matching-keys`, so the namespace is always one of the three;
+ * `sym:` is the only one that is not a national identifier.
  */
-function isinLaneKey(source: {
-  isin?: string | null;
-  securityId?: SecurityId | null;
-}): string | null {
-  if (source.securityId?.kind === "isin")
-    return normalizeMatchKey(source.securityId.value);
-  return normalizeMatchKey(source.isin);
-}
-
-/**
- * The DGS lane. Only a TYPED declaration reaches it — the shape is normalized once
- * here (`n-5394` and `N5394` are one code) and never derived from a loose column:
- * the pair is what says «this is a plan code», and guessing it from a string is the
- * fallback chain the PRD's second invariant forbids.
- */
-function dgsLaneKey(source: { securityId?: SecurityId | null }): string | null {
-  return source.securityId?.kind === "dgs"
-    ? normalizeDgsCode(source.securityId.value)
-    : null;
+function matchKeyOf(key: string): MatchKey {
+  const namespace = matchKeyNamespace(key);
+  return namespace === "isin" || namespace === "dgs" ? namespace : "provider_symbol";
 }
 
 /** Append to a multi-map bucket, keeping portfolio order within the key. */
@@ -215,26 +192,25 @@ function claim(
 }
 
 /**
- * Index the portfolio by strong key. **Every** claimant of a key is kept, in
- * portfolio order: a key claimed twice is real (#1331) and the matcher must be able
- * to see it, which first-wins made structurally impossible.
+ * Index the portfolio by strong key, each in its own namespace (#1748). **Every**
+ * claimant of a key is kept, in portfolio order: a key claimed twice is real
+ * (#1331) and the matcher must be able to see it, which first-wins made
+ * structurally impossible.
  */
 function buildStrongIndex(holdings: MatchPortfolioHolding[]): StrongIndex {
-  const byKey = new Map<string, MatchPortfolioHolding[]>();
-  const byDgs = new Map<string, MatchPortfolioHolding[]>();
-  const bySymbolLower = new Map<string, MatchPortfolioHolding[]>();
+  const index: StrongIndex = new Map();
   for (const holding of holdings) {
-    const isin = isinLaneKey(holding);
-    if (isin) claim(byKey, isin, holding);
-    const dgs = dgsLaneKey(holding);
-    if (dgs) claim(byDgs, dgs, holding);
-    const symbol = normalizeMatchKey(holding.providerSymbol);
+    // The holding's identity is the pair it DECLARES — no bare column to classify.
+    const identifier = securityIdMatchKey(holding.securityId);
+    if (identifier) claim(index, identifier, holding);
+    const symbol = providerSymbolMatchKey(holding.providerSymbol);
     if (symbol) {
-      claim(byKey, symbol, holding);
-      claim(bySymbolLower, symbol.toLowerCase(), holding);
+      claim(index, symbol, holding);
+      const variant = symbolMatchKeyVariant(symbol);
+      if (variant) claim(index, variant, holding);
     }
   }
-  return { byDgs, byKey, bySymbolLower };
+  return index;
 }
 
 /** Concatenate holding lists, dropping the ids already seen. */
@@ -251,34 +227,26 @@ function dedupeById(...lists: MatchPortfolioHolding[][]): MatchPortfolioHolding[
 
 /**
  * Every holding a row's strong keys hit, with the key that produced them, or null.
- * The two national identifiers resolve before the provider symbol (each is the more
- * specific claim) and never cross lanes: a plan's `N5394` matches another `N5394`
- * declared as a DGS code, never one that happens to sit in an ISIN column or in a
- * Finect symbol. A symbol hit merges the exact-case and lowercased indexes, so
- * "N5115" and "n5115" in the same portfolio are seen as the two claimants they are
- * rather than one.
+ *
+ * The row's own identifier resolves before its provider symbol (it is the more
+ * specific claim), and keys never cross lanes (#1748): a plan's `N5394` matches
+ * another `N5394` declared as a DGS code, never one that happens to sit in an ISIN
+ * column or in a Finect symbol. A symbol hit merges the exact-case and lowercased
+ * entries, so "N5115" and "n5115" in the same portfolio are seen as the two
+ * claimants they are rather than one.
  */
 function findStrongMatches(
   row: MatchCandidateRow,
   index: StrongIndex,
 ): { holdings: MatchPortfolioHolding[]; key: MatchKey } | null {
-  const isin = isinLaneKey(row);
-  if (isin) {
-    const byIsin = index.byKey.get(isin);
-    if (byIsin && byIsin.length > 0) return { holdings: byIsin, key: "isin" };
-  }
-  const dgs = dgsLaneKey(row);
-  if (dgs) {
-    const byDgs = index.byDgs.get(dgs);
-    if (byDgs && byDgs.length > 0) return { holdings: byDgs, key: "dgs" };
-  }
-  const symbol = normalizeMatchKey(row.providerSymbol);
-  if (symbol) {
-    const bySymbol = dedupeById(
-      index.byKey.get(symbol) ?? [],
-      index.bySymbolLower.get(symbol.toLowerCase()) ?? [],
+  for (const key of [rowMatchKey(row), providerSymbolMatchKey(row.providerSymbol)]) {
+    if (key === null) continue;
+    const variant = symbolMatchKeyVariant(key);
+    const holdings = dedupeById(
+      index.get(key) ?? [],
+      variant === null ? [] : (index.get(variant) ?? []),
     );
-    if (bySymbol.length > 0) return { holdings: bySymbol, key: "provider_symbol" };
+    if (holdings.length > 0) return { holdings, key: matchKeyOf(key) };
   }
   return null;
 }

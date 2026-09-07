@@ -9,6 +9,9 @@ import {
   INITIAL_STATEMENT_PROPOSAL_DISCARD_STATE,
   reduceStatementProposalDiscard,
 } from "@web/asistente/statement-proposal-discard-state";
+// The offer sentence lives with the import preview that also prints it (#1748):
+// one promise about what the confirm writes, not two that can drift apart.
+import { identifierBackfillOfferNote } from "@web/patrimonio/importar-extracto/import-statement-summary";
 import { useEffect, useReducer, useRef, useState, useTransition } from "react";
 import {
   ambiguousFundNote,
@@ -108,6 +111,14 @@ export function StatementProposalCard({
                 </span>
                 {fund.positionImpact.flags.length > 0 ? (
                   <span>Avisos: {fund.positionImpact.flags.join(", ")}</span>
+                ) : null}
+                {fund.bucket === "matched" && fund.offeredIdentifierKind ? (
+                  // The identifier this document brings for a holding that
+                  // declares none (#1748): the same sentence the import page
+                  // prints, because confirming here writes the same thing.
+                  <span>
+                    {identifierBackfillOfferNote(fund.isin, fund.offeredIdentifierKind)}
+                  </span>
                 ) : null}
               </>
             )}

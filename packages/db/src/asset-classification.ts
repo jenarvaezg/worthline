@@ -1,6 +1,7 @@
-import type { ClassifiableAsset } from "@worthline/domain";
+import type { ClassifiableAsset, Instrument } from "@worthline/domain";
+import { instrumentOfAsset } from "@worthline/domain";
 
-import type { assets } from "./schema";
+import { assets } from "./schema";
 
 /**
  * The columns the ADR 0014 derivation needs off an `assets` row — its instrument
@@ -26,4 +27,21 @@ export function classifiableAssetFromRow(row: ClassifiableAssetRow): Classifiabl
     isPrimaryResidence: row.isPrimaryResidence === 1,
     type: row.type,
   };
+}
+
+/**
+ * The three columns {@link classifiableAssetFromRow} needs, to spread into a
+ * `select` — so a reader that wants the derived instrument asks for the whole
+ * triple or none of it. Selecting two of the three compiles and derives the wrong
+ * answer for a primary residence.
+ */
+export const CLASSIFIABLE_ASSET_COLUMNS = {
+  instrument: assets.instrument,
+  isPrimaryResidence: assets.isPrimaryResidence,
+  type: assets.type,
+} as const;
+
+/** The instrument an `assets` row derives to (ADR 0014, #1680) — never null. */
+export function instrumentOfRow(row: ClassifiableAssetRow): Instrument {
+  return instrumentOfAsset(classifiableAssetFromRow(row));
 }

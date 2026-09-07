@@ -54,7 +54,7 @@ describe("buildReconcileRows", () => {
       {
         holdingId: "asset-amundi",
         name: "Amundi MSCI World",
-        isin: AMUNDI,
+        securityId: { kind: "isin", value: AMUNDI },
         instrument: "fund",
       },
     ];
@@ -151,14 +151,14 @@ describe("buildReconcileRows — el mismo fondo en dos brokers (#1331)", () => {
     {
       holdingId: "asset-closed",
       name: "Vanguard U.S. 500 Stk Idx € H Acc",
-      isin: SHARED,
+      securityId: { kind: "isin", value: SHARED },
       instrument: "fund",
       closed: true,
     },
     {
       holdingId: "asset-live",
       name: "Vanguard US Equity Index Fund EUR Hedged",
-      isin: SHARED,
+      securityId: { kind: "isin", value: SHARED },
       instrument: "fund",
     },
   ];
@@ -364,7 +364,7 @@ describe("editing (immutable)", () => {
     {
       holdingId: "asset-amundi",
       name: "Amundi MSCI World",
-      isin: AMUNDI,
+      securityId: { kind: "isin", value: AMUNDI },
       instrument: "fund",
     },
   ];
@@ -419,7 +419,12 @@ describe("reconcileSummary", () => {
       ],
     });
     const portfolio: MatchPortfolioHolding[] = [
-      { holdingId: "asset-a", name: "A", isin: AMUNDI, instrument: "fund" },
+      {
+        holdingId: "asset-a",
+        instrument: "fund",
+        name: "A",
+        securityId: { kind: "isin", value: AMUNDI },
+      },
     ];
     const rows = discardReconcileRow(buildReconcileRows(document, portfolio), "row-2");
     // "A" matches by ISIN but is value_only with no movements → an update that does
@@ -503,7 +508,12 @@ describe("reconcileImpact", () => {
       ],
     });
     const portfolio: MatchPortfolioHolding[] = [
-      { holdingId: "asset-a", name: "Fund", isin: AMUNDI, instrument: "fund" },
+      {
+        holdingId: "asset-a",
+        instrument: "fund",
+        name: "Fund",
+        securityId: { kind: "isin", value: AMUNDI },
+      },
     ];
     const rows = buildReconcileRows(document, portfolio);
     const impact = reconcileImpact(rows, 0);
@@ -549,7 +559,12 @@ describe("reconcileImpact", () => {
       ],
     });
     const portfolio: MatchPortfolioHolding[] = [
-      { holdingId: "asset-a", name: "Fondo", isin: AMUNDI, instrument: "fund" },
+      {
+        holdingId: "asset-a",
+        instrument: "fund",
+        name: "Fondo",
+        securityId: { kind: "isin", value: AMUNDI },
+      },
     ];
 
     expect(reconcileImpact(buildReconcileRows(document, portfolio), 0).deltaMinor).toBe(
@@ -575,7 +590,12 @@ describe("reconcileImpact", () => {
       ],
     });
     const portfolio: MatchPortfolioHolding[] = [
-      { holdingId: "asset-a", name: "Fondo", isin: AMUNDI, instrument: "fund" },
+      {
+        holdingId: "asset-a",
+        instrument: "fund",
+        name: "Fondo",
+        securityId: { kind: "isin", value: AMUNDI },
+      },
     ];
     const impact = reconcileImpact(buildReconcileRows(document, portfolio), 0);
 

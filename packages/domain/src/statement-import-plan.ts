@@ -1,18 +1,37 @@
 /**
  * Portfolio-level statement routing (ADR 0055).
  *
- * Parsing stays broker-only. This module groups parsed rows by ISIN, resolves each
- * fund against the current portfolio, and builds the confirmed import plan from
- * the user's include/ignore decisions without touching persistence.
+ * Parsing stays broker-only. This module groups parsed rows by **typed
+ * identifier** (#1748), resolves each fund against the current portfolio, and
+ * builds the confirmed import plan from the user's include/ignore decisions
+ * without touching persistence.
  */
 
 import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Instrument, InstrumentPriceProvider } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
-import { normalizeMatchKey, normalizeMatchName } from "./matching-keys";
+import {
+  classifiedMatchKey,
+  type IdentifiedByMatchKey,
+  instrumentsCompatible,
+  matchKeyValue,
+  normalizeMatchKey,
+  normalizeMatchName,
+  providerSymbolMatchKey,
+  rowMatchKey,
+  securityIdFromMatchKey,
+  securityIdMatchKey,
+  symbolMatchKeyVariant,
+} from "./matching-keys";
 import type { CurrencyCode } from "./money";
 import { netUnitsFromOperations } from "./positions";
+import {
+  declaredSecurityId,
+  instrumentCanCarrySecurityIdKind,
+  type SecurityId,
+  type StoredSecurityId,
+} from "./security-id";
 import { planStatementMerge, type StatementMergePlan } from "./statement-merge";
 import type {
   ParsedStatement,
@@ -22,25 +41,70 @@ import type {
 import { unitsReadAsClosed } from "./warnings";
 import type { OwnershipShare } from "./workspace-types";
 
-export interface StatementPortfolioInvestment {
+/**
+ * A holding as CLAIMANT SELECTION reads it: identity only, no ledger.
+ *
+ * The split is what keeps the preview from reading the whole portfolio's
+ * operations (#1748): which holdings a file could route to is decided from the
+ * identity columns alone, and only those holdings' ledgers are then read — the
+ * merge plan is the only thing that needs one.
+ */
+export interface StatementCandidateInvestment {
   assetId: string;
   name: string;
-  isin?: string | null;
   /**
-   * The investment's provider symbol, a second matching key (#695): plantilla
-   * identifiers for pension plans (Finect code) and crypto (CoinGecko id) live
-   * here, never in `isin`, so without it every re-upload would duplicate them.
+   * The holding's stored identifier pair (#1743, #1748). Its **declared** half is
+   * what claims an `isin:`/`dgs:` key; the raw value is read for one other thing
+   * only — whether the identifier hole is TAKEN, which is what forbids the
+   * backfill offer below. A preserved value with no kind (`kind: null`, the v70
+   * import exemption) claims no key and yet occupies the hole: it is something
+   * nobody could read, not an invitation to write over it.
+   */
+  securityId?: StoredSecurityId | null;
+  /**
+   * The investment's provider symbol, a second matching key (#695): a CoinGecko id
+   * for crypto and the finect slug of a pension plan live here, never in the
+   * identifier pair, so without it every re-upload would duplicate them.
    */
   providerSymbol?: string | null;
+  /**
+   * What the holding is (ADR 0014). Read for the weak arm only: it is the other
+   * half of the name key, and it selects which identifier kind the holding could
+   * legally carry when the file offers one.
+   */
+  instrument?: Instrument | null;
+}
+
+/** A candidate with the ledger the merge plan is written against. */
+export interface StatementPortfolioInvestment extends StatementCandidateInvestment {
   operations: InvestmentOperation[];
 }
 
 export interface StatementFundGroup {
-  /** The group's identifier — an ISIN for broker rows; any key for plantilla. */
+  /**
+   * The group's canonical identifier — an ISIN, a plan's DGS code, or the
+   * plantilla's own key (a finect slug, a CoinGecko id). It is what the preview
+   * prints and what the confirm's form fields key on; {@link key} is what it
+   * MATCHES by. The field keeps its historical name to spare every consumer a
+   * rename (as `ParsedStatementRow.isin` does).
+   */
   isin: string;
+  /**
+   * The namespaced match key the group claims — `isin:…`, `dgs:N####` or
+   * `sym:<símbolo>` (#1748). Two identifiers meet only inside one namespace, so a
+   * plan code never matches the same characters sitting in an ISIN column or in a
+   * pricing handle.
+   */
+  key: string;
+  /**
+   * The typed national identifier the group declares, when its key is one. This
+   * is what a creation records and what the backfill offer would write; a `sym:`
+   * group has none, because a pricing handle is not an identity.
+   */
+  securityId?: SecurityId;
   /** The asset type the group's rows declare, when the format carries one (#695). */
   instrument?: Instrument;
-  /** A display name carried by the rows, used only to prefill creation (#695). */
+  /** A display name carried by the rows, used to prefill creation (#695) and as the weak key (#1748). */
   name?: string;
   rows: ParsedStatementRow[];
   skipped: SkippedStatementRow[];
@@ -86,6 +150,18 @@ export interface MatchedStatementFund extends StatementFundGroup {
    * brokers is a legitimate portfolio. The choice is the user's.
    */
   ambiguous?: boolean;
+  /**
+   * The identifier this file brings for a holding that declares NONE (#1748).
+   *
+   * Present only on the weak arm: no holding claimed the group's identifier, and
+   * the ones below matched by exact name + compatible instrument with their
+   * identifier hole empty. It is an **offer** — the preview says «este extracto
+   * trae el código N5394; tu ficha no lo declara — al confirmar, se rellena» and
+   * the user confirms — never a resolution, and it never overwrites a declared
+   * identifier. It is the natural cure for the «identificador ausente» health
+   * signal (#1745).
+   */
+  offeredSecurityId?: SecurityId;
 }
 
 export interface NewStatementFund extends StatementFundGroup {
@@ -132,11 +208,26 @@ export type StatementImportPlanFund =
       isin: string;
       assetId: string;
       mergePlan: StatementMergePlan;
+      /**
+       * The identifier to write onto the holding as part of this import — the
+       * accepted {@link MatchedStatementFund.offeredSecurityId} (#1748). Present
+       * only when the holding's hole is empty and the kind is one its instrument
+       * can carry, so the write never has to re-decide anything.
+       */
+      backfillSecurityId?: SecurityId;
     }
   | {
       kind: "new";
       isin: string;
       creation: StatementNewInvestmentSelection & { isin: string };
+      /**
+       * The typed identifier the new holding is born with, when the group carries
+       * one the chosen instrument can hold (#1748). A plantilla's `N5394` creates
+       * a plan that DECLARES its DGS code instead of one that merely echoes it in
+       * a name — which is what lets two people with the same plan share a catalog
+       * ficha (PRD #1741).
+       */
+      securityId?: SecurityId;
       rows: ParsedStatementRow[];
     };
 
@@ -145,25 +236,32 @@ export interface StatementImportPlan {
   ignored: StatementFundGroup[];
 }
 
-export function groupStatementRowsByIsin(
+export function groupStatementRowsByIdentifier(
   statement: ParsedStatement,
 ): StatementFundGroup[] {
-  const groupsByIsin = new Map<string, StatementFundGroup>();
+  const groupsByKey = new Map<string, StatementFundGroup>();
 
-  const groupFor = (isin: string | null): StatementFundGroup | null => {
-    const normalized = normalizeMatchKey(isin);
-    if (!normalized) return null;
+  const groupFor = (row: IdentifiedByMatchKey): StatementFundGroup | null => {
+    const key = rowMatchKey(row);
+    if (key === null) return null;
 
-    let group = groupsByIsin.get(normalized);
+    let group = groupsByKey.get(key);
     if (!group) {
-      group = { isin: normalized, rows: [], skipped: [] };
-      groupsByIsin.set(normalized, group);
+      const securityId = securityIdFromMatchKey(key);
+      group = {
+        isin: matchKeyValue(key),
+        key,
+        rows: [],
+        skipped: [],
+        ...(securityId ? { securityId } : {}),
+      };
+      groupsByKey.set(key, group);
     }
     return group;
   };
 
   for (const row of statement.rows) {
-    const group = groupFor(row.isin);
+    const group = groupFor(row);
     if (!group) continue;
     group.rows.push({ ...row, isin: normalizeMatchKey(row.isin) });
     // The group's instrument/name come from its first row that carries them;
@@ -173,10 +271,10 @@ export function groupStatementRowsByIsin(
   }
 
   for (const row of statement.skipped) {
-    groupFor(row.isin)?.skipped.push({ ...row, isin: normalizeMatchKey(row.isin) });
+    groupFor(row)?.skipped.push({ ...row, isin: normalizeMatchKey(row.isin) });
   }
 
-  return [...groupsByIsin.values()];
+  return [...groupsByKey.values()];
 }
 
 /**
@@ -197,11 +295,7 @@ export function findStatementTypeConflict(groups: StatementFundGroup[]): string 
 }
 
 /** Append to a multi-map bucket, keeping portfolio order within the key. */
-function claim(
-  index: Map<string, StatementPortfolioInvestment[]>,
-  key: string | null,
-  investment: StatementPortfolioInvestment,
-): void {
+function claim<T>(index: Map<string, T[]>, key: string | null, investment: T): void {
   if (!key) return;
   const bucket = index.get(key);
   if (bucket) bucket.push(investment);
@@ -213,12 +307,12 @@ function claim(
  * portfolio order — the exact-case and lowercased symbol indexes are two lookups,
  * so the order they merge in is an artifact of the key, not of the portfolio.
  */
-function dedupeByAssetId(
+function dedupeByAssetId<T extends StatementCandidateInvestment>(
   order: ReadonlyMap<string, number>,
-  ...lists: StatementPortfolioInvestment[][]
-): StatementPortfolioInvestment[] {
+  ...lists: T[][]
+): T[] {
   const seen = new Set<string>();
-  const merged: StatementPortfolioInvestment[] = [];
+  const merged: T[] = [];
   for (const investment of lists.flat()) {
     if (seen.has(investment.assetId)) continue;
     seen.add(investment.assetId);
@@ -246,14 +340,14 @@ function isClosedLedger(investment: StatementPortfolioInvestment): boolean {
  * Ties keep portfolio order, so the default the preview renders is deterministic.
  * `sort` is stable per spec and the input is never mutated.
  */
-function rankClaimants(
+function rankClaimants<T extends StatementCandidateInvestment>(
   group: StatementFundGroup,
-  investments: StatementPortfolioInvestment[],
+  investments: T[],
   closedByAssetId: ReadonlyMap<string, boolean>,
-): StatementPortfolioInvestment[] {
+): T[] {
   if (investments.length < 2) return investments;
   const groupName = normalizeMatchName(group.name);
-  const score = (investment: StatementPortfolioInvestment): number => {
+  const score = (investment: T): number => {
     const nameMatches =
       groupName !== null && normalizeMatchName(investment.name) === groupName;
     return (nameMatches ? 2 : 0) + (closedByAssetId.get(investment.assetId) ? 0 : 1);
@@ -261,48 +355,147 @@ function rankClaimants(
   return [...investments].sort((a, b) => score(b) - score(a));
 }
 
+/** Whether the holding's identifier hole is taken — declared or merely preserved. */
+function identifierHoleTaken(investment: StatementCandidateInvestment): boolean {
+  return (investment.securityId?.value ?? "").trim().length > 0;
+}
+
+/**
+ * The holdings that would ACCEPT the group's identifier (#1748) — the weak arm.
+ *
+ * A group whose identifier nobody claims may still be a holding the user already
+ * has: the one whose identifier hole was never filled, which is exactly what the
+ * health signal complains about. It matches on the weak key of `matching-keys` —
+ * exact normalized name plus a compatible instrument, never fuzzy — and only when
+ * the hole is EMPTY and the kind is one the instrument can carry. Empty is the
+ * whole guard: filling a hole cannot re-price a holding as another instrument,
+ * while overwriting a declared identifier could hand a later statement the wrong
+ * ledger to overwrite (the #1349 asymmetry).
+ */
+function backfillClaimants<T extends StatementCandidateInvestment>(
+  group: StatementFundGroup,
+  investments: T[],
+): T[] {
+  const offered = group.securityId;
+  const groupName = normalizeMatchName(group.name);
+  if (!offered || !groupName) return [];
+  return investments.filter(
+    (investment) =>
+      normalizeMatchName(investment.name) === groupName &&
+      instrumentsCompatible(group.instrument, investment.instrument) &&
+      !identifierHoleTaken(investment) &&
+      instrumentCanCarrySecurityIdKind(investment.instrument, offered.kind),
+  );
+}
+
+/**
+ * Index the portfolio by strong key, each in its own namespace (#1748): the
+ * DECLARED half of a holding's identifier pair (`isin:` / `dgs:`) and its provider
+ * symbol (`sym:`, also indexed lowercased so "Bitcoin" finds "bitcoin"). A mistyped
+ * pair claims no key and shows up as «sin match» rather than matching an identifier
+ * of another register.
+ *
+ * EVERY claimant of a key is kept, in portfolio order (#1366): an identifier claimed
+ * twice is a real portfolio — the same fund at two brokers — and first-wins made it
+ * structurally impossible for the router to even see the second one, so it silently
+ * merged into whichever was created first.
+ */
+function indexByStrongKey<T extends StatementCandidateInvestment>(
+  investments: T[],
+): Map<string, T[]> {
+  const index = new Map<string, T[]>();
+  for (const investment of investments) {
+    claim(
+      index,
+      securityIdMatchKey(declaredSecurityId(investment.securityId)),
+      investment,
+    );
+    const symbolKey = providerSymbolMatchKey(investment.providerSymbol);
+    if (symbolKey) {
+      claim(index, symbolKey, investment);
+      claim(index, symbolMatchKeyVariant(symbolKey), investment);
+    }
+  }
+  return index;
+}
+
+/**
+ * The holdings that claim a group, in portfolio order, and by which arm.
+ *
+ * The STRONG arm is the identifier itself; the weak arm (the offer of #1748) is
+ * consulted only when the identifier found nobody, so it never competes with an
+ * identifier that did. Needs no ledger: this is the selection every caller runs
+ * before deciding whose operations to read.
+ */
+function claimantsOfGroup<T extends StatementCandidateInvestment>(
+  group: StatementFundGroup,
+  investments: T[],
+  index: Map<string, T[]>,
+  order: ReadonlyMap<string, number>,
+): { arm: "identifier" | "offered_name"; investments: T[] } {
+  const variant = symbolMatchKeyVariant(group.key);
+  const strong = dedupeByAssetId(
+    order,
+    index.get(group.key) ?? [],
+    variant === null ? [] : (index.get(variant) ?? []),
+  );
+  return strong.length > 0
+    ? { arm: "identifier", investments: strong }
+    : { arm: "offered_name", investments: backfillClaimants(group, investments) };
+}
+
+/** Portfolio order, so a merged claimant list reads as the portfolio does. */
+function portfolioOrderOf(
+  investments: readonly StatementCandidateInvestment[],
+): Map<string, number> {
+  return new Map(investments.map((investment, index) => [investment.assetId, index]));
+}
+
+/**
+ * The ids of the holdings this statement could route to — the ONLY ones whose
+ * ledger the router needs (#1748).
+ *
+ * A caller reads this first and then reads operations for these ids alone: the
+ * preview used to read the whole portfolio's operations to answer a question that
+ * only the identity columns decide, and the weak arm would have widened that to
+ * every holding there is.
+ */
+export function statementClaimantAssetIds(
+  statement: ParsedStatement,
+  investments: StatementCandidateInvestment[],
+): string[] {
+  const index = indexByStrongKey(investments);
+  const order = portfolioOrderOf(investments);
+  const ids = new Set<string>();
+  for (const group of groupStatementRowsByIdentifier(statement)) {
+    for (const investment of claimantsOfGroup(group, investments, index, order)
+      .investments) {
+      ids.add(investment.assetId);
+    }
+  }
+  return [...ids];
+}
+
 export function resolveStatementImportBuckets(
   statement: ParsedStatement,
   investments: StatementPortfolioInvestment[],
   options: ResolveStatementImportBucketsOptions = {},
 ): StatementImportBucket[] {
-  // Two matching keys per investment (#695): its ISIN and its provider symbol
-  // (Finect code / CoinGecko id — how plantilla identifies plans and crypto).
-  // The symbol also indexes case-insensitively so "Bitcoin" finds "bitcoin".
-  //
-  // EVERY claimant of a key is kept, in portfolio order (#1366): an identifier
-  // claimed twice is a real portfolio — the same fund at two brokers — and
-  // first-wins made it structurally impossible for the router to even see the
-  // second one, so it silently merged into whichever was created first.
-  const investmentsByKey = new Map<string, StatementPortfolioInvestment[]>();
-  const portfolioOrder = new Map(
-    investments.map((investment, index) => [investment.assetId, index]),
-  );
+  const investmentsByKey = indexByStrongKey(investments);
+  const portfolioOrder = portfolioOrderOf(investments);
   // Derived once per portfolio, not once per comparison inside a sort.
   const closedByAssetId = new Map(
     investments.map((investment) => [investment.assetId, isClosedLedger(investment)]),
   );
-  for (const investment of investments) {
-    claim(investmentsByKey, normalizeMatchKey(investment.isin), investment);
-    const symbol = (investment.providerSymbol ?? "").trim();
-    if (symbol) {
-      claim(investmentsByKey, symbol, investment);
-      if (symbol.toLowerCase() !== symbol) {
-        claim(investmentsByKey, symbol.toLowerCase(), investment);
-      }
-    }
-  }
 
-  return groupStatementRowsByIsin(statement).map((group) => {
-    const claimants = rankClaimants(
+  return groupStatementRowsByIdentifier(statement).map((group) => {
+    const claimed = claimantsOfGroup(
       group,
-      dedupeByAssetId(
-        portfolioOrder,
-        investmentsByKey.get(group.isin) ?? [],
-        investmentsByKey.get(group.isin.toLowerCase()) ?? [],
-      ),
-      closedByAssetId,
+      investments,
+      investmentsByKey,
+      portfolioOrder,
     );
+    const claimants = rankClaimants(group, claimed.investments, closedByAssetId);
 
     if (claimants.length === 0) {
       return { ...group, bucket: "new" };
@@ -326,6 +519,9 @@ export function resolveStatementImportBuckets(
       claimants: planned,
       mergePlan: best.mergePlan,
       name: best.name,
+      ...(claimed.arm === "offered_name" && group.securityId
+        ? { offeredSecurityId: group.securityId }
+        : {}),
       ...(planned.length > 1 ? { ambiguous: true } : {}),
     };
   });
@@ -349,13 +545,22 @@ export function findUnresolvedStatementChoice(
 
   for (const selection of selections) {
     if (selection.action !== "include") continue;
-    const key = normalizeMatchKey(selection.isin);
-    const bucket = key === null ? undefined : bucketByIsin.get(key);
+    const bucket = bucketByIsin.get(selectionIdentifier(selection.isin));
     if (!bucket || bucket.bucket !== "matched") continue;
     if (resolveChosenClaimant(bucket, selection.assetId) === null) return bucket.isin;
   }
 
   return null;
+}
+
+/**
+ * A selection names a bucket by the identifier the preview printed, so it is
+ * canonicalized the same way the group was — through the classifier, not through
+ * the loose key normalizer, or `n-5394` posted back would find no bucket.
+ */
+function selectionIdentifier(isin: string): string {
+  const key = classifiedMatchKey(isin);
+  return key === null ? "" : matchKeyValue(key);
 }
 
 /**
@@ -378,7 +583,7 @@ export function buildStatementImportPlan(
   selections: StatementFundSelection[],
 ): StatementImportPlan {
   const selectionByIsin = new Map(
-    selections.map((selection) => [normalizeMatchKey(selection.isin), selection]),
+    selections.map((selection) => [selectionIdentifier(selection.isin), selection]),
   );
   const included: StatementImportPlanFund[] = [];
   const ignored: StatementFundGroup[] = [];
@@ -387,7 +592,13 @@ export function buildStatementImportPlan(
     const selection = selectionByIsin.get(bucket.isin);
 
     if (!selection || selection.action === "ignore") {
-      ignored.push({ isin: bucket.isin, rows: bucket.rows, skipped: bucket.skipped });
+      ignored.push({
+        isin: bucket.isin,
+        key: bucket.key,
+        rows: bucket.rows,
+        skipped: bucket.skipped,
+        ...(bucket.securityId ? { securityId: bucket.securityId } : {}),
+      });
       continue;
     }
 
@@ -395,7 +606,7 @@ export function buildStatementImportPlan(
       const chosen = resolveChosenClaimant(bucket, selection.assetId);
       if (!chosen) {
         throw new Error(
-          `Unresolved holding choice for ISIN ${bucket.isin}: ${bucket.claimants.length} investments claim it.`,
+          `Unresolved holding choice for identifier ${bucket.isin}: ${bucket.claimants.length} investments claim it.`,
         );
       }
       included.push({
@@ -403,19 +614,35 @@ export function buildStatementImportPlan(
         isin: bucket.isin,
         kind: "matched",
         mergePlan: chosen.mergePlan,
+        ...(bucket.offeredSecurityId
+          ? { backfillSecurityId: bucket.offeredSecurityId }
+          : {}),
       });
       continue;
     }
 
     if (!selection.creation) {
-      throw new Error(`Missing creation details for ISIN ${bucket.isin}.`);
+      throw new Error(`Missing creation details for identifier ${bucket.isin}.`);
     }
+
+    // The identity a creation is born with is written only when the instrument the
+    // user is creating could carry it (#1453): an ISIN group turned into a crypto
+    // holding records no ISIN, it does not record a wrong one.
+    const born =
+      bucket.securityId &&
+      instrumentCanCarrySecurityIdKind(
+        selection.creation.instrument,
+        bucket.securityId.kind,
+      )
+        ? bucket.securityId
+        : undefined;
 
     included.push({
       creation: { ...selection.creation, isin: bucket.isin },
       isin: bucket.isin,
       kind: "new",
       rows: bucket.rows,
+      ...(born ? { securityId: born } : {}),
     });
   }
 

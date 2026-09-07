@@ -1,4 +1,5 @@
-import type { ParsedStatementRow } from "@worthline/domain";
+import type { ParsedStatementRow, SecurityId } from "@worthline/domain";
+import { classifySecurityId } from "@worthline/domain";
 import { and, asc, eq, max } from "drizzle-orm";
 
 import type { CorrectionPlan } from "./correction-plan";
@@ -325,11 +326,34 @@ function normalizeFact(
       kind: row.kind,
       pricePerUnit: row.pricePerUnit,
       units: row.units,
+      // The typed pair travels with the row (#1748): without it a plan named by
+      // its código DGS in the document would come back from the store as a bare
+      // string and route by shape instead of by what the reading declared. It is
+      // re-validated on the way through, as the reconcile parser validates its
+      // own (ADR 0107): a pair whose value is not of the kind it declares claims
+      // no key at all downstream, so the row would vanish from the routing
+      // instead of being attributed. The pair is dropped here and the raw column
+      // classified by shape, which is what every broker file already relies on.
+      ...securityIdField(row.securityId),
       ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
       ...(row.instrument === undefined ? {} : { instrument: row.instrument }),
       ...(row.name === undefined ? {} : { name: row.name }),
     },
   };
+}
+
+/**
+ * The row's identifier pair, kept only when its value validates as the kind it
+ * declares. The extraction contract can only produce a valid pair (#1747); this
+ * is the boundary that keeps a hand-edited or legacy row from carrying one that
+ * nothing can read.
+ */
+function securityIdField(securityId: SecurityId | undefined): {
+  securityId?: SecurityId;
+} {
+  if (securityId === undefined) return {};
+  const classified = classifySecurityId(securityId.value);
+  return classified?.kind === securityId.kind ? { securityId: classified } : {};
 }
 
 function assertDocument(input: AssistantProposalDocumentRef): void {

@@ -879,7 +879,19 @@ export {
   managedPortfolioMemberValues,
   reconcileManagedPortfolio,
 } from "./managed-portfolio-reconciliation";
-export { isIsinShaped } from "./matching-keys";
+export type { IdentifiedByMatchKey, MatchKeyNamespace } from "./matching-keys";
+export {
+  classifiedMatchKey,
+  instrumentsCompatible,
+  isIsinShaped,
+  matchKeyNamespace,
+  normalizeMatchName,
+  providerSymbolMatchKey,
+  rowMatchKey,
+  securityIdFromMatchKey,
+  securityIdMatchKey,
+  symbolMatchKeyVariant,
+} from "./matching-keys";
 export type { CurrencyCode, MoneyMinor } from "./money";
 export {
   addMoney,
@@ -1131,12 +1143,14 @@ export type { SecurityId, SecurityIdKind, StoredSecurityId } from "./security-id
 export {
   classifySecurityId,
   declaredSecurityId,
+  instrumentCanCarrySecurityIdKind,
   isinSecurityId,
   normalizeDgsCode,
   normalizedSecurityIdColumnValue,
   preservedSecurityId,
   SECURITY_ID_KIND_LABEL,
   SECURITY_ID_KIND_LABEL_INLINE,
+  SECURITY_ID_KINDS,
   securityIdFieldForInstrument,
   storedIsinOrNull,
   storedSecurityIdFromColumns,
@@ -1221,8 +1235,14 @@ export { getStatementBrokerAdapter, isStatementBroker } from "./statement-broker
 export type { BrokerTransactionsStatementResult } from "./statement-from-broker-transactions";
 export { statementFromBrokerTransactions } from "./statement-from-broker-transactions";
 export type {
+  StatementGuardHolding,
+  StatementIdentityGuard,
+} from "./statement-identity-guard";
+export { resolvePerHoldingStatementIdentityGuard } from "./statement-identity-guard";
+export type {
   MatchedStatementFund,
   NewStatementFund,
+  StatementCandidateInvestment,
   StatementFundClaimant,
   StatementFundGroup,
   StatementFundSelection,
@@ -1236,14 +1256,10 @@ export {
   buildStatementImportPlan,
   findStatementTypeConflict,
   findUnresolvedStatementChoice,
-  groupStatementRowsByIsin,
+  groupStatementRowsByIdentifier,
   resolveStatementImportBuckets,
+  statementClaimantAssetIds,
 } from "./statement-import-plan";
-export type { PerHoldingStatementIsinGuard, StatementIsinGuard } from "./statement-isin";
-export {
-  resolvePerHoldingStatementIsinGuard,
-  resolveStatementIsinGuard,
-} from "./statement-isin";
 export type {
   StatementAnomaly,
   StatementMergePlan,

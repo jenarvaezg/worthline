@@ -51,6 +51,15 @@ export function createStatementImportCommands(
           }
 
           if (fund.kind === "matched") {
+            // The accepted identifier offer (#1748), written where the movements
+            // are written: an import that teaches the holding its código DGS and
+            // then fails would leave an identity nobody confirmed.
+            if (fund.backfillSecurityId) {
+              await stores.assets.backfillInvestmentSecurityId(
+                assetId,
+                fund.backfillSecurityId,
+              );
+            }
             for (const input of fund.overwrites) {
               const result = await stores.operations.updateOperation(input);
               if (result) noteOperationDate(assetId, result.executedAt.slice(0, 10));

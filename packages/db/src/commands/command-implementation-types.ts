@@ -40,6 +40,7 @@ import type {
   DecimalString,
   DomainResult,
   HousingValuationAnchor,
+  SecurityId,
   ValuationCadence,
 } from "@worthline/domain";
 import type {
@@ -143,6 +144,14 @@ export interface DatedFactCommandImplementations {
           creates: CreateInvestmentOperationInput[];
           overwrites: UpdateInvestmentOperationInput[];
           deletes?: string[];
+          /**
+           * The identifier the file taught this holding, accepted by the confirm
+           * (#1748). Written INSIDE the import's transaction: the offer and the
+           * movements it came with either both land or neither does, as ADR 0055's
+           * atomicity requires. Only ever set for a holding whose identifier hole
+           * is empty, and never on a `new` fund (its identity is born with it).
+           */
+          backfillSecurityId?: SecurityId;
         }
       | {
           kind: "new";

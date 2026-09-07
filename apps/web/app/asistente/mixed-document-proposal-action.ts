@@ -11,8 +11,6 @@ import type { StatementImportCommand } from "@worthline/db";
 import {
   buildStatementImportPlan,
   findStatementTypeConflict,
-  isIsinShaped,
-  isinSecurityId,
   resolveStatementImportBuckets,
 } from "@worthline/domain";
 
@@ -63,7 +61,7 @@ export async function confirmMixedDocumentProposalAction(
         if (!preview.ok) return { status: "error", message: preview.message };
         const buckets = resolveStatementImportBuckets(
           statement,
-          await readPortfolioInvestments(readPort),
+          await readPortfolioInvestments(readPort, statement),
         );
         if (findStatementTypeConflict(buckets))
           return {
@@ -109,6 +107,11 @@ export async function confirmMixedDocumentProposalAction(
                 creates,
                 deletes: fund.mergePlan.toDelete.map((row) => row.id),
                 kind: "matched" as const,
+                // The accepted identifier offer (#1748), same rule as the other
+                // two statement doors: it rides with the confirm.
+                ...(fund.backfillSecurityId
+                  ? { backfillSecurityId: fund.backfillSecurityId }
+                  : {}),
                 overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
                   currency: row.currency,
                   feesMinor: row.feesMinor,
@@ -125,9 +128,7 @@ export async function confirmMixedDocumentProposalAction(
               asset: {
                 currency: fund.creation.currency,
                 id: assetId,
-                ...(isIsinShaped(fund.isin)
-                  ? { securityId: isinSecurityId(fund.isin) }
-                  : {}),
+                ...(fund.securityId ? { securityId: fund.securityId } : {}),
                 name: fund.creation.name,
                 ownership: fund.creation.ownership,
                 ...(fund.creation.instrument

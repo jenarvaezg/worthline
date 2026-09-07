@@ -342,6 +342,20 @@ describe("parseStatementImportProposal (#933)", () => {
     expect(parseStatementImportProposal(statementImportOutput({ funds }))).not.toBeNull();
   });
 
+  it("re-hydrates the offered identifier's kind, and drops one it cannot name (#1748)", () => {
+    const offered = [fundPreviewRow({ offeredIdentifierKind: "dgs" })];
+    const parsed = parseStatementImportProposal(
+      statementImportOutput({ funds: offered }),
+    );
+    expect(parsed?.funds[0]).toMatchObject({ offeredIdentifierKind: "dgs" });
+
+    // A kind no register names would promise a fill nobody can honour.
+    const lying = [fundPreviewRow({ offeredIdentifierKind: "cusip" })];
+    expect(
+      parseStatementImportProposal(statementImportOutput({ funds: lying }))?.funds[0],
+    ).not.toHaveProperty("offeredIdentifierKind");
+  });
+
   it("refuses a row whose position impact has no flags array", () => {
     const funds = [
       fundPreviewRow({

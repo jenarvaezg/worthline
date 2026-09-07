@@ -7,6 +7,7 @@ import type {
   ExtractedDocument,
   ExtractedTransaction,
 } from "./attachment-extraction-contract";
+import { extractedSecurityId } from "./attachment-extraction-primitives";
 
 /**
  * The document-only frontier of `propose_statement_import` for a broker's transactions
@@ -31,7 +32,7 @@ export type StatementFromDocumentResult =
 
 export type StatementFromDocumentError =
   | "statement_document_required"
-  | "statement_rows_without_isin"
+  | "statement_rows_without_identifier"
   | "statement_currency_unsupported";
 
 /**
@@ -98,7 +99,8 @@ export function brokerTransactionsInContext(
 
 /** How a transaction reads back to the model inside a refusal. */
 function describeTransaction(transaction: ExtractedTransaction): string {
-  return `${transaction.date} ${transaction.name ?? transaction.isin ?? "(sin nombre)"}`;
+  const identifier = transaction.isin ?? transaction.dgsCode;
+  return `${transaction.date} ${transaction.name ?? identifier ?? "(sin nombre)"}`;
 }
 
 /**
@@ -108,9 +110,10 @@ function describeTransaction(transaction: ExtractedTransaction): string {
  * Two refusals, both all-or-nothing on purpose (ADR 0010 — a statement import writes
  * every row or none):
  *
- * - **a row with no ISIN**. The import routes by ISIN and the planner DROPS a row that
- *   has none, so letting the call through would import nine trades out of eleven and say
- *   nothing. Naming the rows is what makes it a route instead of a wall.
+ * - **a row with no identifier**. The import routes by typed identifier — an ISIN or a
+ *   plan's código DGS (#1748) — and the planner DROPS a row that has neither, so letting
+ *   the call through would import nine trades out of eleven and say nothing. Naming the
+ *   rows is what makes it a route instead of a wall.
  * - **a currency the app cannot capture**. Operations are stored in a closed currency
  *   vocabulary (#1401); coercing anything else to euros is the exact bug that vocabulary
  *   exists to prevent.
@@ -118,17 +121,17 @@ function describeTransaction(transaction: ExtractedTransaction): string {
 export function statementFromTransactionsDocument(
   document: ExtractedBrokerTransactionsDocument,
 ): StatementFromDocumentResult {
-  const withoutIsin = document.transactions.filter(
-    (transaction) => transaction.isin === undefined,
+  const withoutIdentifier = document.transactions.filter(
+    (transaction) => extractedSecurityId(transaction) === null,
   );
-  if (withoutIsin.length > 0) {
+  if (withoutIdentifier.length > 0) {
     return {
-      error: "statement_rows_without_isin",
+      error: "statement_rows_without_identifier",
       message:
-        `Estas operaciones del documento no traen ISIN, y la importación de extracto rutea ` +
-        `por ISIN: ${withoutIsin.map(describeTransaction).join(", ")}. Si las importara, esas filas se ` +
-        "perderían sin avisar. Súbeme el extracto con la columna ISIN, o anótalas una a una " +
-        "desde su justificante.",
+        `Estas operaciones del documento no traen identificador —ISIN o código DGS del plan—, ` +
+        `y la importación de extracto rutea por él: ${withoutIdentifier.map(describeTransaction).join(", ")}. ` +
+        "Si las importara, esas filas se perderían sin avisar. Súbeme el extracto con la columna " +
+        "del identificador, o anótalas una a una desde su justificante.",
       ok: false,
     };
   }
@@ -142,6 +145,7 @@ export function statementFromTransactionsDocument(
       unsupported.push(transaction.currency);
       continue;
     }
+    const securityId = extractedSecurityId(transaction);
     rows.push({
       currency: transaction.currency,
       dateKey: transaction.date,
@@ -149,6 +153,10 @@ export function statementFromTransactionsDocument(
       isin: transaction.isin ?? null,
       kind: transaction.kind,
       pricePerUnit: transaction.pricePerUnit,
+      // The row states its identifier as the TYPED pair the reading validated
+      // (#1748): the router must not have to re-guess which register a
+      // five-character code belongs to.
+      ...(securityId ? { securityId } : {}),
       units: transaction.units,
       ...(transaction.name === undefined ? {} : { name: transaction.name }),
     });
