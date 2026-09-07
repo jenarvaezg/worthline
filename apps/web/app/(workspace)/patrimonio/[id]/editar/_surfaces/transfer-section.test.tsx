@@ -12,6 +12,7 @@
  * the destination's name obligatory is the server.
  */
 
+import type { Instrument } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -47,6 +48,7 @@ function render(
   over: {
     destinations?: TransferDestinationOption[];
     formError?: Parameters<typeof TransferSection>[0]["formError"];
+    instrument?: Instrument;
     readOnly?: boolean;
   } = {},
 ) {
@@ -55,7 +57,7 @@ function render(
       currentUrl="/patrimonio/h-origen/editar"
       destinations={over.destinations ?? DESTINATIONS}
       formError={over.formError ?? null}
-      origin={ORIGIN}
+      origin={over.instrument ? { ...ORIGIN, instrument: over.instrument } : ORIGIN}
       originName="Indexado PP"
       readOnly={over.readOnly ?? false}
       recordAction={noop}
@@ -117,6 +119,57 @@ describe("TransferSection", () => {
     expect(html).toMatch(/name="reading" checked="" value="units"/);
     expect(html).toContain('name="originUnits"');
     expect(html).toContain('name="destinationUnits"');
+  });
+
+  test("the new destination is asked for the identifier ITS instrument admits (#1772)", () => {
+    // A plan has no ISIN and never will (#1489): the destination inherits the origin's
+    // instrument, so the box asks the plan's own question, with the plan's example.
+    const plan = render({ instrument: "pension_plan" });
+
+    // The VISIBLE label, not the accessible name: asserting the latter is how the
+    // fund's own wording regressed unnoticed once.
+    expect(plan).toContain("Código DGS del plan <small>· del destino (opcional)</small>");
+    expect(plan).toContain('name="newDestinationSecurityId"');
+    expect(plan).toContain('placeholder="N5394"');
+    expect(plan).not.toContain("ISIN");
+    // The trap of the paper travels with the field, not just with the rejection: the
+    // extracto prints the FONDO's code next to the plan's, and this is the fourth
+    // surface that has to say so (`security-id-field-view.ts`).
+    expect(plan).toContain("F####");
+  });
+
+  test("a fund still asks for an ISIN, and still says whose it is", () => {
+    const fund = render({ instrument: "fund" });
+
+    // «Conducta de hoy, sin cambios» (aceptación de #1772): the box said «del destino»
+    // before the field was opened per instrument, and it still does.
+    expect(fund).toContain("ISIN <small>· del destino (opcional)</small>");
+    expect(fund).toContain('name="newDestinationSecurityId"');
+    expect(fund).toContain('placeholder="IE00B52MJY50"');
+    expect(fund).toContain("un extracto de tu bróker");
+    expect(fund).not.toContain("Código DGS");
+  });
+
+  test("the identifier box is named by what a sighted user reads on it", () => {
+    // WCAG 2.5.3: an `aria-label` that renames the control makes the announced name
+    // and the printed one disagree. Same shape as the ficha's own identity box, whose
+    // `aria-label` is its `fichaLabel` verbatim.
+    for (const [instrument, label] of [
+      ["pension_plan", "Código DGS del plan"],
+      ["fund", "ISIN"],
+    ] as const) {
+      const box = render({ instrument }).match(
+        /<input[^>]*name="newDestinationSecurityId"[^>]*\/>/,
+      )?.[0];
+
+      expect(box).toContain(`aria-label="${label}"`);
+    }
+  });
+
+  test("an instrument with no identifier renders no identifier box at all", () => {
+    expect(render({ instrument: "crypto" })).not.toContain(
+      'name="newDestinationSecurityId"',
+    );
   });
 
   test("a rejected submit round-trips its message and its typed values", () => {

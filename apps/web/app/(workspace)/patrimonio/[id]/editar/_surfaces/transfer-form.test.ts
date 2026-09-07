@@ -12,12 +12,15 @@ import type { InvestmentOperation, ManualAsset } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 import {
   NEW_DESTINATION,
+  newDestinationSecurityIdField,
+  parseNewDestinationSecurityId,
   parseTransferForm,
   previewTransfer,
   readTransferFormValues,
   type SubmissionKeyRef,
   stampTransferSubmission,
   type TransferFormValues,
+  transferDestinationInstrument,
   transferDestinationOptions,
 } from "./transfer-form";
 
@@ -52,7 +55,7 @@ function values(over: Partial<TransferFormValues> = {}): TransferFormValues {
     destinationPricePerUnit: "14,50",
     destinationUnits: "",
     executedAt: "2026-08-14",
-    newDestinationIsin: "",
+    newDestinationSecurityId: "",
     newDestinationName: "",
     originPricePerUnit: "12,00",
     originUnits: "",
@@ -82,7 +85,7 @@ describe("readTransferFormValues", () => {
     const formData = new FormData();
     formData.set("destinationAssetId", NEW_DESTINATION);
     formData.set("newDestinationName", "  Value PP  ");
-    formData.set("newDestinationIsin", " es0173894017 ");
+    formData.set("newDestinationSecurityId", " es0173894017 ");
     formData.set("executedAt", "2026-08-14");
     formData.set("portion", "all");
     formData.set("amount", "739,22");
@@ -100,7 +103,7 @@ describe("readTransferFormValues", () => {
       destinationPricePerUnit: "14,50",
       destinationUnits: "50,980690",
       executedAt: "2026-08-14",
-      newDestinationIsin: "es0173894017",
+      newDestinationSecurityId: "es0173894017",
       newDestinationName: "Value PP",
       originPricePerUnit: "12,00",
       originUnits: "61,601667",
@@ -117,7 +120,7 @@ describe("readTransferFormValues", () => {
       destinationPricePerUnit: "",
       destinationUnits: "",
       executedAt: "",
-      newDestinationIsin: "",
+      newDestinationSecurityId: "",
       newDestinationName: "",
       originPricePerUnit: "",
       originUnits: "",
@@ -167,32 +170,21 @@ describe("parseTransferForm", () => {
     expect(parsed.ok && "destinationAmountMinor" in parsed.command).toBe(false);
   });
 
-  test("a new destination carries its name, trimmed, and its normalized ISIN", () => {
+  test("a new destination carries its name, trimmed, and nothing else", () => {
     const parsed = parseTransferForm(
       values({
         destinationAssetId: NEW_DESTINATION,
-        newDestinationIsin: "es0173894017",
-        newDestinationName: "Cartera Permanente PP",
+        newDestinationSecurityId: "es0173894017",
+        newDestinationName: "  Cartera Permanente PP  ",
       }),
       TODAY,
     );
 
+    // The identifier is NOT here: which class it must validate as depends on the
+    // instrument the destination inherits, and only the store knows it (#1772).
     expect(parsed.ok && parsed.command.destination).toEqual({
-      isin: "ES0173894017",
       kind: "new",
       name: "Cartera Permanente PP",
-    });
-  });
-
-  test("a new destination with no ISIN is allowed — a pension plan often has none", () => {
-    const parsed = parseTransferForm(
-      values({ destinationAssetId: NEW_DESTINATION, newDestinationName: "Value PP" }),
-      TODAY,
-    );
-
-    expect(parsed.ok && parsed.command.destination).toEqual({
-      kind: "new",
-      name: "Value PP",
     });
   });
 
@@ -202,15 +194,6 @@ describe("parseTransferForm", () => {
       "a new destination with no name",
       { destinationAssetId: NEW_DESTINATION, newDestinationName: "  " },
       "nombre",
-    ],
-    [
-      "an ISIN that fails its check digit",
-      {
-        destinationAssetId: NEW_DESTINATION,
-        newDestinationIsin: "ES0173894013",
-        newDestinationName: "Value PP",
-      },
-      "ISIN",
     ],
     ["a blank importe", { amount: "" }, "importe"],
     ["a zero importe", { amount: "0" }, "importe"],
@@ -222,6 +205,93 @@ describe("parseTransferForm", () => {
 
     expect(parsed.ok).toBe(false);
     expect(!parsed.ok && parsed.error).toContain(expected);
+  });
+});
+
+describe("the new destination's identity — the instrument it inherits decides (#1772)", () => {
+  const newDestination = { kind: "new" as const, name: "Value PP" };
+
+  test("a plan is asked for its DGS code, and the code is what gets stored", () => {
+    expect(newDestinationSecurityIdField({ instrument: "pension_plan" })).toEqual({
+      kind: "dgs",
+      label: "Código DGS",
+    });
+    expect(
+      parseNewDestinationSecurityId({
+        destination: newDestination,
+        origin: { instrument: "pension_plan" },
+        values: values({ newDestinationSecurityId: "n-5394" }),
+      }),
+    ).toEqual({ ok: true, securityId: { kind: "dgs", value: "N5394" } });
+  });
+
+  test("an ISIN typed into a plan's box is refused — the state #1741 forbids", () => {
+    const parsed = parseNewDestinationSecurityId({
+      destination: newDestination,
+      origin: { instrument: "pension_plan" },
+      values: values({ newDestinationSecurityId: "IE00B52MJY50" }),
+    });
+
+    expect(parsed.ok).toBe(false);
+    expect(!parsed.ok && parsed.error).toContain("código DGS");
+  });
+
+  test("the fondo's code, printed next to the plan's, is refused by naming it", () => {
+    const parsed = parseNewDestinationSecurityId({
+      destination: newDestination,
+      origin: { instrument: "pension_plan" },
+      values: values({ newDestinationSecurityId: "F2244" }),
+    });
+
+    expect(!parsed.ok && parsed.error).toContain("fondo de pensiones");
+  });
+
+  test("a fund keeps today's question, and an origin with no instrument reads as one", () => {
+    expect(newDestinationSecurityIdField({ instrument: "fund" })).toEqual({
+      kind: "isin",
+      label: "ISIN",
+    });
+    expect(transferDestinationInstrument({})).toBe("fund");
+    expect(
+      parseNewDestinationSecurityId({
+        destination: newDestination,
+        origin: {},
+        values: values({ newDestinationSecurityId: "es0173894017" }),
+      }),
+    ).toEqual({ ok: true, securityId: { kind: "isin", value: "ES0173894017" } });
+  });
+
+  test("an instrument with no identifier at all renders no field and reads none", () => {
+    expect(newDestinationSecurityIdField({ instrument: "crypto" })).toBeNull();
+    expect(
+      parseNewDestinationSecurityId({
+        destination: newDestination,
+        origin: { instrument: "crypto" },
+        values: values({ newDestinationSecurityId: "IE00B52MJY50" }),
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("blank stays blank — «identificado, sin cotizar» is not the only legitimate state", () => {
+    expect(
+      parseNewDestinationSecurityId({
+        destination: newDestination,
+        origin: { instrument: "pension_plan" },
+        values: values(),
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("a value abandoned in the hidden pane is never read for an existing destination", () => {
+    // The pane is hidden with CSS, not removed, so what was typed and abandoned is
+    // still posted. Judging it would refuse a traspaso nobody got wrong.
+    expect(
+      parseNewDestinationSecurityId({
+        destination: { assetId: "h-destination", kind: "existing" },
+        origin: { instrument: "pension_plan" },
+        values: values({ newDestinationSecurityId: "IE00B52MJY50" }),
+      }),
+    ).toEqual({ ok: true });
   });
 });
 

@@ -16,6 +16,7 @@
 
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
+import type { Instrument } from "@worthline/domain";
 import { derivePosition, multiplyToMinor } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
@@ -31,7 +32,13 @@ const FICHA = `/patrimonio/${ORIGIN}/editar`;
  * (1.000 € of cost), worth 12 € the day the capital leaves, and a destination plan
  * quoted at 14,50 € that day.
  */
-async function seed({ withDestination = true } = {}): Promise<WorthlineStore> {
+async function seed({
+  instrument = "pension_plan",
+  withDestination = true,
+}: {
+  instrument?: Instrument;
+  withDestination?: boolean;
+} = {}): Promise<WorthlineStore> {
   const store = await createInMemoryStore();
   await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jorge" }],
@@ -40,7 +47,7 @@ async function seed({ withDestination = true } = {}): Promise<WorthlineStore> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: ORIGIN,
-    instrument: "pension_plan",
+    instrument,
     liquidityTier: "term-locked",
     name: "Indexado PP",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -219,7 +226,9 @@ describe("recordTransferAction — a destination created on the way in", () => {
     const redirect = await submit(
       transferForm({
         destinationAssetId: "__new__",
-        newDestinationIsin: "ES0173894017",
+        // The origin is a plan, so the destination it is traspasado to is one too, and
+        // its identifier is the DGS code — never an ISIN (#1772).
+        newDestinationSecurityId: "n-5394",
         newDestinationName: "Value PP",
       }),
       store,
@@ -237,7 +246,7 @@ describe("recordTransferAction — a destination created on the way in", () => {
 
     const investment = await store.assets.readInvestmentAssetById(created?.id ?? "");
     expect(investment).toMatchObject({
-      securityId: { kind: "isin", value: "ES0173894017" },
+      securityId: { kind: "dgs", value: "N5394" },
       // Nobody will quote a hand-created plan, so the VL just declared is its price
       // — otherwise the holding would land worth 0 €.
       manualPricePerUnit: "14.50",
@@ -245,6 +254,80 @@ describe("recordTransferAction — a destination created on the way in", () => {
 
     const [incoming] = await store.operations.readOperations(created?.id ?? "");
     expect(incoming).toMatchObject({ kind: "transfer_in", units: "50.98069" });
+  });
+
+  test("an ISIN typed where a plan's code belongs is refused, and creates nothing", async () => {
+    const store = await seed({ withDestination: false });
+    const assetsBefore = (await store.assets.readAssets()).length;
+
+    const redirect = readable(
+      await submit(
+        transferForm({
+          destinationAssetId: "__new__",
+          newDestinationSecurityId: "ES0173894017",
+          newDestinationName: "Value PP",
+        }),
+        store,
+      ),
+    );
+
+    // The fourth state #1746 declared impossible in every interactive write — a plan
+    // whose identifier is stored as an ISIN — is refused at the door rather than born
+    // and diagnosed on the ficha afterwards (invariante 3 del PRD #1741).
+    expect(redirect).toContain("error=");
+    expect(redirect).toContain("código DGS");
+    expect((await store.assets.readAssets()).length).toBe(assetsBefore);
+  });
+
+  test("the plan's own trap — the fondo's F#### code — is refused by naming it", async () => {
+    const store = await seed({ withDestination: false });
+
+    const redirect = readable(
+      await submit(
+        transferForm({
+          destinationAssetId: "__new__",
+          newDestinationSecurityId: "F2244",
+          newDestinationName: "Value PP",
+        }),
+        store,
+      ),
+    );
+
+    expect(redirect).toContain("fondo de pensiones");
+  });
+
+  test("a fund traspasado to a new fund is still asked for an ISIN", async () => {
+    const store = await seed({ instrument: "fund", withDestination: false });
+
+    await submit(
+      transferForm({
+        destinationAssetId: "__new__",
+        newDestinationSecurityId: "es0173894017",
+        newDestinationName: "Value FI",
+      }),
+      store,
+    );
+
+    const created = (await store.assets.readAssets()).find(
+      (asset) => asset.name === "Value FI",
+    );
+    expect(await store.assets.readInvestmentAssetById(created?.id ?? "")).toMatchObject({
+      securityId: { kind: "isin", value: "ES0173894017" },
+    });
+  });
+
+  test("an identifier abandoned in the hidden pane never refuses a traspaso to an existing holding", async () => {
+    const store = await seed();
+
+    // The «crear destino» pane is hidden with CSS, not removed: what was typed in it
+    // and then abandoned is still posted, and reading it here would refuse a
+    // perfectly good traspaso over a value nobody meant to submit.
+    const redirect = await submit(
+      transferForm({ newDestinationSecurityId: "ES0173894017" }),
+      store,
+    );
+
+    expect(redirect).toContain("ok=transfer_recorded");
   });
 
   test("a replayed submit does not create a second holding", async () => {

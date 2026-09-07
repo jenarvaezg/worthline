@@ -281,6 +281,9 @@ export async function loadInvestmentSurface(
               assetId: id,
               currency: asset.currency,
               operations,
+              // Lo que ES el origen: el destino que se cree hereda su instrumento, y de
+              // él sale QUÉ identificador pide el panel de «crear destino» (#1772).
+              ...(asset.instrument ? { instrument: asset.instrument } : {}),
               ...(position?.currentPricePerUnit
                 ? { pricePerUnit: position.currentPricePerUnit }
                 : {}),
