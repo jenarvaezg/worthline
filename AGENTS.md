@@ -17,6 +17,13 @@ network checks can report false auth/connectivity failures here.
 
 The repo uses the default Matt Pocock skill label vocabulary as GitHub labels. See `docs/agents/triage-labels.md`.
 
+### Subagents
+
+Which subagents apply here, which are vetoed and why, what briefing they get
+(`claim` + `evidence`, never the implementer's reasoning), and which gate they
+close with. See `docs/agents/subagents.md`. Repo-specific agents live in
+`.claude/agents/`, the one part of `.claude/` that git tracks.
+
 ### Domain docs
 
 This is a single-context repo with domain docs rooted at `CONTEXT.md` and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
