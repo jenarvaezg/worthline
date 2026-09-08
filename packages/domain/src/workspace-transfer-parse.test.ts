@@ -1341,6 +1341,72 @@ describe("parseWorkspaceExport — FireScopeConfig N3 fields", () => {
 });
 
 describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", () => {
+  const income = {
+    id: "pension",
+    holdingId: null,
+    nature: "passive" as const,
+    amountBasis: "real" as const,
+    assumedContributionThrough: "2030-09-01",
+    provenance: "official_simulation" as const,
+    provenanceAsOf: "2026-08-18",
+    label: "Pensión pública",
+    amountMinor: 150000,
+    cadence: "monthly" as const,
+    startISO: "2030-09-01",
+    endISO: null,
+    exclusions: [],
+  };
+
+  test("an income without an asset transfers its declaration and provenance (#1672)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [income];
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.payoutSchedules[0]).toMatchObject(income);
+  });
+
+  test("old documents leave income declarations null, unlike the live DB migration", () => {
+    const document = makeDocument((doc) => {
+      doc.payoutSchedules = [{ ...income, holdingId: "a1" }];
+      for (const field of [
+        "nature",
+        "amountBasis",
+        "assumedContributionThrough",
+        "provenance",
+        "provenanceAsOf",
+      ]) {
+        delete (doc.payoutSchedules[0] as unknown as Record<string, unknown>)[field];
+      }
+    });
+    const result = parseWorkspaceExport(document);
+    expect(result.ok).toBe(true);
+    if (result.ok)
+      expect(result.value.payoutSchedules[0]).toMatchObject({
+        holdingId: "a1",
+        nature: null,
+        amountBasis: null,
+        assumedContributionThrough: null,
+        provenance: null,
+        provenanceAsOf: null,
+      });
+  });
+
+  test.each([
+    ["nature", "pension"],
+    ["amountBasis", "inflation_adjusted"],
+    ["provenance", "government"],
+    ["assumedContributionThrough", "2030-02-30"],
+    ["provenanceAsOf", "2026-8-18"],
+  ])("rejects invalid %s without silently discarding it", (field, value) => {
+    const document = makeDocument((doc) => {
+      doc.payoutSchedules = [{ ...income, holdingId: "a1" }];
+      (doc.payoutSchedules[0] as unknown as Record<string, unknown>)[field] = value;
+    });
+    expect(parseWorkspaceExport(document).ok).toBe(false);
+  });
+
   test("rejects a payout whose holdingId is not an exported asset", () => {
     expectRejection(
       makeDocument((doc) => {
@@ -1368,6 +1434,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "ghost",
             label: "Alquiler",
@@ -1400,6 +1471,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "s9",
             holdingId: "a1",
             label: "X",
@@ -1423,6 +1499,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
         ];
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",
@@ -1446,6 +1527,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",
@@ -1468,6 +1554,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",
@@ -1493,6 +1584,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",
@@ -1520,6 +1616,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",
@@ -1550,6 +1651,11 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
       makeDocument((doc) => {
         doc.payoutSchedules = [
           {
+            nature: "passive",
+            amountBasis: "real",
+            assumedContributionThrough: null,
+            provenance: null,
+            provenanceAsOf: null,
             id: "sch1",
             holdingId: "a1",
             label: "Alquiler",

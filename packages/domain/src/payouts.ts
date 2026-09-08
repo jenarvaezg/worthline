@@ -82,10 +82,23 @@ export interface Payout {
   note?: string;
 }
 
-/** A declared fixed recurrence. Its occurrences are derived, never stored. */
-export interface PayoutSchedule {
+export type IncomeNature = "passive" | "work";
+export type IncomeAmountBasis = "real" | "nominal";
+export type IncomeProvenance = "official_simulation" | "user_estimate";
+
+/** A declared fixed income, optionally linked to its generating asset (#1672). */
+export interface Income {
   id: string;
-  holdingId: string;
+  holdingId: string | null;
+  /** Undeclared income never enters a figure. Work is not passive income. */
+  nature: IncomeNature | null;
+  /** Real means euros of today; nominal amounts never stand in for real ones. */
+  amountBasis: IncomeAmountBasis | null;
+  /** The date through which the declaration assumes continued contributions. */
+  assumedContributionThrough: string | null;
+  provenance: IncomeProvenance | null;
+  /** The declaration's cut-off date, never the date it was entered. */
+  provenanceAsOf: string | null;
   label: string;
   amountMinor: number;
   /**
@@ -135,10 +148,30 @@ export interface PayoutSchedule {
   postMandatoryTermPolicy?: PostMandatoryTermPolicy | null;
 }
 
+/** Compatibility vocabulary for consumers of the single income entity. */
+export type PayoutSchedule = Income;
+
+export type IncomeExclusionReason =
+  | "missing_nature"
+  | "work_income"
+  | "missing_amount_basis"
+  | "nominal_amount";
+
+/** Why a declaration cannot feed passive figures, shared with their explanations. */
+export function incomeExclusionReason(
+  income: Pick<Income, "nature" | "amountBasis">,
+): IncomeExclusionReason | null {
+  if (income.nature == null) return "missing_nature";
+  if (income.nature === "work") return "work_income";
+  if (income.amountBasis == null) return "missing_amount_basis";
+  if (income.amountBasis === "nominal") return "nominal_amount";
+  return null;
+}
+
 /** A single occurrence derived from a schedule. */
 export interface DerivedPayout {
   scheduleId: string;
-  holdingId: string;
+  holdingId: string | null;
   label: string;
   dateISO: string;
   amountMinor: number;
@@ -256,11 +289,14 @@ export function collectHoldingPayouts(
     }
   }
   for (const schedule of schedules) {
+    // Standalone income has no holding return to attribute. Its future consumption
+    // belongs to the dated sustainable-spending card, never a fabricated holding.
+    if (schedule.holdingId === null || incomeExclusionReason(schedule) !== null) continue;
     // deriveScheduleOccurrences already caps at today and honors end/exclusions.
     // Today's expense declaration rides every occurrence, past ones included —
     // the same retroactivity the schedule's exclusions already have (#1463).
     for (const occurrence of deriveScheduleOccurrences(schedule, todayISO)) {
-      push(occurrence.holdingId, {
+      push(schedule.holdingId, {
         dateISO: occurrence.dateISO,
         amountMinor: occurrence.amountMinor,
         ...(schedule.expensesMinor == null

@@ -16,7 +16,7 @@ function columnNames(rows: unknown): string[] {
 }
 
 describe("schema migration v42 (payouts)", () => {
-  test("creates the payouts and payout_schedules tables", async () => {
+  test("creates payouts and the current income declaration table", async () => {
     const client = await seedV41();
 
     await migrate(client);
@@ -34,34 +34,34 @@ describe("schema migration v42 (payouts)", () => {
     ]);
 
     const scheduleCols = columnNames(
-      (await client.execute("PRAGMA table_info(payout_schedules)")).rows,
+      (await client.execute("PRAGMA table_info(incomes)")).rows,
     );
     expect(scheduleCols).toEqual([
       "id",
       "holding_id",
+      "nature",
+      "amount_basis",
+      "assumed_contribution_through",
+      "provenance",
+      "provenance_as_of",
       "label",
       "amount_minor",
+      "expenses_minor",
       "cadence",
       "start_date",
       "end_date",
-      "exclusions_json",
-      "created_at",
-      // v57 (#1448) appends it here on a migrated DB; a fresh one has it beside
-      // `amount_minor`, where schema.ts declares it. SQLite's ALTER cannot insert
-      // mid-table and nothing reads a column by position.
-      "expenses_minor",
-      // v66 (#1521), appended for the same reason: the lease terms of a declared
-      // rent — what its end date means and what happens after it.
       "lease_regime",
       "rent_revision",
       "rent_revision_reference",
       "post_mandatory_term_policy",
+      "exclusions_json",
+      "created_at",
     ]);
 
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(70);
+    expect(SCHEMA_VERSION).toBe(71);
   });
 
   test("fresh schemaSql includes both payout tables", async () => {
@@ -73,7 +73,7 @@ describe("schema migration v42 (payouts)", () => {
       columnNames((await client.execute("PRAGMA table_info(payouts)")).rows),
     ).toContain("amount_minor");
     expect(
-      columnNames((await client.execute("PRAGMA table_info(payout_schedules)")).rows),
+      columnNames((await client.execute("PRAGMA table_info(incomes)")).rows),
     ).toContain("exclusions_json");
   });
 });

@@ -44,6 +44,11 @@ function schedule(
   over: Partial<PayoutSchedule> = {},
 ): PayoutSchedule {
   return {
+    nature: "passive",
+    amountBasis: "real",
+    assumedContributionThrough: null,
+    provenance: null,
+    provenanceAsOf: null,
     amountMinor: 100_000,
     cadence: "monthly" as PayoutCadence,
     endISO: null,
@@ -100,6 +105,38 @@ describe("isScheduleLiveOn", () => {
 });
 
 describe("deriveRentRealReturns", () => {
+  it.each([
+    [{ nature: null }, "missing_nature"],
+    [{ nature: "work" }, "work_income"],
+    [{ amountBasis: null }, "missing_amount_basis"],
+    [{ amountBasis: "nominal" }, "nominal_amount"],
+  ] as const)("refuses the whole property's yield for %j", (declaration, reason) => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 20_000_000)],
+      baseCurrency: EUR,
+      schedules: [
+        schedule("known", "piso", { expensesMinor: 25_000 }),
+        schedule("unknown", "piso", { expensesMinor: 0, ...declaration }),
+      ],
+      todayISO: TODAY,
+    });
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices).toEqual([
+      expect.objectContaining({ assetId: "piso", reason }),
+    ]);
+  });
+
+  it("a standalone income substitutes no holding's yield", () => {
+    const result = deriveRentRealReturns({
+      assets: [flat("piso", 20_000_000)],
+      baseCurrency: EUR,
+      schedules: [schedule("pension", "piso", { holdingId: null, expensesMinor: 0 })],
+      todayISO: TODAY,
+    });
+    expect(result.byAssetId.size).toBe(0);
+    expect(result.notices).toEqual([]);
+  });
+
   it("net rent over value replaces the tier default", () => {
     // 1.000 €/mes rent, 250 €/mes of costs, on a 200.000 € flat → 9.000 €/año → 4,5 %.
     const result = deriveRentRealReturns({

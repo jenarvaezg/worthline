@@ -39,6 +39,11 @@ function schedule(
   return {
     label: "Alquiler",
     amountMinor: 90_000,
+    nature: "passive",
+    amountBasis: "real",
+    assumedContributionThrough: null,
+    provenance: null,
+    provenanceAsOf: null,
     cadence: "monthly",
     startISO: "2025-01-01",
     endISO: null,
@@ -48,6 +53,42 @@ function schedule(
 }
 
 describe("buildHoldingPayouts", () => {
+  test.each([
+    [{ nature: null }, "missing_nature"],
+    [{ nature: "work" }, "work_income"],
+    [{ amountBasis: null }, "missing_amount_basis"],
+    [{ amountBasis: "nominal" }, "nominal_amount"],
+  ] as const)("explains excluded declarations %j without adding income", async (declaration, reason) => {
+    const result = await buildHoldingPayouts({
+      store: holdingStore(
+        {},
+        {
+          h1: [
+            schedule({
+              id: "s1",
+              holdingId: "h1",
+              ...declaration,
+              provenance: "official_simulation",
+              provenanceAsOf: "2026-06-01",
+              assumedContributionThrough: "2030-11-30",
+            }),
+          ],
+        },
+      ),
+      assetId: "h1",
+      currency: "EUR",
+      todayISO: TODAY,
+    });
+    expect(result.block!.trailing12m.net.amountMinor).toBe(0);
+    expect(result.block!.schedules[0]).toMatchObject({
+      ...declaration,
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-06-01",
+      assumedContributionThrough: "2030-11-30",
+      exclusionReason: reason,
+    });
+  });
+
   test("returns null when the holding has neither payouts nor schedules", async () => {
     const result = await buildHoldingPayouts({
       store: holdingStore({}, {}),
@@ -109,7 +150,13 @@ describe("buildHoldingPayouts", () => {
       {
         id: derivePublicId("psc", "s1"),
         object: "payout_schedule",
+        exclusionReason: null,
         label: "Alquiler",
+        nature: "passive",
+        amountBasis: "real",
+        assumedContributionThrough: null,
+        provenance: null,
+        provenanceAsOf: null,
         cadence: "monthly",
         amount: { amountMinor: 90_000, currency: "EUR" },
         startDate: "2025-01-01",

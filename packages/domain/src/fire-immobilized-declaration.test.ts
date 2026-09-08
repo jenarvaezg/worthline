@@ -175,6 +175,11 @@ describe("what leaves the calculation is still on the page", () => {
   it("a declared rent on excluded brick is reported as withheld, never as applied", () => {
     const schedules: PayoutSchedule[] = [
       {
+        nature: "passive",
+        amountBasis: "real",
+        assumedContributionThrough: null,
+        provenance: null,
+        provenanceAsOf: null,
         amountMinor: 155_000,
         cadence: "monthly",
         endISO: null,

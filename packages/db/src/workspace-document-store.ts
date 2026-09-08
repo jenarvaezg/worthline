@@ -644,6 +644,11 @@ async function importWorkspace(
           doc.payoutSchedules.map((schedule) => ({
             id: schedule.id,
             holdingId: schedule.holdingId,
+            nature: schedule.nature ?? null,
+            amountBasis: schedule.amountBasis ?? null,
+            assumedContributionThrough: schedule.assumedContributionThrough ?? null,
+            provenance: schedule.provenance ?? null,
+            provenanceAsOf: schedule.provenanceAsOf ?? null,
             label: schedule.label,
             amountMinor: schedule.amountMinor,
             expensesMinor: schedule.expensesMinor ?? null,
@@ -1236,6 +1241,11 @@ async function buildWorkspaceExport(
     payoutSchedules: payoutScheduleRows.map((row) => ({
       id: row.id,
       holdingId: row.holdingId,
+      nature: row.nature,
+      amountBasis: row.amountBasis,
+      assumedContributionThrough: row.assumedContributionThrough,
+      provenance: row.provenance,
+      provenanceAsOf: row.provenanceAsOf,
       label: row.label,
       amountMinor: row.amountMinor,
       expensesMinor: row.expensesMinor,

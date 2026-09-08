@@ -447,20 +447,28 @@ _Avoid_: income (smells of salary and budgeting — in a net-worth app "ingreso"
 reads as an incoming transfer), flow (direction-ambiguous, collides with the
 IRR's cashflows), distribution (fund jargon — wrong for rent or interest).
 
+**Income** (renta):
+A declared fixed recurring amount, with a cadence, start, optional end and
+**exclusions** for unpaid occurrences. It can optionally name the **holding** that
+generates it; a public pension or salary needs no invented asset. Its **nature**
+says passive or work, and its **amount basis** says today's purchasing power (real)
+or money at the payment date (nominal). Undeclared nature or basis contributes to no
+figure; work income is not passive income, and a nominal amount is never read as
+real. Its **provenance** names an official simulation or a user estimate, dated by
+the information's cut-off date; its **assumed contribution through** date names how
+long that amount assumes the owner keeps contributing. Absence declares none of these
+facts. It may carry **declared expenses** and **lease terms**.
+Only past occurrences, up to today, are derived as truth; a future start is preserved
+without inventing received money. An income adds no **net worth** or **snapshot**.
+UI label: "Renta"; the holding's existing declaration surface says "Cobro recurrente".
+_Avoid_: a holding with a token value to stand for a pension; a **payout** (the dated
+attribution of money received, not the recurring declaration).
+
 **Payout schedule**:
-A declared fixed recurrence of **payouts** on one **holding** — amount, cadence,
-start, optional end. Like an **amortization plan** or an **appreciation rate**, it
-is a declared parameter that _derives_ its past occurrences as truth — no
-per-occurrence confirmation, and nothing derived beyond today: expected future
-income is forecast, the **contribution plan** family's territory, not this.
-Amending it re-derives the list live: a retroactive end date removes a dead tail
-in one edit, and an **exclusion** removes a single occurrence (an unpaid month).
-A variable amount never gets a schedule — estimating one would invent facts;
-enter those as one-off **payouts**. It may also carry **declared expenses** and, when
-its income is a rent, its **lease terms**.
-UI label: "Cobro recurrente".
-_Avoid_: recurring income, planned payout (a schedule derives past truth; a plan
-forecasts the future).
+The former name of an **income**, retained for the recurring **payout** declaration
+on a holding's Cobros surface. It is the same declaration with an optional holding
+link, never a second way to declare the same income. A variable amount stays a
+one-off **payout**; estimating its recurrence would invent facts.
 
 **Declared expenses**:
 What a **payout schedule**'s income costs its owner, per occurrence and in the

@@ -10,7 +10,7 @@
  */
 
 import type { Payout, PayoutSchedule } from "@worthline/domain";
-import { deriveScheduleOccurrences } from "@worthline/domain";
+import { deriveScheduleOccurrences, incomeExclusionReason } from "@worthline/domain";
 
 /** A payout row ready to render — a recorded one-off or a derived occurrence. */
 export interface CobroRow {
@@ -32,19 +32,24 @@ export function buildCobroRows(
   schedules: readonly PayoutSchedule[],
   todayISO: string,
 ): CobroRow[] {
-  const derived: CobroRow[] = schedules.flatMap((schedule) =>
-    deriveScheduleOccurrences(schedule, todayISO).map((occurrence) => ({
-      key: `${schedule.id}:${occurrence.dateISO}`,
-      dateISO: occurrence.dateISO,
-      amountMinor: occurrence.amountMinor,
-      kind: "derived" as const,
-      label: occurrence.label,
-      scheduleId: schedule.id,
-      ...(schedule.expensesMinor == null
-        ? {}
-        : { expensesMinor: schedule.expensesMinor }),
-    })),
-  );
+  const derived: CobroRow[] = schedules
+    .filter(
+      (schedule) =>
+        schedule.holdingId !== null && incomeExclusionReason(schedule) === null,
+    )
+    .flatMap((schedule) =>
+      deriveScheduleOccurrences(schedule, todayISO).map((occurrence) => ({
+        key: `${schedule.id}:${occurrence.dateISO}`,
+        dateISO: occurrence.dateISO,
+        amountMinor: occurrence.amountMinor,
+        kind: "derived" as const,
+        label: occurrence.label,
+        scheduleId: schedule.id,
+        ...(schedule.expensesMinor == null
+          ? {}
+          : { expensesMinor: schedule.expensesMinor }),
+      })),
+    );
   const oneOffs: CobroRow[] = payouts.map((payout) => ({
     key: `oneoff:${payout.id}`,
     dateISO: payout.dateISO,

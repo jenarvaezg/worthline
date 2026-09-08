@@ -67,7 +67,7 @@ describe("schema migration v59 (traspaso columns)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(70);
+    expect(SCHEMA_VERSION).toBe(71);
   });
 
   test("a fresh schema already has both columns", async () => {

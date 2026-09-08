@@ -47,7 +47,7 @@ import type {
   PlannedContribution,
 } from "./contribution-plan";
 import type { CostBasisGrade } from "./cost-basis-grade";
-import { asInstant } from "./dates";
+import { asInstant, isRealCalendarDay } from "./dates";
 import type { FireScopeConfig } from "./fire";
 import type { FireRetirementPlan } from "./fire-retirement-profile";
 import type { TrashExit } from "./holding-trash-exit";
@@ -64,6 +64,9 @@ import type { ManagedPortfolio } from "./managed-portfolio";
 import type { ManagedPortfolioWitness } from "./managed-portfolio-reconciliation";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type {
+  IncomeAmountBasis,
+  IncomeNature,
+  IncomeProvenance,
   LeaseRegime,
   Payout,
   PayoutCadence,
@@ -865,7 +868,19 @@ const payoutSchema = reproduces<Payout>()(
 const payoutScheduleSchema = reproduces<PayoutSchedule>()(
   z.object({
     id: nonEmptyString,
-    holdingId: nonEmptyString,
+    holdingId: nonEmptyString.nullable().default(null),
+    nature: vocabularyOf<IncomeNature>()(["passive", "work"]).nullable().default(null),
+    amountBasis: vocabularyOf<IncomeAmountBasis>()(["real", "nominal"])
+      .nullable()
+      .default(null),
+    assumedContributionThrough: nonEmptyString
+      .refine(isRealCalendarDay)
+      .nullable()
+      .default(null),
+    provenance: vocabularyOf<IncomeProvenance>()(["official_simulation", "user_estimate"])
+      .nullable()
+      .default(null),
+    provenanceAsOf: nonEmptyString.refine(isRealCalendarDay).nullable().default(null),
     label: nonEmptyString,
     amountMinor: z.number().int(),
     // Declared cost per occurrence (#1448). Null / absent = not declared, which is

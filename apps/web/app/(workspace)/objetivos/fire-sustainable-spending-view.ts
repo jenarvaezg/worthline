@@ -248,6 +248,18 @@ function rentGapClause(notices: readonly RentReturnNotice[]): string | null {
   if (reasons.has("nominal_rent_revision")) {
     clauses.push("su renta no se revisa, así que su rendimiento no es real");
   }
+  if (reasons.has("missing_nature")) {
+    clauses.push("su naturaleza está sin declarar");
+  }
+  if (reasons.has("work_income")) {
+    clauses.push("son rentas del trabajo");
+  }
+  if (reasons.has("missing_amount_basis")) {
+    clauses.push("su importe está sin declarar como real o nominal");
+  }
+  if (reasons.has("nominal_amount")) {
+    clauses.push("su importe es nominal, no está expresado en euros de hoy");
+  }
 
   if (clauses.length === 0) {
     return null;

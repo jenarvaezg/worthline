@@ -16,6 +16,7 @@ import type {
   OperationKind,
   OperationSource,
   PayoutCadence,
+  PayoutSchedule,
   PostMandatoryTermPolicy,
   PriceFreshnessState,
   PriceSource,
@@ -332,12 +333,15 @@ export const payouts = sqliteTable(
 // A declared fixed recurrence. Only the declaration is stored; occurrences are
 // derived on read (never materialized). Exclusions are a JSON array of ISO dates.
 export const payoutSchedules = sqliteTable(
-  "payout_schedules",
+  "incomes",
   {
     id: text("id").primaryKey(),
-    holdingId: text("holding_id")
-      .notNull()
-      .references(() => assets.id, { onDelete: "cascade" }),
+    holdingId: text("holding_id").references(() => assets.id, { onDelete: "cascade" }),
+    nature: text("nature").$type<PayoutSchedule["nature"]>(),
+    amountBasis: text("amount_basis").$type<PayoutSchedule["amountBasis"]>(),
+    assumedContributionThrough: text("assumed_contribution_through"),
+    provenance: text("provenance").$type<PayoutSchedule["provenance"]>(),
+    provenanceAsOf: text("provenance_as_of"),
     label: text("label").notNull(),
     amountMinor: integer("amount_minor").notNull(),
     /** Declared cost of this income, same cadence as `amount_minor`; NULL = not declared (#1448). */
@@ -358,7 +362,7 @@ export const payoutSchedules = sqliteTable(
     exclusionsJson: text("exclusions_json").notNull().default("[]"),
     createdAt: timestamp("created_at"),
   },
-  (table) => [index("payout_schedules_holding_idx").on(table.holdingId, table.id)],
+  (table) => [index("incomes_holding_idx").on(table.holdingId, table.id)],
 );
 
 export const assetOperations = sqliteTable(

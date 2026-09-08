@@ -20,7 +20,10 @@ import {
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import { projectFire } from "./fire-projection";
 import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+import { fireSustainableSpending } from "./fire-sustainable-spending";
 import type { ContributionPlan, ManualAsset, PayoutSchedule, Workspace } from "./index";
+import { scopePassiveIncome } from "./objetivos-passive-income";
+import { collectHoldingPayouts } from "./payouts";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -96,6 +99,11 @@ describe("a declared net rent resolves the rate for its own property", () => {
     expensesMinor?: number,
   ): PayoutSchedule {
     return {
+      nature: "passive",
+      amountBasis: "real",
+      assumedContributionThrough: null,
+      provenance: null,
+      provenanceAsOf: null,
       amountMinor,
       cadence: "monthly",
       endISO: null,
@@ -111,6 +119,41 @@ describe("a declared net rent resolves the rate for its own property", () => {
   // Jorge's shape, scaled: 370.000 € of rented brick beside 168.000 € of market.
   const brick = rentedFlat("piso", 37_000_000);
   const market = makeAsset("fondo", 16_800_000, "market");
+
+  it.each([
+    { nature: null },
+    { nature: "work" as const },
+    { amountBasis: null },
+    { amountBasis: "nominal" as const },
+    { holdingId: null },
+  ])("%j adds nothing to FIRE, sustainable spending or spending coverage", (declaration) => {
+    const assets = [brick, market];
+    const config = { ...BASE_CONFIG, currentAge: 63, targetRetirementAge: 68 };
+    const todayISO = "2026-08-18";
+    const schedules = [{ ...rent("piso", 155_000, 25_000), ...declaration }];
+    const baseline = calculateFireForScope(config, assets, [], workspace, "alice", 0, {
+      rents: { schedules: [], todayISO },
+    });
+    const result = calculateFireForScope(config, assets, [], workspace, "alice", 0, {
+      rents: { schedules, todayISO },
+    });
+    expect(result.context).toEqual(baseline.context);
+    expect(result.coastFireRequired).toEqual(baseline.coastFireRequired);
+    expect(result.fireAgeIfContributionsStop).toEqual(
+      baseline.fireAgeIfContributionsStop,
+    );
+    expect(result.rentReturns.netRentAnnualMinor).toBe(0);
+    expect(fireSustainableSpending(result)).toEqual(fireSustainableSpending(baseline));
+    const coverage = scopePassiveIncome({
+      holdings: assets,
+      payoutsByHolding: collectHoldingPayouts([], schedules, todayISO),
+      scopeMemberIds: new Set(["alice"]),
+      monthlySpendingMinor: config.monthlySpendingMinor,
+      todayISO,
+    });
+    expect(coverage.netMinor).toBe(0);
+    expect(coverage.coverageRatio).toBe(0);
+  });
 
   it("the housing default is what applies with no schedule in hand", () => {
     const { context } = calculateFireForScope(

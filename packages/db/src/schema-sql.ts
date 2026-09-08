@@ -194,9 +194,14 @@ CREATE TABLE \`payouts\` (
 );
 --> statement-breakpoint
 CREATE INDEX \`payouts_holding_date_idx\` ON \`payouts\` (\`holding_id\`,\`date\`,\`id\`);--> statement-breakpoint
-CREATE TABLE \`payout_schedules\` (
+CREATE TABLE \`incomes\` (
 	\`id\` text PRIMARY KEY NOT NULL,
-	\`holding_id\` text NOT NULL,
+	\`holding_id\` text,
+	\`nature\` text,
+	\`amount_basis\` text,
+	\`assumed_contribution_through\` text,
+	\`provenance\` text,
+	\`provenance_as_of\` text,
 	\`label\` text NOT NULL,
 	\`amount_minor\` integer NOT NULL,
 	\`expenses_minor\` integer,
@@ -212,7 +217,7 @@ CREATE TABLE \`payout_schedules\` (
 	FOREIGN KEY (\`holding_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX \`payout_schedules_holding_idx\` ON \`payout_schedules\` (\`holding_id\`,\`id\`);--> statement-breakpoint
+CREATE INDEX \`incomes_holding_idx\` ON \`incomes\` (\`holding_id\`,\`id\`);--> statement-breakpoint
 CREATE TABLE \`asset_price_cache\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`currency\` text NOT NULL,

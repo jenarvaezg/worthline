@@ -46,7 +46,8 @@
 
 import { isHousingAsset } from "./classification";
 import type { CurrencyCode } from "./money";
-import type { PayoutCadence, PayoutSchedule } from "./payouts";
+import type { IncomeExclusionReason, PayoutCadence, PayoutSchedule } from "./payouts";
+import { incomeExclusionReason } from "./payouts";
 import type { ManualAsset } from "./workspace-types";
 
 /** Occurrences per year for each cadence. Weekly is 52 — an approximation, named. */
@@ -175,6 +176,7 @@ export function isScheduleProjectedOn(
 
 /** Why a declared rent did NOT become a rate. Each one is shown, never swallowed. */
 export type RentReturnNoticeReason =
+  | IncomeExclusionReason
   /** Some live schedule has no `expensesMinor`: the gross would flatter, so nothing is used. */
   | "missing_expenses"
   /**
@@ -446,6 +448,7 @@ export function deriveRentRealReturns(
 
   const schedulesByHolding = new Map<string, PayoutSchedule[]>();
   for (const schedule of schedules) {
+    if (schedule.holdingId === null) continue;
     const rows = schedulesByHolding.get(schedule.holdingId);
     if (rows) {
       rows.push(schedule);
@@ -494,6 +497,22 @@ export function deriveRentRealReturns(
         grossRate: null,
         reason: "no_live_schedule",
         scheduleWindow: scheduleWindowOn(declared, todayISO),
+      });
+      continue;
+    }
+
+    // An undecided or nominal declaration cannot be silently omitted to derive a
+    // partial yield from the rest. All projected incomes must satisfy the same
+    // premise, just as every one must carry expenses under ADR 0076.
+    const excluded = projected
+      .map(incomeExclusionReason)
+      .find((reason) => reason !== null);
+    if (excluded !== undefined) {
+      notices.push({
+        assetId: asset.id,
+        assetName: asset.name,
+        grossRate: null,
+        reason: excluded,
       });
       continue;
     }

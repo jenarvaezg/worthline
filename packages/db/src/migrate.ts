@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 70;
+export const SCHEMA_VERSION = 71;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2249,6 +2249,76 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     }
 
     await writeSchemaVersion(client, 70);
+  }
+
+  if (version < 71) {
+    // #1672: one canonical declaration table, with an optional holding link.
+    // The legacy classification belongs to this migration only; new declarations
+    // leave every new field NULL. Preserve all lease terms, exclusions and timestamps.
+    const legacyColumns = (
+      await client.execute("PRAGMA table_info(payout_schedules)")
+    ).rows.map((row) => String(row.name));
+    const carry = [
+      "id",
+      "holding_id",
+      "label",
+      "amount_minor",
+      "expenses_minor",
+      "cadence",
+      "start_date",
+      "end_date",
+      "lease_regime",
+      "rent_revision",
+      "rent_revision_reference",
+      "post_mandatory_term_policy",
+      "exclusions_json",
+      "created_at",
+    ].filter((column) => legacyColumns.includes(column));
+
+    // As in v70, tolerate partial historical fixtures without parent tables. The
+    // copy/drop is atomic, and foreign-key enforcement is restored even on failure.
+    await client.execute("PRAGMA foreign_keys = OFF");
+    try {
+      await client.executeMultiple(`BEGIN;
+        CREATE TABLE IF NOT EXISTS incomes (
+          id TEXT PRIMARY KEY NOT NULL,
+          holding_id TEXT REFERENCES assets(id) ON DELETE CASCADE,
+          nature TEXT,
+          amount_basis TEXT,
+          assumed_contribution_through TEXT,
+          provenance TEXT,
+          provenance_as_of TEXT,
+          label TEXT NOT NULL,
+          amount_minor INTEGER NOT NULL,
+          expenses_minor INTEGER,
+          cadence TEXT NOT NULL,
+          start_date TEXT NOT NULL,
+          end_date TEXT,
+          lease_regime TEXT,
+          rent_revision TEXT,
+          rent_revision_reference TEXT,
+          post_mandatory_term_policy TEXT,
+          exclusions_json TEXT DEFAULT '[]' NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+        );
+        ${
+          legacyColumns.length > 0
+            ? `
+          INSERT INTO incomes (${carry.join(", ")}, nature, amount_basis)
+            SELECT ${carry.join(", ")}, 'passive', 'real' FROM payout_schedules;
+          DROP TABLE payout_schedules;
+        `
+            : ""
+        }
+        CREATE INDEX IF NOT EXISTS incomes_holding_idx ON incomes (holding_id, id);
+        COMMIT;`);
+    } catch (error) {
+      await client.execute("ROLLBACK");
+      throw error;
+    } finally {
+      await client.execute("PRAGMA foreign_keys = ON");
+    }
+    await writeSchemaVersion(client, 71);
   }
 
   return { ranV18Backfill, ranV33Backfill };
