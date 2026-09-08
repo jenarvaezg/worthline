@@ -1550,6 +1550,11 @@ describe("loadDashboard — a declared net rent is the rate the home projects wi
     });
     await store.payouts.createPayoutSchedule({
       amountMinor: 1_000_00,
+      nature: "passive",
+      amountBasis: "real",
+      assumedContributionThrough: null,
+      provenance: null,
+      provenanceAsOf: null,
       cadence: "monthly",
       holdingId: "asset_flat",
       label: "Alquiler",

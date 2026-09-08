@@ -580,6 +580,8 @@ describe("fire-context reports the rent-derived real return", () => {
       type: "real_estate",
     });
     await store.payouts.createPayoutSchedule({
+      nature: "passive",
+      amountBasis: "real",
       amountMinor: 1_000_00,
       cadence: "monthly",
       holdingId: "asset_flat",

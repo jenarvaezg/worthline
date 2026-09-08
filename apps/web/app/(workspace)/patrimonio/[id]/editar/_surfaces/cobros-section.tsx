@@ -13,11 +13,13 @@
  * monthly-spending figure; otherwise it is omitted rather than invented.
  */
 
+import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
 import { PendingSubmit } from "@web/pending-submit";
 import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
 import {
   formatMoneyInput,
   formatMoneyMinorPrivacy,
+  incomeExclusionReason,
   passiveIncomeTrailing,
 } from "@worthline/domain";
 import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
@@ -39,6 +41,11 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
   timeZone: "UTC",
 });
 const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
+
+function IncomeDeclarationNotice({ schedule }: { schedule: PayoutSchedule }) {
+  const reason = incomeExclusionReason(schedule);
+  return reason ? <p className="infoNote">{INCOME_EXCLUSION_COPY[reason]}</p> : null;
+}
 
 /** A one-line human spec for a schedule row (amount · cadence · window · costs). */
 function scheduleSpec(
@@ -268,7 +275,8 @@ export function CobrosSection({
         </div>
         <p className="cobrosCap">
           Los gastos van en la misma cadencia que el importe (comunidad, IBI, seguro,
-          agencia, mantenimiento…). Si es un inmueble alquilado, tu FIRE usará el
+          agencia, mantenimiento…). Con naturaleza pasiva e importe en euros de hoy
+          declarados, si es un inmueble alquilado tu FIRE usará el
           <strong> alquiler neto</strong> sobre su valor como rentabilidad real en vez del
           retorno por defecto de su tramo. Sin gastos declarados no se usa el bruto: se
           queda ese retorno por defecto.
@@ -345,6 +353,7 @@ export function CobrosSection({
                   </form>
                 </div>
               </div>
+              <IncomeDeclarationNotice schedule={schedule} />
               {/* What the end date MEANS, and what happens after it (#1521). Below
                   the row rather than inside it: the sentence it prints is about the
                   rent's future, not another button. */}

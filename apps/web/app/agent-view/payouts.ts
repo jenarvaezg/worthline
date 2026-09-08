@@ -11,6 +11,7 @@ import type {
 } from "@worthline/domain";
 import {
   collectHoldingPayouts,
+  incomeExclusionReason,
   passiveIncomeTrailing,
   resolveScopeMemberIds,
   scopePassiveIncome,
@@ -168,6 +169,12 @@ function toSchedule(
     id: derivePublicId("psc", schedule.id),
     object: "payout_schedule",
     label: schedule.label,
+    nature: schedule.nature,
+    amountBasis: schedule.amountBasis,
+    assumedContributionThrough: schedule.assumedContributionThrough,
+    provenance: schedule.provenance,
+    provenanceAsOf: schedule.provenanceAsOf,
+    exclusionReason: incomeExclusionReason(schedule),
     cadence: schedule.cadence,
     amount: moneyOf(schedule.amountMinor, currency),
     startDate: schedule.startISO,

@@ -59,7 +59,7 @@ describe("schema migration v68 (lease terms)", () => {
         await client.execute(
           `SELECT id, amount_minor, expenses_minor, end_date, lease_regime, rent_revision,
                   rent_revision_reference, post_mandatory_term_policy
-             FROM payout_schedules`,
+             FROM incomes`,
         )
       ).rows,
     ).toEqual([
@@ -79,7 +79,7 @@ describe("schema migration v68 (lease terms)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(70);
+    expect(SCHEMA_VERSION).toBe(71);
   });
 
   test("is idempotent over a DB that already carries the columns", async () => {
@@ -88,7 +88,7 @@ describe("schema migration v68 (lease terms)", () => {
 
     await migrate(client);
 
-    const columns = await client.execute("PRAGMA table_info(payout_schedules)");
+    const columns = await client.execute("PRAGMA table_info(incomes)");
     const names = (columns.rows as unknown as Array<{ name: string }>).map(
       (row) => row.name,
     );
@@ -107,7 +107,7 @@ describe("schema migration v68 (lease terms)", () => {
 
     await client.executeMultiple(schemaSql);
 
-    const columns = await client.execute("PRAGMA table_info(payout_schedules)");
+    const columns = await client.execute("PRAGMA table_info(incomes)");
     const rows = columns.rows as unknown as Array<{ name: string; notnull: number }>;
     for (const column of [
       "lease_regime",

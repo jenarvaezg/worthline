@@ -17,6 +17,11 @@ import {
 
 function schedule(overrides: Partial<PayoutSchedule> = {}): PayoutSchedule {
   return {
+    nature: "passive",
+    amountBasis: "real",
+    assumedContributionThrough: null,
+    provenance: null,
+    provenanceAsOf: null,
     id: "s1",
     holdingId: "h1",
     label: "Alquiler",
@@ -28,6 +33,28 @@ function schedule(overrides: Partial<PayoutSchedule> = {}): PayoutSchedule {
     ...overrides,
   };
 }
+
+describe("income declarations enter figures only when applicable (#1672)", () => {
+  test.each([
+    { nature: null },
+    { nature: "work" as const },
+    { amountBasis: null },
+    { amountBasis: "nominal" as const },
+    { holdingId: null },
+  ])("keeps %j out of holding payouts without rewriting its history", (declaration) => {
+    const income = schedule(declaration);
+    const oneOff: Payout = {
+      id: "pay-1",
+      holdingId: "h1",
+      dateISO: "2025-02-01",
+      amountMinor: 500,
+    };
+    expect(deriveScheduleOccurrences(income, "2025-02-20")).toHaveLength(2);
+    expect(collectHoldingPayouts([oneOff], [income], "2025-02-20")).toEqual(
+      new Map([["h1", [{ dateISO: "2025-02-01", amountMinor: 500 }]]]),
+    );
+  });
+});
 
 describe("deriveScheduleOccurrences", () => {
   test("monthly: from start up to and including today", () => {

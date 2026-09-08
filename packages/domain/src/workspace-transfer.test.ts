@@ -232,6 +232,11 @@ function makeExportData(): WorkspaceExportData {
     ],
     payoutSchedules: [
       {
+        nature: "passive",
+        amountBasis: "real",
+        assumedContributionThrough: null,
+        provenance: null,
+        provenanceAsOf: null,
         id: "s1",
         holdingId: "a1",
         label: "Alquiler",

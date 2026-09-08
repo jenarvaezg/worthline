@@ -20,6 +20,11 @@ const TODAY = "2026-07-06";
 
 const RENT: PayoutSchedule = {
   id: "sch-rent",
+  nature: "passive",
+  amountBasis: "real",
+  assumedContributionThrough: null,
+  provenance: null,
+  provenanceAsOf: null,
   holdingId: "h1",
   label: "Alquiler piso",
   amountMinor: 100000,
@@ -66,6 +71,24 @@ function renderSection(
 }
 
 describe("CobrosSection wiring", () => {
+  test.each([
+    [{ nature: null }, "Naturaleza sin declarar"],
+    [{ nature: "work" }, "Renta del trabajo"],
+    [{ amountBasis: null }, "Importe sin declarar como real o nominal"],
+    [{ amountBasis: "nominal" }, "Importe nominal"],
+  ] as const)("excludes %j from figures and explains why", (declaration, warning) => {
+    const markup = renderSection({
+      monthlySpendingMinor: 220000,
+      schedules: [{ ...RENT, ...declaration }],
+    });
+
+    expect(markup).toContain(warning);
+    // Only the 340 € one-off dividend remains: 340 / 26,400 = 1.3%.
+    expect(markup).toContain("1.3 %");
+    expect(markup).toContain("1 cobro");
+    expect(markup).toContain("Alquiler piso");
+  });
+
   test("renders the section heading and the honest attribution note", () => {
     const markup = renderSection();
     expect(markup).toContain("Cobros");

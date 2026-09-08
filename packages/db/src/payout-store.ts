@@ -43,8 +43,18 @@ export interface PayoutScheduleLeaseTerms {
   postMandatoryTermPolicy?: PostMandatoryTermPolicy | null;
 }
 
-export interface CreatePayoutScheduleInput extends PayoutScheduleLeaseTerms {
-  holdingId: string;
+export interface IncomeDeclarationMetadata {
+  nature?: PayoutSchedule["nature"];
+  amountBasis?: PayoutSchedule["amountBasis"];
+  assumedContributionThrough?: string | null;
+  provenance?: PayoutSchedule["provenance"];
+  provenanceAsOf?: string | null;
+}
+
+export interface CreatePayoutScheduleInput
+  extends PayoutScheduleLeaseTerms,
+    IncomeDeclarationMetadata {
+  holdingId?: string | null;
   label: string;
   amountMinor: number;
   /** Declared cost per occurrence (#1448); omit / null for "not declared". */
@@ -55,7 +65,10 @@ export interface CreatePayoutScheduleInput extends PayoutScheduleLeaseTerms {
   exclusions?: string[];
 }
 
-export interface UpdatePayoutSchedulePatch extends PayoutScheduleLeaseTerms {
+export interface UpdatePayoutSchedulePatch
+  extends PayoutScheduleLeaseTerms,
+    IncomeDeclarationMetadata {
+  holdingId?: string | null;
   label?: string;
   amountMinor?: number;
   /** `null` clears the declaration back to "not declared" — distinct from a declared 0. */
@@ -111,6 +124,11 @@ function rowToSchedule(row: ScheduleRow): PayoutSchedule {
   return {
     id: row.id,
     holdingId: row.holdingId,
+    nature: row.nature,
+    amountBasis: row.amountBasis,
+    assumedContributionThrough: row.assumedContributionThrough,
+    provenance: row.provenance,
+    provenanceAsOf: row.provenanceAsOf,
     label: row.label,
     amountMinor: row.amountMinor,
     expensesMinor: row.expensesMinor,
@@ -180,6 +198,13 @@ async function createPayoutSchedule(
   input: CreatePayoutScheduleInput,
 ): Promise<PayoutSchedule> {
   const id = ctx.newId();
+  const metadata = {
+    nature: input.nature ?? null,
+    amountBasis: input.amountBasis ?? null,
+    assumedContributionThrough: input.assumedContributionThrough ?? null,
+    provenance: input.provenance ?? null,
+    provenanceAsOf: input.provenanceAsOf ?? null,
+  };
   const endISO = input.endISO ?? null;
   const exclusions = input.exclusions ?? [];
   const expensesMinor = input.expensesMinor ?? null;
@@ -191,7 +216,8 @@ async function createPayoutSchedule(
     .insert(payoutSchedules)
     .values({
       id,
-      holdingId: input.holdingId,
+      holdingId: input.holdingId ?? null,
+      ...metadata,
       label: input.label,
       amountMinor: input.amountMinor,
       expensesMinor,
@@ -207,7 +233,8 @@ async function createPayoutSchedule(
     .run();
   return {
     id,
-    holdingId: input.holdingId,
+    holdingId: input.holdingId ?? null,
+    ...metadata,
     label: input.label,
     amountMinor: input.amountMinor,
     expensesMinor,
@@ -228,6 +255,13 @@ async function updatePayoutSchedule(
   patch: UpdatePayoutSchedulePatch,
 ): Promise<void> {
   const set: Partial<typeof payoutSchedules.$inferInsert> = {};
+  if (patch.holdingId !== undefined) set.holdingId = patch.holdingId;
+  if (patch.nature !== undefined) set.nature = patch.nature;
+  if (patch.amountBasis !== undefined) set.amountBasis = patch.amountBasis;
+  if (patch.assumedContributionThrough !== undefined)
+    set.assumedContributionThrough = patch.assumedContributionThrough;
+  if (patch.provenance !== undefined) set.provenance = patch.provenance;
+  if (patch.provenanceAsOf !== undefined) set.provenanceAsOf = patch.provenanceAsOf;
   if (patch.label !== undefined) set.label = patch.label;
   if (patch.amountMinor !== undefined) set.amountMinor = patch.amountMinor;
   if (patch.expensesMinor !== undefined) set.expensesMinor = patch.expensesMinor;

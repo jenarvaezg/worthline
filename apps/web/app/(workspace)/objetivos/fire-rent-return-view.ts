@@ -17,6 +17,7 @@
  */
 
 import { holdingCobrosHref } from "@web/holding-route";
+import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
 import type {
   FireRentReturnReport,
   RentReturnNotice,
@@ -148,6 +149,11 @@ const TIER_FALLBACK_CLAUSE = "cuenta con el retorno por defecto de su tramo";
 
 function noticeGloss(notice: RentReturnNotice): string {
   switch (notice.reason) {
+    case "missing_nature":
+    case "work_income":
+    case "missing_amount_basis":
+    case "nominal_amount":
+      return `${INCOME_EXCLUSION_COPY[notice.reason]} El activo ${TIER_FALLBACK_CLAUSE}.`;
     case "missing_expenses":
       // The gross is named, and named as what it is NOT: seeing 6,3 % beside the
       // reason is what makes declaring the costs worth the trouble. The title is

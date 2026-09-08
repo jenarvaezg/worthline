@@ -961,6 +961,11 @@ export { classifyOversellExcess, oversellConfirmMessage } from "./oversell";
 export type {
   DatedAmount,
   DerivedPayout,
+  Income,
+  IncomeAmountBasis,
+  IncomeExclusionReason,
+  IncomeNature,
+  IncomeProvenance,
   LeaseRegime,
   PassiveIncomeWindow,
   Payout,
@@ -972,6 +977,7 @@ export type {
 export {
   collectHoldingPayouts,
   deriveScheduleOccurrences,
+  incomeExclusionReason,
   passiveIncomeTrailing,
 } from "./payouts";
 export type {

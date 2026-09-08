@@ -904,7 +904,7 @@ function collectPayoutErrors(
   }
 
   for (const schedule of doc.payoutSchedules) {
-    if (!assetIds.has(schedule.holdingId)) {
+    if (schedule.holdingId !== null && !assetIds.has(schedule.holdingId)) {
       errors.push(
         `El cobro recurrente "${schedule.label}" (${schedule.id}) referencia un activo inexistente: ${schedule.holdingId}.`,
       );

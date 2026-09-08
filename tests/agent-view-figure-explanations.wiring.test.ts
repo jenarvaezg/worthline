@@ -542,6 +542,8 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
       type: "real_estate",
     });
     await store.payouts.createPayoutSchedule({
+      nature: "passive",
+      amountBasis: "real",
       amountMinor: 1_000_00,
       cadence: "monthly",
       expensesMinor: 250_00,

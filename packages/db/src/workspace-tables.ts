@@ -34,7 +34,7 @@ const WORKSPACE_TABLES = [
   "warning_overrides",
   "audit_log",
   "payouts",
-  "payout_schedules",
+  "incomes",
   "planned_contributions",
   "liabilities",
   "assets",

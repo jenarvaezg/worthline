@@ -1,4 +1,4 @@
-import type { PayoutCadence } from "@worthline/domain";
+import type { Income, IncomeExclusionReason, PayoutCadence } from "@worthline/domain";
 
 import type { AgentViewMoney } from "./shared";
 
@@ -28,6 +28,12 @@ export interface AgentViewPayoutSchedule {
   id: string;
   object: "payout_schedule";
   label: string;
+  nature: Income["nature"];
+  amountBasis: Income["amountBasis"];
+  assumedContributionThrough: Income["assumedContributionThrough"];
+  provenance: Income["provenance"];
+  provenanceAsOf: Income["provenanceAsOf"];
+  exclusionReason: IncomeExclusionReason | null;
   cadence: PayoutCadence;
   amount: AgentViewMoney;
   startDate: string;

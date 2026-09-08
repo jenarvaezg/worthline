@@ -49,16 +49,12 @@ describe("schema migration v57 (payout schedule expenses)", () => {
     // Not backfilled to 0: "this flat costs me nothing to hold" is a statement the
     // user makes, not one the migration makes for him.
     expect(
-      (
-        await client.execute(
-          "SELECT id, amount_minor, expenses_minor FROM payout_schedules",
-        )
-      ).rows,
+      (await client.execute("SELECT id, amount_minor, expenses_minor FROM incomes")).rows,
     ).toEqual([{ id: "s_navalcarnero", amount_minor: 65_000, expenses_minor: null }]);
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(70);
+    expect(SCHEMA_VERSION).toBe(71);
   });
 
   test("is idempotent over a DB that already carries the column", async () => {
@@ -67,7 +63,7 @@ describe("schema migration v57 (payout schedule expenses)", () => {
 
     await migrate(client);
 
-    const columns = await client.execute("PRAGMA table_info(payout_schedules)");
+    const columns = await client.execute("PRAGMA table_info(incomes)");
     expect(columns.rows.filter((row) => row.name === "expenses_minor")).toHaveLength(1);
   });
 
@@ -76,7 +72,7 @@ describe("schema migration v57 (payout schedule expenses)", () => {
 
     await client.executeMultiple(schemaSql);
 
-    const columns = await client.execute("PRAGMA table_info(payout_schedules)");
+    const columns = await client.execute("PRAGMA table_info(incomes)");
     expect(
       (columns.rows as unknown as Array<{ name: string; notnull: number }>).find(
         (row) => row.name === "expenses_minor",

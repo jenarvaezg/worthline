@@ -110,6 +110,27 @@ describe("payout CRUD", () => {
 });
 
 describe("payout schedule CRUD", () => {
+  it("stores an independent income declaration without inventing missing metadata", async () => {
+    const store = await freshStore();
+    const created = await store.payouts.createPayoutSchedule({
+      label: "Pensión futura",
+      amountMinor: 180_000,
+      cadence: "monthly",
+      startISO: "2035-01-01",
+    });
+    expect(created).toMatchObject({
+      holdingId: null,
+      nature: null,
+      amountBasis: null,
+      assumedContributionThrough: null,
+      provenance: null,
+      provenanceAsOf: null,
+    });
+    expect(await store.payouts.readPayoutSchedules()).toEqual([created]);
+    expect(await store.payouts.readPayoutSchedulesForHolding("h1")).toEqual([]);
+    expect(await store.payouts.readPayouts()).toEqual([]);
+  });
+
   it("creates a schedule (exclusions default to []) and reads it back", async () => {
     const store = await freshStore();
     const created = await store.payouts.createPayoutSchedule({
@@ -126,6 +147,11 @@ describe("payout schedule CRUD", () => {
       {
         id: created.id,
         holdingId: "h1",
+        nature: null,
+        amountBasis: null,
+        assumedContributionThrough: null,
+        provenance: null,
+        provenanceAsOf: null,
         label: "Alquiler piso",
         amountMinor: 100000,
         // Not declared, not zero (#1448): a rent with no declared cost derives no
@@ -143,6 +169,61 @@ describe("payout schedule CRUD", () => {
         exclusions: [],
       },
     ]);
+  });
+
+  it("round-trips income metadata and permits detaching a declaration from a holding", async () => {
+    const store = await freshStore();
+    const created = await store.payouts.createPayoutSchedule({
+      holdingId: "h1",
+      label: "Renta declarada",
+      amountMinor: 180_000,
+      cadence: "monthly",
+      startISO: "2035-01-01",
+      nature: "passive",
+      amountBasis: "real",
+      assumedContributionThrough: "2034-12-31",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-09-01",
+    });
+    await store.payouts.updatePayoutSchedule(created.id, {
+      holdingId: null,
+      nature: "work",
+      amountBasis: "nominal",
+      provenance: "user_estimate",
+    });
+    const [updated] = await store.payouts.readPayoutSchedules();
+    expect(updated).toEqual({
+      ...created,
+      holdingId: null,
+      nature: "work",
+      amountBasis: "nominal",
+      provenance: "user_estimate",
+    });
+    expect(await store.payouts.readPayoutSchedulesForHolding("h1")).toEqual([]);
+
+    const exported = await store.workspace.exportWorkspace();
+    const parsed = parseWorkspaceExport(exported);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+    const target = await freshStore();
+    await target.workspace.importWorkspace(parsed.value);
+    expect(await target.payouts.readPayoutSchedules()).toEqual([updated]);
+
+    await target.payouts.updatePayoutSchedule(created.id, {
+      nature: null,
+      amountBasis: null,
+      assumedContributionThrough: null,
+      provenance: null,
+      provenanceAsOf: null,
+    });
+    expect((await target.payouts.readPayoutSchedules())[0]).toMatchObject({
+      holdingId: null,
+      nature: null,
+      amountBasis: null,
+      assumedContributionThrough: null,
+      provenance: null,
+      provenanceAsOf: null,
+    });
   });
 
   it("round-trips declared expenses, and tells a declared 0 from an absence", async () => {
