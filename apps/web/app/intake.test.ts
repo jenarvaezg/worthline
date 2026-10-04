@@ -604,6 +604,29 @@ describe("prices refresh feedback", () => {
   });
 });
 
+describe("snapshot capture feedback", () => {
+  // The local-mode manual capture from /historico: the redirect names the day
+  // `captureSnapshotForScope` stamped, which is the point of record rather than
+  // the moment of the click.
+  test("names the captured day when the redirect carries one", () => {
+    expect(resolveOkMessage({ date: "2026-06-18", ok: "snapshot_captured" })).toBe(
+      "Captura del 2026-06-18 guardada.",
+    );
+  });
+
+  test("degrades to the static wording when the redirect carries no day", () => {
+    expect(resolveOkMessage({ ok: "snapshot_captured" })).toBe(
+      "Captura guardada. Vuelve mañana para la siguiente.",
+    );
+  });
+
+  test("the correction banner is unaffected by the shared `date` param", () => {
+    expect(resolveOkMessage({ date: "2026-06-18", ok: "snapshot_price_corrected" })).toBe(
+      "Snapshot del 2026-06-18 corregido.",
+    );
+  });
+});
+
 // ─── Issue #54: intake v2 ────────────────────────────────────────────────────
 
 describe("ownership split violation message — specific sum named", () => {
@@ -1155,6 +1178,19 @@ describe("buildCurrentUrlFor — subpage-scoped return URL", () => {
         scope: "household",
       }),
     ).toBe("/inversiones/nueva?scope=household");
+  });
+
+  // `date` names the day a one-shot snapshot outcome stamped (`ok` + `date`), so
+  // it is feedback shown once — never something the next navigation carries.
+  test("strips the `date` a snapshot outcome stamped, keeping the rest", () => {
+    expect(
+      buildCurrentUrlFor("/historico", {
+        date: "2026-06-18",
+        ok: "snapshot_captured",
+        range: "3y",
+        scope: "household",
+      }),
+    ).toBe("/historico?range=3y&scope=household");
   });
 });
 

@@ -174,3 +174,49 @@ recoverable later"), and inventing one is the option this ADR already rejected.
 - The CONTEXT.md **Snapshot** entry is sharpened: "automatic" now genuinely means
   time-driven, recorded whether or not anyone signs in, finalising at the day's
   close.
+
+## Amendment (#1782): in local no-auth mode the person is the writer
+
+This ADR's job reaches a workspace by **enumerating the control plane**, and
+ADR 0030's local no-auth mode has no control plane: `listAllWorkspaces()` has
+nothing to list. The render stopped writing a snapshot in #895 (the self-heal
+leg of "Decoupled from the render"), so the two paths that once covered local
+mode are both gone. **A local /historico is therefore permanently empty**, with
+nothing on the page to say so — the empty state still promised "cada día que
+abres worthline se guarda una captura", which is the cron talking about a mode
+that has none.
+
+The fix is a **third writer**: a «Capturar hoy» button on `/historico`, rendered
+only when the request resolved to the local store, running the same pure
+`captureDailySnapshotForWorkspace` the cron runs. Hosted workspaces and the demo
+are excluded, and excluded **twice** — the page does not render the control, and
+the action re-checks the resolved target itself, because a hidden button is not
+an authorization. The rule is one pure function (`localCaptureRefusal`) read by
+both, so they cannot drift.
+
+Three deliberate limits, each for a reason this ADR already supplies:
+
+- **It captures today and nothing else.** `captureSnapshotForScope` derives
+  `dateKey` from `now`, so a back-dated `now` would stamp present-day holdings —
+  and today's prices — under an old date, and the monthly close (ADR 0005) would
+  go on treating that fabrication as a real close. Seeding genuine history stays
+  with `bun run backfill:snapshots`.
+- **It does NOT refresh prices first**, so it contradicts step 1 of "What the job
+  does" above — deliberately, and only here. That step exists to keep a *hosted*
+  history honest on a schedule nobody watches; here the person pressing the
+  button is watching, and «Actualizar precios» on `/patrimonio` is one click away.
+  The frozen point carries the last cached quote, which is the same quote the
+  dashboard would have drawn moments earlier. The trade the cron refuses to make
+  is acceptable in a local store and not in a tenant's.
+- **It is a user act, and the glossary had said it could not be.** CONTEXT.md
+  read "Captured automatically … **Not a user act**". That is now true of every
+  mode except this one, and the entry says so.
+
+So the writers are: **cron** (hosted), **nothing** (demo, ephemeral and never
+enumerated), **a person** (local). The snapshot is still one-per-scope-per-day,
+latest-wins, and still freezes the day it was taken.
+
+The refusal is a **returned state**, not a redirect: this is a capture that can
+fail on an ordinary store error, and a refusal travelling in a navigation is
+losable without a recovery net (ADR 0036's #1311 amendment). Success still
+redirects, because it revalidates and needs the fresh destination.

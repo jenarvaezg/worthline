@@ -1,7 +1,10 @@
+import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { COMPOSITION_RANGES, valuationMethodOfAsset } from "@worthline/domain";
 import { Suspense } from "react";
 import { buildHistoricoBreakdownView } from "./build-historico-breakdown";
+import { captureSnapshotAction } from "./capture-snapshot-action";
+import { CaptureSnapshotControl } from "./capture-snapshot-control";
 import HistoricoBreakdown from "./historico-breakdown";
 import {
   HISTORICO_RANGE_LABELS,
@@ -12,6 +15,7 @@ import {
 } from "./historico-range";
 import HistoricoSkeleton from "./historico-skeleton";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
+import { localCaptureAllowed } from "./local-capture";
 
 /**
  * /historico — Stream (#1229). Sync page + Suspense body so Partial Prefetching
@@ -20,6 +24,10 @@ import { buildHistoricoRows, HistoricoTable } from "./historico-table";
  * Snapshot reads are windowed to the selected range (#1535). Changing the range
  * navigates (interaction-patterns §2 exception): the cost is the dataset, so
  * the alternatives are not preloaded.
+ *
+ * The «Capturar hoy» control exists only in local no-auth mode, where ADR 0037's
+ * cron has no control plane to enumerate and nothing else writes a snapshot
+ * (since #895 neither does the render) — see `local-capture`.
  */
 export default function HistoricoPage({
   searchParams,
@@ -40,7 +48,13 @@ export async function HistoricoContent({
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const shell = await resolvePageShell({ searchParams: resolvedSearchParams });
-  const { privacyMode, selectedScope, store, workspace } = shell;
+  const { privacyMode, selectedScope, store, target, workspace } = shell;
+
+  // One-shot feedback from the capture action's redirect terminal.
+  const formError = parseFormError(resolvedSearchParams);
+  const formOk = resolveOkMessage(resolvedSearchParams);
+  // Strips `ok`/`date` so the action returns here rather than to the banner.
+  const currentUrl = buildCurrentUrlFor("/historico", resolvedSearchParams);
 
   const today = new Date().toISOString().slice(0, 10);
   const range = parseHistoricoRangeParam(resolvedSearchParams.range);
@@ -104,42 +118,69 @@ export async function HistoricoContent({
           workspace,
         });
 
-  return (
-    <section className="historicoPanel section" aria-label="Histórico de snapshots">
-      <div className="panelHeader">
-        <h2>Histórico</h2>
-        <div className="historyControls">
-          <nav className="rangeTabs" aria-label="Rango temporal del histórico">
-            {COMPOSITION_RANGES.map((option) => {
-              const isActive = option === range;
-              return (
-                <a
-                  aria-current={isActive ? "true" : undefined}
-                  className={isActive ? "active" : undefined}
-                  href={historicoRangeHref(search, option)}
-                  key={option}
-                >
-                  {HISTORICO_RANGE_LABELS[option]}
-                </a>
-              );
-            })}
-          </nav>
-          <span>{snapshots.length} capturas</span>
-        </div>
-      </div>
+  // The empty state is where a local developer lands, and the hosted copy is a
+  // lie for them: "it accumulates by itself" is the twice-daily cron (ADR 0037),
+  // which in local mode has no control plane to enumerate and never runs. So the
+  // local branch points at the button sitting right above it instead.
+  const canCaptureLocally = localCaptureAllowed(target);
+  const emptyLine = canCaptureLocally
+    ? "Aquí no hay captura programada: el modo local no lanza la captura diaria. Pulsa «Capturar hoy» para guardar el punto de hoy."
+    : range === "all"
+      ? "El histórico se acumula solo: cada día que abres worthline se guarda una captura. Vuelve mañana para ver tu primera comparativa."
+      : "No hay capturas en este periodo. Amplía el rango o vuelve mañana.";
 
-      {snapshots.length === 0 ? (
-        <p className="emptyLine historicoEmpty">
-          {range === "all"
-            ? "El histórico se acumula solo: cada día que abres worthline se guarda una captura. Vuelve mañana para ver tu primera comparativa."
-            : "No hay capturas en este periodo. Amplía el rango o vuelve mañana."}
+  return (
+    <>
+      {formError && !formError.formId ? (
+        <p className="errorBand" role="alert">
+          {formError.message}
         </p>
-      ) : (
-        <>
-          <HistoricoBreakdown breakdown={breakdown} />
-          <HistoricoTable privacyMode={privacyMode} rows={rows} />
-        </>
-      )}
-    </section>
+      ) : null}
+
+      {formOk ? (
+        <p className="successBand" role="status">
+          {formOk}
+        </p>
+      ) : null}
+
+      <section className="historicoPanel section" aria-label="Histórico de snapshots">
+        <div className="panelHeader">
+          <h2>Histórico</h2>
+          <div className="historyControls">
+            <nav className="rangeTabs" aria-label="Rango temporal del histórico">
+              {COMPOSITION_RANGES.map((option) => {
+                const isActive = option === range;
+                return (
+                  <a
+                    aria-current={isActive ? "true" : undefined}
+                    className={isActive ? "active" : undefined}
+                    href={historicoRangeHref(search, option)}
+                    key={option}
+                  >
+                    {HISTORICO_RANGE_LABELS[option]}
+                  </a>
+                );
+              })}
+            </nav>
+            <span>{snapshots.length} capturas</span>
+            {canCaptureLocally ? (
+              <CaptureSnapshotControl
+                action={captureSnapshotAction}
+                currentUrl={currentUrl}
+              />
+            ) : null}
+          </div>
+        </div>
+
+        {snapshots.length === 0 ? (
+          <p className="emptyLine historicoEmpty">{emptyLine}</p>
+        ) : (
+          <>
+            <HistoricoBreakdown breakdown={breakdown} />
+            <HistoricoTable privacyMode={privacyMode} rows={rows} />
+          </>
+        )}
+      </section>
+    </>
   );
 }
