@@ -468,6 +468,15 @@ export function resolveOkMessage(
     return source ? `Histórico de precios rellenado desde ${source}.` : okMessage(key);
   }
 
+  if (key === "snapshot_captured") {
+    // Names the day the capture stamped. `captureSnapshotForScope` derives
+    // `dateKey` from `now`, so this is the point of record, not the click time.
+    const dateKey = normalizeParam(searchParams?.["date"]);
+    return dateKey
+      ? `Captura del ${dateKey} guardada.`
+      : "Captura guardada. Vuelve mañana para la siguiente.";
+  }
+
   if (key === "snapshot_price_corrected") {
     const dateKey = normalizeParam(searchParams?.["date"]);
     return dateKey ? `Snapshot del ${dateKey} corregido.` : okMessage(key);
@@ -609,6 +618,8 @@ export function okMessage(key: string | undefined): string | null {
     plan_saved: "Plan de amortización guardado.",
     price_backfill_done: "Histórico de precios rellenado.",
     snapshot_price_corrected: "Snapshot corregido.",
+    // Local-mode manual capture from /historico (ADR 0037 has no writer here).
+    snapshot_captured: "Captura guardada. Vuelve mañana para la siguiente.",
     prices_refreshed: "Precios actualizados.",
     repayment_added: "Amortización anticipada registrada.",
     repayment_deleted: "Amortización anticipada eliminada.",

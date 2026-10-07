@@ -32,6 +32,14 @@ export const ONE_SHOT_PARAMS = new Set([
   "pfName",
   "pfSymbol",
   "pfProvider",
+  // The day a one-shot snapshot outcome stamped: `snapshot_price_corrected`
+  // (#926) and `snapshot_captured` (the local-mode manual capture) both redirect
+  // with `ok` + `date` so the banner can name the day. It was read back at
+  // intake.ts but never listed here, so the confirmation date leaked into every
+  // later currentUrl — and /historico, whose range tabs build hrefs from the raw
+  // params rather than through this builder, kept the banner alive across range
+  // changes. Listed now for what it always was: feedback, shown once.
+  "date",
   // Onboarding re-run trigger (#1170): a one-shot activation flag consumed by the
   // assistant layer; never carried into action-return URLs or the sibling links.
   "repasar",
