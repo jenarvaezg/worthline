@@ -1,5 +1,10 @@
 # The assistant provider pool is validated and strictly ordered
 
+> Amended by [ADR 0113](0113-ollama-is-a-self-hosted-user-funded-provider.md): a
+> self-hosted, user-funded provider (Ollama) joins the pool as a code-typed class
+> exempt from the shared-baseline admission gate, carrying a reference mark and an
+> environment-chosen served model. Every other rule here is unchanged.
+
 The shared financial assistant resolves models from one committed allowlist. Its
 default priority is strict: Google Gemini 3.1 Flash Lite, then Cerebras GPT OSS
 120B. The first entry whose own provider credential is present is selected.

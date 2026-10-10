@@ -36,7 +36,29 @@ interface AdmittedEvidence {
   run: EvidenceRun & { complete: true };
 }
 
-export type AdmissionEvidence = AdmittedEvidence;
+/**
+ * A self-hosted provider's mark (ADR 0113).
+ *
+ * Ollama is user-funded and its served model is chosen per user
+ * (`WORTHLINE_OLLAMA_MODEL`), so the shared-baseline quality gate does not apply
+ * to it: there is no single model to admit. What is committed instead is a
+ * REFERENCE run of the reference tag (`llama3.2:3b`) against a real server, on
+ * the record so the interaction is reviewable — and it is allowed to be
+ * incomplete or below threshold. «Permitir que no pase» is the point: a small
+ * local model is a legitimate choice the gate is not empowered to veto.
+ *
+ * The weaker guarantee that remains is code, not a mark: the server must be
+ * configured (base URL present), the turn budget is still derived from a
+ * capacity card, and a rejected turn fails over like any other provider.
+ */
+interface SelfHostedEvidence {
+  status: "self_hosted";
+  provider: "ollama";
+  model: string;
+  run: EvidenceRun;
+}
+
+export type AdmissionEvidence = AdmittedEvidence | SelfHostedEvidence;
 
 /**
  * Reviewed evidence, shaped for the committed pool marks in #957. Scores are the
@@ -159,6 +181,38 @@ export const ADMISSION_EVIDENCE = [
       dimensions: [
         { dimension: "reading", passed: 32, total: 42 },
         { dimension: "tool-discipline", passed: 17, total: 23 },
+      ],
+    },
+  },
+  {
+    status: "self_hosted",
+    provider: "ollama",
+    model: "llama3.2:3b",
+    /**
+     * Reference run, 2026-10-10, against a real local server (Ollama,
+     * `WORTHLINE_OLLAMA_BASE_URL=http://127.0.0.1:11434/v1`, default `num_ctx`).
+     *
+     * This is the run that proved the interaction WORKS end to end: it completed —
+     * 28/28 questions answered, not one lost to a rejected turn — and priced the
+     * honesty of a modest 3 B model on the current 28-question set. It is NOT an
+     * admission: `reading` fell to 45 % (recitation-grade prose at its worst), and
+     * on the set as read today no version of this mark may be treated as one
+     * (ADR 0113). The two write-path dimensions cleared the hurdle — 30/40 tool
+     * discipline, 33/42 attachments — so the honest reading is «a small local
+     * model can hold a tooled turn, and will read worse than the shared baseline»,
+     * which is precisely the trade the user's own money gets to make.
+     */
+    run: {
+      evaluatedAt: "2026-10-10",
+      complete: true,
+      passed: 84,
+      total: 129,
+      executedQuestions: 28,
+      totalQuestions: 28,
+      dimensions: [
+        { dimension: "reading", passed: 21, total: 47 },
+        { dimension: "tool-discipline", passed: 30, total: 40 },
+        { dimension: "attachments", passed: 33, total: 42 },
       ],
     },
   },

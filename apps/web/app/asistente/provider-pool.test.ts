@@ -13,6 +13,7 @@ describe("validated assistant provider allowlist", () => {
     ).toEqual([
       { provider: "google", modelId: "gemini-3.5-flash-lite" },
       { provider: "cerebras", modelId: "gpt-oss-120b" },
+      { provider: "ollama", modelId: "llama3.2:3b" },
     ]);
     expect(() => validateProviderAllowlist(DEFAULT_PROVIDER_ALLOWLIST)).not.toThrow();
   });
@@ -126,18 +127,102 @@ describe("validated assistant provider allowlist", () => {
   });
 });
 
+describe("self-hosted provider marks (ADR 0113)", () => {
+  const ollama = DEFAULT_PROVIDER_ALLOWLIST[2];
+
+  it("accepts a reference run that fails, is incomplete, or scores zero", () => {
+    // The whole point: a small local model is allowed to fail. What stays
+    // refused is a missing or incoherent measurement, never a low score.
+    for (const run of [
+      {
+        ...ollama.validation.run,
+        passed: 0,
+        total: 40,
+        complete: false,
+        executedQuestions: 23,
+      },
+      {
+        ...ollama.validation.run,
+        passed: 5,
+        total: 40,
+        complete: true,
+        executedQuestions: 23,
+      },
+    ]) {
+      expect(() =>
+        validateProviderAllowlist([
+          { ...ollama, validation: { ...ollama.validation, run } },
+        ]),
+      ).not.toThrow();
+    }
+  });
+
+  it("refuses a self-hosted slot carrying an admission mark", () => {
+    expect(() =>
+      validateProviderAllowlist([
+        {
+          ...ollama,
+          validation: {
+            status: "admitted",
+            provider: "ollama",
+            model: "llama3.2:3b",
+            run: {
+              ...ollama.validation.run,
+              complete: true,
+              passed: 40,
+              total: 40,
+              executedQuestions: 23,
+            },
+          },
+        },
+      ]),
+    ).toThrow(/self-hosted|reference/i);
+  });
+
+  it("refuses a self-hosted mark on a shared-baseline slot", () => {
+    expect(() =>
+      validateProviderAllowlist([
+        {
+          ...DEFAULT_PROVIDER_ALLOWLIST[0],
+          validation: {
+            ...ollama.validation,
+            provider: "google",
+            model: DEFAULT_PROVIDER_ALLOWLIST[0].modelId,
+          },
+        },
+      ]),
+    ).toThrow(/self-hosted/i);
+  });
+
+  it("still refuses an incoherent reference mark", () => {
+    expect(() =>
+      validateProviderAllowlist([
+        {
+          ...ollama,
+          validation: {
+            ...ollama.validation,
+            run: { ...ollama.validation.run, total: 0, passed: 0 },
+          },
+        },
+      ]),
+    ).toThrow(/incoherent/i);
+  });
+});
+
 describe("availableProviderEntries", () => {
   it.each([
     [{}, []],
     [{ GOOGLE_GENERATIVE_AI_API_KEY: "google" }, ["google"]],
     [{ CEREBRAS_API_KEY: "cerebras" }, ["cerebras"]],
+    [{ WORTHLINE_OLLAMA_BASE_URL: "http://127.0.0.1:51335/v1" }, ["ollama"]],
     [{ GROQ_API_KEY: "groq" }, []],
     [
       {
         GOOGLE_GENERATIVE_AI_API_KEY: "google",
         CEREBRAS_API_KEY: "cerebras",
+        WORTHLINE_OLLAMA_BASE_URL: "http://127.0.0.1:51335/v1",
       },
-      ["google", "cerebras"],
+      ["google", "cerebras", "ollama"],
     ],
   ])("filters the credential combination %#", (env, providers) => {
     expect(availableProviderEntries(env).map((entry) => entry.provider)).toEqual(

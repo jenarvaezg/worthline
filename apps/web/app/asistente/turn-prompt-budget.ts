@@ -178,6 +178,26 @@ export const MODEL_PROMPT_CAPACITY: Readonly<Record<string, ModelPromptCapacity>
     source:
       "inference-docs.cerebras.ai/support/rate-limits (Free Trial: 5 RPM · 30 K TPM · 1 M TPH · 1 M TPD), re-read 2026-08-17",
   },
+  /**
+   * The self-hosted reference tag (ADR 0113). This card prices the committed
+   * `ollama/llama3.2:3b` slot; whatever the user serves via `WORTHLINE_OLLAMA_MODEL`
+   * inherits it through the sibling fallback, because its exact published capacity
+   * is not knowable in code.
+   *
+   * Two caveats a small local box trips on, both surfaced rather than buried:
+   * the native 128 K window is only what the MODEL supports — Ollama serves a far
+   * shorter default `num_ctx` unless it is raised, so a request bigger than the
+   * served window is rejected and fails over; and this 3 B model is not expected
+   * to pass the admission harness, which the reference (not admission) mark says
+   * openly. The budget here is honest either way: it is derived from the window
+   * a properly-configured server can cite, not from what the reference box chokes on.
+   */
+  "ollama/llama3.2:3b": {
+    inputTokens: 131_072,
+    tokensPerMinute: null,
+    source:
+      "model card of llama3.2 3B (128K context, like llama3.1), read 2026-10-10 · served context depends on the server's num_ctx",
+  },
 };
 
 function capacityKey(model: { provider: string; modelId: string }): string {

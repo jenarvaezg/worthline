@@ -53,6 +53,14 @@ describe("turnPromptBudget (#1408)", () => {
     expect(budget.attachmentChars).toBe(16_000);
   });
 
+  it("cualquier tag de ollama hereda la ficha de referencia, no el suelo (ADR 0113)", () => {
+    // The served model is env-chosen and unknowable in code; the reference card
+    // is a better guess than the floor, exactly like a version bump.
+    const budget = turnPromptBudget({ provider: "ollama", modelId: "qwen2.5:14b" });
+
+    expect(budget.proseChars).toBeGreaterThan(8_000);
+  });
+
   it("mantiene el techo del cuaderno muy por debajo del de la conversación", () => {
     // What #1408 asked for explicitly: `MAX_CONTEXT_CHARS` (12 000 — what a
     // spreadsheet hands the model to describe) used to be 75 % of the whole prose
