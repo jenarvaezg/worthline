@@ -57,4 +57,4 @@ The action is built from five deep, pure-where-possible modules:
 
 - **Gaps are honest.** A range the source cannot cover yields gaps the UI explains; the CSV import is the escape hatch for ranges beyond the public endpoint's window. No price is ever invented.
 
-- **No new domain noun.** "Backfill", "ripple recalculation", "snapshot", "cost basis", and "operation" already name these concepts (CONTEXT.md, ADR 0006/0008/0012). The historical price backfill is a _new action_ over existing terms, not a new kind of snapshot — a backfilled snapshot is an ordinary snapshot on a past date.
+- **No new domain noun.** "Backfill", "ripple recalculation", "snapshot", "cost basis", and "operation" already name these concepts (GLOSSARY.md, ADR 0006/0008/0012). The historical price backfill is a _new action_ over existing terms, not a new kind of snapshot — a backfilled snapshot is an ordinary snapshot on a past date.

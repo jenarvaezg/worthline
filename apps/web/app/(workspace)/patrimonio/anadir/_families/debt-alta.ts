@@ -147,7 +147,7 @@ export async function runDebtAlta(
 
   // #171: a debt associated to an asset inherits that asset's ownership split by
   // default — a one-time copy at creation, then independently editable (not a
-  // live link, CONTEXT.md). The pre-checked «mismo reparto» drives it; unchecked
+  // live link, GLOSSARY.md). The pre-checked «mismo reparto» drives it; unchecked
   // — or no asset associated — falls back to the footer ownership inputs.
   const inheritOwnership = scoped.get("inheritOwnership") === "on";
   const associatedAsset = command.associatedAssetId

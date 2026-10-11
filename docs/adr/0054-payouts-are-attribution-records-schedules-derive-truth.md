@@ -76,7 +76,7 @@ owner an amount — a pure attribution record, never a figure.
 
 ## Consequences
 
-- `CONTEXT.md` gains **payout** and **payout schedule** (UI: "Cobro" / "Cobro
+- `GLOSSARY.md` gains **payout** and **payout schedule** (UI: "Cobro" / "Cobro
   recurrente"); **return**'s honest-limits language changes to "distributions
   enter only as declared payouts".
 - The return engine's input contract (#547) gains an optional payout series;

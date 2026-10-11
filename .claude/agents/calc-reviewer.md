@@ -14,7 +14,7 @@ run the gate. Your output is a verdict and a short list of findings, nothing els
 
 You get the claim and the evidence exactly as `docs/agents/subagents.md` § «The
 briefing: claim + evidence» defines them. Given only an issue number, run
-`gh issue view <n> --comments`; given only a branch, run `git diff main...<branch>`.
+`gh issue view <n> --json title,body,labels,comments`; given only a branch, run `git diff main...<branch>`.
 
 Do not go looking for the implementer's reasoning: no commit messages, no PR
 description. A code comment, or the issue's own wording, that justifies a rule is a
@@ -39,7 +39,7 @@ before judging, and if the diff contradicts an ADR, say so.
 
 Read: ADR 0100 § Consequences (the lots bullet: «average, not FIFO»); `derivePosition`
 and its docblock in `packages/domain/src/positions.ts`; ADR 0082 § Decision 3;
-`CONTEXT.md` «Inherited cost», «Contribution lot».
+`GLOSSARY.md` «Inherited cost», «Contribution lot».
 
 Tells: an outgoing leg's cost assigned by matching it to particular purchases — in
 order, by lot, by date — instead of the position's proportional cost; expected figures
@@ -61,11 +61,11 @@ checking that its result contains what it was asked to write.
 ### 3. Traspaso: the pair's identity is its `transferId`
 
 Read: ADR 0082 § Decision 2, 4, 6, 7, 8; ADR 0083 § Decision 6; the amendments of
-ADR 0040 (#1592, #1593) and ADR 0085 (#1552); `CONTEXT.md` «Traspaso», «Inherited
+ADR 0040 (#1592, #1593) and ADR 0085 (#1552); `GLOSSARY.md` «Traspaso», «Inherited
 cost», «Portfolio return»; `signedInvestedMinor` in
 `packages/domain/src/operation-flow.ts`.
 
-How to read them together. `CONTEXT.md` «Traspaso» says the pair cancels itself «on
+How to read them together. `GLOSSARY.md` «Traspaso» says the pair cancels itself «on
 its date», ADR 0082 § Decision 4 calls the halves «equal and opposite on the same
 date», and the ADR 0085 amendment's title says «cancel on their date». Those sentences
 describe a pair; they do not say how to find one. **The identity of a pair is its
@@ -82,7 +82,7 @@ deletes half a pair outside the traspaso command.
 ### 4. Ripple: bounded, and a frozen rung does not heal itself
 
 Read: ADR 0012; ADR 0089; ADR 0091; ADR 0008 § Consequences; ADR 0013 (a liability's
-rung follows the identity of its asset); `CONTEXT.md` «Ripple recalculation» and the
+rung follows the identity of its asset); `GLOSSARY.md` «Ripple recalculation» and the
 ripple bullet of «Relationships»; the incidents in `gh issue view 1435` and
 `gh issue view 1436`.
 
@@ -126,7 +126,7 @@ Invariantes que toca el diff: <1–4, o ninguno>
 Hallazgos
 1. [invariante N] <ruta:línea> — <qué viola, en una frase>.
    Contraejemplo: <entrada concreta → cifra que sale mal>.
-   Fuente: <CONTEXT.md «término» / ADR NNNN § sección>.
+   Fuente: <GLOSSARY.md «término» / ADR NNNN § sección>.
    Gravedad: bloquea | debería corregirse
 
 Huecos (no son hallazgos)

@@ -16,7 +16,7 @@ type EventHint = Parameters<NonNullable<NodeOptions["beforeSend"]>>[1];
  * The privacy policy declares Sentry as an encargado that receives the TYPE of a
  * server error, where in the code it broke and on which screen — never the text
  * of the error, nor anything about the person or their workspace — and the
- * no-telemetry constraint (#1131, CONTEXT.md) says nothing else leaves: no
+ * no-telemetry constraint (#1131, GLOSSARY.md) says nothing else leaves: no
  * tracing, no replay, no sessions, no analytics. This module IS that promise in
  * code, and its tests are the sentence. Three layers, each sufficient on its own
  * for what it covers:

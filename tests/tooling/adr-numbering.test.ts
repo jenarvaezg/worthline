@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 
 /**
  * ADR numbers are addresses (#1704). This repo cites decisions by number from
- * code comments, tests, `CONTEXT.md` and other ADRs — «ver ADR 0096» has to
+ * code comments, tests, `GLOSSARY.md` and other ADRs — «ver ADR 0096» has to
  * resolve to exactly one file. Four ADRs once shared 0096 and two shared 0071,
  * which made every one of those citations ambiguous. This guard fails the gate
  * the moment a new ADR reuses a number already taken.

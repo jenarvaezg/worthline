@@ -171,7 +171,7 @@ recoverable later"), and inventing one is the option this ADR already rejected.
   `missed_capture` maintainer alert (#1339). An external pinger and Vercel's paid
   tier (guaranteed timing) stay available if detection shows the misses are frequent
   enough to matter.
-- The CONTEXT.md **Snapshot** entry is sharpened: "automatic" now genuinely means
+- The GLOSSARY.md **Snapshot** entry is sharpened: "automatic" now genuinely means
   time-driven, recorded whether or not anyone signs in, finalising at the day's
   close.
 
@@ -208,7 +208,7 @@ Three deliberate limits, each for a reason this ADR already supplies:
   The frozen point carries the last cached quote, which is the same quote the
   dashboard would have drawn moments earlier. The trade the cron refuses to make
   is acceptable in a local store and not in a tenant's.
-- **It is a user act, and the glossary had said it could not be.** CONTEXT.md
+- **It is a user act, and the glossary had said it could not be.** GLOSSARY.md
   read "Captured automatically … **Not a user act**". That is now true of every
   mode except this one, and the entry says so.
 

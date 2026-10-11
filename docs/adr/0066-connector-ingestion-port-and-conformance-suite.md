@@ -131,7 +131,7 @@ adopts this port; until then the two live sources are untouched.
 
 - **A no-op sync still writes one empty `fact_batch`.** This is an audit record —
   "a sync ran against source X and applied nothing" — which the application owns
-  (CONTEXT). On a poll loop (two crons/day) these accumulate. Accepted for now as
+  (GLOSSARY). On a poll loop (two crons/day) these accumulate. Accepted for now as
   cheap, honest provenance; revisit with a retention/prune story, or move pure
   freshness onto a `lastSyncedAt` on the connected source, when volume warrants.
 - **Cursor monotonicity is an adapter contract, not a port guarantee.** The port

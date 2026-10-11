@@ -119,7 +119,7 @@ export function AcquisitionEditForm({
           type="date"
         />
       </label>
-      {/* Same name the alta gives it (#1441, #1635) — see CONTEXT.md, **valuation
+      {/* Same name the alta gives it (#1441, #1635) — see GLOSSARY.md, **valuation
           anchor**. This screen renders «Coste de adquisición» a few pixels below,
           so a second name for the value is a question the reader has to answer. */}
       <label>

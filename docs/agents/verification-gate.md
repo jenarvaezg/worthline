@@ -25,7 +25,7 @@
   Two suppressions exist today and both are documented in place:
   `hero-data-health-alert.tsx` (biome cannot evaluate a conditional `role`) and
   `form-submit-scroll-keeper.tsx` (an intentional effect re-run trigger).
-- `bun run format` — `biome format --write .` (fix formatting locally).
+- `bun run format` — `biome check --write .`: formats, organizes imports and applies safe lint fixes, the same pass the pre-commit hook runs. It fixes what `lint` reports as fixable.
 - `bun run build` — full production gate, including `apps/web`'s `bun --bun next build`.
   Use before deploy / as a pre-push gate. Vercel Functions stay on Node 24 — see [`bun-runtime.md`](bun-runtime.md).
 - `bun run test:related` — run only the tests related to changed files.

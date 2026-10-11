@@ -154,5 +154,5 @@ them and contain only their per-trigger row-shaping.
   exported.
 - No new domain noun. "Ripple," "frozen identity," "valuation anchor," "balance
   anchor," "amortization plan," "position revalue," and "ownership split" already name
-  these concepts (CONTEXT.md, ADR 0012/0017/0020/0021). The new files are
+  these concepts (GLOSSARY.md, ADR 0012/0017/0020/0021). The new files are
   implementation homes, not new terms.

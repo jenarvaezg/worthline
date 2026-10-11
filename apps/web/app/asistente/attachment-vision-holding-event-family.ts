@@ -172,7 +172,7 @@ export const DROPPED_ISIN_WARNING =
 export const DROPPED_DGS_CODE_WARNING =
   "El código DGS del documento no se lee como el código de un plan (N seguida de cuatro cifras); no se recoge.";
 /**
- * The reading claimed BOTH registers at once, which CONTEXT.md calls impossible: an
+ * The reading claimed BOTH registers at once, which GLOSSARY.md calls impossible: an
  * ISIN and a DGS code name different instruments, so one of them is about another
  * paper. There is no principled winner, so neither is kept — the fact survives and is
  * attributed by its label, which is the honest outcome of a contradiction.

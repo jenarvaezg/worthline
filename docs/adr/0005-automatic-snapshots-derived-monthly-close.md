@@ -23,4 +23,4 @@ single-user app, and a derived close can never be forgotten.
   Schema changes follow the forward-migration approach in
   [ADR 0002](./0002-forward-migration-with-drizzle.md).
 - The snapshot save form, its checkboxes, and the "save" vocabulary leave the UI
-  (see CONTEXT.md: _avoid "guardar snapshot" as a user-facing action_).
+  (see GLOSSARY.md: _avoid "guardar snapshot" as a user-facing action_).

@@ -149,7 +149,7 @@ export function resolveExternalTransferCapture(
   // The plan already applied the default (the importe that arrived) and refused a
   // negative one, so this is the figure the row carries — never re-derived here, or
   // the default would have two homes. Its absence is a bug upstream, not a shape the
-  // ledger supports (CONTEXT.md, «Inherited cost»), so it throws rather than guessing.
+  // ledger supports (GLOSSARY.md, «Inherited cost»), so it throws rather than guessing.
   const { transferCostMinor } = plan.value;
   if (transferCostMinor === undefined) {
     throw new Error(

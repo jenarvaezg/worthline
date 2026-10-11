@@ -36,7 +36,7 @@ env:
 jobs:
   # Detect docs-only PRs so heavy jobs can skip. Safe to omit from full CI:
   #   docs/**  — ADRs, agent docs, design system, interaction patterns, …
-  #   *.md     — root markdown only (README, CONTEXT, AGENTS, CLAUDE, …)
+  #   *.md     — root markdown only (README, GLOSSARY, AGENTS, CLAUDE, …)
   # Any other path (including .github/workflows, packages/, apps/, tests/) runs
   # the full graph. Mixed docs+code PRs always match `code` and run everything.
   changes:

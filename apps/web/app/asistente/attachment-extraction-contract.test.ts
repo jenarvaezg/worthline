@@ -1171,7 +1171,7 @@ describe("el ISIN del contrato lleva dígito de control (#1747)", () => {
 });
 
 /**
- * CONTEXT.md, «Security id»: an ISIN or a Código DGS, «mutually exclusive, never both
+ * GLOSSARY.md, «Security id»: an ISIN or a Código DGS, «mutually exclusive, never both
  * at once». A reading that claims both is contradictory, not rich — so the boundary
  * refuses it rather than letting a downstream tiebreak decide which paper it was.
  */

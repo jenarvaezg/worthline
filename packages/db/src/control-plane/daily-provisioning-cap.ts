@@ -23,7 +23,7 @@ export interface DailyProvisioningClaim {
 }
 
 /**
- * The **daily provisioning cap** (CONTEXT.md; #1175): the fuse #733 left as the
+ * The **daily provisioning cap** (GLOSSARY.md; #1175): the fuse #733 left as the
  * future of open registration. Every serverless instance shares it through the
  * control plane, so the decision cannot live in process memory (ADR 0051's
  * reasoning).

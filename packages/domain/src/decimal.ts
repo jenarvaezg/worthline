@@ -3,7 +3,7 @@ import Big from "big.js";
 export type DecimalString = string;
 
 /**
- * The decimal seam. Units and prices are decimal strings (CONTEXT.md), money is
+ * The decimal seam. Units and prices are decimal strings (GLOSSARY.md), money is
  * integer minor units — so every units/price calculation and the decimal→minor
  * boundary crosses this one module (backed by big.js) instead of being re-derived
  * with lossy float math. Keeping big.js behind this seam keeps it swappable.
@@ -112,7 +112,7 @@ export function toMinorInt(value: Big): number {
  * Integer minor units back to a decimal string, for the seam's division and
  * comparison primitives — the inverse of {@link multiplyToMinor} at price "1".
  *
- * Money is stored as integer cents (CONTEXT.md) but `divideUnits` speaks decimals,
+ * Money is stored as integer cents (GLOSSARY.md) but `divideUnits` speaks decimals,
  * so every «importe ÷ VL» has to cross this boundary. It goes through big.js rather
  * than `amountMinor / 100`: the float division is exact for the magnitudes involved,
  * but a division whose result feeds a stored unit count belongs behind the same seam

@@ -98,4 +98,4 @@ keeps the interest/principal split of each payment cycle it already computes, an
   one.
 - The schedule import (ADR 0104) is unaffected: it reads a bank's document into
   events and never simulated the francesa. It remains the only other thing
-  called a cuadro, and CONTEXT.md now distinguishes the two.
+  called a cuadro, and GLOSSARY.md now distinguishes the two.
