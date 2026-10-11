@@ -68,6 +68,24 @@ describe("parseTypedTransfer (#1482)", () => {
     });
   });
 
+  it.each([
+    "traspasa todo",
+    "Traspasa todas las participaciones del World al EM",
+    "Lo traspaso entero al EM",
+  ])("«%s» is the whole position, still waiting for its day", (text) => {
+    expect(parseTypedTransfer(text, TODAY)).toEqual({
+      missing: ["date"],
+      status: "incomplete",
+    });
+  });
+
+  it("«ahora» does not date a traspaso: the day has to be named (#1798)", () => {
+    expect(parseTypedTransfer("Ahora traspaso 500 € del World al EM", TODAY)).toEqual({
+      missing: ["date"],
+      status: "incomplete",
+    });
+  });
+
   it("refuses a message with no date at all rather than dating it today", () => {
     const reading = parseTypedTransfer("He traspasado 1.018,67 € del World al EM", TODAY);
 
@@ -457,6 +475,64 @@ describe("typedTransferInTurn: the figures last until a card spends them (#1798)
     );
 
     expect(reading).toMatchObject({ earlierMessage: WRITTEN, status: "read" });
+  });
+
+  it("«¿lo ves ahora?» is transparent: «ahora» is not the day of a traspaso", () => {
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        assistantText("No encuentro el fondo de destino."),
+        userMessage("¿Lo ves ahora?"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({ earlierMessage: WRITTEN, status: "read" });
+  });
+
+  it("«vale, todo claro, procede» is transparent: that «todo» is assent, not the participaciones", () => {
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        assistantText("Te lo preparo como traspaso."),
+        userMessage("Vale, todo claro, procede"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({
+      earlierMessage: WRITTEN,
+      status: "read",
+      transfer: { portion: { amountMinor: 101867, kind: "amount" } },
+    });
+  });
+
+  it.each([
+    "todo bien, adelante",
+    "Todo correcto, procede",
+  ])("«%s» is assent too, and reaches back to the figures", (assent) => {
+    const reading = typedTransferInTurn(
+      [userMessage(WRITTEN), assistantText("¿Lo anoto?"), userMessage(assent)],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({ earlierMessage: WRITTEN, status: "read" });
+  });
+
+  it("«traspasa todo» is still «todo», and it is the turn's own", () => {
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        assistantText("¿Lo anoto?"),
+        userMessage("No, mejor traspasa todo, hoy"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      status: "read",
+      transfer: { executedAt: TODAY, portion: { kind: "all" } },
+    });
   });
 
   it("with nothing written at all, the reading is absent", () => {

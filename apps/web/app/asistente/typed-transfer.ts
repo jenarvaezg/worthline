@@ -216,6 +216,28 @@ const ALL_PORTION_WORDS =
 const ALL_PORTION_PERCENT = /(?<!\d)100\s?%/u;
 
 /**
+ * «Todo» that is ASSENT and not the participaciones (#1798, decided with Jose): «vale, todo
+ * claro, procede», «todo bien», «todo correcto». Cut out before the portion is read, so
+ * the «sí, procede» of someone agreeing reaches back to the figures they wrote instead
+ * of stopping the walk as a «todo» with no day.
+ *
+ * A short list on purpose, and not a rule about what may follow «todo»: an assent missed
+ * here fails CLOSED (the turn reads as «todo» and is asked for its day), while a «todo»
+ * wrongly taken for assent would reach back to an earlier importe the person just
+ * replaced with the whole position.
+ */
+const ASSENT_TODO =
+  /\btodo\s+(?:claro|bien|correcto|ok|okay|perfecto|listo|en\s+orden|entendido|conforme)\b/giu;
+
+/**
+ * «Ahora», as the traspaso reads it: not a day (#1798). The shared reader takes it for
+ * today, which is right for «he comprado ahora»; in this lane it is far likelier to be
+ * «¿lo ves ahora?», and as a date it stopped the walk over the conversation with a
+ * traspaso missing its importe. A traspaso done today is «hoy» — the person names it.
+ */
+const NOT_A_DAY = /\bahora(?:\s+mismo)?\b/giu;
+
+/**
  * Read the traspaso written in `text`, against the clock the turn is being answered at.
  *
  * The date is required and never defaulted, which is the one decision here worth
@@ -240,8 +262,12 @@ export function parseTypedTransfer(text: string, today: string): TypedTransferRe
   if (receipt !== null) return receiptReading(receipt, scanned, today);
   // The identifiers go first (#1798): a person who types the destination's ISIN so the
   // assistant can find it has written no figure, and a message of «todo» naming its
-  // fund by ISIN is not «todo» plus an importe.
-  const prose = withoutSecurityIds(scanned);
+  // fund by ISIN is not «todo» plus an importe. So do the two words this lane reads
+  // differently from the shared reader: «ahora» names no day, and «todo claro» no
+  // portion.
+  const prose = withoutSecurityIds(scanned)
+    .replace(NOT_A_DAY, " ")
+    .replace(ASSENT_TODO, " ");
   const dated = dateInMessage(prose, today);
   // The date is cut out before the figures are counted: `12/08/2026` is three numbers
   // to a scanner and would make every dated message ambiguous.
@@ -289,7 +315,9 @@ function receiptReading(
   // and not the day it moved, so the gap is named instead of a day borrowed.
   const executedAt =
     figures.executedAt ??
-    (VALUE_DATE.test(scanned) ? null : (dateInMessage(scanned, today)?.day ?? null));
+    (VALUE_DATE.test(scanned)
+      ? null
+      : (dateInMessage(scanned.replace(NOT_A_DAY, " "), today)?.day ?? null));
   const amountMinor =
     figures.amount === undefined ? Number.NaN : Math.round(figures.amount * 100);
 
