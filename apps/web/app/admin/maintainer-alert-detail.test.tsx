@@ -307,8 +307,11 @@ describe("MaintainerAlertDetail", () => {
     // Illustrative cap only — the real figure lives in the deployment's env.
     const refused = buildProvisioningCapAlert({
       detectedAt: "2026-03-14T10:00:00.000Z",
-      reason: "cap_reached",
-      refusal: { dailyCap: 2, dayKey: "2026-03-14", used: 2 },
+      refusal: {
+        dayKey: "2026-03-14",
+        policy: { kind: "limited", limit: 2 },
+        provisionedToday: 2,
+      },
     });
 
     const html = renderToStaticMarkup(

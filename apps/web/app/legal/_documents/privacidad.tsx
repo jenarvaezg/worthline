@@ -79,10 +79,10 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           hay dentro.
         </li>
         <li>
-          <strong>Errores técnicos</strong>: cuando algo falla en el servidor, un informe
-          del fallo —qué error fue y en qué parte del código ocurrió— con los datos
-          personales filtrados antes de enviarse: no lleva tu correo, ni tu dirección IP,
-          ni cookies, ni el contenido de tu workspace. Solo errores: no se registran
+          <strong>Errores técnicos</strong>: cuando algo falla en el servidor, un aviso
+          del fallo con el tipo de error, el punto del código y la pantalla en que
+          ocurrió. No lleva el texto del error, ni tu correo, ni tu dirección IP, ni
+          cookies, ni el contenido de tu workspace. Solo errores: no se registran
           sesiones, ni grabaciones de pantalla, ni trazas de lo que haces.
         </li>
       </ul>

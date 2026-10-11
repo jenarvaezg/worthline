@@ -1,3 +1,5 @@
+import type { DailyProvisioningCapPolicy } from "@worthline/db";
+
 /**
  * The daily provisioning cap, read from the deployment (#1175, PRD #1171 S4).
  *
@@ -5,17 +7,20 @@
  * the public repo — so this module knows its NAME and nothing about its value:
  * there is no default number anywhere in code, docs or tests.
  *
- * Unset means **no cap**. Registration is open by design (#733): local no-auth
- * dev, the e2e suite and any self-hosted deploy never provision through a fuse,
- * and a missing variable must not turn into «nobody can sign up» — a silent,
- * total outage of the front door would be worse than the cost the fuse bounds.
- * The fuse is something the operator switches ON.
+ * What an absent variable means depends on where the app runs:
  *
- * A value that is set but is not a non-negative integer is the opposite case:
- * the operator clearly meant to switch the fuse on, so a typo must not quietly
- * remove it. It fails CLOSED — for new workspaces only; a returning user is
- * resolved before the cap is consulted — and the maintainer alert names the
- * misconfiguration, so the first refused sign-up is also the signal to fix it.
+ * - **Outside production** (local no-auth dev, the e2e suite, a self-hosted
+ *   deploy) it means no cap: registration is open by design there (#733), and
+ *   none of those provisions billed databases for strangers.
+ * - **In a Vercel production deploy** it closes new sign-ups, exactly like an
+ *   unreadable value. The fuse exists to close #733's open registration in the
+ *   public deploy (PRD #1171), and a variable forgotten in the Vercel dashboard
+ *   must not reopen it in silence — so a forgotten variable and a typo behave
+ *   the same, and the maintainer alert names which one it was.
+ *
+ * Neither ever touches an existing user: the provisioner resolves them before
+ * the cap is consulted. That is also why this is not a boot refusal in
+ * `production-config.ts` — refusing to boot would lock out everyone.
  *
  * Pure over an env bag: no `process.env` read, no I/O.
  */
@@ -35,42 +40,28 @@ export const PROVISIONING_CLOSED_FLAG = { name: "registro", value: "lleno" } as 
  */
 export const PROVISIONING_CLOSED_LOGIN_PATH = `/login?${PROVISIONING_CLOSED_FLAG.name}=${PROVISIONING_CLOSED_FLAG.value}`;
 
-export type DailyProvisioningCapPolicy =
-  | { kind: "uncapped" }
-  | { kind: "capped"; cap: number }
-  | { kind: "misconfigured"; raw: string };
-
 /** Digits only: no sign, no decimals, no exponent, no hex, no separators. */
 const NON_NEGATIVE_INTEGER = /^\d+$/;
+
+/**
+ * The same production signal `production-config.ts` keys on: `VERCEL_ENV` is set
+ * only by the hosted platform, while `NODE_ENV=production` is also how local
+ * single-user mode and the e2e suite run.
+ */
+function isProductionDeploy(env: Readonly<Record<string, string | undefined>>): boolean {
+  return env["VERCEL_ENV"]?.trim() === "production";
+}
 
 export function readDailyProvisioningCap(
   env: Readonly<Record<string, string | undefined>>,
 ): DailyProvisioningCapPolicy {
-  const raw = env[DAILY_PROVISIONING_CAP_ENV];
-  const trimmed = raw?.trim() ?? "";
-  if (trimmed === "") return { kind: "uncapped" };
-  if (!NON_NEGATIVE_INTEGER.test(trimmed)) {
-    return { kind: "misconfigured", raw: raw ?? "" };
+  const configuredValue = env[DAILY_PROVISIONING_CAP_ENV] ?? "";
+  const trimmed = configuredValue.trim();
+  if (trimmed === "") {
+    return isProductionDeploy(env) ? { kind: "unset" } : { kind: "uncapped" };
   }
-  const cap = Number(trimmed);
-  return Number.isSafeInteger(cap)
-    ? { cap, kind: "capped" }
-    : { kind: "misconfigured", raw: raw ?? "" };
-}
-
-/**
- * The cap the provisioner enforces: null for none, a number otherwise. A
- * misconfigured value closes registration (cap 0) — see the module contract.
- */
-export function effectiveDailyProvisioningCap(
-  policy: DailyProvisioningCapPolicy,
-): number | null {
-  switch (policy.kind) {
-    case "uncapped":
-      return null;
-    case "capped":
-      return policy.cap;
-    case "misconfigured":
-      return 0;
-  }
+  const limit = Number(trimmed);
+  return NON_NEGATIVE_INTEGER.test(trimmed) && Number.isSafeInteger(limit)
+    ? { kind: "limited", limit }
+    : { configuredValue, kind: "misconfigured" };
 }

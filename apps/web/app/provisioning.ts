@@ -1,17 +1,17 @@
 import { buildProvisioningCapAlert } from "@web/admin/provisioning-cap-alert";
 import { withControlPlaneStore } from "@web/control-plane-store";
 import {
-  effectiveDailyProvisioningCap,
   PROVISIONING_CLOSED_LOGIN_PATH,
   readDailyProvisioningCap,
 } from "@web/provisioning-cap";
+import { handOffSignInWorkspace, takeSignInWorkspace } from "@web/sign-in-handoff";
 import { createTursoPort } from "@web/turso-port";
 import {
   type ControlPlaneStore,
+  DailyProvisioningCapRefusedError,
   type ProvisionDeps,
   provisionWorkspaceForUser,
   type TursoPort,
-  WorkspaceProvisioningClosedError,
 } from "@worthline/db";
 
 /**
@@ -21,8 +21,8 @@ import {
  * one on first login. Runs only in the Node runtime (the Auth.js callbacks);
  * the local no-auth build never reaches it.
  *
- * Creating a NEW workspace passes the daily provisioning cap (#1175): when the
- * day is full the sign-in is refused honestly and the maintainer gets an alert
+ * Creating a NEW workspace passes the daily provisioning cap (#1175): when it
+ * refuses, the sign-in is turned away honestly and the maintainer gets an alert
  * (ADR 0064). A returning user never meets the cap.
  */
 
@@ -56,7 +56,7 @@ type Env = Record<string, string | undefined>;
 
 /**
  * The signed-in identity's workspace, or `closed` when it owns none and the
- * day's provisioning cap refuses to create one. Raises the maintainer alert on
+ * daily provisioning cap refuses to create one. Raises the maintainer alert on
  * a refusal; any other failure propagates.
  */
 export async function resolveWorkspaceForSignIn(
@@ -64,7 +64,7 @@ export async function resolveWorkspaceForSignIn(
   env: Env = process.env,
   overrides: ProvisioningOverrides = {},
 ): Promise<SignInWorkspaceOutcome> {
-  const capPolicy = readDailyProvisioningCap(env);
+  const provisioningCap = readDailyProvisioningCap(env);
   const now = overrides.now ?? (() => new Date().toISOString());
 
   return withControlPlaneStore<SignInWorkspaceOutcome, ProvisioningControlPlane>(
@@ -74,8 +74,8 @@ export async function resolveWorkspaceForSignIn(
         const workspace = await provisionWorkspaceForUser(
           {
             controlPlane,
-            dailyProvisioningCap: effectiveDailyProvisioningCap(capPolicy),
             now,
+            provisioningCap,
             turso,
             ...(overrides.openAndMigrate
               ? { openAndMigrate: overrides.openAndMigrate }
@@ -92,14 +92,10 @@ export async function resolveWorkspaceForSignIn(
           },
         };
       } catch (error) {
-        if (!(error instanceof WorkspaceProvisioningClosedError)) throw error;
+        if (!(error instanceof DailyProvisioningCapRefusedError)) throw error;
         await raiseCapAlertBestEffort(controlPlane, {
           detectedAt: now(),
-          reason: capPolicy.kind === "misconfigured" ? "misconfigured" : "cap_reached",
-          refusal: { dailyCap: error.dailyCap, dayKey: error.dayKey, used: error.used },
-          ...(capPolicy.kind === "misconfigured"
-            ? { configuredValue: capPolicy.raw }
-            : {}),
+          refusal: error.refusal,
         });
         return { kind: "closed" };
       }
@@ -113,29 +109,12 @@ export async function resolveWorkspaceForSignIn(
 }
 
 /**
- * The workspace to pin into the session token. Called from the `jwt` callback
- * AFTER {@link admitSignIn} has already provisioned, so in practice it resolves
- * an existing workspace; a refusal here (the cap closing between the two
- * callbacks would need the workspace to vanish in between) is a failure.
- */
-export async function provisionWorkspaceForEmail(
-  email: string,
-  env: Env = process.env,
-  overrides: ProvisioningOverrides = {},
-): Promise<ResolvedWorkspace> {
-  const outcome = await resolveWorkspaceForSignIn(email, env, overrides);
-  if (outcome.kind === "closed") {
-    throw new Error("Workspace provisioning is closed for this identity today.");
-  }
-  return outcome.workspace;
-}
-
-/**
- * The Auth.js `signIn` decision (#1175): `true` lets the sign-in through with
- * its workspace provisioned; a path refuses it and sends the person there. It
- * runs in `signIn` rather than `jwt` because only `signIn` can redirect — a
- * refusal raised from `jwt` would surface as Auth.js's generic server-error
- * page, which is not an honest way to say «hoy estamos llenos».
+ * The Auth.js `signIn` decision (#1175, ADR 0110): `true` lets the sign-in
+ * through with its workspace provisioned; a path refuses it and sends the person
+ * there. It runs in `signIn` rather than `jwt` because only `signIn` can
+ * redirect — a refusal raised from `jwt` would surface as Auth.js's generic
+ * server-error page, which is not an honest way to say «hoy estamos llenos».
+ * The resolved workspace is handed to this request's `jwt` callback.
  */
 export async function admitSignIn(
   email: string,
@@ -143,7 +122,33 @@ export async function admitSignIn(
   overrides: ProvisioningOverrides = {},
 ): Promise<true | string> {
   const outcome = await resolveWorkspaceForSignIn(email, env, overrides);
-  return outcome.kind === "ready" ? true : PROVISIONING_CLOSED_LOGIN_PATH;
+  if (outcome.kind === "closed") return PROVISIONING_CLOSED_LOGIN_PATH;
+  handOffSignInWorkspace(email, outcome.workspace);
+  return true;
+}
+
+/**
+ * The workspace the `jwt` callback pins into the session token: the one
+ * {@link admitSignIn} handed off in this same request, so a login opens the
+ * control plane once. Without a handoff (a path that bypasses the auth route)
+ * it resolves the workspace itself — slower, same answer: `signIn` has already
+ * provisioned it, and an existing user is never refused. A refusal here would
+ * need the workspace to vanish between the two callbacks, so it is a failure.
+ */
+export async function workspaceForSessionToken(
+  email: string,
+  env: Env = process.env,
+  overrides: ProvisioningOverrides = {},
+): Promise<ResolvedWorkspace> {
+  const handedOff = takeSignInWorkspace(email);
+  if (handedOff) return handedOff;
+  const outcome = await resolveWorkspaceForSignIn(email, env, overrides);
+  if (outcome.kind === "closed") {
+    throw new Error(
+      "The signed-in identity has no workspace and the daily provisioning cap refused one.",
+    );
+  }
+  return outcome.workspace;
 }
 
 function tursoPortFromEnv(env: Env): TursoPort {

@@ -69,8 +69,9 @@ workspace a signed-in user owns; each per-workspace database holds exactly one
 `id = 'default'` row and knows nothing of users. On first login a user with no grant
 is _provisioned_ a fresh workspace database here (ADR 0030). Provisioning is the one
 step a **daily provisioning cap** (UI: «cupo diario de altas», #1175) can refuse: it
-meters new workspaces per UTC day, never a returning user's sign-in, and is off
-unless the deployment sets it.
+meters new workspaces per UTC day, never a returning user's sign-in. Outside production
+it is off unless the deployment sets it; a production deploy without it refuses new
+workspaces, like one with an unreadable value (ADR 0110).
 _Avoid_: admin database, master DB.
 
 **Scope**:
@@ -1440,4 +1441,4 @@ _Avoid_: imported history (implies verified), synced history.
 - Money amounts are represented as integer minor units.
 - Decimal quantities, FX rates, and prices should use decimal strings.
 - Local data must stay outside git.
-- No telemetry or personal-spreadsheet assumptions. Auth and per-**workspace** cloud storage — originally excluded in the MVP — are now part of the **hosted, multi-user** product (see ADR 0030): a **user** signs in and is granted access to workspaces. They add no figure and change no calculation; the app stays local-first and runs identically with auth off.
+- No telemetry or personal-spreadsheet assumptions. Auth and per-**workspace** cloud storage — originally excluded in the MVP — are now part of the **hosted, multi-user** product (see ADR 0030): a **user** signs in and is granted access to workspaces. They add no figure and change no calculation; the app stays local-first and runs identically with auth off. The one exception to «no telemetry» is an **error processor** (Sentry, ADR 0110): server errors only, reduced to their type, code location and route pattern — never their text, never usage, sessions, traces or replays — and only when the deployment configures it.

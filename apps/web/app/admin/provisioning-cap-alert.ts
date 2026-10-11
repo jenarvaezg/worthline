@@ -1,10 +1,14 @@
 import { DAILY_PROVISIONING_CAP_ENV } from "@web/provisioning-cap";
-import type { RaiseMaintainerAlertInput } from "@worthline/db";
+import {
+  type DailyProvisioningCapRefusal,
+  dailyProvisioningLimit,
+  type RaiseMaintainerAlertInput,
+} from "@worthline/db";
 
 /**
  * The provisioning-cap maintainer-alert contract (#1175, ADR 0064 amended).
  *
- * When the day's provisioning cap turns a new identity away, the refused person
+ * When the daily provisioning cap turns a new identity away, the refused person
  * gets the honest «hoy estamos llenos» — and the maintainer has to hear about
  * it, or demand bouncing off the fuse is invisible. The `/admin` alerts surface
  * already exists for exactly this kind of signal; this is its emitter.
@@ -19,8 +23,8 @@ import type { RaiseMaintainerAlertInput } from "@worthline/db";
  *     day's cap»: the first refusal of a day mints the alert and every later one
  *     accumulates an occurrence, so the occurrence count reads as «how many
  *     sign-ups were turned away that day». The next day is a new incident.
- *   - The payload carries the day, the cap and the count — and never the
- *     identity that was refused. The builder is not even given it.
+ *   - The payload carries the day, the cause, the limit and the count — and
+ *     never the identity that was refused. The builder is not even given it.
  */
 
 /** Sentinel workspace id: a refused sign-up is fleet-wide (same as missed captures). */
@@ -28,21 +32,29 @@ export const PROVISIONING_CAP_ALERT_WORKSPACE_ID = "fleet";
 
 const HOLDING_ID_PREFIX = "provisioning-cap:";
 
-/** Why the sign-up was refused: the day is full, or the cap could not be read. */
-export type ProvisioningCapRefusalReason = "cap_reached" | "misconfigured";
+/**
+ * Why the cap refused, in the maintainer's terms: the day is full, registration
+ * is closed on purpose (limit 0), the variable is unreadable, or a production
+ * deploy is missing it.
+ */
+export type ProvisioningCapCause =
+  | "cap_reached"
+  | "closed"
+  | "misconfigured"
+  | "unset_in_production";
 
 /** The forensic payload of one refused sign-up (#1175). */
 export interface ProvisioningCapPayload {
   category: "provisioning_cap";
   /** The maintainer-facing diagnosis, already spelled out in words. */
   summary: string;
-  reason: ProvisioningCapRefusalReason;
+  cause: ProvisioningCapCause;
   /** The UTC day whose cap refused the sign-up (`YYYY-MM-DD`). */
   dayKey: string;
-  /** The cap in force (0 when closed, or when misconfigured — it fails closed). */
-  dailyCap: number;
-  /** Workspaces that day had already handed out. */
-  used: number;
+  /** The limit enforced — 0 for every fail-closed cause. */
+  limit: number;
+  /** Workspaces that day had already provisioned. */
+  provisionedToday: number;
   /** The env value that failed to parse — only for `misconfigured`. */
   configuredValue?: string;
   detectedAt: string;
@@ -61,61 +73,86 @@ export function provisioningCapDayLabel(dayKey: string): string {
   return match ? `${match[3]}-${match[2]}-${match[1]}` : dayKey;
 }
 
+function causeOf(refusal: DailyProvisioningCapRefusal): ProvisioningCapCause {
+  switch (refusal.policy.kind) {
+    case "limited":
+      return refusal.policy.limit === 0 ? "closed" : "cap_reached";
+    case "misconfigured":
+      return "misconfigured";
+    case "unset":
+      return "unset_in_production";
+  }
+}
+
 export function buildProvisioningCapAlert(input: {
-  refusal: { dayKey: string; dailyCap: number; used: number };
-  reason: ProvisioningCapRefusalReason;
-  /** The raw env value, for a misconfigured cap. */
-  configuredValue?: string;
+  refusal: DailyProvisioningCapRefusal;
   detectedAt: string;
 }): RaiseMaintainerAlertInput & { payload: ProvisioningCapPayload } {
-  const { refusal, reason, detectedAt } = input;
-  const configuredValue =
-    reason === "misconfigured" ? (input.configuredValue ?? "") : null;
+  const { refusal, detectedAt } = input;
+  const { policy } = refusal;
   return {
     category: "provisioning_cap",
     holdingId: `${HOLDING_ID_PREFIX}${refusal.dayKey}`,
     occurredAt: detectedAt,
     payload: {
       category: "provisioning_cap",
-      dailyCap: refusal.dailyCap,
+      cause: causeOf(refusal),
       dayKey: refusal.dayKey,
       detectedAt,
-      reason,
-      summary: provisioningCapSummary(refusal, configuredValue),
-      used: refusal.used,
-      ...(configuredValue === null ? {} : { configuredValue }),
+      limit: dailyProvisioningLimit(policy),
+      provisionedToday: refusal.provisionedToday,
+      summary: provisioningCapSummary(refusal),
+      ...(policy.kind === "misconfigured"
+        ? { configuredValue: policy.configuredValue }
+        : {}),
     },
     workspaceId: PROVISIONING_CAP_ALERT_WORKSPACE_ID,
   };
 }
 
-function provisioningCapSummary(
-  refusal: { dayKey: string; dailyCap: number; used: number },
-  configuredValue: string | null,
-): string {
+const EXISTING_USERS_UNAFFECTED = "Los usuarios existentes entran con normalidad.";
+
+function provisioningCapSummary(refusal: DailyProvisioningCapRefusal): string {
   const day = provisioningCapDayLabel(refusal.dayKey);
-  if (configuredValue !== null) {
-    return (
-      `Alta rechazada el ${day}: ${DAILY_PROVISIONING_CAP_ENV} vale «${configuredValue}», ` +
-      "que no es un entero no negativo, así que el cupo falla cerrado y no se abre " +
-      "ningún workspace nuevo. Los usuarios existentes entran con normalidad. " +
-      "Corrige la variable (o bórrala para registro abierto) y redespliega."
-    );
+  const { policy } = refusal;
+  switch (policy.kind) {
+    case "unset":
+      return (
+        `Alta rechazada el ${day}: este despliegue de producción no define ` +
+        `${DAILY_PROVISIONING_CAP_ENV}, y en producción un cupo sin definir falla ` +
+        "cerrado igual que uno ilegible, así que no se abre ningún workspace nuevo. " +
+        `${EXISTING_USERS_UNAFFECTED} Define la variable y redespliega.`
+      );
+    case "misconfigured":
+      return (
+        `Alta rechazada el ${day}: ${DAILY_PROVISIONING_CAP_ENV} vale ` +
+        `«${policy.configuredValue}», que no es un entero no negativo, así que el ` +
+        "cupo falla cerrado y no se abre ningún workspace nuevo. " +
+        `${EXISTING_USERS_UNAFFECTED} Corrige la variable y redespliega.`
+      );
+    case "limited":
+      if (policy.limit === 0) {
+        return (
+          `Alta rechazada el ${day}: el cupo diario de altas está a 0, es decir, ` +
+          `el registro de workspaces nuevos está cerrado. ${EXISTING_USERS_UNAFFECTED}`
+        );
+      }
+      return (
+        `Alta rechazada el ${day}: el cupo diario de altas (${policy.limit}) ya está ` +
+        `cubierto con ${refusal.provisionedToday} workspace(s) nuevo(s). A la persona ` +
+        "se le ha dicho que hoy estamos llenos y que vuelva mañana. " +
+        `${EXISTING_USERS_UNAFFECTED} Cada ocurrencia de esta alerta es un alta ` +
+        "rechazada ese día."
+      );
   }
-  if (refusal.dailyCap === 0) {
-    return (
-      `Alta rechazada el ${day}: el cupo diario de altas está a 0, es decir, el ` +
-      "registro de workspaces nuevos está cerrado. Los usuarios existentes entran " +
-      "con normalidad."
-    );
-  }
-  return (
-    `Alta rechazada el ${day}: el cupo diario de altas (${refusal.dailyCap}) ya está ` +
-    `cubierto con ${refusal.used} workspace(s) nuevo(s). A la persona se le ha dicho ` +
-    "que hoy estamos llenos y que vuelva mañana; los usuarios existentes entran con " +
-    "normalidad. Cada ocurrencia de esta alerta es un alta rechazada hoy."
-  );
 }
+
+const CAUSES: ReadonlySet<string> = new Set<ProvisioningCapCause>([
+  "cap_reached",
+  "closed",
+  "misconfigured",
+  "unset_in_production",
+]);
 
 /**
  * Whether a stored occurrence payload is a provisioning-cap one. Structural, not
@@ -129,9 +166,10 @@ export function isProvisioningCapPayload(
   return (
     candidate.category === "provisioning_cap" &&
     typeof candidate.summary === "string" &&
-    (candidate.reason === "cap_reached" || candidate.reason === "misconfigured") &&
+    typeof candidate.cause === "string" &&
+    CAUSES.has(candidate.cause) &&
     typeof candidate.dayKey === "string" &&
-    typeof candidate.dailyCap === "number" &&
-    typeof candidate.used === "number"
+    typeof candidate.limit === "number" &&
+    typeof candidate.provisionedToday === "number"
   );
 }

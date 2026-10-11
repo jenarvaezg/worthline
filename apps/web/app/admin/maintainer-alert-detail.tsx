@@ -199,10 +199,13 @@ function ProvisioningCapView({ payload }: { payload: ProvisioningCapPayload }) {
       <p className="alertSummary">{payload.summary}</p>
       <p className="alertMeta">
         Día <strong>{provisioningCapDayLabel(payload.dayKey)}</strong> (UTC) · Cupo{" "}
-        <strong>{payload.dailyCap}</strong> · altas ya concedidas ese día {payload.used}
-        {payload.reason === "misconfigured"
+        <strong>{payload.limit}</strong> · altas ya concedidas ese día{" "}
+        {payload.provisionedToday}
+        {payload.cause === "misconfigured"
           ? ` · valor configurado «${payload.configuredValue ?? ""}» ilegible`
-          : null}
+          : payload.cause === "unset_in_production"
+            ? " · variable sin definir en producción"
+            : null}
       </p>
     </>
   );

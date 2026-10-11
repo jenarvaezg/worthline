@@ -5,9 +5,9 @@ import { createInMemoryControlPlaneStore } from "@db/control-plane";
 import { openLibsqlClient } from "@db/libsql-client";
 import { SCHEMA_VERSION } from "@db/migrate";
 import {
+  DailyProvisioningCapRefusedError,
   provisionWorkspaceForUser,
   type TursoPort,
-  WorkspaceProvisioningClosedError,
 } from "@db/provisioner";
 import { afterAll, describe, expect, test, vi } from "vitest";
 
@@ -285,40 +285,62 @@ describe("workspace provisioner", () => {
 });
 
 /**
- * The daily provisioning cap (#1175). The caps below are illustrative — the real
- * figure lives only in the deployment's env. The hostile cases: a returning user
- * on a full day, the race for the last slot, and the reset at the UTC day change.
+ * The daily provisioning cap (#1175). The limits below are illustrative — the
+ * real figure lives only in the deployment's env. The hostile cases: a returning
+ * user on a full day, sign-ups competing for the last place, and the reset at the
+ * UTC day change.
  */
 describe("workspace provisioner · daily provisioning cap (#1175)", () => {
   const MORNING = "2026-03-14T09:00:00.000Z";
+  const limited = (limit: number) => ({ kind: "limited" as const, limit });
 
-  test("a returning user on a full day still gets their workspace, and takes no slot", async () => {
+  /**
+   * How many workspaces `day` has provisioned, read through the cap port: a claim
+   * under a limit nothing reaches reports the count it lands on, then goes back.
+   */
+  async function provisionedOn(
+    cp: Awaited<ReturnType<typeof createInMemoryControlPlaneStore>>,
+    day: string,
+  ): Promise<number> {
+    const probe = await cp.claimDailyProvisioning(day, Number.MAX_SAFE_INTEGER);
+    await cp.releaseDailyProvisioning(day);
+    return probe.provisionedToday - 1;
+  }
+
+  test("a returning user on a full day still gets their workspace, and is not counted", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port, created } = fakeTurso(tempDir("worthline-cap-returning-"));
     try {
       const deps = {
         controlPlane: cp,
-        dailyProvisioningCap: 1,
         now: () => MORNING,
+        provisioningCap: limited(1),
         turso: port,
       };
       const ana = await provisionWorkspaceForUser(deps, "ana@example.com");
       await expect(provisionWorkspaceForUser(deps, "leo@example.com")).rejects.toThrow(
-        WorkspaceProvisioningClosedError,
+        DailyProvisioningCapRefusedError,
       );
 
       // The day is full — and Ana's next sign-in is untouched by it.
       const again = await provisionWorkspaceForUser(deps, "ana@example.com");
       expect(again.id).toBe(ana.id);
       expect(created).toHaveLength(1);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(1);
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(1);
 
-      // Even a closed registration (cap 0) never locks an existing user out.
-      const closed = await provisionWorkspaceForUser(
-        { ...deps, dailyProvisioningCap: 0 },
-        "ana@example.com",
-      );
-      expect(closed.id).toBe(ana.id);
+      // Nor does any closed cap — a zero limit, a typo, a forgotten variable —
+      // ever lock an existing user out.
+      for (const provisioningCap of [
+        limited(0),
+        { configuredValue: "cinco", kind: "misconfigured" as const },
+        { kind: "unset" as const },
+      ]) {
+        const closed = await provisionWorkspaceForUser(
+          { ...deps, provisioningCap },
+          "ana@example.com",
+        );
+        expect(closed.id).toBe(ana.id);
+      }
     } finally {
       cp.close();
     }
@@ -330,8 +352,8 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     try {
       const deps = {
         controlPlane: cp,
-        dailyProvisioningCap: 1,
         now: () => MORNING,
+        provisioningCap: limited(1),
         turso: port,
       };
       await provisionWorkspaceForUser(deps, "ana@example.com");
@@ -339,8 +361,12 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
       const refusal = await provisionWorkspaceForUser(deps, "leo@example.com").catch(
         (error: unknown) => error,
       );
-      expect(refusal).toBeInstanceOf(WorkspaceProvisioningClosedError);
-      expect(refusal).toMatchObject({ dailyCap: 1, dayKey: "2026-03-14", used: 1 });
+      expect(refusal).toBeInstanceOf(DailyProvisioningCapRefusedError);
+      expect((refusal as DailyProvisioningCapRefusedError).refusal).toEqual({
+        dayKey: "2026-03-14",
+        policy: limited(1),
+        provisionedToday: 1,
+      });
 
       expect(created).toHaveLength(1);
       // The refused identity left nothing behind in the control plane.
@@ -350,26 +376,52 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     }
   });
 
-  test("new identities racing for the last slots: exactly the cap is provisioned", async () => {
+  test("a misconfigured or unset cap refuses new identities and says which it was", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port, created } = fakeTurso(tempDir("worthline-cap-closed-"));
+    try {
+      for (const provisioningCap of [
+        { configuredValue: "cinco", kind: "misconfigured" as const },
+        { kind: "unset" as const },
+      ]) {
+        const refusal = await provisionWorkspaceForUser(
+          { controlPlane: cp, now: () => MORNING, provisioningCap, turso: port },
+          "leo@example.com",
+        ).catch((error: unknown) => error);
+        expect((refusal as DailyProvisioningCapRefusedError).refusal).toEqual({
+          dayKey: "2026-03-14",
+          policy: provisioningCap,
+          provisionedToday: 0,
+        });
+      }
+      expect(created).toHaveLength(0);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("new identities competing for the last places: exactly the limit is provisioned", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port, created } = fakeTurso(tempDir("worthline-cap-race-"));
     try {
-      // The two winners are held inside their migration until both have their
-      // slot, so the losers' claims land while the winners are still creating.
+      // The two admitted sign-ups are held inside their migration until both
+      // are in, so the other claims are answered while those two are still
+      // mid-creation. The in-memory client interleaves the statements rather
+      // than running them in parallel; the atomic claim is what this pins.
       let arrived = 0;
       let release = () => {};
-      const bothWinnersInside = new Promise<void>((resolve) => {
+      const bothAdmittedInside = new Promise<void>((resolve) => {
         release = resolve;
       });
       const deps = {
         controlPlane: cp,
-        dailyProvisioningCap: 2,
         now: () => MORNING,
         openAndMigrate: async () => {
           arrived += 1;
           if (arrived === 2) release();
-          await bothWinnersInside;
+          await bothAdmittedInside;
         },
+        provisioningCap: limited(2),
         turso: port,
       };
 
@@ -383,13 +435,13 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
       const refused = outcomes.filter(
         (outcome) =>
           outcome.status === "rejected" &&
-          outcome.reason instanceof WorkspaceProvisioningClosedError,
+          outcome.reason instanceof DailyProvisioningCapRefusedError,
       );
       expect(provisioned).toHaveLength(2);
       expect(refused).toHaveLength(3);
       expect(created).toHaveLength(2);
       expect(await cp.listAllWorkspaces()).toHaveLength(2);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(2);
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(2);
     } finally {
       cp.close();
     }
@@ -402,27 +454,27 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     try {
       const deps = {
         controlPlane: cp,
-        dailyProvisioningCap: 1,
         now: () => now,
+        provisioningCap: limited(1),
         turso: port,
       };
       await provisionWorkspaceForUser(deps, "ana@example.com");
       await expect(provisionWorkspaceForUser(deps, "leo@example.com")).rejects.toThrow(
-        WorkspaceProvisioningClosedError,
+        DailyProvisioningCapRefusedError,
       );
 
       now = "2026-03-15T00:00:00.000Z";
       const leo = await provisionWorkspaceForUser(deps, "leo@example.com");
       expect(leo.id).toBeTruthy();
       expect(created).toHaveLength(2);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(1);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-15")).toBe(1);
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(1);
+      expect(await provisionedOn(cp, "2026-03-15")).toBe(1);
     } finally {
       cp.close();
     }
   });
 
-  test("a provision that fails hands its slot back to the day it was claimed on", async () => {
+  test("a provision that fails is given back to the day it was claimed on", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port } = fakeTurso(tempDir("worthline-cap-failure-"));
     // The claim happens a second before midnight; the failure lands after it.
@@ -439,21 +491,21 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
         provisionWorkspaceForUser(
           {
             controlPlane: cp,
-            dailyProvisioningCap: 1,
             now: () => now,
+            provisioningCap: limited(1),
             turso: failing,
           },
           "ana@example.com",
         ),
       ).rejects.toThrow("Turso Platform API unavailable");
 
-      // The outage did not eat the day's only slot…
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(0);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-15")).toBe(0);
+      // The outage did not eat the day's only place…
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(0);
+      expect(await provisionedOn(cp, "2026-03-15")).toBe(0);
       // …so the retry, on the healthy port, gets in.
       now = "2026-03-14T23:59:59.000Z";
       const ws = await provisionWorkspaceForUser(
-        { controlPlane: cp, dailyProvisioningCap: 1, now: () => now, turso: port },
+        { controlPlane: cp, now: () => now, provisioningCap: limited(1), turso: port },
         "ana@example.com",
       );
       expect(ws.id).toBeTruthy();
@@ -462,7 +514,7 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     }
   });
 
-  test("a double-fired first login takes ONE slot: the race loser hands its back (#733)", async () => {
+  test("a double-fired first login is counted ONCE: the race loser gives its claim back (#733)", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port } = fakeTurso(tempDir("worthline-cap-double-fire-"));
     try {
@@ -473,13 +525,13 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
       });
       const deps = {
         controlPlane: cp,
-        dailyProvisioningCap: 2,
         now: () => MORNING,
         openAndMigrate: async () => {
           arrived += 1;
           if (arrived === 2) release();
           await bothPastTheCheck;
         },
+        provisioningCap: limited(2),
         turso: port,
       };
 
@@ -488,11 +540,16 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
         provisionWorkspaceForUser(deps, "ana@example.com"),
       ]);
       expect(second.id).toBe(first.id);
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(1);
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(1);
 
-      // The second slot is still there for somebody else today.
+      // The second place is still there for somebody else today.
       const leo = await provisionWorkspaceForUser(
-        { controlPlane: cp, dailyProvisioningCap: 2, now: () => MORNING, turso: port },
+        {
+          controlPlane: cp,
+          now: () => MORNING,
+          provisioningCap: limited(2),
+          turso: port,
+        },
         "leo@example.com",
       );
       expect(leo.id).not.toBe(first.id);
@@ -501,7 +558,7 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     }
   });
 
-  test("without a cap, provisioning is unmetered: open registration by design (#733)", async () => {
+  test("uncapped, provisioning is not even counted: open registration by design (#733)", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port, created } = fakeTurso(tempDir("worthline-cap-none-"));
     try {
@@ -509,16 +566,15 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
         await provisionWorkspaceForUser(
           {
             controlPlane: cp,
-            dailyProvisioningCap: null,
             now: () => MORNING,
+            provisioningCap: { kind: "uncapped" },
             turso: port,
           },
           `${name}@example.com`,
         );
       }
       expect(created).toHaveLength(3);
-      // No cap means no counting either: nothing is written to the quota table.
-      expect(await cp.readWorkspaceProvisionCount("2026-03-14")).toBe(0);
+      expect(await provisionedOn(cp, "2026-03-14")).toBe(0);
     } finally {
       cp.close();
     }

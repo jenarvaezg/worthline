@@ -12,9 +12,10 @@
  * todavía no está instalado (es un slice posterior del PRD #1171), así que va
  * marcado `active: false` hasta que trate su primer dato.
  *
- * **Sentry** entró con #1175: recibe los errores del servidor, filtrados por
- * `error-monitoring.ts` (sin correo, IP, cookies, cabeceras ni contenido del
- * workspace) y solo si el despliegue configura `SENTRY_DSN`. Se declara activo
+ * **Sentry** entró con #1175 (ADR 0110): recibe los errores del servidor
+ * reducidos por `error-monitoring.ts` a su tipo, su punto del código y el patrón
+ * de la ruta — sin el texto del error, ni correo, IP, cookies, cabeceras o
+ * contenido del workspace — y solo si el despliegue configura `SENTRY_DSN`. Se declara activo
  * sin condicionarlo a esa variable: declarar un encargado que algún día no
  * recibe nada es la imprecisión menor; callar uno que sí recibe, la grave.
  *
@@ -69,7 +70,7 @@ export const LEGAL_PROCESSORS: readonly LegalProcessor[] = [
     mechanism: "DPA con Data Privacy Framework y cláusulas contractuales tipo",
     name: "Sentry",
     purpose:
-      "Registro de errores del servidor: qué falló y dónde en el código, con los datos personales filtrados antes de enviarse.",
+      "Registro de errores del servidor: el tipo de fallo y dónde ocurrió en el código, sin el texto del error ni datos personales.",
   },
   {
     mechanism: "Condiciones de la API de pago: no entrenan con los datos enviados",

@@ -5,16 +5,17 @@ import {
   ERROR_MONITORING_DSN_ENV,
   errorMonitoringDsn,
   errorMonitoringOptions,
-  redactText,
+  OMITTED_ERROR_TEXT,
   type SentryIntegration,
   scrubErrorEvent,
 } from "./error-monitoring";
 
 /**
- * The privacy promise of the error monitor, in code (#1175). The policy text
- * (`/legal/privacidad`) says Sentry receives technical error reports «con los
- * datos personales filtrados antes de enviarse» and nothing else: no tracing,
- * no replay, no sessions, no analytics. These tests are that sentence.
+ * The privacy promise of the error monitor, in code (#1175, ADR 0110). The
+ * policy text (`/legal/privacidad`) says Sentry receives the type of a server
+ * error, where in the code it broke and on which screen — never the text of the
+ * error, the person or their workspace — and nothing else: no tracing, no
+ * replay, no sessions, no analytics. These tests are that sentence.
  */
 
 // A fake DSN in Sentry's documented shape; no real project behind it.
@@ -36,12 +37,16 @@ describe("errorMonitoringDsn (#1175)", () => {
 describe("errorMonitoringOptions · errors only (#1175, #1131)", () => {
   const options = errorMonitoringOptions(DSN);
 
-  test("never turns tracing on", () => {
+  test("never turns tracing on, by any door", () => {
     // Defining either key — even as 0 — switches the tracing machinery on.
     expect(options).not.toHaveProperty("tracesSampleRate");
     expect(options).not.toHaveProperty("tracesSampler");
-    // …and no trace headers ride along on outgoing requests to third parties.
+    expect(options.enableOpenTelemetrySetup).toBe(false);
+    expect(options.beforeSendTransaction?.({ type: "transaction" }, {})).toBeNull();
+    // …no trace headers ride along on outgoing requests to third parties…
     expect(options.tracePropagationTargets).toEqual([]);
+    // …and SENTRY_SPOTLIGHT cannot switch the development sidecar on.
+    expect(options.spotlight).toBe(false);
   });
 
   test("collects no request, user, cookie, header, body or local-variable data", () => {
@@ -82,6 +87,7 @@ describe("errorMonitoringOptions · errors only (#1175, #1131)", () => {
       "Context",
       "ContextLines",
       "Dedupe",
+      "DistDirRewriteFrames",
       "EventFilters",
       "FunctionToString",
       "Http",
@@ -110,48 +116,6 @@ describe("errorMonitoringOptions · errors only (#1175, #1131)", () => {
   });
 });
 
-describe("redactText (#1175)", () => {
-  test.each([
-    ["owner ana.perez@example.com not found", "owner [email] not found"],
-    ['Holding "Piso de la playa" has no price', 'Holding "[redacted]" has no price'],
-    ["Activo «Fondo indexado» sin precio", "Activo «[redacted]» sin precio"],
-    ["cannot parse 'cuenta nómina'", "cannot parse '[redacted]'"],
-    [
-      "balance 1.234,56 does not match 1234.56",
-      "balance [amount] does not match [amount]",
-    ],
-    ["IBAN ES91 2100 0418 4502 0005 1332 rejected", "IBAN [iban] rejected"],
-    ["NIF 12345678Z and NIE X1234567L", "NIF [id] and NIE [id]"],
-    ["phone 612345678", "phone [number]"],
-    [
-      "fetch libsql://wl-0123456789abcdef-org.turso.io?authToken=abc failed",
-      "fetch libsql://[workspace-db]-org.turso.io?[redacted] failed",
-    ],
-    [
-      "https://user:pass@api.example.com/v1/x?q=1#frag",
-      "https://[credentials]@api.example.com/v1/x?[redacted]",
-    ],
-    ["Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln", "Bearer [token]"],
-    ["token=s3cr3t and apiKey: k3y", "token=[redacted] and apiKey=[redacted]"],
-    ["workspace 3f2b8c1e-9d4a-4f6b-8e2a-1c5d7e9f0a3b missing", "workspace [id] missing"],
-  ])("%j → %j", (input, expected) => {
-    expect(redactText(input)).toBe(expected);
-  });
-
-  test("leaves code-shaped diagnostics readable", () => {
-    expect(redactText("Cannot read properties of undefined (reading 'map')")).toBe(
-      "Cannot read properties of undefined (reading '[redacted]')",
-    );
-    expect(
-      redactText("SQLITE_CONSTRAINT: UNIQUE constraint failed: grants.user_id"),
-    ).toBe("SQLITE_CONSTRAINT: UNIQUE constraint failed: grants.user_id");
-    expect(redactText("next 16.3.0 failed after 3 retries")).toBe(
-      "next 16.3.0 failed after 3 retries",
-    );
-    expect(redactText("can't resolve the module")).toBe("can't resolve the module");
-  });
-});
-
 function hostileEvent(): ErrorEvent {
   return {
     breadcrumbs: [{ message: "GET /patrimonio?q=piso" }],
@@ -175,6 +139,10 @@ function hostileEvent(): ErrorEvent {
     exception: {
       values: [
         {
+          type: "LibsqlError",
+          value: "connect libsql://wl-0123456789abcdef-org.turso.io?authToken=abc",
+        },
+        {
           mechanism: {
             data: { leaked: "x" },
             handled: false,
@@ -197,12 +165,15 @@ function hostileEvent(): ErrorEvent {
             ],
           },
           type: "Error",
-          value: 'Holding "Piso de la playa" of ana@example.com has no price',
+          value:
+            "Holding Piso de la playa of ana@example.com has no price at 250.000,00 €",
         },
       ],
     },
     extra: { workspace: { assets: ["Piso"] } },
+    fingerprint: ["Piso de la playa"],
     level: "error",
+    logentry: { message: "valor %s", params: ["250.000,00 €"] },
     message: "valor 250.000,00 € para ana@example.com",
     modules: { next: "16.3.0" },
     platform: "node",
@@ -242,20 +213,36 @@ describe("scrubErrorEvent · beforeSend (#1175)", () => {
       "server_name",
       "modules",
       "tags",
+      "fingerprint",
     ]) {
       expect(scrubbed, field).not.toHaveProperty(field);
     }
-    expect(serialized).not.toContain("ana@example.com");
-    expect(serialized).not.toContain("Piso");
-    expect(serialized).not.toContain("203.0.113.7");
-    expect(serialized).not.toContain("authjs");
-    expect(serialized).not.toContain("250.000,00");
-    expect(serialized).not.toContain("wl-0123456789abcdef");
-    expect(serialized).not.toContain("tab=historico");
+    for (const leak of [
+      "ana@example.com",
+      "Piso",
+      "203.0.113.7",
+      "authjs",
+      "250.000,00",
+      "wl-0123456789abcdef",
+      "authToken",
+      "tab=historico",
+      "has no price",
+    ]) {
+      expect(serialized, leak).not.toContain(leak);
+    }
   });
 
-  test("keeps the diagnosis: error type, redacted message, code location, route pattern", () => {
-    expect(scrubbed.exception?.values?.[0]).toEqual({
+  test("sends no free text at all: every message becomes the marker", () => {
+    expect(scrubbed.exception?.values?.map((value) => value.value)).toEqual([
+      OMITTED_ERROR_TEXT,
+      OMITTED_ERROR_TEXT,
+    ]);
+    expect(scrubbed.message).toBe(OMITTED_ERROR_TEXT);
+    expect(scrubbed.logentry).toEqual({ message: OMITTED_ERROR_TEXT });
+  });
+
+  test("keeps the shape of the failure: error class, code location, route pattern", () => {
+    expect(scrubbed.exception?.values?.[1]).toEqual({
       mechanism: { handled: false, type: "auto.function.nextjs" },
       stacktrace: {
         frames: [
@@ -270,9 +257,9 @@ describe("scrubErrorEvent · beforeSend (#1175)", () => {
         ],
       },
       type: "Error",
-      value: 'Holding "[redacted]" of [email] has no price',
+      value: OMITTED_ERROR_TEXT,
     });
-    expect(scrubbed.message).toBe("valor [amount] € para [email]");
+    expect(scrubbed.exception?.values?.[0]?.type).toBe("LibsqlError");
     expect(scrubbed.transaction).toBe("GET /(workspace)/patrimonio/[id]");
     expect(scrubbed.contexts).toEqual({
       nextjs: {
@@ -298,9 +285,38 @@ describe("scrubErrorEvent · beforeSend (#1175)", () => {
     });
   });
 
+  test("carries Next's render digest, the key to the full error in the runtime logs", () => {
+    const withDigest = scrubErrorEvent(hostileEvent(), {
+      originalException: Object.assign(new Error("Piso de la playa"), {
+        digest: "3565469810",
+      }),
+    });
+    expect(withDigest.exception?.values?.[1]?.value).toBe(
+      `${OMITTED_ERROR_TEXT} · digest 3565469810`,
+    );
+    // A «digest» that is not digest-shaped is not trusted into the event.
+    const forged = scrubErrorEvent(hostileEvent(), {
+      originalException: { digest: "ana@example.com has a Piso" },
+    });
+    expect(forged.exception?.values?.[1]?.value).toBe(OMITTED_ERROR_TEXT);
+  });
+
+  test("a transaction that is not a route pattern is not copied", () => {
+    for (const transaction of [
+      "GET /patrimonio?q=piso",
+      "Piso de la playa",
+      "/patrimonio sin método",
+    ]) {
+      expect(scrubErrorEvent({ ...hostileEvent(), transaction })).not.toHaveProperty(
+        "transaction",
+      );
+    }
+  });
+
   test("is wired as the beforeSend of the options", () => {
     const options = errorMonitoringOptions(DSN);
     const sent = options.beforeSend?.(hostileEvent(), {});
     expect(JSON.stringify(sent)).not.toContain("ana@example.com");
+    expect(JSON.stringify(sent)).toContain(OMITTED_ERROR_TEXT);
   });
 });

@@ -1,5 +1,5 @@
 import config from "@web/auth.config";
-import { admitSignIn, provisionWorkspaceForEmail } from "@web/provisioning";
+import { admitSignIn, workspaceForSessionToken } from "@web/provisioning";
 import NextAuth, { AuthError } from "next-auth";
 
 /**
@@ -8,17 +8,18 @@ import NextAuth, { AuthError } from "next-auth";
  * below run only here — in the sign-in route and `auth()` — because they touch
  * the control-plane database and the Turso Platform API, neither edge-safe.
  *
- * Provision-on-first-login happens in the `signIn` callback (#1175): it resolves
- * the user's workspace — creating and migrating a fresh one the first time —
- * and is the one callback that can REFUSE with a redirect, which is how a new
- * identity past the day's provisioning cap reaches the honest «hoy estamos
- * llenos» instead of a server error. An existing user is never refused.
+ * Provision-on-first-login happens in the `signIn` callback (#1175, ADR 0110):
+ * it resolves the user's workspace — creating and migrating a fresh one the
+ * first time — and is the one callback that can REFUSE with a redirect, which
+ * is how a new identity past the daily provisioning cap reaches the honest «hoy
+ * estamos llenos» instead of a server error. An existing user is never refused.
  *
  * The `jwt` callback then pins the workspace id + URL + per-database Turso
- * token (#1185) into the JWT; by then the workspace exists, so its lookup
- * creates nothing. The `session` callback exposes that to server code, so the
- * store resolver reads the workspace straight off the session with no
- * per-request control-plane query.
+ * token (#1185) into the JWT, taking the workspace `signIn` handed off in the
+ * same request (`sign-in-handoff.ts`), so a login opens the control plane once.
+ * The `session` callback exposes that to server code, so the store resolver
+ * reads the workspace straight off the session with no per-request
+ * control-plane query.
  */
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...config,
@@ -39,7 +40,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async jwt({ token, account }) {
       if (account && token.email) {
-        const workspace = await provisionWorkspaceForEmail(token.email);
+        const workspace = await workspaceForSessionToken(token.email);
         token.workspaceId = workspace.id;
         token.dbUrl = workspace.dbUrl;
         if (workspace.dbAuthToken) {

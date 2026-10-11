@@ -12,6 +12,11 @@ import {
   type DailyCaptureLog,
 } from "./control-plane/daily-capture-log";
 import {
+  createDailyProvisioningCap,
+  DAILY_PROVISIONING_CAP_SCHEMA,
+  type DailyProvisioningCap,
+} from "./control-plane/daily-provisioning-cap";
+import {
   createEntitlementDirectory,
   ENTITLEMENT_SCHEMA,
   type EntitlementDirectory,
@@ -29,11 +34,6 @@ import {
   type MaintainerAlertLog,
 } from "./control-plane/maintainer-alert-log";
 import { migrateControlPlane } from "./control-plane/migrate";
-import {
-  createProvisioningQuota,
-  PROVISIONING_QUOTA_SCHEMA,
-  type ProvisioningQuota,
-} from "./control-plane/provisioning-quota";
 import {
   createTenancyDirectory,
   TENANCY_SCHEMA,
@@ -66,6 +66,10 @@ export type {
   BenchmarkPriceCache,
 } from "./control-plane/benchmark-price-cache";
 export type { DailyCaptureLog } from "./control-plane/daily-capture-log";
+export type {
+  DailyProvisioningCap,
+  DailyProvisioningClaim,
+} from "./control-plane/daily-provisioning-cap";
 export type {
   EntitlementDirectory,
   GrantPremiumInput,
@@ -100,10 +104,6 @@ export type {
   UpdateMaintainerAlertStatusInput,
 } from "./control-plane/maintainer-alert-log";
 export type {
-  ProvisioningQuota,
-  ProvisionSlotClaim,
-} from "./control-plane/provisioning-quota";
-export type {
   ControlPlaneGrant,
   ControlPlaneUser,
   ControlPlaneWorkspace,
@@ -133,7 +133,7 @@ export interface ControlPlaneStore
     DailyCaptureLog,
     BenchmarkPriceCache,
     UsageLimits,
-    ProvisioningQuota,
+    DailyProvisioningCap,
     ExposureProfileCatalog,
     MaintainerAlertLog,
     JobStore {
@@ -170,7 +170,7 @@ const SCHEMA = [
   ENTITLEMENT_SCHEMA,
   DAILY_CAPTURE_SCHEMA,
   USAGE_SCHEMA,
-  PROVISIONING_QUOTA_SCHEMA,
+  DAILY_PROVISIONING_CAP_SCHEMA,
   BENCHMARK_PRICE_SCHEMA,
   EXPOSURE_PROFILE_SCHEMA,
   MAINTAINER_ALERT_SCHEMA,
@@ -191,7 +191,7 @@ async function buildControlPlaneStore(
     ...createDailyCaptureLog(client),
     ...createBenchmarkPriceCache(client),
     ...createUsageLimits(client),
-    ...createProvisioningQuota(client),
+    ...createDailyProvisioningCap(client),
     ...createExposureProfileCatalog(client),
     ...createMaintainerAlertLog(client, newId),
     ...createJobStore(client, newId),

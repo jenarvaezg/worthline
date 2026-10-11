@@ -180,7 +180,9 @@ describe("política de privacidad · RGPD (#1172)", () => {
     expect(page).not.toMatch(/Sentry\s*<span class="legalPending">/);
     expectAll("privacidad", [
       "Registro de errores del servidor",
-      "datos personales filtrados antes de enviarse",
+      // No free text leaves (ADR 0110): the promise is about the code, literally.
+      "sin el texto del error ni datos personales",
+      "No lleva el texto del error",
       "ni tu dirección IP",
       "ni el contenido de tu workspace",
       "Solo errores",

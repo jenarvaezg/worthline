@@ -6,15 +6,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
  * replaced by a stub that hands back the config, so the callbacks run exactly
  * as Auth.js would call them, with provisioning mocked at its seam.
  */
-const { captured, admitSignInMock, provisionMock, FakeAuthError } = vi.hoisted(() => {
-  class FakeAuthError extends Error {}
-  return {
-    admitSignInMock: vi.fn(),
-    captured: { config: null as NextAuthConfig | null },
-    FakeAuthError,
-    provisionMock: vi.fn(),
-  };
-});
+const { captured, admitSignInMock, workspaceForTokenMock, FakeAuthError } = vi.hoisted(
+  () => {
+    class FakeAuthError extends Error {}
+    return {
+      admitSignInMock: vi.fn(),
+      captured: { config: null as NextAuthConfig | null },
+      FakeAuthError,
+      workspaceForTokenMock: vi.fn(),
+    };
+  },
+);
 
 vi.mock("next-auth", () => ({
   AuthError: FakeAuthError,
@@ -26,7 +28,7 @@ vi.mock("next-auth", () => ({
 
 vi.mock("@web/provisioning", () => ({
   admitSignIn: admitSignInMock,
-  provisionWorkspaceForEmail: provisionMock,
+  workspaceForSessionToken: workspaceForTokenMock,
 }));
 
 await import("./auth");
@@ -78,5 +80,47 @@ describe("auth.ts · signIn (#1175)", () => {
       true,
     );
     expect(admitSignInMock).not.toHaveBeenCalled();
+  });
+});
+
+type JwtArgs = Parameters<
+  NonNullable<NonNullable<NextAuthConfig["callbacks"]>["jwt"]>
+>[0];
+
+function jwt(args: Partial<JwtArgs>) {
+  const callback = captured.config?.callbacks?.jwt;
+  if (!callback) throw new Error("auth.ts must declare a jwt callback");
+  return callback(args as JwtArgs);
+}
+
+describe("auth.ts · jwt (#1175)", () => {
+  afterEach(() => {
+    workspaceForTokenMock.mockReset();
+  });
+
+  test("pins the workspace of the sign-in into the token", async () => {
+    workspaceForTokenMock.mockResolvedValue({
+      dbAuthToken: "scoped",
+      dbUrl: "libsql://ws",
+      id: "ws-ana",
+    });
+    const token = await jwt({
+      account: GOOGLE_ACCOUNT as never,
+      token: { email: "ana@example.com" },
+    });
+    expect(workspaceForTokenMock).toHaveBeenCalledWith("ana@example.com");
+    expect(token).toMatchObject({
+      dbAuthToken: "scoped",
+      dbUrl: "libsql://ws",
+      workspaceId: "ws-ana",
+    });
+  });
+
+  test("an ordinary session refresh (no account) resolves nothing", async () => {
+    const token = await jwt({
+      token: { email: "ana@example.com", workspaceId: "ws-ana" },
+    });
+    expect(workspaceForTokenMock).not.toHaveBeenCalled();
+    expect(token).toMatchObject({ workspaceId: "ws-ana" });
   });
 });

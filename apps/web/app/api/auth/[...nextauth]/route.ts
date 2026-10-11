@@ -1,6 +1,7 @@
 import { authOAuthRatePlan } from "@web/api/mcp/rate-limit";
 import { enforceMcpRateLimit } from "@web/api/mcp/rate-limit-store";
 import { handlers } from "@web/auth";
+import { withSignInHandoff } from "@web/sign-in-handoff";
 import type { NextRequest } from "next/server";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -43,7 +44,10 @@ async function gateAuthOAuthRequest(
     });
   }
 
-  return handler(request);
+  // One request-scoped handoff per auth request: the OAuth callback runs the
+  // `signIn` and `jwt` callbacks inside it, so the workspace `signIn` resolved
+  // reaches `jwt` without reopening the control plane (#1175, ADR 0110).
+  return withSignInHandoff(() => handler(request));
 }
 
 export async function GET(request: NextRequest): Promise<Response> {

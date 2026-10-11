@@ -117,6 +117,8 @@ export {
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
   type DailyCaptureLog,
+  type DailyProvisioningCap,
+  type DailyProvisioningClaim,
   DEFAULT_JOB_MAX_ATTEMPTS,
   type EnqueueJobInput,
   type EnqueueJobResult,
@@ -137,8 +139,6 @@ export {
   type MaintainerAlertStatus,
   type MaintainerAlertWithOccurrences,
   type ProviderCooldown,
-  type ProvisioningQuota,
-  type ProvisionSlotClaim,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
   type RenewJobLeaseInput,
@@ -244,10 +244,14 @@ export type {
   ValueUpdateCommand,
 } from "./operations-store";
 export {
+  type DailyProvisioningCapPolicy,
+  type DailyProvisioningCapRefusal,
+  DailyProvisioningCapRefusedError,
+  dailyProvisioningLimit,
+  type EnforcedDailyProvisioningCap,
   type ProvisionDeps,
   provisionWorkspaceForUser,
   type TursoPort,
-  WorkspaceProvisioningClosedError,
 } from "./provisioner";
 export type {
   DailyCaptureBenchmarkFailure,
