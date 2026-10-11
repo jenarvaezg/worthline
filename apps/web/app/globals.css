@@ -7105,18 +7105,45 @@ td.rowActions > * {
   color: var(--blue);
 }
 
-.exposureCurrencyRisk {
+/* Currency risk and the portfolio cost (#1717) are the two portfolio-level
+   readouts under the lens: same rule, same small-caps label. */
+.exposureCurrencyRisk,
+.exposureCost {
   margin-top: 20px;
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
 
-.exposureCurrencyRisk h3 {
+.exposureCurrencyRisk h3,
+.exposureCost h3 {
   color: var(--muted);
   font-size: 0.78rem;
   letter-spacing: 0.05em;
   margin: 0 0 12px;
   text-transform: uppercase;
+}
+
+/* The cost is a static estimate, so it stays in ink — green/red are reserved
+   for movement (design-system §6); only the figure takes the numeric face. */
+.exposureCostLine {
+  color: var(--ink);
+  margin: 0;
+}
+
+.exposureCostLine b {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.exposureCostLine span {
+  color: var(--muted);
+}
+
+.exposureCostNote {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 6px 0 0;
 }
 
 /* Per-asset-class returns (#552): same panel frame as exposure; each class row

@@ -491,6 +491,7 @@ export {
   lookThroughExposure,
   OTHER_BUCKET_KEY,
   resolveAssetClassBreakdown,
+  resolveExposureProfile,
   validateImportedExposureProfile,
 } from "./exposure-lookthrough";
 export type {
@@ -980,6 +981,12 @@ export {
   incomeExclusionReason,
   passiveIncomeTrailing,
 } from "./payouts";
+export type {
+  PortfolioCost,
+  PortfolioCostCoverage,
+  PortfolioCostInput,
+} from "./portfolio-cost";
+export { portfolioCost } from "./portfolio-cost";
 export type {
   BoardUnit,
   ManagedPortfolioGrouping,
