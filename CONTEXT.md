@@ -484,7 +484,10 @@ provenance and its cut-off date; nature and basis open undeclared. Every income,
 linked or not, is listed on Rentas, saying whether it counts and why not. One with no
 holding (in code, a *standalone income*) is read only by the **sustainable spending**,
 and, having no owner declared, only in a scope that covers every active member
-(ADR 0111).
+(ADR 0111). One linked to a holding that has value is crossed against it: unless the
+holding is a property, whose rent replaces its rung's return, the same money may count
+twice — as capital and as income — and a data-quality signal says so without choosing
+which side is wrong; interest or a coupon is acknowledged once as intentional.
 Only past occurrences, up to today, are derived as truth; a future start is preserved
 without inventing received money. An income adds no **net worth** or **snapshot**.
 UI label: "Renta"; the holding's existing declaration surface says "Cobro recurrente".

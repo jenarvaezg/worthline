@@ -20,6 +20,7 @@ import {
   type DatedSnapshotHoldingRow,
   type DebtModel,
   type FireScopeConfig,
+  type Income,
   type InvestmentOperation,
   type Liability,
   type ManualAsset,
@@ -57,6 +58,11 @@ export interface DashboardDataQualityInput {
    */
   operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>;
   fireConfigByScopeId: Readonly<Record<string, FireScopeConfig | undefined>>;
+  /**
+   * Every declared income the dashboard already read for the returns engine — the
+   * double-count cross (#1675) reads the same rows. No extra I/O.
+   */
+  incomes: readonly Income[];
   /** Refreshed price cache — the freshness signals read this, not new I/O. */
   priceCache: readonly AssetPrice[];
   /** Calendar day the collection runs against (`YYYY-MM-DD`). */
@@ -186,6 +192,7 @@ export async function collectDashboardDataQualitySignals(
     holdingValueByHoldingId: new Map(
       input.assets.map((asset) => [asset.id, asset.currentValue]),
     ),
+    incomes: input.incomes,
     // The same ledger, un-folded: the savings-coherence watch (#1449) needs the
     // operations themselves, not just the net units derived from them.
     investmentOperationsByAssetId: input.operationsByAsset,

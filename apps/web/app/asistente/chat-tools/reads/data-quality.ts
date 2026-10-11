@@ -23,8 +23,7 @@ export function dataQualityReadTools(turn: ChatToolTurn): ToolSet {
       description:
         "Señales de calidad de datos del scope: avisos de dominio, precios/sincronizaciones " +
         "obsoletos o fallidos, configuración ausente, historial escaso, carteras gestionadas " +
-        "cuyo valor se aparta del saldo declarado y activos en la papelera con saldo vivo. " +
-        "Filtra por categoría o severidad.",
+        "cuyo valor se aparta del saldo declarado y activos en la papelera con saldo vivo.",
       inputSchema: DATA_QUALITY_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {

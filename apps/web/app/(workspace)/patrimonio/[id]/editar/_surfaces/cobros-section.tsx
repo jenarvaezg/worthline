@@ -22,6 +22,7 @@ import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
 import {
   formatMoneyInput,
   formatMoneyMinorPrivacy,
+  INCOME_DOUBLE_COUNT_CODE,
   passiveIncomeTrailing,
 } from "@worthline/domain";
 import Link from "next/link";
@@ -63,12 +64,14 @@ function scheduleSpec(
 }
 
 export function CobrosSection({
+  acknowledgeWarningAction,
   createIncomeAction,
   createPayoutAction,
   currency,
   currentUrl,
   deletePayoutAction,
   deletePayoutScheduleAction,
+  doubleCount,
   error,
   errorValues = {},
   holdingId,
@@ -81,6 +84,8 @@ export function CobrosSection({
   today,
   updatePayoutScheduleAction,
 }: {
+  /** «Es intencional» for the double-count cross (#1675) — the warnings' own door. */
+  acknowledgeWarningAction: FormAction;
   /**
    * The income declaration door with this holding bound (#1673): the same action,
    * parser and required provenance as the Rentas surface. Redirects on success and
@@ -92,6 +97,12 @@ export function CobrosSection({
   currentUrl: string;
   deletePayoutAction: FormAction;
   deletePayoutScheduleAction: FormAction;
+  /**
+   * The double-count cross (#1675): the sentence that names this holding's value and
+   * the income linked to it, or null when there is nothing to cross or the user
+   * already said it is intentional. Decided by the loader, which knows the holding.
+   */
+  doubleCount: string | null;
   /** A validation error to surface at this section (formId "payout"). */
   error?: string | null;
   /** What a refused no-JS declaration had typed, to refill the door with. */
@@ -138,6 +149,25 @@ export function CobrosSection({
         <p className="errorBand" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {/* The double-count cross (#1675), beside the incomes it is about: the user is
+          the one who knows whether the income is paid out of this capital or is what
+          it yields, so the legitimate case is acknowledged here, once. */}
+      {doubleCount ? (
+        <div className="warningBand" role="status" aria-label="Posible doble conteo">
+          <div className="warningItem">
+            <span>⚠ {doubleCount}</span>
+            <form action={acknowledgeWarningAction}>
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <input name="code" type="hidden" value={INCOME_DOUBLE_COUNT_CODE} />
+              <input name="entityId" type="hidden" value={holdingId} />
+              <button className="btnSmall btnWarning" disabled={readOnly} type="submit">
+                Es intencional
+              </button>
+            </form>
+          </div>
+        </div>
       ) : null}
 
       {/* Renta pasiva · trailing 12 months (server-rendered figure). */}

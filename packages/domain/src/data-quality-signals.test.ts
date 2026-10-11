@@ -15,6 +15,7 @@ import type { DecimalString } from "./decimal";
 import type { FireScopeConfig } from "./fire";
 import type { InvestmentOperation } from "./investment-types";
 import { formatMoneyMinor } from "./money";
+import type { Income } from "./payouts";
 import { netUnitsByAsset } from "./positions";
 import { listScopeOptions, type ScopeOption } from "./scope";
 import {
@@ -44,6 +45,7 @@ function baseInput(
     debtServiceByLiabilityId: new Map(),
     fireConfigByScopeId: {},
     holdingValueByHoldingId: new Map(),
+    incomes: [],
     investmentOperationsByAssetId: new Map(),
     managedPortfolios: [],
     liabilities: [],
@@ -1929,5 +1931,193 @@ describe("collectDataQualitySignals — SPENDING_VS_DEBT_SERVICE (#1520)", () =>
 
   test("sin config FIRE calla: MISSING_FIRE_CONFIG ya lo cubre", () => {
     expect(collect({ cuotaMinor: 883_66 })).toEqual([]);
+  });
+});
+
+describe("collectDataQualitySignals — INCOME_DOUBLE_COUNT (#1675)", () => {
+  /** A declared income, passive and real unless the test says otherwise. */
+  function income(partial: Partial<Income> & Pick<Income, "id">): Income {
+    return {
+      amountBasis: "real",
+      amountMinor: 300_00,
+      assumedContributionThrough: null,
+      cadence: "monthly",
+      endISO: null,
+      exclusions: [],
+      holdingId: "asset_plan",
+      label: "Renta vitalicia",
+      nature: "passive",
+      provenance: null,
+      provenanceAsOf: null,
+      startISO: "2026-01-01",
+      ...partial,
+    };
+  }
+
+  test("un plan de pensiones con valor y una renta ligada avisa de que el mismo dinero puede contar dos veces", () => {
+    const { asset, input } = fixture();
+    const plan = asset({
+      currentValueMinor: 52_300_00,
+      id: "asset_plan",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Plan Indexa",
+      type: "investment",
+    });
+
+    const signals = collectDataQualitySignals(
+      input({ assets: [plan], incomes: [income({ id: "inc_vitalicia" })] }),
+    ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      affected: { id: "asset_plan", label: "Plan Indexa", object: "holding" },
+      category: "income_coherence",
+      code: "INCOME_DOUBLE_COUNT",
+      fixable: true,
+      severity: "medium",
+    });
+    expect(signals[0]?.label).toContain("«Renta vitalicia»");
+    expect(signals[0]?.label).toContain("el mismo dinero cuenta dos veces");
+  });
+
+  test("un piso alquilado calla: su renta sustituye el retorno del tramo y no se suma (ADR 0076)", () => {
+    const { asset, input } = fixture();
+    const piso = asset({
+      currentValueMinor: 120_000_00,
+      id: "asset_piso",
+      instrument: "property",
+      name: "Piso Navalcarnero",
+      type: "real_estate",
+    });
+
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [piso],
+        incomes: [
+          income({
+            expensesMinor: 150_00,
+            holdingId: "asset_piso",
+            id: "inc_alquiler",
+            label: "Alquiler",
+          }),
+        ],
+      }),
+    ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
+
+    expect(signals).toEqual([]);
+  });
+
+  /** The plan at `currentValueMinor`, with the given incomes linked to it. */
+  function crossSignals(options: {
+    currentValueMinor?: number;
+    incomes?: Income[];
+    overrides?: Partial<CollectDataQualitySignalsInput>;
+  }): DataQualitySignal[] {
+    const { asset, input } = fixture();
+    const plan = asset({
+      currentValueMinor: options.currentValueMinor ?? 52_300_00,
+      id: "asset_plan",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Plan Indexa",
+      type: "investment",
+    });
+    return collectDataQualitySignals(
+      input({
+        assets: [plan],
+        incomes: options.incomes ?? [income({ id: "inc_vitalicia" })],
+        ...options.overrides,
+      }),
+    ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
+  }
+
+  test("un holding sin valor calla: el capital ya se convirtió en la renta", () => {
+    expect(crossSignals({ currentValueMinor: 0 })).toEqual([]);
+  });
+
+  test("una renta que ninguna cifra lee no cuenta ni una vez, así que tampoco dos", () => {
+    expect(crossSignals({ incomes: [income({ id: "inc", nature: null })] })).toEqual([]);
+    expect(crossSignals({ incomes: [income({ id: "inc", nature: "work" })] })).toEqual(
+      [],
+    );
+    expect(
+      crossSignals({ incomes: [income({ amountBasis: "nominal", id: "inc" })] }),
+    ).toEqual([]);
+  });
+
+  test("una renta ya terminada calla: ese dinero dejó de llegar", () => {
+    // asOfDateKey del fixture: 2026-07-11.
+    expect(
+      crossSignals({ incomes: [income({ endISO: "2026-07-10", id: "inc" })] }),
+    ).toEqual([]);
+    expect(
+      crossSignals({ incomes: [income({ endISO: "2026-07-11", id: "inc" })] }),
+    ).toHaveLength(1);
+  });
+
+  test("una renta que empieza más adelante ya cruza: la declaración es la que duplica", () => {
+    expect(
+      crossSignals({ incomes: [income({ id: "inc", startISO: "2035-01-01" })] }),
+    ).toHaveLength(1);
+  });
+
+  test("un holding que el ámbito no posee no se le pregunta a este ámbito", () => {
+    const workspace = createWorkspace({
+      members: [
+        { id: "member_jose", name: "Jose" },
+        { id: "member_ana", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    const joseScope = listScopeOptions(workspace).find(
+      (option) => option.id === "member_jose",
+    )!;
+    const plan = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 52_300_00,
+      id: "asset_plan",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Plan de Ana",
+      ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
+      type: "investment",
+    });
+
+    const signals = collectDataQualitySignals(
+      baseInput(workspace, joseScope, {
+        assets: [plan],
+        incomes: [income({ id: "inc_vitalicia" })],
+      }),
+    ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
+
+    expect(signals).toEqual([]);
+  });
+
+  test("dos rentas ligadas al mismo holding son UNA señal que nombra las dos", () => {
+    const signals = crossSignals({
+      incomes: [
+        income({ id: "inc_pension", label: "Pensión" }),
+        income({ cadence: "quarterly", id: "inc_extra", label: "Pensión Paga Extra" }),
+      ],
+    });
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.label).toContain("2 rentas declaradas ligadas a él");
+    expect(signals[0]?.label).toContain("(«Pensión», «Pensión Paga Extra»)");
+    expect(signals[0]?.label).toContain("Si esas rentas salen de este capital");
+  });
+
+  test("el caso legítimo se reconoce una vez: queda en el inventario, etiquetado", () => {
+    expect(isOverrideableSignalCode("INCOME_DOUBLE_COUNT")).toBe(true);
+
+    const signals = crossSignals({
+      overrides: {
+        warningOverrides: [{ code: "INCOME_DOUBLE_COUNT", entityId: "asset_plan" }],
+      },
+    });
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.label).toMatch(/\(marcado como intencional\)$/);
   });
 });

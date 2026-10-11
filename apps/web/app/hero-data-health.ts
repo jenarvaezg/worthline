@@ -13,6 +13,7 @@
 
 import {
   type HoldingPublicIdIndex,
+  holdingCobrosHref,
   holdingDetailHref,
   type ManagedPortfolioPublicIdIndex,
   managedPortfolioFichaHref,
@@ -264,6 +265,15 @@ function fixSurface(
       // El mismo formulario, otro campo (#1520): el gasto mensual y la declaración de
       // si incluye las cuotas están uno debajo del otro.
       return { href: "/objetivos#supuestos", label: "Revisar gasto" };
+    case "income_coherence": {
+      // La renta y el valor que la cruzan viven en la misma ficha, y la salida del
+      // caso legítimo («Es intencional») está junto a las rentas, en Cobros (#1675).
+      // Va al héroe a propósito, al contrario que sus hermanas de coherencia: uno de
+      // los dos lados es el VALOR, y una pensión capitalizada como holding infla el
+      // patrimonio de hoy exactamente en lo que vale.
+      const publicId = affected ? publicIds.publicByInternal.get(affected.id) : undefined;
+      return publicId ? { href: holdingCobrosHref(publicId), label: "Ver cobros" } : null;
+    }
     case "history_coverage":
     case "transfer_integrity":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.

@@ -46,6 +46,7 @@ const noop = async () => {};
 
 function renderSection(
   over: {
+    doubleCount?: string | null;
     monthlySpendingMinor?: number | null;
     schedules?: PayoutSchedule[];
     showLeaseTerms?: boolean;
@@ -53,12 +54,14 @@ function renderSection(
 ) {
   return renderToStaticMarkup(
     <CobrosSection
+      acknowledgeWarningAction={noop}
       createPayoutAction={noop}
       createIncomeAction={noop}
       currency="EUR"
       currentUrl="/patrimonio/h1/editar"
       deletePayoutAction={noop}
       deletePayoutScheduleAction={noop}
+      doubleCount={over.doubleCount ?? null}
       holdingId="h1"
       monthlySpendingMinor={over.monthlySpendingMinor ?? null}
       payouts={[DIVIDEND]}
@@ -327,5 +330,26 @@ describe("CobrosSection — lease terms (#1521)", () => {
     });
 
     expect(markup).toContain("no la lee como rentabilidad real");
+  });
+});
+
+describe("CobrosSection — el doble conteo de una renta ligada (#1675)", () => {
+  const SENTENCE =
+    "«Plan Indexa» tiene valor y además una renta declarada ligada a él («Renta vitalicia»).";
+
+  test("nombra el cruce junto a las rentas y ofrece reconocerlo como intencional", () => {
+    const markup = renderSection({ doubleCount: SENTENCE });
+
+    expect(markup).toContain(SENTENCE);
+    expect(markup).toContain('type="hidden" name="code" value="INCOME_DOUBLE_COUNT"');
+    expect(markup).toContain('type="hidden" name="entityId" value="h1"');
+    expect(markup).toContain("Es intencional");
+  });
+
+  test("sin cruce no hay aviso ni botón", () => {
+    const markup = renderSection();
+
+    expect(markup).not.toContain("INCOME_DOUBLE_COUNT");
+    expect(markup).not.toContain("Es intencional");
   });
 });

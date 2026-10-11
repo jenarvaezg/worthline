@@ -4,7 +4,7 @@ import {
   readMonthlyDebtServiceByLiabilityId,
 } from "@web/debt-service-reads";
 import type { AgentViewReadStore } from "@worthline/db";
-import type { InvestmentOperation } from "@worthline/domain";
+import type { Income, InvestmentOperation } from "@worthline/domain";
 import {
   collectDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
@@ -140,6 +140,8 @@ export async function buildDataQualitySummary(
 /** What a caller that already read the workspace's ledgers can hand this fold. */
 interface SharedLedgerInput {
   operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  /** Every declared income, linked or not — the double-count cross reads it (#1675). */
+  incomes: readonly Income[];
 }
 
 async function collectScopeSignals(
@@ -289,6 +291,10 @@ async function collectScopeSignals(
   // otherwise this fold's own bulk read. Never one query per holding: the id set
   // below runs into the dozens, and the fold is a fold.
   const ledger = input?.operationsByAssetId ?? (await store.readAllOperations());
+  // Every declared income, for the double-count cross (#1675): a holding with value
+  // and an income linked to it. Same rule as the ledger — the caller's read when it
+  // has one, so the context never quotes two readings of the same table.
+  const incomes = input?.incomes ?? (await store.readPayoutSchedules());
   const ledgerHoldingIds = new Set([
     ...assets
       .filter((asset) => valuationMethodOfAsset(asset) === "derived")
@@ -319,6 +325,7 @@ async function collectScopeSignals(
     debtServiceByLiabilityId,
     fireConfigByScopeId,
     holdingValueByHoldingId,
+    incomes,
     investmentOperationsByAssetId: operationsByAssetId,
     liabilities,
     managedPortfolios,

@@ -21,8 +21,14 @@ import {
 } from "@web/inversiones/cobros-actions";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
-import type { ManualAsset } from "@worthline/domain";
-import { isHousingAsset } from "@worthline/domain";
+import { acknowledgeWarningAction } from "@web/patrimonio/actions";
+import type { ManualAsset, WarningOverride } from "@worthline/domain";
+import {
+  describeIncomeDoubleCount,
+  INCOME_DOUBLE_COUNT_CODE,
+  incomeDoubleCount,
+  isHousingAsset,
+} from "@worthline/domain";
 import type { ReactNode } from "react";
 
 export async function loadPayoutsPanel(
@@ -34,12 +40,14 @@ export async function loadPayoutsPanel(
      * derived HERE and not as another instrument boolean on the page (ADR 0095).
      */
     asset: ManualAsset;
+    /** The acknowledgements the page already read — «Es intencional» silences the cross. */
+    overrides: readonly WarningOverride[];
     /** The scope whose declared spending frames the renta-pasiva coverage. */
     scopeId: string | undefined;
   },
 ): Promise<ReactNode> {
   const { currentUrl, formError, id, isDemo, privacyMode, store, today } = ficha;
-  const { asset, scopeId } = input;
+  const { asset, overrides, scopeId } = input;
 
   const [payouts, schedules, fireConfig] = await Promise.all([
     store.payouts.readPayoutsForHolding(id),
@@ -48,6 +56,16 @@ export async function loadPayoutsPanel(
     // otherwise it is omitted rather than invented.
     scopeId ? store.readFireConfig(today) : Promise.resolve(null),
   ]);
+
+  // The double-count cross (#1675), by the same rule the health engine runs: the
+  // ficha's holding and the incomes linked to it, read above. Acknowledged, it stays
+  // in the inventory (ADR 0004) and stops asking here, exactly as a warning does.
+  const cross = incomeDoubleCount(asset, schedules, today);
+  const acknowledged = overrides.some(
+    (override) => override.code === INCOME_DOUBLE_COUNT_CODE && override.entityId === id,
+  );
+  const doubleCount =
+    cross === null || acknowledged ? null : describeIncomeDoubleCount(cross);
 
   async function boundCreatePayoutAction(formData: FormData) {
     "use server";
@@ -79,12 +97,14 @@ export async function loadPayoutsPanel(
 
   return (
     <CobrosSection
+      acknowledgeWarningAction={acknowledgeWarningAction}
       createPayoutAction={boundCreatePayoutAction}
       createIncomeAction={boundCreateIncomeAction}
       currency={asset.currency}
       currentUrl={currentUrl}
       deletePayoutAction={boundDeletePayoutAction}
       deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
+      doubleCount={doubleCount}
       error={formError?.formId === "payout" ? formError.message : null}
       errorValues={formError?.formId === "payout" ? formError.values : {}}
       holdingId={id}
