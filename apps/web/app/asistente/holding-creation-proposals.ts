@@ -16,7 +16,7 @@ import {
   acquisitionTodayQuestion,
   resolveOwnershipSplit,
 } from "@web/intake";
-import { parseOptionalIsin } from "@web/intake/investment";
+import { parseOptionalIsin, parseOptionalSecurityId } from "@web/intake/investment";
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import { readDebtHistoryStarts } from "@web/patrimonio/debt-history-starts";
 import { priceSourceLabel } from "@web/price-source-label";
@@ -31,12 +31,15 @@ import {
   formatDateKeyEs,
   formatMoneyMinor,
   type Instrument,
+  instrumentCanCarrySecurityIdKind,
   isinSecurityId,
   type MatchCandidateRow,
   type MatchPortfolioHolding,
   matchHoldings,
+  normalizeDgsCode,
   type PriceSource,
   reassignToNew,
+  type SecurityId,
 } from "@worthline/domain";
 import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
 import { holdingCreationImpact } from "./holding-creation-impact";
@@ -82,6 +85,12 @@ export interface HoldingCreationArgs {
   providerSymbol?: string;
   /** investment: the ISIN, when the holding has one. */
   isin?: string;
+  /**
+   * pension_plan: the plan's DGS code (`N5394`), which is what its papers print instead
+   * of an ISIN (#1454) — so the destination of a plan's traspaso can be born with the
+   * identifier the traspaso is then checked against (#1800). Never together with `isin`.
+   */
+  dgsCode?: string;
   /** investment: the cash amount of the opening BUY, in minor units. */
   openingValueMinor?: number;
   /** investment: the unit price, as an es-ES decimal string. */
@@ -172,6 +181,56 @@ function parseAcquisition(
     return { ok: false, error: "La fecha de compra no puede ser futura." };
   }
   return { ok: true, acquisition: { date, valueMinor } };
+}
+
+/**
+ * The identifier an investment alta is born with, or a Spanish rejection.
+ *
+ * The ISIN keeps the one identity rule of the alta form (#1489/#1453): a chat-extracted
+ * ISIN that fails the ISO 6166 check would persist a key the exposure catalog never
+ * registers, so it is refused at draft time — same message the ficha shows. A DGS code
+ * goes through the domain's own per-kind boundary, which also names the `F####` mistake
+ * (#1746), and only onto the instrument that can carry it: a plan's code on a fund
+ * would be stored under a register it does not belong to.
+ */
+function parseAltaSecurityId(
+  args: HoldingCreationArgs,
+  instrument: Instrument,
+): { ok: true; securityId?: SecurityId } | { ok: false; error: string } {
+  if (args.isin !== undefined && args.dgsCode !== undefined) {
+    return {
+      ok: false,
+      error:
+        "Un alta lleva ISIN o código DGS, nunca los dos: identifican instrumentos " +
+        "distintos. Un plan de pensiones se identifica por su código DGS; lo demás, por su ISIN.",
+    };
+  }
+  if (args.dgsCode !== undefined) {
+    if (!instrumentCanCarrySecurityIdKind(instrument, "dgs")) {
+      return {
+        ok: false,
+        error:
+          "El código DGS identifica un plan de pensiones, y esta alta no lo es: un fondo, " +
+          "un ETF o una acción se identifican por su ISIN.",
+      };
+    }
+    return parseOptionalSecurityId("dgs", args.dgsCode);
+  }
+  const parsedIsin = parseOptionalIsin(args.isin ?? null);
+  if (!parsedIsin.ok) {
+    // A plan's code where the ISIN goes: the description does not spend floor on the
+    // `dgsCode` field (#1342), so the refusal that fires on the mistake names it.
+    const dgs = normalizeDgsCode(args.isin ?? "");
+    return dgs === null
+      ? parsedIsin
+      : {
+          ok: false,
+          error: `${parsedIsin.error} ${dgs} es el código DGS de un plan de pensiones, no un ISIN: va en dgsCode.`,
+        };
+  }
+  return parsedIsin.isin
+    ? { ok: true, securityId: isinSecurityId(parsedIsin.isin) }
+    : { ok: true };
 }
 
 /** Validate the args into a fully-resolved plan, or a Spanish rejection. */
@@ -269,11 +328,8 @@ function buildPlan(
     };
   }
 
-  // The one identity rule of the alta form (#1489/#1453): a chat-extracted ISIN
-  // that fails the ISO 6166 check would persist a key the exposure catalog never
-  // registers, so it is refused at draft time — same message the ficha shows.
-  const parsedIsin = parseOptionalIsin(args.isin ?? null);
-  if (!parsedIsin.ok) return { ok: false, error: parsedIsin.error };
+  const identity = parseAltaSecurityId(args, instrument);
+  if (!identity.ok) return identity;
 
   // investment: an optional opening BUY dated today, resolved by the one module
   // that owns `importe = títulos × precio + comisión` (#1315). Nothing declared →
@@ -284,7 +340,7 @@ function buildPlan(
     instrument,
     name,
     ownership,
-    ...(parsedIsin.isin ? { securityId: isinSecurityId(parsedIsin.isin) } : {}),
+    ...(identity.securityId ? { securityId: identity.securityId } : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
   const resolved = resolveHoldingCreationOpening(
@@ -524,10 +580,12 @@ function needsLiveQuote(
 function withoutBlankOptionals(args: HoldingCreationArgs): HoldingCreationArgs {
   const isBlank = (value: string | undefined): boolean =>
     value === undefined || value.trim() === "";
-  const { acquisitionDate, isin, pricePerUnit, providerSymbol, units, ...rest } = args;
+  const { acquisitionDate, dgsCode, isin, pricePerUnit, providerSymbol, units, ...rest } =
+    args;
   return {
     ...rest,
     ...(isBlank(acquisitionDate) ? {} : { acquisitionDate }),
+    ...(isBlank(dgsCode) ? {} : { dgsCode }),
     ...(isBlank(isin) ? {} : { isin }),
     ...(isBlank(pricePerUnit) ? {} : { pricePerUnit }),
     ...(isBlank(providerSymbol) ? {} : { providerSymbol }),

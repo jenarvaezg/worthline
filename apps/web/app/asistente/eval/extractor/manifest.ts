@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   extractedPositionSchema,
+  TRANSFER_CONFIRMED_HALVES,
 } from "@web/asistente/attachment-extraction-contract";
 import { z } from "zod";
 
@@ -239,6 +240,111 @@ export function parseBalanceSeriesGoldenExpected(
   input: unknown,
 ): BalanceSeriesGoldenExpected {
   return balanceSeriesGoldenExpectedSchema.parse(input);
+}
+
+// --- Traspaso confirmation golden track (#1795) ------------------------------------
+
+export const TRANSFER_GOLDEN_SCENARIOS = ["transfer-confirmation"] as const;
+
+export type TransferGoldenScenario = (typeof TRANSFER_GOLDEN_SCENARIOS)[number];
+
+const isoDayStringSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/);
+const currencyCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Z]{3}$/);
+const expectedMoneySchema = z
+  .object({ amount: z.number().finite(), currency: currencyCodeSchema })
+  .strict();
+const expectedFundSchema = z
+  .object({
+    name: z.string().trim().min(1).max(240),
+    isin: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/)
+      .optional(),
+    dgsCode: z
+      .string()
+      .trim()
+      .regex(/^N\d{4}$/)
+      .optional(),
+  })
+  .strict();
+
+/**
+ * The traspaso the capture prints, field by field. Its own closed shape rather than the
+ * contract's, because what is graded is narrower than what is carried: `label` is the
+ * paper's literal text and a model may legitimately transcribe it with a different
+ * spacing, so it is graded by fragment (`labelIncludes`) and never by equality.
+ *
+ * Every optional field grades on BOTH sides, as on the positions track (#1325): a
+ * fixture that states the VL fails a reading that omitted it, and one that omits it
+ * fails a reading that invented it.
+ */
+const transferGoldenExpectedSchema = z
+  .object({
+    transfer: z
+      .object({
+        date: isoDayStringSchema,
+        confirms: z.enum(TRANSFER_CONFIRMED_HALVES),
+        origin: expectedFundSchema,
+        destination: expectedFundSchema,
+        units: z.number().finite().optional(),
+        pricePerUnit: expectedMoneySchema.optional(),
+        amount: z.number().finite(),
+        currency: currencyCodeSchema,
+        fees: expectedMoneySchema.optional(),
+      })
+      .strict(),
+    labelIncludes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+    warningIncludes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  })
+  .strict();
+
+export type TransferGoldenExpected = z.infer<typeof transferGoldenExpectedSchema>;
+
+interface TransferGoldenFixtureBase {
+  id: string;
+  scenario: TransferGoldenScenario;
+  sourceFile: string;
+  expectedFile: string;
+}
+
+export type TransferGoldenFixture =
+  | (TransferGoldenFixtureBase & { storage: "committed" })
+  | (TransferGoldenFixtureBase & { storage: "local" });
+
+/**
+ * The traspaso confirmation (#1795), the paper of PRD #1793: a bank's «Ejecución de una
+ * orden de traspaso de IIC», printed to a page from the e-mail. The real one never
+ * enters git; this render keeps its layout with an invented bank, holder, contract and
+ * figures.
+ *
+ * It is a POSITIVE synthetic fixture, which the README says a render usually cannot be
+ * for a one-fact document — and the reason this one can is that what fails on it is
+ * not the pixels. The paper prints THREE dates (the e-mail's, the fecha de operación
+ * and the fecha valor), TWO funds with an ISIN each, and both a gross and a net importe
+ * with the fee between them. Typing it, choosing the day, telling the origin from the
+ * destination and the bruto from the neto are judgements a clean render does not
+ * supply, and they are exactly the ones the incident got wrong: the paper was typed as
+ * a dated fact on one product and thrown away 2/2.
+ */
+export const TRANSFER_GOLDEN_FIXTURES: TransferGoldenFixture[] = [
+  {
+    expectedFile: "expected/synthetic-transfer-confirmation.json",
+    id: "synthetic-transfer-confirmation",
+    scenario: "transfer-confirmation",
+    sourceFile: "fixtures/synthetic-transfer-confirmation.png",
+    storage: "committed",
+  },
+];
+
+export function parseTransferGoldenExpected(input: unknown): TransferGoldenExpected {
+  return transferGoldenExpectedSchema.parse(input);
 }
 
 // --- Positions + movements (XLSX/CSV) golden track (PRD #1103 S4) ----------------

@@ -65,6 +65,7 @@ function transferProposal(overrides: Partial<TransferProposal> = {}): TransferPr
       positionLine: "Entran en «Cartera Permanente PP»: 0 → 50,98069 participaciones",
     },
     dictated: "14/08/2026 · 739,22 €",
+    sourceCaption: "Lo que he leído en tu mensaje",
     draft: { proposalId: "wl_prp_1482" },
     folio: "1 propuesta · 1 traspaso · 2 apuntes atados",
     impact: { afterMinor: 297_060_00, beforeMinor: 297_060_00, deltaMinor: 0 },
@@ -91,6 +92,22 @@ describe("the traspaso card (#1482)", () => {
 
     expect(markup).toContain("14/08/2026 · 739,22 €");
     expect(markup).toContain("Lo que he leído en tu mensaje");
+  });
+
+  test("says the figures come from an earlier message, quoting its opening (#1798)", () => {
+    const markup = plain(
+      markupFor(
+        transferProposal({
+          sourceCaption:
+            "Lo que he leído en un mensaje anterior tuyo: «Hoy he traspasado 739,22 € del…»",
+        }),
+      ),
+    );
+
+    expect(markup).toContain(
+      "Lo que he leído en un mensaje anterior tuyo: «Hoy he traspasado 739,22 € del…»",
+    );
+    expect(markup).not.toContain("Lo que he leído en tu mensaje");
   });
 
   test("prints BOTH halves and both positions: two unrelated unit counts", () => {

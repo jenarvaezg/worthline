@@ -9,6 +9,7 @@ import {
   isinSchema,
   isoDateSchema,
   nonEmptyStringSchema,
+  observedMoneySchema,
   TWO_IDENTIFIERS_MESSAGE,
 } from "./attachment-extraction-primitives";
 
@@ -61,20 +62,6 @@ const declaredEffectSchema = z
     (effect) => (effect.amount === undefined) === (effect.currency === undefined),
     "Un efecto declarado con importe necesita su divisa.",
   );
-
-/**
- * A figure the document PRINTS together with the currency it is printed in. Both
- * halves are required and there is no XOR to refine: an amount with no currency to
- * read it in cannot be rendered honestly, and defaulting to EUR would invent exactly
- * what this contract exists not to invent. An incomplete pair is the vision seam's
- * problem, and it drops the pair with a warning rather than sinking the reading.
- */
-const observedMoneySchema = z
-  .object({
-    amount: extractedNumberSchema,
-    currency: currencySchema,
-  })
-  .strict();
 
 /** The next instalment the screen showed next to the event, when it showed one. */
 const nextInstalmentSchema = z

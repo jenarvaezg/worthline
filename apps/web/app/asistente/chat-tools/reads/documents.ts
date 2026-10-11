@@ -1,5 +1,7 @@
 import { EXTRACTED_DOCUMENT_SCHEMA } from "@web/asistente/chat-tools/schemas/reads";
 import type { ChatToolTurn } from "@web/asistente/chat-tools/turn";
+import { EMPTY_TRANSFER_BOOK, type TransferBook } from "@web/asistente/transfer-book";
+import { readTransferBook } from "@web/asistente/transfer-identity";
 import { TOOL_PROMPT_BUDGET } from "@web/asistente/turn-prompt-budget";
 import {
   extractedDocumentDetail,
@@ -12,6 +14,10 @@ import { type ToolSet, tool } from "ai";
  * ESTRUCTURADOS block may only carry the summary; this is how a concrete row gets
  * cited without the model inventing it. A file that is not in the turn's context is
  * refused, never guessed at.
+ *
+ * A traspaso paper comes back with what worthline found in the book for each of its
+ * funds, by identifier (#1793) — the same lines the block carries — and, this being a
+ * read, the ids in them count as read for the rest of the turn (#1263).
  */
 export function documentReadTools(turn: ChatToolTurn): ToolSet {
   const { input } = turn;
@@ -24,7 +30,7 @@ export function documentReadTools(turn: ChatToolTurn): ToolSet {
         "fila concreta de un extracto. Si el fichero no está entre los 3 en contexto, " +
         "la app rechaza.",
       inputSchema: EXTRACTED_DOCUMENT_SCHEMA,
-      execute: (args) => {
+      execute: async (args) => {
         const fileName = args.fileName.trim();
         const match = (input.validatedAttachments ?? []).find(
           (attachment) => attachment.fileName === fileName,
@@ -37,7 +43,19 @@ export function documentReadTools(turn: ChatToolTurn): ToolSet {
               "uno de los adjuntos validados que ves en DATOS ESTRUCTURADOS.",
           };
         }
-        const card = typedDocumentCard(match.fileName, match.document, false);
+        const book =
+          match.document.documentType === "transfer"
+            ? await input.runWithStore(
+                (store): Promise<TransferBook> =>
+                  store.assets
+                    ? readTransferBook(
+                        { agentView: store.agentView, assets: store.assets },
+                        [match],
+                      )
+                    : Promise.resolve(EMPTY_TRANSFER_BOOK),
+              )
+            : undefined;
+        const card = typedDocumentCard(match.fileName, match.document, false, book);
         const detail = extractedDocumentDetail(match.document);
         if (
           detail !== null &&

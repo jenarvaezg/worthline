@@ -14,7 +14,10 @@
  * The frontiers, all in code and not in the tool's prose (ADR 0067):
  *
  * - **The figures come from the USER's message, parsed by worthline**, never from the
- *   model's arguments ({@link ../typed-transfer} carries that whole argument).
+ *   model's arguments ({@link ../typed-transfer} carries that whole argument) — or,
+ *   since #1799, from the bank's confirmation worthline validated
+ *   ({@link ../transfer-document-source}), and then the draft says so: provenance
+ *   `agent`, the file's name, and a caption that names it.
  * - **Both holdings must be MANUAL investments of this workspace.** A sync-owned
  *   position is the source's to write, and the gate THROWS on one — so it is refused
  *   here, with a sentence, before anything is persisted.
@@ -25,6 +28,9 @@
  *   message instead of a 500).
  * - **The same traspaso is never written twice**: a pair already sitting on the origin
  *   at that date, towards that same destination, is reported and not doubled.
+ * - **The two funds are the paper's** (#1800): when the figures came off a confirmation
+ *   that prints each fund's ISIN or DGS code, both holdings are checked against them
+ *   ({@link ../transfer-identity}), at build and again at confirm.
  *
  * What it does NOT ask the user for: the two VLs. Nobody dictates them. A leg whose
  * participaciones the message DID state derives its own (#1544) and needs no price at
@@ -43,7 +49,12 @@ import type {
   InvestmentTransferPlan,
   WorthlineStore,
 } from "@worthline/db";
-import type { CurrencyCode, DecimalString, TransferPortion } from "@worthline/domain";
+import type {
+  CurrencyCode,
+  DecimalString,
+  SecurityId,
+  TransferPortion,
+} from "@worthline/domain";
 import {
   addUnits,
   derivePosition,
@@ -63,15 +74,24 @@ import {
 import { formatIsoDayEs } from "./iso-day-es";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 import { boundProposalSummary } from "./proposal-summary";
+import {
+  type PrintedFund,
+  type TransferIdentityRefusal,
+  transferIdentityContradiction,
+  transferIdentityRefusal,
+} from "./transfer-identity";
 import type {
   TransferProposal,
   TransferProposalSide,
 } from "./transfer-proposal-contract";
 import {
+  TRANSFER_DICTATED_CAPTION,
   TRANSFER_FOLIO,
   TRANSFER_IMPACT_CAPTION,
   TRANSFER_NEUTRALITY_NOTE,
   transferDictatedLine,
+  transferDocumentCaption,
+  transferEarlierMessageCaption,
   transferHalfLine,
   transferInheritedCostLine,
   transferPriceProvenanceNote,
@@ -95,10 +115,43 @@ export interface TransferArgs {
   /** The `wl_hld_…` pair echoed back to the card. */
   originHolding: string;
   destinationHolding: string;
-  /** The traspaso worthline read in the user's own message. Never the model's args. */
+  /**
+   * The traspaso worthline READ — in the user's own message, or off a validated
+   * confirmation (#1799). Never the model's args.
+   */
   transfer: TypedTransfer;
+  /** Where {@link transfer} was read. Absent means the turn's own message. */
+  source?: TransferSource;
   summary?: string;
 }
+
+/**
+ * Where the figures of a traspaso were read, which is what the card says under them and
+ * what the draft records as its provenance. Two doors, one builder — the operation's
+ * shape (#1374, #1466).
+ */
+export type TransferSource =
+  | {
+      from: "message";
+      /**
+       * The earlier user message those figures were read from, when it was not the
+       * turn's own (#1798): «sí, procede» reaches back to them, and the card says so.
+       */
+      earlierMessage?: string;
+    }
+  | {
+      /** A confirmation worthline extracted and validated (#1795, #1799). */
+      from: "document";
+      /** The file it came in: the card names it, and so does the draft. */
+      fileName: string;
+      /** The currency the paper prints the importe in. */
+      currency: string;
+      /**
+       * The two funds the paper names, with the identifier each prints — what the two
+       * holdings the model chose are checked against (#1800).
+       */
+      funds: { origin: PrintedFund; destination: PrintedFund };
+    };
 
 /**
  * The route offered when a side of the traspaso is not a manual investment with
@@ -163,6 +216,9 @@ export interface TransferWrite {
   destinationPricePerUnit?: DecimalString | undefined;
   /** The participaciones that arrived, when they were stated rather than divided. */
   destinationUnits?: DecimalString | undefined;
+  /** The identifier the paper printed for each fund, re-checked here (#1800). */
+  originSecurityId?: SecurityId | undefined;
+  destinationSecurityId?: SecurityId | undefined;
 }
 
 /**
@@ -192,6 +248,19 @@ export async function projectTransferWrite(
   if (!destination) {
     return { error: `La inversión de destino: ${NOT_AN_INVESTMENT}`, ok: false };
   }
+
+  // The identity contradiction, through the operation's own piece (#1800): a holding
+  // that registers another identifier than the paper's is another instrument. The
+  // build already refused it with the holdings that DO carry it; what reaches here is
+  // the confirm, after a ficha edit in between.
+  const contradiction =
+    transferIdentityContradiction("origin", write.originSecurityId, origin) ??
+    transferIdentityContradiction(
+      "destination",
+      write.destinationSecurityId,
+      destination,
+    );
+  if (contradiction) return { error: contradiction, ok: false };
 
   // The connected-source frontier, in code (#1326) and on BOTH sides: the gate throws
   // on a sync-owned holding, whose position its own sync re-rolls, so a hand-written
@@ -234,7 +303,7 @@ export async function projectTransferWrite(
   const counterparts = await store.operations.readTransferCounterparts(
     write.originAssetId,
   );
-  const alreadyThere = originOperations.some(
+  const alreadyThere = originOperations.find(
     (operation) =>
       operation.kind === "transfer_out" &&
       operation.executedAt.slice(0, 10) === dateKey &&
@@ -245,7 +314,9 @@ export async function projectTransferWrite(
     return {
       error:
         `Ese traspaso ya está anotado: «${origin.name}» tiene una salida por traspaso del ` +
-        `${formatIsoDayEs(dateKey)} hacia «${destination.name}», así que no lo duplico. Si de ` +
+        `${formatIsoDayEs(dateKey)} hacia «${destination.name}» (${formatUnits(alreadyThere.units)} ` +
+        "participaciones), así que no lo duplico. Para corregir las participaciones que entraron, " +
+        "usa la ficha de la posición. Si de " +
         "verdad hiciste dos ese día, el segundo se registra desde «Traspasar» en la ficha de " +
         "la posición de origen.",
       ok: false,
@@ -362,6 +433,8 @@ export function transferWriteFromPlan(plan: InvestmentTransferPlan): TransferWri
     originAssetId: plan.originAssetId,
     originPricePerUnit: plan.originPricePerUnit,
     portion: plan.portion,
+    originSecurityId: plan.originSecurityId,
+    destinationSecurityId: plan.destinationSecurityId,
   };
 }
 
@@ -369,8 +442,16 @@ export async function buildTransferProposal(
   store: TransferStore,
   args: TransferArgs,
   today: string,
-): Promise<{ ok: true; proposal: TransferProposal } | { ok: false; error: string }> {
-  const { executedAt, portion } = args.transfer;
+): Promise<
+  | { ok: true; proposal: TransferProposal }
+  | {
+      ok: false;
+      error: string;
+      /** The typed answer, when the refusal is more than its sentence (#1800). */
+      refusal?: TransferIdentityRefusal;
+    }
+> {
+  const { destinationUnits, executedAt, portion } = args.transfer;
   if (executedAt > today) {
     return {
       error:
@@ -380,46 +461,95 @@ export async function buildTransferProposal(
     };
   }
 
+  // The two funds are the paper's (#1800), judged before any price is read: a wrong
+  // holding with no VL would otherwise be refused for its missing price, and the
+  // person told to type participaciones for a fund the traspaso never touched.
+  if (args.source?.from === "document") {
+    const refusal = await transferIdentityRefusal(store, {
+      destination: {
+        assetId: args.destinationAssetId,
+        printed: args.source.funds.destination,
+      },
+      origin: { assetId: args.originAssetId, printed: args.source.funds.origin },
+    });
+    if (refusal) return { error: refusal.message, ok: false, refusal };
+  }
+
   // The VLs the arithmetic still needs, and only those: a leg that DECLARES its
   // participaciones derives its own (#1544), so a holding with no price at all no
   // longer blocks a traspaso the user stated fully. The refusal has to name WHICH
-  // holding has no price — «no tengo precio» about an unnamed one is a dead end.
-  const prices = await readTransferPrices(store, args, portion.kind !== "units");
+  // holding has no price — «no tengo precio» about an unnamed one is a dead end. The
+  // same goes for the arriving leg when a pasted suscripción stated its
+  // participaciones (#1794): its VL is derived, and the destination's price is neither
+  // read nor missed.
+  const prices = await readTransferPrices(store, args, {
+    destination: destinationUnits === undefined,
+    origin: portion.kind !== "units",
+  });
   if (!prices.ok) return prices;
+
+  // What the user's figures STATE, frozen in the draft: a VL only for a leg whose
+  // participaciones were not stated, and the arriving participaciones when they were.
+  const stated = {
+    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
+    ...(prices.destination === null
+      ? {}
+      : { destinationPricePerUnit: prices.destination.pricePerUnit }),
+    ...(destinationUnits === undefined ? {} : { destinationUnits }),
+    // And what the paper printed about WHICH funds, so the confirm re-checks it (#1800).
+    ...printedSecurityIds(args.source),
+  };
 
   const projected = await projectTransferWrite(store, {
     destinationAssetId: args.destinationAssetId,
-    destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
     originAssetId: args.originAssetId,
-    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
     portion,
+    ...stated,
   });
   if (!projected.ok) return projected;
 
   const { destination, origin, pair } = projected;
   const currency = origin.currency;
+  const source: TransferSource = args.source ?? { from: "message" };
+  // A paper's importe is in the paper's currency, and the pair is written in the
+  // holdings': no rate is ever invented (ADR 0072), so a confirmation in another one is
+  // refused rather than read as if it were the same money.
+  if (
+    source.from === "document" &&
+    source.currency.toUpperCase() !== currency.toUpperCase()
+  ) {
+    return {
+      error:
+        `El justificante está en ${source.currency} y «${origin.name}» se lleva en ` +
+        `${currency}: no convierto divisas por mi cuenta, así que este traspaso regístralo ` +
+        "desde «Traspasar» en la ficha de la posición de origen.",
+      ok: false,
+    };
+  }
 
   const plan: InvestmentTransferPlan = {
     currency,
     destinationAssetId: destination.assetId,
     destinationHolding: args.destinationHolding,
-    destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
     originAssetId: origin.assetId,
     originHolding: args.originHolding,
     portion,
-    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
+    ...stated,
   };
 
   const proposal = await store.assistantProposals.create({ kind: "investment_transfer" });
   await store.assistantProposals.appendDocument(proposal.id, {
     document: {
-      // Provenance `user`: what backs this write is the user's OWN message, read by
-      // worthline (#1418's rule) — there is no document, and naming one would put a
-      // file's name on a write no file grounds.
-      name: TRANSFER_DICTATED_DOCUMENT_NAME,
-      provenance: "user",
+      // Provenance `agent` and the file's own name when worthline READ the figures off a
+      // validated confirmation (#1799), as the operation records its justificante.
+      // Provenance `user` otherwise: what backs this write is the user's OWN message,
+      // read by worthline (#1418's rule) — there is no document, and naming one would
+      // put a file's name on a write no file grounds.
+      ...(source.from === "document"
+        ? { name: source.fileName, provenance: "agent" as const }
+        : { name: TRANSFER_DICTATED_DOCUMENT_NAME, provenance: "user" as const }),
       sha256: createHash("sha256").update(JSON.stringify(plan)).digest("hex"),
     },
     facts: [{ kind: "investment_transfer", row: plan }],
@@ -448,7 +578,13 @@ export async function buildTransferProposal(
         projected: destination,
         units: pair.incoming.units,
       }),
-      dictated: transferDictatedLine({ currency, executedAt, portion }),
+      dictated: transferDictatedLine({
+        currency,
+        executedAt,
+        portion,
+        ...(destinationUnits === undefined ? {} : { destinationUnits }),
+      }),
+      sourceCaption: transferSourceCaption(source),
       draft: { proposalId: proposal.id },
       folio: TRANSFER_FOLIO,
       impact: {
@@ -470,7 +606,8 @@ export async function buildTransferProposal(
         // traspaso states one unit count, and a message with two is refused as
         // ambiguous (`typed-transfer.ts`) and routed to the screen, which has a field
         // per leg. So the arriving half is still divided at the app's price, and still
-        // says so.
+        // says so — unless a pasted suscripción stated it (#1794), and then it is the
+        // ORIGIN that is divided and says so instead.
         ...[
           prices.origin === null
             ? null
@@ -480,12 +617,14 @@ export async function buildTransferProposal(
                 side: "origin",
                 ...prices.origin,
               }),
-          transferPriceProvenanceNote({
-            executedAt,
-            name: destination.name,
-            side: "destination",
-            ...prices.destination,
-          }),
+          prices.destination === null
+            ? null
+            : transferPriceProvenanceNote({
+                executedAt,
+                name: destination.name,
+                side: "destination",
+                ...prices.destination,
+              }),
         ].filter((note): note is string => note !== null),
       ],
       origin: side({
@@ -511,8 +650,28 @@ export async function buildTransferProposal(
  */
 export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
 
+/** The identifier each fund's paper printed, when the figures came off a paper. */
+function printedSecurityIds(
+  source: TransferSource | undefined,
+): Pick<TransferWrite, "originSecurityId" | "destinationSecurityId"> {
+  if (source?.from !== "document") return {};
+  const { destination, origin } = source.funds;
+  return {
+    ...(origin.securityId ? { originSecurityId: origin.securityId } : {}),
+    ...(destination.securityId ? { destinationSecurityId: destination.securityId } : {}),
+  };
+}
+
+/** The caption under the echo: the file, an earlier message, or the turn's own. */
+function transferSourceCaption(source: TransferSource): string {
+  if (source.from === "document") return transferDocumentCaption(source.fileName);
+  return source.earlierMessage === undefined
+    ? TRANSFER_DICTATED_CAPTION
+    : transferEarlierMessageCaption(source.earlierMessage);
+}
+
 /**
- * Both VLs, or the refusal that names the holding without one.
+ * The VLs the arithmetic still needs, or the refusal that names the holding without one.
  *
  * It does NOT re-read the portfolio to name them: each side's row already came back
  * from `readTransferSidePrice`, and «no existe» is
@@ -523,30 +682,28 @@ async function readTransferPrices(
   store: TransferProjectionStore,
   args: TransferArgs,
   /**
-   * Whether the origin's VL is still part of the arithmetic. False when the message
-   * declared the participaciones that left (#1544): the origin's price is then neither
-   * read for the plan nor missed when the holding has none.
+   * Whether each side's VL is still part of the arithmetic. False for a side whose
+   * participaciones were stated — the origin's by the message (#1544), the
+   * destination's by a pasted suscripción (#1794): that price is then neither read for
+   * the plan nor missed when the holding has none.
    */
-  needsOriginPrice: boolean,
+  needs: { origin: boolean; destination: boolean },
 ): Promise<
-  | { ok: true; origin: TransferSidePrice | null; destination: TransferSidePrice }
+  | { ok: true; origin: TransferSidePrice | null; destination: TransferSidePrice | null }
   | { ok: false; error: string }
 > {
+  const unread = Promise.resolve({ name: null, price: null });
   const [origin, destination] = await Promise.all([
-    needsOriginPrice
-      ? readTransferSidePrice(store, args.originAssetId)
-      : Promise.resolve({ name: null, price: null }),
-    readTransferSidePrice(store, args.destinationAssetId),
+    needs.origin ? readTransferSidePrice(store, args.originAssetId) : unread,
+    needs.destination ? readTransferSidePrice(store, args.destinationAssetId) : unread,
   ]);
 
-  if ((needsOriginPrice && origin.price === null) || destination.price === null) {
+  const originMissing = needs.origin && origin.price === null;
+  const destinationMissing = needs.destination && destination.price === null;
+  if (originMissing || destinationMissing) {
     const without = [
-      ...(needsOriginPrice && origin.price === null
-        ? [origin.name ?? "la inversión de origen"]
-        : []),
-      ...(destination.price === null
-        ? [destination.name ?? "la inversión de destino"]
-        : []),
+      ...(originMissing ? [origin.name ?? "la inversión de origen"] : []),
+      ...(destinationMissing ? [destination.name ?? "la inversión de destino"] : []),
     ];
     return {
       error:

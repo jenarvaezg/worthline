@@ -1,0 +1,28 @@
+{
+  "fileName": "confirmacion-traspaso.pdf",
+  "result": {
+    "status": "valid",
+    "data": {
+      "documentType": "transfer",
+      "transfer": {
+        "date": "2026-05-27",
+        "confirms": "redemption",
+        "label": "REEMBOLSO POR TRASPASO",
+        "origin": {
+          "name": "ÍNDICE EUROPA BOLSA FI, CLASE A",
+          "isin": "ES0190731002"
+        },
+        "destination": {
+          "name": "ÍNDICE RENTA FIJA EURO FI, CLASE A",
+          "isin": "ES0158342917"
+        },
+        "units": 150,
+        "pricePerUnit": { "amount": 13.2, "currency": "EUR" },
+        "amount": 1980,
+        "currency": "EUR",
+        "fees": { "amount": 0, "currency": "EUR" }
+      },
+      "warnings": []
+    }
+  }
+}

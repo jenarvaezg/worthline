@@ -36,17 +36,32 @@
  *   naming both — the screen of #1480 has a field for each.
  * - **A commission.** Same reason: it is a third money figure competing with the two
  *   above, and a traspaso charged one is the case for the screen.
+ *
+ * And what it reads since #1794: the bank's confirmation PASTED as it comes, through the
+ * label reader of #1751 ({@link ../typed-operation-receipt}) — the same one the dictated
+ * operation uses. A table pairs each figure with its own label, so the four euro
+ * figures of a confirmation are no longer four candidates for one importe: the importe
+ * is the gross, the day is «Fecha Operación» and never «Fecha Valor», and a commission
+ * is still the case for the screen — now said as such rather than as ambiguity. The
+ * participaciones are the ones that LEFT, as ever, unless the paper is a suscripción:
+ * then they are the ones that ARRIVED.
  */
 
 import type { TransferPortion } from "@worthline/domain";
 import type { UIMessage } from "ai";
 
 import { normalizeExtractedNumber } from "./attachment-extraction-contract";
+import { proposalCardInPart } from "./proposal-card-presence";
 import {
   dateInMessage,
   joinRefusalGaps,
   MAX_SCANNED_CHARS,
+  withoutSecurityIds,
 } from "./typed-message-reading";
+import {
+  type OperationReceiptFigures,
+  operationReceiptFigures,
+} from "./typed-operation-receipt";
 
 /** One traspaso, as much of it as a message can state. */
 export interface TypedTransfer {
@@ -57,6 +72,12 @@ export interface TypedTransfer {
    * participaciones the message stated together with their importe (#1544).
    */
   portion: TransferPortion;
+  /**
+   * The participaciones that ARRIVED in the destination, when a pasted suscripción
+   * states them (#1794). Absent everywhere else: a dictated sentence states one count,
+   * and it is the one that left.
+   */
+  destinationUnits?: string;
 }
 
 /**
@@ -73,12 +94,45 @@ export type TypedTransferGap =
   /** Two or more figures are marked as participaciones, one per leg — see #1544. */
   | "ambiguous_units"
   /** «Todo» AND an importe (or participaciones): two intents for one portion. */
-  | "conflicting_portion";
+  | "conflicting_portion"
+  /**
+   * A pasted confirmation that charged a commission (#1794): the importe that left and
+   * the one that arrived differ, and only the screen has a field for each.
+   */
+  | "fee"
+  /**
+   * A pasted figure like «37.203» whose block never says whether its point is the
+   * decimal or the thousands (#1794): no other figure of the paper settles it, so the
+   * app does not pick.
+   */
+  | "unsettled_decimal";
 
 export type TypedTransferReading =
-  | { status: "read"; transfer: TypedTransfer }
-  /** Nothing was written, or what was written is ambiguous. Never a silent guess. */
-  | { status: "incomplete"; missing: TypedTransferGap[] };
+  | {
+      status: "read";
+      transfer: TypedTransfer;
+      /**
+       * The text of the EARLIER user message the figures were read from (#1798), when
+       * the turn's own message stated nothing about a traspaso — «sí, procede». Absent
+       * when they come from the turn's own message: the card says where they came from
+       * only when it is not the obvious place.
+       */
+      earlierMessage?: string;
+    }
+  /** Something was written, but not enough — or not unambiguously. Never a silent guess. */
+  | {
+      status: "incomplete";
+      missing: TypedTransferGap[];
+      /** The figure as printed, when the gap is `unsettled_decimal`: the refusal names it. */
+      unsettledFigure?: string;
+    }
+  /**
+   * The message states nothing about a traspaso: no figure, no date, no «todo», no
+   * legible pasted block (#1798). Kept apart from `incomplete` because it is the one
+   * reading that lets the walk over the conversation go on to an earlier message — a
+   * half-written traspaso is told what it is missing, «vale, gracias» is not.
+   */
+  | { status: "absent" };
 
 /**
  * What each gap says back to the person, in the words that let them fix it.
@@ -110,7 +164,25 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
   date:
     "no he visto la fecha. Dime el día del traspaso («hoy», «ayer» o 12/08/2026): no fecho " +
     "yo un movimiento que no me has fechado",
+  fee:
+    "lo que me has pegado trae una comisión, y un traspaso con comisión no lo anoto a " +
+    "medias desde el chat: regístralo desde «Traspasar» en la ficha de la posición de " +
+    "origen, que tiene un campo para cada cifra",
+  unsettled_decimal:
+    "en lo que me has pegado hay una cifra con tres decimales tras un punto o una coma, " +
+    "y ninguna otra del bloque dice si ese signo es el decimal o el de los miles",
 };
+
+/** {@link GAP_MESSAGES}' `unsettled_decimal`, naming the figure it could not settle. */
+function unsettledDecimalMessage(figure: string): string {
+  const [whole, decimals] = figure.split(/[.,]/u) as [string, string];
+  return (
+    `en lo que me has pegado no sé leer «${figure}»: puede ser ${whole},${decimals} o ` +
+    `${whole}${decimals}, y ninguna otra cifra del bloque dice si ese signo es el decimal ` +
+    "o el de los miles. Escríbemelo en una frase con la fecha, el importe y esa cifra con " +
+    `coma decimal («el 14/08/2026, ${whole},${decimals} participaciones, 739,22 €»)`
+  );
+}
 
 /**
  * The refusal for a dictated traspaso worthline could not read, as the model relays it.
@@ -118,9 +190,20 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
  * One sentence with every gap in it, not one round trip per gap: a person who has to be
  * asked three times for one traspaso has been asked to fill in a form badly.
  */
-export function typedTransferGapMessage(missing: readonly TypedTransferGap[]): string {
+export function typedTransferGapMessage(
+  missing: readonly TypedTransferGap[],
+  /** The figure behind an `unsettled_decimal` gap, as printed (#1794). */
+  unsettledFigure?: string,
+): string {
+  // A commission is not something to write again: the way out is the screen, so the
+  // sentence about how the chat reads a message would point the wrong way (#1794).
+  if (missing.includes("fee")) return `Te preparo el traspaso, pero ${GAP_MESSAGES.fee}.`;
   const listed = joinRefusalGaps(
-    missing.map((gap) => GAP_MESSAGES[gap]),
+    missing.map((gap) =>
+      gap === "unsettled_decimal" && unsettledFigure !== undefined
+        ? unsettledDecimalMessage(unsettledFigure)
+        : GAP_MESSAGES[gap],
+    ),
     GAP_MESSAGES.amount,
   );
   return (
@@ -166,6 +249,28 @@ const ALL_PORTION_WORDS =
 const ALL_PORTION_PERCENT = /(?<!\d)100\s?%/u;
 
 /**
+ * «Todo» that is ASSENT and not the participaciones (#1798, decided with Jose): «vale, todo
+ * claro, procede», «todo bien», «todo correcto». Cut out before the portion is read, so
+ * the «sí, procede» of someone agreeing reaches back to the figures they wrote instead
+ * of stopping the walk as a «todo» with no day.
+ *
+ * A short list on purpose, and not a rule about what may follow «todo»: an assent missed
+ * here fails CLOSED (the turn reads as «todo» and is asked for its day), while a «todo»
+ * wrongly taken for assent would reach back to an earlier importe the person just
+ * replaced with the whole position.
+ */
+const ASSENT_TODO =
+  /\btodo\s+(?:claro|bien|correcto|ok|okay|perfecto|listo|en\s+orden|entendido|conforme)\b/giu;
+
+/**
+ * «Ahora», as the traspaso reads it: not a day (#1798). The shared reader takes it for
+ * today, which is right for «he comprado ahora»; in this lane it is far likelier to be
+ * «¿lo ves ahora?», and as a date it stopped the walk over the conversation with a
+ * traspaso missing its importe. A traspaso done today is «hoy» — the person names it.
+ */
+const NOT_A_DAY = /\bahora(?:\s+mismo)?\b/giu;
+
+/**
  * Read the traspaso written in `text`, against the clock the turn is being answered at.
  *
  * The date is required and never defaulted, which is the one decision here worth
@@ -181,10 +286,29 @@ const ALL_PORTION_PERCENT = /(?<!\d)100\s?%/u;
  */
 export function parseTypedTransfer(text: string, today: string): TypedTransferReading {
   const scanned = text.slice(0, MAX_SCANNED_CHARS);
-  const dated = dateInMessage(scanned, today);
+  // A PASTED confirmation is read by its labels FIRST (#1794), for the reason the
+  // operation's reader gave (#1751): what the prose reader says about a table is
+  // `ambiguous_amount` — a refusal, not a miss — so there would be no failure to fall
+  // through from. `null` means this text is not a table, and everything below is
+  // untouched.
+  const receipt = operationReceiptFigures(scanned);
+  if (receipt !== null) return receiptReading(receipt, scanned, today);
+  // The identifiers go first (#1798): a person who types the destination's ISIN so the
+  // assistant can find it has written no figure, and a message of «todo» naming its
+  // fund by ISIN is not «todo» plus an importe. So do the two words this lane reads
+  // differently from the shared reader: «ahora» names no day, and «todo claro» no
+  // portion.
+  const prose = withoutSecurityIds(scanned)
+    .replace(NOT_A_DAY, " ")
+    .replace(ASSENT_TODO, " ");
+  const dated = dateInMessage(prose, today);
   // The date is cut out before the figures are counted: `12/08/2026` is three numbers
   // to a scanner and would make every dated message ambiguous.
-  const portion = portionIn(dated === null ? scanned : dated.rest);
+  const portion = portionIn(dated === null ? prose : dated.rest);
+  // Not a single thing a traspaso is made of: this message is about something else
+  // («sí, procede», «vale», «¿lo ves?»), and saying it lacks an importe and a date would
+  // be answering a question nobody asked in it (#1798).
+  if (dated === null && !portion.ok && portion.statesNothing) return { status: "absent" };
 
   const missing: TypedTransferGap[] = [];
   if (!portion.ok) missing.push(portion.gap);
@@ -195,35 +319,163 @@ export function parseTypedTransfer(text: string, today: string): TypedTransferRe
   return { status: "read", transfer: { executedAt, portion: portion.portion } };
 }
 
+/** A paper that prints the day its money settled: «Fecha Valor», «Fecha de valor». */
+const VALUE_DATE = /fecha\s+(?:de\s+)?valor\b/iu;
+
 /**
- * The traspaso dictated in THIS turn — the last user message and nothing else.
+ * The traspaso a PASTED confirmation states (#1794).
  *
- * Scoped to the turn, and to the user's own role, for the same two reasons as the
- * balance series: prose written by the ASSISTANT is the model quoting itself, and an
- * earlier user turn is a figure from another conversation about another traspaso. «Hoy»
- * only means something in the turn being answered.
+ * Deliberately the same {@link TypedTransferReading} the prose reader returns, gaps
+ * included: a paste with no importe is told the same sentence as a message that never
+ * wrote one, because it is the same thing missing. What it does NOT inherit is the two
+ * ambiguity gaps — a table pairs each figure with its own label, so there is nothing
+ * left to be ambiguous about, which is the whole reason this door exists.
+ */
+function receiptReading(
+  figures: OperationReceiptFigures,
+  scanned: string,
+  today: string,
+): TypedTransferReading {
+  // A commission, alone: the other gaps would be asking for figures the chat is not
+  // going to write anyway. Zero is not a commission — the block prints it on every
+  // traspaso, charged or not.
+  if (figures.fees !== undefined && figures.fees !== 0) {
+    return { missing: ["fee"], status: "incomplete" };
+  }
+  // A figure the traspaso stands on whose decimal mark the paper never settled
+  // («37.203» in a block with no other figure to say, #1794): named, never guessed. The
+  // VL is not one of them — this lane derives its own, and never reads the printed one.
+  const unsettled = figures.unsettled?.find((figure) => figure.field !== "price");
+  if (unsettled !== undefined) {
+    return {
+      missing: ["unsettled_decimal"],
+      status: "incomplete",
+      unsettledFigure: unsettled.printed,
+    };
+  }
+  // «Fecha Operación» wins; a paper that labels no date falls back to the day the
+  // message names, and silence is still never «hoy». Except when the paper prints a
+  // «Fecha Valor»: then any loose date in it may be that one, the day the money settled
+  // and not the day it moved, so the gap is named instead of a day borrowed.
+  const executedAt =
+    figures.executedAt ??
+    (VALUE_DATE.test(scanned)
+      ? null
+      : (dateInMessage(scanned.replace(NOT_A_DAY, " "), today)?.day ?? null));
+  const amountMinor =
+    figures.amount === undefined ? Number.NaN : Math.round(figures.amount * 100);
+
+  const missing: TypedTransferGap[] = [];
+  if (!(amountMinor > 0) || !Number.isSafeInteger(amountMinor)) missing.push("amount");
+  if (executedAt === null) missing.push("date");
+  if (missing.length > 0 || executedAt === null) return { missing, status: "incomplete" };
+
+  const { units } = figures;
+  if (units === undefined) {
+    return {
+      status: "read",
+      transfer: { executedAt, portion: { amountMinor, kind: "amount" } },
+    };
+  }
+  // The paper of the half that ARRIVED: its participaciones are the destination's,
+  // stated, and the origin's are still divided at its own price — the card says which
+  // price that was. Every other paper — a reembolso, or one that names neither — states
+  // the participaciones that LEFT, which is what this lane has always read them as
+  // (#1544).
+  if (confirmsArrival(figures, scanned)) {
+    return {
+      status: "read",
+      transfer: {
+        destinationUnits: units,
+        executedAt,
+        portion: { amountMinor, kind: "amount" },
+      },
+    };
+  }
+  return {
+    status: "read",
+    transfer: { executedAt, portion: { amountMinor, kind: "units", units } },
+  };
+}
+
+/** A suscripción, as a bank abbreviates it: «SUSCR.POR TRASPASO I», «SUSCRIPCION I.I.C.». */
+const SUBSCRIPTION = /(?<!\p{L})suscr/iu;
+/** A reembolso, the half that left: «REEMB.POR TRASPASO I», «rescate». */
+const REDEMPTION = /(?<!\p{L})(?:reemb|rescat)/iu;
+
+/**
+ * Whether the pasted paper confirms the half that ARRIVED (#1794).
+ *
+ * The name printed beside «Operación» decides when there is one: it is the paper's own
+ * word for itself, and the prose around a paste («te pego el reembolso») can be wrong
+ * about which half was copied. With no such name the whole message is read, and only a
+ * message that names a suscripción and NOT a reembolso counts as one: naming both says
+ * nothing about which half this is, and the half that left is what this lane already
+ * understood by «participaciones».
+ */
+function confirmsArrival(figures: OperationReceiptFigures, scanned: string): boolean {
+  if (figures.operation !== undefined) return SUBSCRIPTION.test(figures.operation);
+  return SUBSCRIPTION.test(scanned) && !REDEMPTION.test(scanned);
+}
+
+/**
+ * The traspaso the user has written and no card has spent yet (#1798).
+ *
+ * Only the user's own messages are read: prose written by the ASSISTANT is the model
+ * quoting itself, which is #1418's whole doctrine. Within those, the figures last until
+ * they are spent, which is the rule decided with Jose after «Sí, procede con la creación
+ * y el traspaso» was refused for lacking an importe two messages below the importe:
+ *
+ * - The walk goes from the most recent message back. A message that states nothing
+ *   about a traspaso is transparent, so «vale» or «¿lo ves?» breaks nothing.
+ * - The FIRST message that states something decides, read or incomplete. Two messages
+ *   are never stitched together — the importe of one and the date of another is a
+ *   traspaso nobody wrote — and a half-written one is told what IT lacks.
+ * - The walk stops at any assistant answer that carries a traspaso card, confirmed or
+ *   not: a card born of a reading spends it, so «hazlo otra vez» cannot write the same
+ *   traspaso twice.
+ *
+ * «Hoy» and «ayer» are still resolved against `today`, the clock of the turn being
+ * answered, whichever message they were written in — exactly as before.
  */
 export function typedTransferInTurn(
   messages: readonly UIMessage[],
   today: string,
 ): TypedTransferReading {
+  let turnsOwnMessage = true;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
+    if (message.role === "assistant" && message.parts.some(drewTransferCard)) break;
     if (message.role !== "user") continue;
-    return parseTypedTransfer(
-      message.parts
-        .filter((part) => part.type === "text")
-        .map((part) => (part as { text: string }).text)
-        .join("\n"),
-      today,
-    );
+    const text = message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => (part as { text: string }).text)
+      .join("\n");
+    const reading = parseTypedTransfer(text, today);
+    if (reading.status === "absent") {
+      turnsOwnMessage = false;
+      continue;
+    }
+    if (reading.status === "read" && !turnsOwnMessage) {
+      return { ...reading, earlierMessage: text };
+    }
+    return reading;
   }
-  return { missing: ["amount", "date"], status: "incomplete" };
+  return { status: "absent" };
+}
+
+/**
+ * Did this part put a traspaso card on the screen? Asked through the same table the
+ * render reads (#1468), so a refused call — which paints nothing — spends nothing.
+ */
+function drewTransferCard(part: UIMessage["parts"][number]): boolean {
+  return proposalCardInPart(part)?.kind === "transfer";
 }
 
 type PortionReading =
   | { ok: true; portion: TransferPortion }
-  | { ok: false; gap: TypedTransferGap };
+  /** `statesNothing`: no figure and no «todo» at all — the gap is a silence. */
+  | { ok: false; gap: TypedTransferGap; statesNothing?: true };
 
 /**
  * How much of the origin left, or the gap that stops us knowing.
@@ -253,7 +505,11 @@ function portionIn(text: string): PortionReading {
   if (amounts.length > 1) return { gap: "ambiguous_amount", ok: false };
 
   const [amount] = amounts;
-  if (amount === undefined) return { gap: "amount", ok: false };
+  if (amount === undefined) {
+    return stated.units.length === 0
+      ? { gap: "amount", ok: false, statesNothing: true }
+      : { gap: "amount", ok: false };
+  }
 
   const amountMinor = Math.round(amount * 100);
   if (!(amountMinor > 0) || !Number.isSafeInteger(amountMinor)) {

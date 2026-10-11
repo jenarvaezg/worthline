@@ -70,6 +70,7 @@ import {
   noInventedMechanism,
   noUnresolvedDistinctInstrument,
   proposesOnHoldingNamed,
+  transfersBetween,
 } from "./golden-write-checks";
 import type { AssistantAnswer } from "./graders";
 import {
@@ -99,6 +100,18 @@ const CONFLICTING_BALANCES = {
 export const SUBSCRIPTION_RECEIPT = {
   file: "justificante-suscripcion.json",
   documentType: "holding_event",
+} as const;
+
+/**
+ * A traspaso confirmation worthline already read and validated (#1801): the reembolso
+ * half of a traspaso between two index funds, each side with the ISIN the paper prints.
+ * Through history for the receipt's reason — a `transfer` comes off a bank's notice, and
+ * the vision call that reads one is a credential this harness's cost model does not
+ * spend. Invented end to end: funds, ISINs and figures.
+ */
+export const TRANSFER_CONFIRMATION = {
+  file: "confirmacion-traspaso.json",
+  documentType: "transfer",
 } as const;
 
 /**
@@ -343,11 +356,12 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
     // corrects course is the design working, not a defect to score.
     //
     // What the resulting card says is deliberately NOT graded. No demo position carries
-    // an ISIN, so the preview files these rows under `new` rather than merging them into
-    // «ETF Pacífico ex-Japón» — a property of the seed, not of the turn, and the
-    // question is about which lane the model chose. `broker-statement-lane.test.ts`
-    // pins the part that must hold: that the lane answers this fixture with a card at
-    // all, so a red here is never the harness refusing the model.
+    // the export's ISINs, so the preview files these rows under `new` rather than
+    // merging them into «ETF Pacífico ex-Japón» — a property of the seed, not of the
+    // turn, and the question is about which lane the model chose.
+    // `broker-statement-lane.test.ts` pins the part that must hold: that the lane
+    // answers this fixture with a card at all, so a red here is never the harness
+    // refusing the model.
     id: "attachment-imports-the-broker-statement",
     dimension: "attachments",
     persona: "inversor",
@@ -370,5 +384,52 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
     validatedDocument: BROKER_TRANSACTIONS_IN_CONTEXT,
     question: CORRECT_FROM_THE_STATEMENT,
     grade: importsTheStatement,
+  },
+  {
+    // The session of 2026-10-11, made gradeable (#1801, PRD #1793). Jorge handed over
+    // his bank's confirmation of a traspaso and asked for it to be noted; it took about
+    // twelve turns. Among the walls: the model searched the destination fund by NAME,
+    // declared missing a fund he held — worth little, below the cut of the portfolio
+    // summary — and offered to create it, first with no value and then as a duplicate.
+    // The paper carried both ISINs the whole time.
+    //
+    // #1795 made the confirmation a validated `transfer`, #1799 made it the lane's own
+    // source and #1800 made the lane check both holdings against the paper's ISINs, so
+    // the app now does the matching it can do. What is left is the model's: finding
+    // each fund — the origin is in the summary with its ISIN, the destination is not,
+    // and the tool descriptions say to search by ISIN before concluding a fund is
+    // missing — and then asking for the traspaso instead of an alta or a venta plus a
+    // compra.
+    //
+    // Graded off the tool trace and never the prose. A wrong pick is refused by the
+    // lane with the holding that does carry the ISIN, so a turn that corrects course
+    // passes (see `transfersBetween`). Two checks are deliberately absent:
+    // `noUnresolvedDistinctInstrument` would fire on the true sentence «un traspaso
+    // entre dos fondos distintos», and `grounded` cannot fail on a turn that proposes
+    // at all — the pair check only resolves names a READ gave.
+    //
+    // Its date (27/05/2026) sits before the harness's pinned clock for the receipt's
+    // reason: the lane refuses a traspaso dated in its own future.
+    id: "attachment-registers-the-transfer",
+    dimension: "attachments",
+    persona: "inversor",
+    validatedDocument: TRANSFER_CONFIRMATION,
+    question: "Anótame este traspaso, por favor.",
+    grade: (a) => [
+      spanish(a),
+      check(
+        "prepara el traspaso y devuelve tarjeta",
+        proposedThroughTool(a, "propose_transfer"),
+      ),
+      transfersBetween(a, ["europa"], ["renta fija"]),
+      check("no da de alta un fondo que ya tiene", !reachedForTool(a, "propose_holding")),
+      check(
+        "no parte el traspaso en una venta y una compra",
+        !reachedForTool(a, "propose_operation"),
+      ),
+      groundedIds(a),
+      noFakeCeremony(a),
+      noCeremonyOverRejection(a),
+    ],
   },
 ];

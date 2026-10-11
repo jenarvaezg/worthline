@@ -680,6 +680,56 @@ identification schema grows by ONE enum value, and the ledger's rows are read in
 narrower call. A fourth fat array beside `positions`, `balances` and `events` is exactly
 the shape that took a bank's composition capture from seven rows to zero.
 
+## Amendment — the traspaso confirmation (#1795, PRD #1793)
+
+The union gains a **sixth document**, `transfer`: the bank's confirmation of ONE traspaso
+between two funds or two plans. The paper that opened PRD #1793 — a «Ejecución de una
+orden de traspaso de IIC» printed from the e-mail — had no shape to land in: typed as a
+`holding_event`, it was either thrown away (that document holds one fund, and a traspaso
+names two) or, on a clean render, kept as a dated fact on the ORIGIN alone, with the net
+importe and without the destination's ISIN. Either way the model never saw the second
+identifier, searched the book by name and concluded a fund the user held did not exist.
+
+It is read the way #1345 and #1487 dictate: the identification grows by one enum value and
+one sentence — and `holding_event`'s own sentence now says a traspaso between two funds is
+not one — while the traspaso itself is read in a second, narrower call that every
+identified traspaso earns. The lock is #1244's, counted on that second reading: a paper
+listing several traspasos is not this document and takes the descriptive lane.
+
+What it carries is observed and nothing else (ADR 0048):
+
+- **The fecha de operación, never the fecha valor.** The value date is asked for in its own
+  slot so the model has somewhere to put it, and the contract has no field for it: a
+  traspaso anotado on the day the VL was struck lands on a day the bank never executed
+  the order. A paper with no readable operation date is declined, never dated by the
+  other one.
+- **Which half the paper confirms** (`redemption` / `subscription`), because the
+  participaciones and the VL it prints belong to that half only — the units that LEFT
+  the origin, or the ones that ARRIVED in the destination (#1544).
+- **Each side's printed name and at most one identifier**, with #1747's rules per side: an
+  ISIN must pass its check digit, a DGS code must be the PLAN's `N####`, a side read with
+  both keeps neither, and each loss is a warning that quotes what did not read.
+- **The gross importe, its currency and the printed fee.** The net is not carried: the fee
+  already states the difference, and a second copy of that arithmetic is a figure that
+  can drift. A printed minus is the half's direction, not the figure, so magnitudes are
+  kept — the reading the ledger makes of a signed row.
+
+A validated `transfer` lifts the unvalidated-evidence gate like any validated document,
+and the structured block carries both identifiers to the model. This slice left the lane
+to its own ticket, and #1799 then connected it: the paper is now the second source of
+`propose_transfer`, ahead of anything the user typed, and #1800 checks the two holdings
+against its identifiers. How the lane reads it is the traspaso's doctrine and lives in
+ADR 0083 (amendment of #1799, #1800 and the review of PRD #1793).
+
+One thing changes on THIS side of the seam, and it is the review's (#1793, decided with
+Jose): the card of a `transfer` document — in the DATOS ESTRUCTURADOS block and in
+`get_extracted_document` — carries `foundByWorthline`, one line per side saying which
+holding of the book carries the identifier the paper prints: one, none (with the route),
+or several (and the app does not pick). It is the only card whose rendering reads the
+store, so the route reads that lookup once per turn before composing any provider's
+prompt (`readTransferBookForTurn`), and it is paid only when such a paper is in the
+window. The ids in those lines are worthline's own lookup and count as read (#1263).
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

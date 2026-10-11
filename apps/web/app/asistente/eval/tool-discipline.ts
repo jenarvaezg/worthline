@@ -29,9 +29,11 @@ import {
   isRaisedAlertOutput,
 } from "@web/asistente/fabricated-maintainer-alert";
 import { claimsPreparedProposal } from "@web/asistente/fabricated-proposal";
+import { CANDIDATE_HOLDINGS_FIELD } from "@web/asistente/holding-id-provenance";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
 import { userFacingRefusal } from "@web/asistente/proposal-refusal";
 import { isProposalToolName } from "@web/asistente/tool-parts";
+import { holdingsNamedIn } from "@web/asistente/transfer-book";
 import { unvalidatedEvidenceClassFor } from "@web/asistente/unvalidated-evidence-gate";
 
 import { type AssistantAnswer, mentionsAny } from "./graders";
@@ -193,18 +195,22 @@ function identifiersIn(input: unknown): string[] {
  * serialized output of every non-proposal tool — because the cost of a false
  * accusation here is a number that condemns a model for something it did not do.
  * A proposal tool's own output is excluded: it echoes back what the model just
- * sent, so counting it would make every invention self-proving.
+ * sent, so counting it would make every invention self-proving. The one exception is
+ * production's: the holdings a refusal looked up itself (#1800, see
+ * {@link candidateHoldingsIn}).
  *
  * Scope: it grades what the TURN grounded. An id the user typed in their own
  * message would be reported here too — no golden question does that, and a
  * question that did would need its own grader.
  */
 export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
-  const read = JSON.stringify(
-    answer.toolResults
+  const read = JSON.stringify([
+    ...answer.toolResults
       .filter((result) => !isProposalToolName(result.name))
       .map((result) => result.output),
-  );
+    ...answer.toolResults.flatMap(candidateHoldingsIn).map((candidate) => candidate.id),
+    ...(answer.promptHoldings ?? []).map((holding) => holding.id),
+  ]);
   const proposed = answer.toolCalls
     .filter((call) => isProposalToolName(call.name))
     .flatMap((call) => identifiersIn(call.input));
@@ -228,6 +234,12 @@ export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
 function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
   const labels = new Map<string, string>();
   const walk = (value: unknown): void => {
+    if (typeof value === "string") {
+      // A traspaso paper read in full names what worthline found as «Nombre» (id)
+      // inside a sentence (#1793): read back through the writer's own format.
+      for (const holding of holdingsNamedIn(value)) labels.set(holding.id, holding.label);
+      return;
+    }
     if (Array.isArray(value)) {
       value.forEach(walk);
       return;
@@ -237,9 +249,9 @@ function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
     const id = record["id"];
     const label = record["label"];
     if (
-      record["object"] === "holding" &&
       typeof id === "string" &&
-      typeof label === "string"
+      typeof label === "string" &&
+      namesAHolding(record, id)
     ) {
       labels.set(id, label);
     }
@@ -247,8 +259,54 @@ function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
   };
   for (const result of answer.toolResults) {
     if (!isProposalToolName(result.name)) walk(result.output);
+    for (const candidate of candidateHoldingsIn(result)) {
+      labels.set(candidate.id, candidate.label);
+    }
   }
+  for (const holding of answer.promptHoldings ?? [])
+    labels.set(holding.id, holding.label);
   return labels;
+}
+
+/**
+ * Whether an `id` + `label` row is a holding: tagged as one, or — on a row that carries
+ * no tag at all, like the compact context the chat trims to `id` + `label` — wearing a
+ * holding's public-id prefix. A row tagged as anything else never is, whatever its id.
+ *
+ * Every source `groundedIds` counts as a read has to be one this can name, or the turn
+ * that wrote the right traspaso is scored «? → ?» — which is what the live run of
+ * 2026-10-12 recorded, on ids that came from the trimmed context.
+ */
+function namesAHolding(record: Record<string, unknown>, id: string): boolean {
+  if (record["object"] !== undefined) return record["object"] === "holding";
+  return id.startsWith("wl_hld_");
+}
+
+/**
+ * The holdings a proposal lane LOOKED UP when it refused (#1800): the one part of a
+ * write's answer that production grounds, read through production's own field name
+ * (`CANDIDATE_HOLDINGS_FIELD`) so the two cannot drift apart.
+ *
+ * The traspaso checks the model's two holdings against the identifiers its paper
+ * prints, and a wrong pick comes back naming the holdings that DO carry them. Following
+ * that refusal is the lane teaching what its description leaves out (#1342), so a
+ * grader that called those ids invented — or left them nameless — would score the
+ * design working as a defect. Every other part of a write's answer stays ungrounding:
+ * its prose may quote anything, and its echo is the model's own input.
+ */
+function candidateHoldingsIn(
+  result: AssistantAnswer["toolResults"][number],
+): { id: string; label: string }[] {
+  if (!isProposalToolName(result.name)) return [];
+  const { output } = result;
+  if (typeof output !== "object" || output === null) return [];
+  const candidates = (output as Record<string, unknown>)[CANDIDATE_HOLDINGS_FIELD];
+  if (!Array.isArray(candidates)) return [];
+  return candidates.flatMap((candidate: unknown) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const { id, label } = candidate as Record<string, unknown>;
+    return typeof id === "string" && typeof label === "string" ? [{ id, label }] : [];
+  });
 }
 
 /** The `holdingId` arguments of one tool call, at any depth. */
@@ -281,6 +339,38 @@ export function proposedHoldingLabels(answer: AssistantAnswer): string[] {
     .flatMap((id) => {
       const label = labels.get(id);
       return label === undefined ? [] : [label];
+    });
+}
+
+/** One traspaso the turn asked for, each side named as the turn's own reads named it. */
+export interface ProposedTransfer {
+  origin: string | null;
+  destination: string | null;
+}
+
+/**
+ * The traspasos the turn asked `propose_transfer` for, origin and destination named as
+ * the TURN'S OWN READS named them (#1801) — {@link proposedHoldingLabels} for the lane
+ * whose two references are not called `holdingId`.
+ *
+ * A pair and not two labels, because a traspaso is directional: «de Europa a renta
+ * fija» and «de renta fija a Europa» name the same two holdings and move capital in
+ * opposite directions. A side no read surfaced stays `null` rather than dropping the
+ * call, so a half-invented traspaso is still visible as a traspaso; the invented id
+ * itself is {@link ungroundedProposalIds}' to report.
+ */
+export function proposedTransfers(answer: AssistantAnswer): ProposedTransfer[] {
+  const labels = holdingLabelsById(answer);
+  const labelOf = (value: unknown): string | null =>
+    typeof value === "string" ? (labels.get(value) ?? null) : null;
+  return answer.toolCalls
+    .filter((call) => call.name === "propose_transfer")
+    .map((call) => {
+      const input = (call.input ?? {}) as Record<string, unknown>;
+      return {
+        destination: labelOf(input["destinationHoldingId"]),
+        origin: labelOf(input["originHoldingId"]),
+      };
     });
 }
 

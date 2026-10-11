@@ -29,6 +29,7 @@ import {
   fakesMaintainerAlertCeremony,
   fakesProposalCeremony,
   proposedHoldingLabels,
+  proposedTransfers,
   refusalWrittenForTheUser,
   ungroundedProposalIds,
 } from "./tool-discipline";
@@ -147,6 +148,46 @@ export const proposesOnHoldingNamed = (a: AssistantAnswer, terms: string[]): Che
       : `la propuesta va a la posición que nombra el documento (destino: ${named})`,
     passes,
   );
+};
+
+/**
+ * The traspaso went from the fund the paper names as its origin to the one it names as
+ * its destination (#1801) — {@link proposesOnHoldingNamed} for the lane that points at
+ * TWO holdings, in a direction.
+ *
+ * `some` call and not `every`, unlike the destination check above, because here a wrong
+ * pick has code behind it: the lane checks both holdings against the identifiers the
+ * paper prints and refuses a mismatch naming the holding that does carry them (#1800),
+ * so a wrong pair never becomes a card and a turn that follows that refusal is the
+ * design working — the reading the broker-statement questions make of a turn that tries
+ * the reconcile lane first. What the user ends up with is graded beside this, by
+ * `proposedThroughTool`.
+ *
+ * Same naming rule as {@link proposesOnHoldingNamed}: the pairs the turn chose travel in
+ * the name only when the check fails, so a passing check keeps one name across runs.
+ */
+export const transfersBetween = (
+  a: AssistantAnswer,
+  originTerms: string[],
+  destinationTerms: string[],
+): Check => {
+  const transfers = proposedTransfers(a);
+  const passes = transfers.some(
+    ({ destination, origin }) =>
+      origin !== null &&
+      destination !== null &&
+      mentionsAll(origin, originTerms) &&
+      mentionsAll(destination, destinationTerms),
+  );
+  const name = "el traspaso va del fondo de origen al de destino que nombra el documento";
+  if (passes) return check(name, true);
+  const chosen =
+    transfers.length === 0
+      ? "ninguno"
+      : transfers
+          .map(({ destination, origin }) => `${origin ?? "?"} → ${destination ?? "?"}`)
+          .join(", ");
+  return check(`${name} (traspaso: ${chosen})`, false);
 };
 
 /**

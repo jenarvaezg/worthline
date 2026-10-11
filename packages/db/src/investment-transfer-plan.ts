@@ -1,4 +1,4 @@
-import type { TransferPortion } from "@worthline/domain";
+import type { SecurityId, TransferPortion } from "@worthline/domain";
 
 /**
  * Investment-transfer plan (#1482, S5 of PRD #1393) — the payload of an
@@ -52,4 +52,13 @@ export interface InvestmentTransferPlan {
   destinationUnits?: string | undefined;
   /** The currency both ledgers keep, checked equal before the draft was armed. */
   currency: string;
+  /**
+   * The identifier the confirmation PRINTED for each fund, when the traspaso was read
+   * off one and it printed one (#1800): an ISIN, or a plan's DGS code. Kept because
+   * the confirm re-checks it against each holding's registered identifier, as the
+   * operation's draft does with its `isin`/`dgsCode` — a paper about another
+   * instrument must not land just because a day passed.
+   */
+  originSecurityId?: SecurityId | undefined;
+  destinationSecurityId?: SecurityId | undefined;
 }

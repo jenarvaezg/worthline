@@ -1,4 +1,4 @@
-import { formatUnits } from "@worthline/domain";
+import { formatUnits, SECURITY_ID_KIND_LABEL_INLINE } from "@worthline/domain";
 import Link from "next/link";
 
 import type { AttachmentPreviewCard } from "./attachment-chat";
@@ -9,11 +9,15 @@ import type {
   ExtractedHoldingEventDocument,
   ExtractedPositionsDocument,
   ExtractedPositionsMovementsDocument,
+  ExtractedTransfer,
+  ExtractedTransferDocument,
   HoldingEventKind,
   HoldingFidelity,
   TransactionKind,
+  TransferConfirmedHalf,
 } from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
+import { formatDocumentUnits } from "./document-figures";
 import { formatIsoDayEs } from "./iso-day-es";
 
 const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
@@ -316,6 +320,118 @@ function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) 
   );
 }
 
+/**
+ * Which half of the traspaso the paper confirms, and what its participaciones are.
+ * Like the holding event's «Tipo», the half is the one field the model CLASSIFIED off
+ * the paper's words rather than copied, so the hint under the table says so.
+ */
+const TRANSFER_HALF_COPY: Record<
+  TransferConfirmedHalf,
+  { kind: string; unitsLabel: string }
+> = {
+  redemption: {
+    kind: "Traspaso · confirma el reembolso",
+    unitsLabel: "Participaciones que salen",
+  },
+  subscription: {
+    kind: "Traspaso · confirma la suscripción",
+    unitsLabel: "Participaciones que entran",
+  },
+};
+
+/** A fund as the paper names it: its printed name and the one identifier it carries. */
+function transferFundLine(fund: ExtractedTransfer["origin"]): string {
+  const identity = fund.isin
+    ? `${SECURITY_ID_KIND_LABEL_INLINE.isin} ${fund.isin}`
+    : fund.dgsCode
+      ? `${SECURITY_ID_KIND_LABEL_INLINE.dgs} ${fund.dgsCode}`
+      : null;
+  return identity === null ? fund.name : `${fund.name} (${identity})`;
+}
+
+/**
+ * The confirmation of ONE traspaso (#1795): the date, the two funds each with its
+ * identifier, and the figures of the half the paper confirms. A label/value table like
+ * the dated fact's, for the same reason — the document IS one traspaso, by contract.
+ *
+ * Every field the contract carries is on it, because this is where the user checks
+ * that worthline read what the bank printed, and only observed fields get a row: an
+ * unprinted VL or fee paints nothing rather than a dash that could read as «no hay».
+ */
+function TransferPreview({ data }: { data: ExtractedTransferDocument }) {
+  const { transfer } = data;
+  const half = TRANSFER_HALF_COPY[transfer.confirms];
+  return (
+    <>
+      <div className="assistantAttachmentTableScroll">
+        <table>
+          <tbody>
+            <tr>
+              <th scope="row">Tipo</th>
+              <td>{half.kind}</td>
+            </tr>
+            <tr>
+              <th scope="row">Fecha de operación</th>
+              <td>{formatIsoDayEs(transfer.date)}</td>
+            </tr>
+            <tr>
+              <th scope="row">Concepto</th>
+              <td>
+                {transfer.label}
+                {transfer.uncertain ? <em>Revisar lectura</em> : null}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Sale de</th>
+              <td>{transferFundLine(transfer.origin)}</td>
+            </tr>
+            <tr>
+              <th scope="row">Entra en</th>
+              <td>{transferFundLine(transfer.destination)}</td>
+            </tr>
+            {transfer.units !== undefined ? (
+              <tr>
+                <th scope="row">{half.unitsLabel}</th>
+                <td>{formatDocumentUnits(transfer.units)}</td>
+              </tr>
+            ) : null}
+            {transfer.pricePerUnit ? (
+              <tr>
+                <th scope="row">Valor liquidativo</th>
+                <td>
+                  {formatAmount(
+                    transfer.pricePerUnit.amount,
+                    transfer.pricePerUnit.currency,
+                    // A fund's VL is quoted to six decimals; the paper's own precision,
+                    // never rounded down to money's two.
+                    { maximumFractionDigits: 6 },
+                  )}
+                </td>
+              </tr>
+            ) : null}
+            <tr>
+              <th scope="row">Importe bruto</th>
+              <td>{formatAmount(transfer.amount, transfer.currency)}</td>
+            </tr>
+            {transfer.fees ? (
+              <tr>
+                <th scope="row">Comisión</th>
+                <td>{formatAmount(transfer.fees.amount, transfer.fees.currency)}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      <p className="assistantAttachmentBridgeHint">
+        {data.uncertain ? "Lectura completa marcada como dudosa. " : ""}
+        La fecha, el concepto, los dos fondos y las cifras se leen del archivo; qué mitad
+        del traspaso confirma es una clasificación de la lectura, y las participaciones y
+        el valor liquidativo son los de esa mitad. Revísalo: nada se guarda desde el chat.
+      </p>
+    </>
+  );
+}
+
 const FIDELITY_LABEL: Record<HoldingFidelity, string> = {
   declared_cost: "Coste declarado",
   movements: "Coste real",
@@ -484,6 +600,8 @@ export default function AttachmentExtractionPreview({
         <HoldingEventPreview data={data} />
       ) : data.documentType === "broker_transactions" ? (
         <BrokerTransactionsPreview data={data} />
+      ) : data.documentType === "transfer" ? (
+        <TransferPreview data={data} />
       ) : (
         <PositionsMovementsPreview data={data} />
       )}

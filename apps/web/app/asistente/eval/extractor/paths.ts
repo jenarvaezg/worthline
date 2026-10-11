@@ -5,6 +5,7 @@ import type {
   BalanceSeriesGoldenFixture,
   GoldenFixture,
   PositionsMovementsGoldenFixture,
+  TransferGoldenFixture,
 } from "./manifest";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -40,6 +41,14 @@ export function resolveBalanceSeriesSourcePath(
 export function resolveBalanceSeriesExpectedPath(
   fixture: BalanceSeriesGoldenFixture,
 ): string {
+  return join(rootFor(fixture.storage), fixture.expectedFile);
+}
+
+export function resolveTransferSourcePath(fixture: TransferGoldenFixture): string {
+  return join(rootFor(fixture.storage), fixture.sourceFile);
+}
+
+export function resolveTransferExpectedPath(fixture: TransferGoldenFixture): string {
   return join(rootFor(fixture.storage), fixture.expectedFile);
 }
 

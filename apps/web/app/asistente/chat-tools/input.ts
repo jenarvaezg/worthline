@@ -66,7 +66,8 @@ export interface ChatToolsInput {
    * The same documents, with the file names the DATOS ESTRUCTURADOS block uses
    * (#1492). `get_extracted_document` looks up by `fileName` here; a name that is
    * not in this list is refused, never invented. Write tools keep reading rows
-   * off {@link validatedDocuments}.
+   * off {@link validatedDocuments} — except `propose_transfer` (#1799), which reads
+   * its traspaso confirmation here because its card names the file it came in.
    */
   validatedAttachments?: readonly ValidatedAttachment[];
   /**
@@ -81,13 +82,16 @@ export interface ChatToolsInput {
    */
   typedBalanceSeries?: TypedBalanceSeriesReading;
   /**
-   * The traspaso this turn's own message states, read by worthline itself (#1482).
+   * The traspaso this turn's own message states, read by worthline itself (#1482) — or,
+   * when that message states nothing about one («sí, procede»), the last one the user
+   * wrote that no traspaso card has spent yet (#1798).
    *
-   * The whole `propose_transfer` lane builds from THIS and never from the model's
-   * arguments: a traspaso writes two rows plus an inherited cost, so an importe the
-   * model «remembered» from a portfolio read would move real capital between two real
-   * holdings. Absent by default — the lane then refuses and says what it is missing,
-   * which is the honest behaviour for a caller that does not read the message.
+   * The `propose_transfer` lane builds from THIS — or, when the turn carries one, from
+   * the validated traspaso confirmation (#1799), which wins — and never from the
+   * model's arguments: a traspaso writes two rows plus an inherited cost, so an importe
+   * the model «remembered» from a portfolio read would move real capital between two
+   * real holdings. Absent by default — the lane then refuses and says what it is
+   * missing, which is the honest behaviour for a caller that does not read the message.
    */
   typedTransfer?: TypedTransferReading;
   /**

@@ -480,3 +480,16 @@ describe("operation · a card emitted before the second door existed", () => {
     });
   });
 });
+
+/**
+ * Same story for the traspaso card (#1798): `sourceCaption` arrived when «sí, procede»
+ * learnt to reach back to an earlier message, and every card emitted before it read the
+ * turn's own message — the only one there was.
+ */
+describe("transfer · a card emitted before the caption existed", () => {
+  it("keeps rendering, and says it came from the user's message", () => {
+    expect(
+      parseTransferProposal(transferOutput({ sourceCaption: undefined }))?.sourceCaption,
+    ).toBe("Lo que he leído en tu mensaje");
+  });
+});

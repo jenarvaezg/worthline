@@ -24,6 +24,10 @@
  * a tool asserting a workspace fact grounds anything. The cost is a turn where the
  * assistant has to read again before it can propose, which is the honest order.
  *
+ * One refusal is the exception, and it is narrow on purpose: the holdings a write
+ * lane LOOKED UP itself and names in {@link CANDIDATE_HOLDINGS_FIELD} (#1800) — a
+ * lookup, not an echo. See that constant for why it cannot launder anything.
+ *
  * The honest limit of «server-side»: the history arrives in the request, because chat
  * messages are ephemeral by design (ADR 0044) and the browser re-sends them. So a
  * crafted request can pre-ground an id — of its OWN workspace, since resolution is
@@ -169,8 +173,32 @@ function isErrorEnvelope(output: unknown): boolean {
 }
 
 /**
+ * The ONE field of a write's answer that grounds ids (#1800): the holdings worthline's
+ * own lookup found when it refused. The traspaso checks the model's two holdings
+ * against the identifiers its paper prints, and when the pick is wrong it answers with
+ * the holdings that DO carry them, so the model can ask which one it is. That lookup is
+ * a read in all but name, and an answer the model cannot act on would turn «ask the
+ * user» into «read again and hope».
+ *
+ * Why this does not reopen the laundering {@link assertsHoldingIds} closes: the field is
+ * filled by the lane from the workspace, never from its input, and a write only runs
+ * once every id it was handed is already grounded. Only that field is read — never the
+ * refusal's prose, which may quote anything — and only on a tool that prepares a write:
+ * `suggest_actions` echoes the model's own words, field names included.
+ */
+export const CANDIDATE_HOLDINGS_FIELD = "candidateHoldings";
+
+function candidateHoldingIdsIn(toolName: string, output: unknown): string[] {
+  if (!requiresGroundedHoldingIds(toolName)) return [];
+  if (typeof output !== "object" || output === null) return [];
+  return publicHoldingIdsIn(
+    (output as Record<string, unknown>)[CANDIDATE_HOLDINGS_FIELD],
+  );
+}
+
+/**
  * The ids the model may legitimately use next turn: those a tool answer ASSERTED in
- * the history it is about to be sent.
+ * the history it is about to be sent, plus the candidates a write's refusal found.
  *
  * A proposal's own output is excluded with every other write (see
  * {@link assertsHoldingIds}) and the ordinary «cámbiale el importe» follow-up survives
@@ -181,7 +209,9 @@ export function groundedHoldingIdsInHistory(messages: readonly UIMessage[]): str
   return [
     ...new Set(
       toolOutputsIn(messages).flatMap(({ name, output }) =>
-        assertsHoldingIds(name, output) ? publicHoldingIdsIn(output) : [],
+        assertsHoldingIds(name, output)
+          ? publicHoldingIdsIn(output)
+          : candidateHoldingIdsIn(name, output),
       ),
     ),
   ];
@@ -244,11 +274,15 @@ export function withHoldingIdProvenance(
       const execute = tool.execute as ToolExecute | undefined;
       if (!execute) return [name, tool];
       const wrapped: ToolExecute = requiresGroundedHoldingIds(name)
-        ? (input, options) => {
+        ? async (input, options) => {
             const ungrounded = ungroundedHoldingIds(input, grounded);
-            if (ungrounded.length === 0) return execute(input, options);
-            onRejected?.({ tool: name, ungroundedHoldingIds: ungrounded });
-            return ungroundedHoldingIdRejected();
+            if (ungrounded.length > 0) {
+              onRejected?.({ tool: name, ungroundedHoldingIds: ungrounded });
+              return ungroundedHoldingIdRejected();
+            }
+            const output = await execute(input, options);
+            grounded.record(candidateHoldingIdsIn(name, output));
+            return output;
           }
         : async (input, options) => {
             const output = await execute(input, options);

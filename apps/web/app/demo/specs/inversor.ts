@@ -6,7 +6,8 @@
  * figures are fictional.
  *
  * Two of its funds are deliberately SIBLINGS — «ETF MSCI World» and «ETF MSCI Small
- * Cap» — so that naming one of them is a judgement and not a lookup (#1376).
+ * Cap» — so that naming one of them is a judgement and not a lookup (#1376). Two more
+ * carry an ISIN, one of them below the summary's cut, for the traspaso question (#1801).
  */
 import type {
   BinanceHistoryMonthSpec,
@@ -162,6 +163,42 @@ export const INVERSOR_SPEC: PersonaSpec = {
       operations: monthlyBuys("asset_inversor_ex_japan", 18, "12", 28, 0.3),
       ownership: FULL,
       unitSymbol: "EXJP",
+    },
+    {
+      // The two funds of the traspaso question (#1801), and the only positions of the
+      // persona that register an ISIN — a confirmation of a traspaso prints one per side,
+      // and matching it is the whole question. Index FUNDS and not ETFs on purpose: a
+      // traspaso between ETFs does not exist under Spanish tax rules, and a model that
+      // knew it would have an honest reason to refuse.
+      //
+      // Named as the user would name them, not as the paper prints them («ÍNDICE EUROPA
+      // BOLSA FI, CLASE A»), so a lookup by the printed name finds nothing and the ISIN
+      // is what lands — the incident's own shape. The origin is sized to sit in the
+      // portfolio summary (it nudges «Binance · spot y earn (bloqueado)», the smallest
+      // row, out of the cut) and the destination is worth a few hundred euros, below it:
+      // that is where the real destination was when the model declared it missing.
+      id: "asset_inversor_europe_index",
+      manualPricePerUnit: "13.35",
+      name: "Fondo indexado Europa",
+      operations: monthlyBuys("asset_inversor_europe_index", 24, "20", 10.4, 0.12),
+      ownership: FULL,
+      securityId: { kind: "isin", value: "ES0190731002" },
+    },
+    {
+      id: "asset_inversor_bond_index",
+      manualPricePerUnit: "10.12",
+      name: "Fondo indexado renta fija",
+      operations: [
+        {
+          at: { monthsAgo: 3 },
+          id: "asset_inversor_bond_index_op_0",
+          kind: "buy",
+          pricePerUnit: "10.05",
+          units: "30",
+        },
+      ],
+      ownership: FULL,
+      securityId: { kind: "isin", value: "ES0158342917" },
     },
     {
       id: "asset_inversor_tech",

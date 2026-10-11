@@ -73,6 +73,12 @@ export {
   WHOLE_READING_UNCERTAIN_WARNING,
 } from "./attachment-vision-positions-family";
 export { EMPTY_TRANSACTIONS_MESSAGE } from "./attachment-vision-transactions-family";
+export {
+  DROPPED_TRANSFER_FEES_WARNING,
+  DROPPED_TRANSFER_PRICE_WARNING,
+  DROPPED_TRANSFER_UNITS_WARNING,
+  EMPTY_TRANSFER_MESSAGE,
+} from "./attachment-vision-transfer-family";
 
 /**
  * The one vision seam (ADR 0063, amended by #1243 and #1345): it identifies the

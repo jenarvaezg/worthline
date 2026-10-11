@@ -6,6 +6,7 @@ import {
   type GoldenExpectedPositive,
   isNegativeGoldenExpected,
   type PositionsMovementsGoldenExpected,
+  type TransferGoldenExpected,
 } from "./manifest";
 
 export interface ExtractorCheck {
@@ -269,6 +270,93 @@ export function gradePositionsMovementsAgainstExpected(
       warningIncludes.every((fragment) => warningMatches(fragment, data.warnings)),
   });
 
+  return checks;
+}
+
+type ExpectedTransfer = TransferGoldenExpected["transfer"];
+
+/** One side of the traspaso: its name on the fact, and its identifier on BOTH sides. */
+function transferFundMatches(
+  actual: { name: string; isin?: string | undefined; dgsCode?: string | undefined },
+  expected: ExpectedTransfer["origin"],
+): boolean {
+  return (
+    normalizeText(actual.name) === normalizeText(expected.name) &&
+    actual.isin === expected.isin &&
+    actual.dgsCode === expected.dgsCode
+  );
+}
+
+/** A printed figure with its currency, graded on both sides like every optional field. */
+function optionalMoneyMatches(
+  actual?: { amount: number; currency: string },
+  expected?: { amount: number; currency: string },
+): boolean {
+  if (actual === undefined || expected === undefined) return actual === expected;
+  return (
+    numbersClose(actual.amount, expected.amount) && actual.currency === expected.currency
+  );
+}
+
+/**
+ * Grade a traspaso confirmation (#1795) one judgement per check, so a red run says WHICH
+ * one the model got wrong: the day (the fecha valor taken for the fecha de operación),
+ * the half, either side, a figure (the net importe taken for the gross one). A reading
+ * typed as anything but a traspaso fails on the document check and stops there — the
+ * incident's misreading, a dated fact on one product, is exactly that.
+ */
+export function gradeTransferAgainstExpected(
+  result: AttachmentExtractionResult,
+  expected: TransferGoldenExpected,
+): ExtractorCheck[] {
+  const checks: ExtractorCheck[] = [
+    { name: "extracción válida", pass: result.status === "valid" },
+  ];
+  if (result.status !== "valid") return checks;
+  if (result.data.documentType !== "transfer") {
+    checks.push({ name: "documento de traspaso", pass: false });
+    return checks;
+  }
+  const { transfer, warnings } = result.data;
+  const want = expected.transfer;
+  const labelIncludes = expected.labelIncludes ?? [];
+  const warningIncludes = expected.warningIncludes ?? [];
+
+  checks.push(
+    { name: "documento de traspaso", pass: true },
+    {
+      name: "fecha de operación (nunca la fecha valor)",
+      pass: transfer.date === want.date,
+    },
+    { name: "mitad confirmada", pass: transfer.confirms === want.confirms },
+    {
+      name: "concepto literal",
+      pass: labelIncludes.every((fragment) => warningMatches(fragment, [transfer.label])),
+    },
+    {
+      name: "origen y su identificador",
+      pass: transferFundMatches(transfer.origin, want.origin),
+    },
+    {
+      name: "destino y su identificador",
+      pass: transferFundMatches(transfer.destination, want.destination),
+    },
+    { name: "participaciones", pass: optionalNumbersClose(transfer.units, want.units) },
+    {
+      name: "valor liquidativo",
+      pass: optionalMoneyMatches(transfer.pricePerUnit, want.pricePerUnit),
+    },
+    {
+      name: "importe bruto",
+      pass:
+        numbersClose(transfer.amount, want.amount) && transfer.currency === want.currency,
+    },
+    { name: "comisión", pass: optionalMoneyMatches(transfer.fees, want.fees) },
+    {
+      name: "warnings visibles",
+      pass: warningIncludes.every((fragment) => warningMatches(fragment, warnings)),
+    },
+  );
   return checks;
 }
 

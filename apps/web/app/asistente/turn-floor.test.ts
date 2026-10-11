@@ -334,6 +334,26 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * its description. That sentence restated the two enums its own schema already carries,
  * the #1342 rule: a fact said in two places is paid twice. The onboarding floor moved
  * 46.392 → 46.377, 23 under the ceiling.
+ *
+ * **NOT raised by #1799**, and paid inside the same tool. `propose_transfer` gained a
+ * second source, the validated traspaso confirmation, and its description now names it
+ * (`documentType transfer`) — without that the model, holding only the notice, has no
+ * reason to reach for a lane described as «lo que el usuario te cuenta». It paid by
+ * dropping the sentence on how the VL is derived from stated participaciones: it spoke
+ * only of the typed door, and both refusals that need it (the gap one and the no-price
+ * one) already say it, paid only when they fire — the #1342 trade. Net 63 fewer: the
+ * onboarding floor moved 46.377 → 46.314, 86 under the ceiling.
+ *
+ * **NOT raised by #1800**, and both additions are the ones the slice cannot do without.
+ * `propose_holding`'s schema gains `dgsCode` (28): without it a plan de pensiones that
+ * is the destination of a traspaso cannot be born with the code its paper prints, and
+ * the description does NOT name the field — a refusal names it when a code lands in
+ * `isin`, paid only then. `propose_transfer`'s description gains the one rule the
+ * incident needed in prose, «con ISIN en la mano, busca cada fondo por ISIN antes de
+ * concluir que no existe», and pays most of it by dropping the two id field names its
+ * own schema already declares (#1342); the rest of the identity check — which holding
+ * carries the paper's ISIN, the route to an alta — is taught by its refusals. Net +64:
+ * the onboarding floor moved 46.314 → 46.378, 22 under the ceiling.
  */
 
 describe("measureTurnFloor", () => {

@@ -54,6 +54,7 @@ async function seedInvestment(
     name: investment.name,
     ownership: investment.ownership,
     ...(investment.unitSymbol ? { unitSymbol: investment.unitSymbol } : {}),
+    ...(investment.securityId ? { securityId: investment.securityId } : {}),
     ...(investment.liquidityTier ? { liquidityTier: investment.liquidityTier } : {}),
   });
 

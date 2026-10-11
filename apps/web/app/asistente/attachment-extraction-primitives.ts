@@ -101,6 +101,23 @@ export const currencySchema = z
   .regex(/^[A-Z]{3}$/);
 
 /**
+ * A figure the document PRINTS together with the currency it is printed in. Both
+ * halves are required and there is no XOR to refine: an amount with no currency to
+ * read it in cannot be rendered honestly, and defaulting to EUR would invent exactly
+ * what this contract exists not to invent. An incomplete pair is the vision seam's
+ * problem, and it drops the pair with a warning rather than sinking the reading.
+ *
+ * Shared by every family that reads a priced figure off a paper — a trade's unit price
+ * and fee (#1316), a traspaso's VL and fee (#1795) — so the pairing rule has one home.
+ */
+export const observedMoneySchema = z
+  .object({
+    amount: extractedNumberSchema,
+    currency: currencySchema,
+  })
+  .strict();
+
+/**
  * True when `value` is `YYYY-MM-DD` AND a real day on the calendar. Exported so a
  * caller can ASK before handing a date to the contract — the vision seam uses it to
  * drop an unreadable optional date instead of failing an otherwise good reading.

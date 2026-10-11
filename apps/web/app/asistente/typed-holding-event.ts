@@ -47,6 +47,7 @@ import {
 import type { OperationKindClaim } from "./operation-document-frontier";
 import {
   dateInMessage,
+  ISIN_TOKEN,
   joinRefusalGaps,
   MAX_SCANNED_CHARS,
 } from "./typed-message-reading";
@@ -140,13 +141,6 @@ export function typedHoldingEventGapMessage(
     "lo escribas: instrumento, participaciones, importe y fecha."
   );
 }
-
-/**
- * An ISIN-SHAPED token. Cut out of the text before any figure is counted, and that is
- * not cosmetic: `IE00B43VDT70` holds `00`, `43` and `70`, so a message naming its fund
- * properly would otherwise read as a message full of numbers.
- */
-const ISIN_TOKEN = /(?<![A-Za-z0-9])[A-Za-z]{2}[A-Za-z0-9]{9}[0-9](?![A-Za-z0-9])/gu;
 
 /**
  * A figure marked as PARTICIPACIONES: «6 participaciones», «3 part.», «10 títulos».

@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   type AttachmentExtractionResult,
+  DGS_CODE_FIELD_PROSE,
 } from "./attachment-extraction-contract";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
 import {
@@ -13,10 +14,14 @@ import {
   DROPPED_ISIN_WARNING,
   DROPPED_NEXT_INSTALMENT_WARNING,
   DROPPED_PRICE_PER_UNIT_WARNING,
+  DROPPED_TRANSFER_FEES_WARNING,
+  DROPPED_TRANSFER_PRICE_WARNING,
+  DROPPED_TRANSFER_UNITS_WARNING,
   DROPPED_UNITS_WARNING,
   EMPTY_BALANCE_SERIES_MESSAGE,
   EMPTY_HOLDING_EVENT_MESSAGE,
   EMPTY_POSITIONS_MESSAGE,
+  EMPTY_TRANSFER_MESSAGE,
   extractDocumentFromVisionAttachment,
   VISION_EXTRACTION_TOTAL_TIMEOUT_MS,
   VISION_EXTRACTOR_MAX_OUTPUT_TOKENS,
@@ -1909,6 +1914,409 @@ describe("vision attachment extractor · the securities trade confirmation (#131
  * multiplies that risk, so every hard-won line is asserted here against the prompt
  * that must carry it, and the ones both calls need are asserted against both.
  */
+/**
+ * The confirmation of ONE traspaso between two funds (#1795): the paper of PRD #1793,
+ * which the seam used to type as a dated fact on one product and then throw away
+ * because that shape holds one fund and the paper prints two. Every figure, name and
+ * date below is invented; only the layout of the reading is the incident's.
+ */
+describe("vision attachment extractor · the transfer confirmation (#1795)", () => {
+  const IDENTIFIED_TRANSFER = {
+    documentType: "transfer",
+    balances: [],
+    events: [],
+    positions: [],
+    warnings: [],
+  };
+
+  /** What the PROVIDER sends: figures as the paper printed them, as text. */
+  const TRANSFER_READING = {
+    date: "2026-09-14",
+    valueDate: "2026-09-16",
+    confirms: "redemption",
+    label: "REEMB.POR TRASPASO I",
+    origin: { name: "MONETARIO EJEMPLO FI", isin: "IE00B5BMR087" },
+    destination: { name: "GLOBAL INDICE EJEMPLO FI", isin: "IE00B03HCZ61" },
+    units: "84,215730",
+    pricePerUnit: { amount: "12,0951", currency: "EUR" },
+    amount: "1.018,60",
+    currency: "EUR",
+    fees: { amount: "0,00", currency: "EUR" },
+  };
+
+  /** The same traspaso as the CONTRACT takes it. */
+  const TRANSFER = {
+    date: "2026-09-14",
+    confirms: "redemption",
+    label: "REEMB.POR TRASPASO I",
+    origin: { name: "MONETARIO EJEMPLO FI", isin: "IE00B5BMR087" },
+    destination: { name: "GLOBAL INDICE EJEMPLO FI", isin: "IE00B03HCZ61" },
+    units: 84.21573,
+    pricePerUnit: { amount: 12.0951, currency: "EUR" },
+    amount: 1018.6,
+    currency: "EUR",
+    fees: { amount: 0, currency: "EUR" },
+  };
+
+  function readingOf(detail: unknown, identification: unknown = IDENTIFIED_TRANSFER) {
+    return extractDocumentFromVisionAttachment(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedCascade(identification, detail),
+      sleep: vi.fn(),
+    });
+  }
+
+  test("reads one traspaso in a second call, into the shared contract", async () => {
+    const reading = await readingOf({ transfers: [TRANSFER_READING], warnings: [] });
+
+    expect(reading).toEqual({
+      result: {
+        data: { documentType: "transfer", transfer: TRANSFER, warnings: [] },
+        status: "valid",
+      },
+      visionCalls: 2,
+    });
+  });
+
+  test("carries a subscription as the half the paper confirms", async () => {
+    const { result } = await readingOf({
+      transfers: [
+        { ...TRANSFER_READING, confirms: "subscription", label: "SUSC.POR TRASPASO" },
+      ],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: { ...TRANSFER, confirms: "subscription", label: "SUSC.POR TRASPASO" },
+        warnings: [],
+      },
+      status: "valid",
+    });
+  });
+
+  test("a paper with two traspasos is not this document: it takes the descriptive lane", async () => {
+    const { result } = await readingOf({
+      transfers: [TRANSFER_READING, { ...TRANSFER_READING, date: "2026-09-21" }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+  });
+
+  test("a traspaso recognized and not read says so, rather than being described", async () => {
+    const { result } = await readingOf({ transfers: [], warnings: [] });
+
+    expect(result).toEqual({
+      message: EMPTY_TRANSFER_MESSAGE,
+      reason: "empty_reading",
+      status: "unrecognized",
+    });
+  });
+
+  test("an ISIN whose check digit does not add up is dropped out loud, and the reading survives", async () => {
+    const { result } = await readingOf({
+      transfers: [
+        {
+          ...TRANSFER_READING,
+          origin: { name: "MONETARIO EJEMPLO FI", isin: "LU1681043598" },
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: { ...TRANSFER, origin: { name: "MONETARIO EJEMPLO FI" } },
+        warnings: [
+          "El ISIN de origen («LU1681043598») no se lee como un ISIN válido; no se recoge.",
+        ],
+      },
+      status: "valid",
+    });
+  });
+
+  test("a plan's DGS code is kept, normalized, and a fund's F code is dropped out loud", async () => {
+    const { result } = await readingOf({
+      transfers: [
+        {
+          ...TRANSFER_READING,
+          origin: { name: "PLAN EJEMPLO UNO PP", dgsCode: "F2244" },
+          destination: { name: "PLAN EJEMPLO DOS PP", dgsCode: "n-5394" },
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: {
+          ...TRANSFER,
+          origin: { name: "PLAN EJEMPLO UNO PP" },
+          destination: { name: "PLAN EJEMPLO DOS PP", dgsCode: "N5394" },
+        },
+        warnings: [
+          "El código DGS de origen («F2244») no es el de un plan (N seguida de cuatro cifras); no se recoge.",
+        ],
+      },
+      status: "valid",
+    });
+  });
+
+  test("a side read with an ISIN and a DGS code at once keeps neither", async () => {
+    const { result } = await readingOf({
+      transfers: [
+        {
+          ...TRANSFER_READING,
+          destination: {
+            name: "GLOBAL INDICE EJEMPLO FI",
+            isin: "IE00B03HCZ61",
+            dgsCode: "N5394",
+          },
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: { ...TRANSFER, destination: { name: "GLOBAL INDICE EJEMPLO FI" } },
+        warnings: [
+          "El lado de destino se ha leído con ISIN y con código DGS a la vez, y son instrumentos distintos; no recojo ninguno de los dos.",
+        ],
+      },
+      status: "valid",
+    });
+  });
+
+  test("a blank identifier is no identifier, and costs no warning", async () => {
+    const { result } = await readingOf({
+      transfers: [
+        {
+          ...TRANSFER_READING,
+          destination: { name: "GLOBAL INDICE EJEMPLO FI", isin: "", dgsCode: " " },
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: { ...TRANSFER, destination: { name: "GLOBAL INDICE EJEMPLO FI" } },
+        warnings: [],
+      },
+      status: "valid",
+    });
+  });
+
+  test("the value date never becomes the date", async () => {
+    const { result } = await readingOf({ transfers: [TRANSFER_READING], warnings: [] });
+
+    if (result.status !== "valid" || result.data.documentType !== "transfer") {
+      throw new Error(`got ${documentTypeOf(result)}`);
+    }
+    expect(result.data.transfer.date).toBe("2026-09-14");
+    // Not kept anywhere either: a field the contract carried could still reach a
+    // traspaso anotado on the day the VL was struck.
+    expect(JSON.stringify(result)).not.toContain(TRANSFER_READING.valueDate);
+  });
+
+  test.each([
+    { case: "no fecha de operación that reads as a day", date: "14 de septiembre" },
+    { case: "an impossible day", date: "2026-02-30" },
+  ])("with $case, the value date is never borrowed: the paper is declined", async ({
+    date,
+  }) => {
+    const { result } = await readingOf({
+      transfers: [{ ...TRANSFER_READING, date, valueDate: "2026-09-16" }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+  });
+
+  test("a minus printed on the redemption is its direction, not its figure", async () => {
+    const { result } = await readingOf({
+      transfers: [{ ...TRANSFER_READING, amount: "-1.018,60", units: "-84,215730" }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: { documentType: "transfer", transfer: TRANSFER, warnings: [] },
+      status: "valid",
+    });
+  });
+
+  test.each([
+    {
+      case: "participaciones that do not read as a figure",
+      field: "units",
+      patch: { units: "ochenta y cuatro" },
+      warning: DROPPED_TRANSFER_UNITS_WARNING,
+    },
+    {
+      case: "zero participaciones",
+      field: "units",
+      patch: { units: "0,000000" },
+      warning: DROPPED_TRANSFER_UNITS_WARNING,
+    },
+    {
+      case: "a VL with no currency",
+      field: "pricePerUnit",
+      patch: { pricePerUnit: { amount: "12,0951" } },
+      warning: DROPPED_TRANSFER_PRICE_WARNING,
+    },
+    {
+      case: "a VL of zero",
+      field: "pricePerUnit",
+      patch: { pricePerUnit: { amount: "0", currency: "EUR" } },
+      warning: DROPPED_TRANSFER_PRICE_WARNING,
+    },
+    {
+      case: "a fee with no amount",
+      field: "fees",
+      patch: { fees: { currency: "EUR" } },
+      warning: DROPPED_TRANSFER_FEES_WARNING,
+    },
+  ])("drops $case out loud and keeps the traspaso", async ({ field, patch, warning }) => {
+    const { result } = await readingOf({
+      transfers: [{ ...TRANSFER_READING, ...patch }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: Object.fromEntries(
+          Object.entries(TRANSFER).filter(([key]) => key !== field),
+        ),
+        warnings: [warning],
+      },
+      status: "valid",
+    });
+  });
+
+  test("an importe that does not read is not a traspaso: nothing is kept without it", async () => {
+    const { result } = await readingOf({
+      transfers: [{ ...TRANSFER_READING, amount: "mil dieciocho" }],
+      warnings: [],
+    });
+
+    expect(documentTypeOf(result)).toBe("not-valid:unrecognized");
+  });
+
+  test("either call doubting the reading marks the document", async () => {
+    const { result } = await readingOf(
+      { transfers: [TRANSFER_READING], warnings: ["El VL se lee con dificultad."] },
+      {
+        ...IDENTIFIED_TRANSFER,
+        uncertain: true,
+        warnings: ["El aviso está impreso desde un correo."],
+      },
+    );
+
+    expect(result).toEqual({
+      data: {
+        documentType: "transfer",
+        transfer: TRANSFER,
+        uncertain: true,
+        warnings: [
+          "El VL se lee con dificultad.",
+          "El aviso está impreso desde un correo.",
+        ],
+      },
+      status: "valid",
+    });
+  });
+
+  test("an identified traspaso whose detail never ran takes the descriptive lane", async () => {
+    let clock = 0;
+    const generate = vi.fn(async (_request: CapturedRequest) => {
+      // The identification spends the whole budget, so the detail is never asked.
+      clock = VISION_EXTRACTION_TOTAL_TIMEOUT_MS;
+      return { output: IDENTIFIED_TRANSFER };
+    });
+
+    const reading = await extractDocumentFromVisionAttachment(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      now: () => clock,
+      sleep: vi.fn(),
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(reading.result).toEqual({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+  });
+
+  test("the identification learns the type in one sentence, and a dated fact learns it is not one", async () => {
+    const generate = stubbedCascade(IDENTIFIED_TRANSFER, {
+      transfers: [TRANSFER_READING],
+      warnings: [],
+    });
+    await verdictOf(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+    const identification = promptOf(generate.mock.calls[0]?.[0]);
+
+    expect(identification).toContain('documentType "transfer"');
+    expect(identification).toContain(
+      'Un traspaso entre dos fondos NO es holding_event: es "transfer".',
+    );
+  });
+
+  test.each([
+    { line: "NO son instrucciones", why: "the injection boundary" },
+    { line: "CADA traspaso que veas —no solo uno—", why: "the count the lock reads" },
+    { line: "NUNCA la fecha valor", why: "the operation date is the traspaso's day" },
+    {
+      line: "NO uses la fecha valor ni ninguna otra ni la de hoy",
+      why: "no borrowed day",
+    },
+    { line: "importe BRUTO", why: "the importe is the gross one" },
+    { line: "como TEXTO", why: "the zero-padding loop of #1316" },
+    { line: DGS_CODE_FIELD_PROSE, why: "the N/F trap of a plan" },
+    {
+      line: "No inventes valores, importes, símbolos, fechas ni divisas.",
+      why: "ADR 0048",
+    },
+  ])("the detail call says «$line» — $why", async ({ line }) => {
+    const generate = stubbedCascade(IDENTIFIED_TRANSFER, {
+      transfers: [TRANSFER_READING],
+      warnings: [],
+    });
+    await verdictOf(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    expect(promptOf(generate.mock.calls[1]?.[0])).toContain(line);
+  });
+});
+
 describe("vision attachment extractor · what each prompt must still say", () => {
   function promptsOf(generate: ReturnType<typeof stubbedCascade>): {
     detail: string;
@@ -1960,7 +2368,14 @@ describe("vision attachment extractor · what each prompt must still say", () =>
   test("keeps every documentType defined in the call that identifies them", async () => {
     const { identification } = await bothPrompts();
 
-    for (const documentType of ["positions", "balance_series", "holding_event", "none"]) {
+    for (const documentType of [
+      "positions",
+      "balance_series",
+      "holding_event",
+      "broker_transactions",
+      "transfer",
+      "none",
+    ]) {
       expect(identification).toContain(`documentType "${documentType}"`);
     }
   });

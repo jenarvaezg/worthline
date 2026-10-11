@@ -21,6 +21,7 @@ import { createInMemoryStore } from "@worthline/db";
 import { derivePosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
+import { PASTED_SUSCRIPCION } from "./pasted-transfer-receipt-fixture";
 import { confirmTransferProposalAction } from "./transfer-proposal-action";
 import {
   buildTransferProposal,
@@ -402,6 +403,35 @@ describe("buildTransferProposal — the card of a dictated traspaso", () => {
   });
 });
 
+describe("buildTransferProposal — a pasted confirmation (#1794)", () => {
+  test("a suscripción's participaciones land on the destination, and the pair writes them", async () => {
+    // No price for the destination at all: the paper states the participaciones that
+    // arrived, so its VL is derived from them and the importe, and nothing is missing.
+    const store = await seed({ priceDestination: false });
+
+    const built = await draft(store, PASTED_SUSCRIPCION);
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.dictated).toBe(
+      "14/08/2026 · 739,22 € · entraron 50,98 participaciones",
+    );
+    expect(built.proposal.destination.positionLine).toBe(
+      "Entran en «Cartera Permanente PP»: 0 → 50,98 participaciones",
+    );
+    // The origin is divided at its own price — 739,22 € ÷ 12 € — as before.
+    expect(built.proposal.origin.positionLine).toBe(
+      "Salen de «Indexado PP»: 100 → 38,398333 participaciones",
+    );
+    expect(built.proposal.notes.join(" ")).not.toContain("VL de destino");
+
+    expect(
+      await confirmTransferProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
+    expect((await positionOf(store, DESTINATION)).currentUnits).toBe("50.98");
+    store.close();
+  });
+});
+
 describe("confirmTransferProposalAction — the pair the gate writes", () => {
   test("writes ONE pair tied by one transferId, with the cost inherited (#1393)", async () => {
     const store = await seed();
@@ -505,6 +535,303 @@ describe("confirmTransferProposalAction — the pair the gate writes", () => {
     expect(second.ok).toBe(false);
     if (second.ok) return;
     expect(second.error).toContain("ya está anotado");
+    store.close();
+  });
+
+  test("the refusal names the traspaso already noted, with its participaciones", async () => {
+    const store = await seed();
+    const first = await draft(store, DICTATED);
+    if (!first.ok) throw new Error(first.error);
+    await confirmTransferProposalAction(first.proposal.draft, store, clock);
+
+    const second = await draft(store, DICTATED);
+
+    if (second.ok) throw new Error("expected a refusal");
+    expect(second.error).toContain("Indexado PP");
+    expect(second.error).toContain("Cartera Permanente PP");
+    expect(second.error).toContain("14/08/2026");
+    expect(second.error).toContain("participaciones");
+    store.close();
+  });
+
+  test("another date, another destination or a loose operation do not trigger it", async () => {
+    const store = await seed();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "otro",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Otro PP",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await price(store, "otro", "9");
+    const first = await draft(store, DICTATED);
+    if (!first.ok) throw new Error(first.error);
+    await confirmTransferProposalAction(first.proposal.draft, store, clock);
+
+    // A loose sale on the origin the same day is not a traspaso.
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: ORIGIN,
+        currency: "EUR",
+        executedAt: DATE,
+        feesMinor: 0,
+        id: "op_venta_suelta",
+        kind: "sell",
+        pricePerUnit: "12",
+        units: "1",
+      },
+      { today: TODAY },
+    );
+
+    const otherDate = await draft(
+      store,
+      "El 15/08/2026 traspasé 100 € del Indexado al Cartera Permanente",
+    );
+    expect(otherDate.ok).toBe(true);
+
+    const reading = parseTypedTransfer(
+      "El 14/08/2026 traspasé 100 € del Indexado al Otro",
+      TODAY,
+    );
+    if (reading.status !== "read") throw new Error("unread");
+    const otherDestination = await buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: "otro",
+        destinationHolding: "wl_hld_otro",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        transfer: reading.transfer,
+      },
+      TODAY,
+    );
+    expect(otherDestination.ok).toBe(true);
+    store.close();
+  });
+
+  test("a loose operation alone on the same day never reads as a traspaso", async () => {
+    const store = await seed();
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: DESTINATION,
+        currency: "EUR",
+        executedAt: DATE,
+        feesMinor: 0,
+        id: "op_compra_suelta",
+        kind: "buy",
+        pricePerUnit: "14.5",
+        units: "5",
+      },
+      { today: TODAY },
+    );
+
+    expect((await draft(store, DICTATED)).ok).toBe(true);
+    store.close();
+  });
+});
+
+describe("the inherited cost the card prints is the one the pair writes", () => {
+  /** The incoming half of the pair, as the ledger holds it after the confirm. */
+  async function incomingOf(store: WorthlineStore) {
+    return (await store.operations.readOperations(DESTINATION)).find(
+      (operation) => operation.kind === "transfer_in",
+    );
+  }
+
+  /** A traspaso read off a validated paper (#1799), with no identifier printed. */
+  async function fromPaper(
+    store: WorthlineStore,
+    transfer: Parameters<typeof buildTransferProposal>[1]["transfer"],
+  ) {
+    return buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: DESTINATION,
+        destinationHolding: "wl_hld_destino",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        source: {
+          currency: "EUR",
+          fileName: "aviso-traspaso.pdf",
+          from: "document",
+          funds: {
+            destination: { name: "CARTERA PERMANENTE EJEMPLO PP" },
+            origin: { name: "INDEXADO EJEMPLO PP" },
+          },
+        },
+        transfer,
+      },
+      TODAY,
+    );
+  }
+
+  test("a pasted suscripción: 61,601667 of 100 participaciones carry 616,02 € of the 1.000 € cost", async () => {
+    // 739,22 € ÷ 12 € leave the origin; the cost travels in proportion: 1.000 € ×
+    // 61,601667 / 100 = 616,01667 € → 616,02 €.
+    const store = await seed({ priceDestination: false });
+    const built = await draft(store, PASTED_SUSCRIPCION);
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.inheritedCost).toBe(
+      "Coste de adquisición que viaja: 616,02\u00a0€",
+    );
+    await confirmTransferProposalAction(built.proposal.draft, store, clock);
+    expect((await incomingOf(store))?.transferCostMinor).toBe(61_602);
+    store.close();
+  });
+
+  test("a suscripción off the paper: the same 616,02 € on the card and on the row", async () => {
+    const store = await seed({ priceDestination: false });
+    const built = await fromPaper(store, {
+      destinationUnits: "50.98",
+      executedAt: DATE,
+      portion: { amountMinor: 73_922, kind: "amount" },
+    });
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.inheritedCost).toBe(
+      "Coste de adquisición que viaja: 616,02\u00a0€",
+    );
+    await confirmTransferProposalAction(built.proposal.draft, store, clock);
+    expect((await incomingOf(store))?.transferCostMinor).toBe(61_602);
+    expect((await incomingOf(store))?.units).toBe("50.98");
+    store.close();
+  });
+
+  test("a reembolso off the paper writes the paper's participaciones out, one transferId, and the cost in proportion", async () => {
+    // 61,6 of 100 participaciones left, as the paper printed: 1.000 € × 61,6 / 100 =
+    // 616,00 € of cost travels with them.
+    const store = await seed();
+    const built = await fromPaper(store, {
+      executedAt: DATE,
+      portion: { amountMinor: 73_922, kind: "units", units: "61.6" },
+    });
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.inheritedCost).toBe(
+      "Coste de adquisición que viaja: 616\u00a0€",
+    );
+    expect(
+      await confirmTransferProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
+    const out = (await store.operations.readOperations(ORIGIN)).find(
+      (operation) => operation.kind === "transfer_out",
+    );
+    const incoming = await incomingOf(store);
+    expect(out?.units).toBe("61.6");
+    expect(out?.transferId).toBeDefined();
+    expect(incoming?.transferId).toBe(out?.transferId);
+    expect(incoming?.transferCostMinor).toBe(61_600);
+    expect((await positionOf(store, ORIGIN)).currentUnits).toBe("38.4");
+    store.close();
+  });
+});
+
+describe("the card of an earlier message quotes its opening and keeps none of the rest (#1798)", () => {
+  test("neither the card nor the draft carries the whole message", async () => {
+    const store = await seed();
+    const tail =
+      "y aquí sigue un párrafo largo que nadie tiene que volver a leer COLA-UNICA";
+    const earlierMessage = `El 14/08/2026 traspasé 739,22 € del Indexado al Cartera Permanente, ${tail}`;
+    const reading = parseTypedTransfer(earlierMessage, TODAY);
+    if (reading.status !== "read") throw new Error("unreadable fixture");
+
+    const built = await buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: DESTINATION,
+        destinationHolding: "wl_hld_destino",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        source: { earlierMessage, from: "message" },
+        transfer: reading.transfer,
+      },
+      TODAY,
+    );
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.sourceCaption).toBe(
+      "Lo que he leído en un mensaje anterior tuyo: «El 14/08/2026 traspasé 739,22 € del…»",
+    );
+    expect(JSON.stringify(built.proposal)).not.toContain("COLA-UNICA");
+    const persisted = await store.assistantProposals.read(
+      built.proposal.draft.proposalId,
+    );
+    expect(JSON.stringify(persisted)).not.toContain("COLA-UNICA");
+    store.close();
+  });
+});
+
+describe("confirmTransferProposalAction — the paper's identifiers, re-checked (#1800)", () => {
+  /** A reembolso notice that prints the origin plan's DGS code, read by worthline. */
+  async function draftFromPaper(store: WorthlineStore) {
+    return buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: DESTINATION,
+        destinationHolding: "wl_hld_destino",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        source: {
+          currency: "EUR",
+          fileName: "aviso-traspaso.pdf",
+          from: "document",
+          funds: {
+            destination: { name: "CARTERA PERMANENTE EJEMPLO PP" },
+            origin: {
+              name: "INDEXADO EJEMPLO PP",
+              securityId: { kind: "dgs", value: "N5394" },
+            },
+          },
+        },
+        transfer: { executedAt: DATE, portion: { amountMinor: 73_922, kind: "amount" } },
+      },
+      TODAY,
+    );
+  }
+
+  test("a plan whose DGS code changed since the card is refused, writing nothing", async () => {
+    const store = await seed();
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    const built = await draftFromPaper(store);
+    if (!built.ok) throw new Error(built.error);
+
+    // Between arming the card and confirming it, the ficha now says another plan.
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5396" },
+    });
+    const result = await confirmTransferProposalAction(
+      built.proposal.draft,
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("error");
+    const { message } = result as { message: string };
+    expect(message).toContain("código DGS N5394");
+    expect(message).toContain("código DGS N5396");
+    expect(
+      (await store.operations.readOperations(ORIGIN)).some(
+        (operation) => operation.kind === "transfer_out",
+      ),
+    ).toBe(false);
+    store.close();
+  });
+
+  test("the same code at confirm writes the pair", async () => {
+    const store = await seed();
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    const built = await draftFromPaper(store);
+    if (!built.ok) throw new Error(built.error);
+
+    expect(
+      await confirmTransferProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
     store.close();
   });
 });

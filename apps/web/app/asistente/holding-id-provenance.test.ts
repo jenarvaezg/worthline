@@ -234,6 +234,43 @@ describe("groundedHoldingIdsInHistory", () => {
     expect(groundedHoldingIdsInHistory(messages)).toEqual([]);
   });
 
+  it("grounds the holdings a write's refusal found by itself, and only those (#1800)", () => {
+    // The traspaso's identity refusal: worthline looked the paper's ISIN up and names
+    // the holdings that carry it, so the model can ask which one — that lookup is a read.
+    const messages = [
+      messageWith([
+        {
+          type: "tool-propose_transfer",
+          toolCallId: "c5",
+          state: "output-available",
+          input: { destinationHoldingId: NEVER_READ },
+          output: {
+            audience: "user",
+            candidateHoldings: [{ id: READ, label: "Fondo Emergentes" }],
+            error: "transfer_identity_ambiguous",
+            message: `no es ${NEVER_READ}`,
+          },
+        } as unknown as UIMessage["parts"][number],
+      ]),
+    ];
+    expect(groundedHoldingIdsInHistory(messages)).toEqual([READ]);
+  });
+
+  it("never grounds a candidates field on suggest_actions, which echoes the model", () => {
+    const messages = [
+      messageWith([
+        {
+          type: "tool-suggest_actions",
+          toolCallId: "c6",
+          state: "output-available",
+          input: {},
+          output: { candidateHoldings: [{ id: NEVER_READ, label: "x" }] },
+        } as unknown as UIMessage["parts"][number],
+      ]),
+    ];
+    expect(groundedHoldingIdsInHistory(messages)).toEqual([]);
+  });
+
   it("never grounds an id the model only put in a tool INPUT", () => {
     const messages = [
       messageWith([
@@ -321,6 +358,23 @@ describe("withHoldingIdProvenance", () => {
 
     expect(result).toEqual({ proposalType: "correction" });
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("grounds the candidates a write's refusal names for the next write (#1800)", async () => {
+    const grounded = createGroundedHoldingIds();
+    const guarded = withHoldingIdProvenance(
+      toolSetOver(() => ({
+        audience: "user",
+        candidateHoldings: [{ id: READ, label: "Fondo Emergentes" }],
+        error: "transfer_identity_mismatch",
+        message: "El justificante dice…",
+      })),
+      grounded,
+    );
+
+    await call(guarded, "propose_correction", {});
+
+    expect(grounded.has(READ)).toBe(true);
   });
 
   it("leaves reads untouched: an unknown id there answers not_found on its own", async () => {

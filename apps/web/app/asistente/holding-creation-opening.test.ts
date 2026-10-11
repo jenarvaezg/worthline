@@ -308,6 +308,19 @@ describe("resolveHoldingCreationOpening (#1315) · rejections", () => {
     expect(resolved.error).toMatch(/CÉNTIMOS/);
   });
 
+  test("an opening of 0 is refused saying that an alta without opening OMITS the field (#1800)", () => {
+    // The probable cause of «requiere valoración de apertura» in the incident: the model
+    // passed 0 for the fund the traspaso was about to fill, and only heard «céntimos».
+    const resolved = resolveHoldingCreationOpening({ openingValueMinor: 0 });
+
+    expect(resolved).toMatchObject({ ok: false });
+    if (resolved.ok) return;
+    expect(resolved.error).toMatch(/CÉNTIMOS/);
+    expect(resolved.error).toMatch(/sin apertura/);
+    expect(resolved.error).toMatch(/omite/);
+    expect(resolved.error).toContain("openingValueMinor");
+  });
+
   test("rejects a commission with decimals rather than rounding it", () => {
     const resolved = resolveHoldingCreationOpening({
       feesMinor: 1.5,

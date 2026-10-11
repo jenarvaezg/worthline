@@ -17,6 +17,7 @@ import type {
   LiquidityTier,
   Member,
   OwnershipShare,
+  SecurityId,
   SourceAdapter,
   WorkspaceMode,
 } from "@worthline/domain";
@@ -56,6 +57,12 @@ export interface InvestmentSpec {
   ownership: OwnershipShare[];
   manualPricePerUnit: DecimalString;
   unitSymbol?: string;
+  /**
+   * The ISIN (or a plan's DGS code) the holding registers (#1743). Optional because a
+   * holding typed in by hand often has none — and a persona whose every position
+   * carried one would only ever grade the easy case of a document lookup.
+   */
+  securityId?: SecurityId;
   liquidityTier?: LiquidityTier;
   currency?: CurrencyCode;
   operations: OperationSpec[];

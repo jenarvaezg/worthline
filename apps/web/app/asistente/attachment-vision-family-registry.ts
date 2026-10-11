@@ -9,6 +9,7 @@ import type {
 import { unidentifiedDocument } from "./attachment-vision-plumbing";
 import { positionsVisionFamily } from "./attachment-vision-positions-family";
 import { brokerTransactionsVisionFamily } from "./attachment-vision-transactions-family";
+import { transferVisionFamily } from "./attachment-vision-transfer-family";
 
 /**
  * THE REGISTRY: the one place that lists the document families of the vision seam.
@@ -26,6 +27,7 @@ const VISION_FAMILY_BY_DOCUMENT_TYPE: Record<
   broker_transactions: brokerTransactionsVisionFamily,
   holding_event: holdingEventVisionFamily,
   positions: positionsVisionFamily,
+  transfer: transferVisionFamily,
 };
 
 /**

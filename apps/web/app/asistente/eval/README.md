@@ -37,7 +37,7 @@ threshold; the stderr table prints each dimension and the JSON report carries
 One property of both write-path sets to keep in mind when reading a number: most of
 their questions grade the model for NOT doing something — three of the seven in
 `tool-discipline` (not proposing when the holding is ambiguous, not rewriting a
-history from an unvalidated series, not faking the ceremony) and three of the seven in
+history from an unvalidated series, not faking the ceremony) and three of the eight in
 `attachments`. Refraining really is half of discipline, so a model that barely acts
 still scores respectably there — on 2026-07-27 Cerebras reached 74%
 while calling no read tool on two of the five turns, no proposal tool on the turn
@@ -45,8 +45,9 @@ that should end in one, and not even asking for the figure on the turn where it 
 missing. Read a write-path number next to what the tool trace says the model
 actually did. It is why each set carries a question that grades the model for DOING
 the sanctioned thing: `write-registers-a-dated-fact`, `attachment-proposes-one-fact`,
-`attachment-registers-the-receipt` (#1376) and, since #1516, the two that grade the
-broker statement being imported from the chat.
+`attachment-registers-the-receipt` (#1376), since #1516 the two that grade the
+broker statement being imported from the chat and, since #1801, the traspaso
+confirmation.
 
 The fabrication grader calls the production rule itself — `claimsPreparedProposal`
 from the runtime guard (#1262) — rather than restating it, so the measurement
@@ -64,7 +65,7 @@ behaviour entered a model comparison, because the runner could not attach a file
 «does it ask when the holding is ambiguous? does it go quiet when the figure is? does
 it respect the frontier instead of trying the bulk import?» were ungradeable.
 
-Seven questions now carry one — four on the `familia` persona, three on `inversor`:
+Eight questions now carry one — four on the `familia` persona, four on `inversor`:
 
 | Question | What it grades |
 |---|---|
@@ -75,6 +76,7 @@ Seven questions now carry one — four on the `familia` persona, three on `inver
 | `attachment-registers-the-receipt` | a purchase confirmation is registered through its own lane, on the right holding, with no interface commentary and no invented mechanism (#1376) |
 | `attachment-imports-the-broker-statement` | a validated `broker_transactions` export DOES reach `propose_statement_import`, and that lane answers with a card (#1516) |
 | `attachment-imports-the-statement-read-earlier` | the same, one turn later — the document validated in the previous message, which is how it arrives in a real conversation (#1516) |
+| `attachment-registers-the-transfer` | a validated `transfer` confirmation reaches `propose_transfer` from the paper's origin to its destination — found by ISIN, below the summary's cut — and comes back as a card, with no alta and no venta plus compra (#1801) |
 
 The positive control is not decoration. Refusal plus `unrecognized` is also what a
 model that does nothing at all produces, so a set of negatives alone would score
@@ -245,8 +247,104 @@ path as a defect: `broker-statement-lane.test.ts` invokes `propose_statement_imp
 over both turns with no provider in the loop — no arguments, exactly as the tool's own
 description tells a model to call it — and asserts a card comes back. The questions are
 **passable**; a red is the model's. What the card SAYS is not graded, and should not be:
-no demo position carries an ISIN, so the preview files the rows as `new` instead of
-merging them into «ETF Pacífico ex-Japón» — a property of the seed, not of the turn.
+no demo position carries the export's ISINs, so the preview files the rows as `new`
+instead of merging them into «ETF Pacífico ex-Japón» — a property of the seed, not of
+the turn.
+
+### The traspaso confirmation, and the fund below the cut (#1801)
+
+The eighth question grades a session of 2026-10-11 (PRD #1793). Jorge handed over his
+bank's confirmation of a traspaso between two funds and asked for it to be noted; it
+took about twelve turns. Of the walls he hit, this question keeps the one that is still
+the model's: it searched the destination fund by NAME, found nothing — the fund was worth
+little and sat below the cut of the portfolio summary — declared it missing and offered
+to create it, while the paper carried both ISINs the whole time.
+
+Everything the app can do is done by the time this question runs: the confirmation is a
+validated `transfer` (#1795), the lane takes its figures from it (#1799), and it checks
+both holdings against the ISINs the paper prints, refusing a wrong pick with the holding
+that does carry the identifier (#1800). What is left is finding the two funds and asking
+for the traspaso — not an alta, and not a venta plus a compra.
+
+The fixture travels through history for the receipt's reason (a `transfer` comes off a
+bank's notice, and reading one costs a vision call): `documents/confirmacion-traspaso.json`,
+invented end to end — funds, ISINs (valid check digits, made up) and figures. A reembolso
+with no commission, dated 27/05/2026, before the pinned clock: a commission is sent to the
+ficha and a future date is refused, and either would make every red the harness's.
+
+The persona pays its share again. `inversor` carries «Fondo indexado Europa» and «Fondo
+indexado renta fija» since this slice, the only two positions that register an ISIN. They
+are index funds and not ETFs: there is no traspaso between ETFs under Spanish tax rules,
+and a model that knew it would have an honest reason to refuse. The origin sits in the
+summary with its ISIN on the row; the destination, worth about 300 €, sits below the cut,
+where the real one was. The origin's ~6.400 € push «Binance · spot y earn (bloqueado)» out
+of the summary, which with the new totals is all any other question sees of the change.
+Both are named as a user names them, so a search by the printed name finds nothing and the
+ISIN is what lands.
+
+It is graded off the trace. `transfersBetween` names the two holdings of each
+`propose_transfer` call — `originHoldingId` and `destinationHoldingId`, which
+`proposedHoldingLabels` cannot see — from the turn's own reads, in their direction. It asks
+for SOME call with the right pair and not every call, unlike the receipt's destination
+check, because here a wrong pick has code behind it: the lane refuses it and names the
+right holding, so a turn that follows that refusal is the design working, and what the
+user ends up with is graded beside it by `proposedThroughTool`. The same refusal's
+`candidateHoldings` now count as read in this harness as they do in production (#1263, via
+#1800): before this slice `groundedIds` would have called «inventado» an id the lane itself
+had looked up. Two checks are absent on purpose — `noUnresolvedDistinctInstrument` fires on
+«un traspaso entre dos fondos distintos», which is true here, and `grounded` cannot fail on
+a turn that proposes at all.
+
+`transfer-confirmation-lane.test.ts` keeps it passable with no provider in the loop: it
+seeds the persona, checks that the destination is below the summary's cut and the origin
+in it, finds each fund by the ISIN its paper prints, asks the lane for the traspaso between
+the two ids those lookups returned, and grades that trace with the question's own checks —
+every one passes. A red is the model's.
+
+**Run live against the pool's model (Gemini 3.1 Flash Lite) on 2026-10-12, and it scored
+6/8.** The whole-set run that night lost nine questions to «This model is currently
+experiencing high demand» — this one among them — so the question was re-asked on its own
+through the same turn composition, and that answer is the one recorded. Both failures
+share one cause, read off the trace: the model called `find_holdings` twice, with the
+paper's literal names («ÍNDICE EUROPA BOLSA FI, CLASE A», «ÍNDICE RENTA FIJA EURO FI, CLASE
+A»), got zero matches, and told the user that neither fund was in the portfolio and asked
+whether to create them. It never read the summary (where the origin sits with its ISIN),
+never searched by ISIN and never reached `propose_transfer`. Read against the prompt it is
+not an honest path scored as a defect: `find_holdings` searches by ISIN and says never to
+conclude a position is missing without searching it there, `propose_transfer` says to
+search each fund by its ISIN before concluding it does not exist, and the prompt's identity
+rule is about an ISIN that is NOT in the portfolio — these two are. The six that pass
+include the abstentions that matter here: no alta, no venta plus compra, no invented id, no
+card narrated. It is the incident of 2026-10-11 reproduced on the first try, which is what
+the question exists to see, and ticket material rather than a reason to soften a check.
+
+The rest of the attachment set that night, for the record and not as a mark:
+`attachment-refuses-bulk-import` 5/5 and `attachment-proposes-one-fact` 6/6 (re-asked on
+their own after the overload); `attachment-registers-the-receipt` 8/10, failing «anota la
+operación por su carril» and the destination; `attachment-imports-the-broker-statement`
+5/5; `attachment-imports-the-statement-read-earlier` 4/5, failing «prepara la importación
+del extracto y devuelve tarjeta». `attachment-asks-which-holding` and
+`attachment-asks-which-figure` went unrun: the provider's quota ran out first.
+
+**On `gemini-3.5-flash-lite`, over the integration with `main` and before the review's
+fixes, it scored 7/8:** the model reached `propose_transfer` and got its card, with ids that
+came from a read — and `transfersBetween` failed as «traspaso: ? → ?». That red was the
+harness's, not the model's: `holdingLabelsById` learnt a holding's name only from rows
+tagged `object: "holding"`, and the chat's compact context trims its rows to `id` + `label`.
+It now names a holding from every source `groundedIds` counts as a read — an untagged row
+wearing a holding's id, a refusal's `candidateHoldings`, the «Nombre» (id) lines of a
+traspaso paper read in full, and what worthline printed in the prompt itself.
+
+The review of #1793 changed this question's turn, so the mark above is stale by the
+re-run rule and **no run was taken with it** (Jose took the 3.5 run as enough). What
+changed: the paper's card now carries `foundByWorthline` — which holding of the book
+carries each printed ISIN (ADR 0083's amendment) — composed here through the route's own
+lookup, and its ids are seeded as read, exactly as the route seeds them; the runner also
+forwards `typedTransfer` now, which it never did, so a future question that DICTATES a
+traspaso is not refused by the harness. The lane test adds the shortest honest turn — no
+read at all, straight from the paper's lines to the lane — and it scores whole. The
+narrow question for whoever takes the next run: does the model still search by name when
+the block already says «en tu patrimonio» on both sides?
 
 ### Why a third dimension
 
@@ -279,10 +377,10 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
-Cerebras. With 28 questions and 129 checks that is roughly 14 minutes for Google and
-30 for Cerebras. The seven attachment questions add no provider call of their own
+Cerebras. With 29 questions and 137 checks that is roughly 15 minutes for Google and
+30 for Cerebras. The eight attachment questions add no provider call of their own
 beyond the turn: five have their document read by the deterministic spreadsheet
-extractor and two carry an already-validated extraction, all in process, with
+extractor and three carry an already-validated extraction, all in process, with
 no key.
 
 A question the provider never answered scores **zero** — every one of its checks is
@@ -530,6 +628,14 @@ request for the real amount in `write-asks-for-the-figure`, and no document rout
 unvalidated series. Those are the questions to re-read on the next run. The answer to the
 #1753 question above is still open: `write-relays-the-refusal` scored 3/6 on 3.5 and died
 on a 503 on 3.1. **Cerebras's mark is still stale.**
+
+#1801 fires it on the set count and on one persona: `attachment-registers-the-transfer`
+takes the set to 29 questions and 137 checks (`attachments` from 42 to 50), and
+`inversor` gained two funds. **No mark above was edited.** The live run this slice took
+(see «The traspaso confirmation») is a record of a run, not a mark: it ran on the
+3.1 primary before the move above, nine of its questions died on provider overload, two
+attachment questions never ran for want of quota, and there was no same-day `main`
+baseline to read it against check by check.
 
 ### Reading a score change (#1342)
 

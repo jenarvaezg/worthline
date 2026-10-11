@@ -53,9 +53,10 @@ export function TransferProposalCard({
       </p>
       <ul>
         <li>
-          {/* What worthline read in the message, before anything derived from it. */}
+          {/* What worthline read in the message, before anything derived from it —
+              and WHICH message: an earlier one is quoted by its opening (#1798). */}
           <strong>{proposal.dictated}</strong>
-          <span>Lo que he leído en tu mensaje</span>
+          <span>{proposal.sourceCaption}</span>
           <span>{proposal.origin.positionLine}</span>
           <span className="assistantRowMovement">{proposal.origin.movementLine}</span>
           <span>{proposal.destination.positionLine}</span>

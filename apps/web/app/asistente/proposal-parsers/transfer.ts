@@ -10,6 +10,7 @@ import type {
   TransferProposalSide,
 } from "@web/asistente/transfer-proposal-contract";
 import { parseTransferProposalDraft } from "@web/asistente/transfer-proposal-contract";
+import { TRANSFER_DICTATED_CAPTION } from "@web/asistente/transfer-proposal-copy";
 import { isRecord, parseNetWorthImpact, parseStrings } from "./shapes";
 
 /** One side of the pair, as the card prints it: two sentences and nothing else. */
@@ -27,7 +28,7 @@ export function parseTransferProposal(raw: unknown): TransferProposal | null {
   const destination = parseSide(raw.destination);
   const impact = parseNetWorthImpact(raw.impact);
   const notes = parseStrings(raw.notes);
-  const { dictated, folio, impactCaption, inheritedCost, summary } = raw;
+  const { dictated, folio, impactCaption, inheritedCost, sourceCaption, summary } = raw;
   if (!draft.ok || origin === null || destination === null) return null;
   if (impact === null || notes === null) return null;
   if (typeof summary !== "string" || typeof folio !== "string") return null;
@@ -36,6 +37,11 @@ export function parseTransferProposal(raw: unknown): TransferProposal | null {
   return {
     destination,
     dictated,
+    // A payload with no caption is not refused, for the operation card's reason (#1466):
+    // it was emitted before #1798, in a conversation that may still be open, and back
+    // then the figures could only come from the turn's own message.
+    sourceCaption:
+      typeof sourceCaption === "string" ? sourceCaption : TRANSFER_DICTATED_CAPTION,
     draft: draft.draft,
     folio,
     impact,

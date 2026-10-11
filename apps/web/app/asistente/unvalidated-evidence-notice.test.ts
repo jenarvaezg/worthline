@@ -9,6 +9,8 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  UNVALIDATED_EVIDENCE_CAP_MESSAGE,
+  UNVALIDATED_EVIDENCE_MESSAGE,
   unreadableTypedSeriesRejected,
   unvalidatedEvidenceRejected,
 } from "./unvalidated-evidence-gate";
@@ -147,6 +149,37 @@ describe("the notes' copy (#1418)", () => {
     expect(UNVALIDATED_EVIDENCE_NOTE).toContain("/patrimonio/importar-extracto");
     expect(UNVALIDATED_EVIDENCE_NOTE).toMatch(/posiciones y movimientos/i);
     expect(UNVALIDATED_EVIDENCE_NOTE).toContain("Cuadro de amortización");
+  });
+
+  it("opens with what CAN be done with the file and never speaks of tables (#1797)", () => {
+    for (const text of [UNVALIDATED_EVIDENCE_NOTE, UNVALIDATED_EVIDENCE_MESSAGE]) {
+      expect(text).not.toMatch(/tabla/i);
+      expect(text).toMatch(/hecho fechado suelto/i);
+      expect(text).toMatch(/traspaso/i);
+      expect(text.indexOf("hecho fechado suelto")).toBeLessThan(
+        text.indexOf("importar-extracto"),
+      );
+    }
+    expect(UNVALIDATED_EVIDENCE_CAP_MESSAGE).not.toMatch(/tabla/i);
+  });
+
+  it("the very first words are what CAN be done, before any «no puedo» (#1797)", () => {
+    for (const text of [UNVALIDATED_EVIDENCE_NOTE, UNVALIDATED_EVIDENCE_MESSAGE]) {
+      expect(text).toMatch(/^Un hecho fechado suelto/);
+      expect(text.indexOf("hecho fechado suelto")).toBeLessThan(
+        text.indexOf("en bloque"),
+      );
+    }
+  });
+
+  it("the twin the model relays speaks to the person in the second person, all of it (#1797)", () => {
+    // Written to be relayed verbatim: a sentence about «el usuario» read out to the user
+    // is the app talking about someone the person cannot see.
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).not.toMatch(
+      /el usuario|si tiene |que me escriba|su mensaje|quiere cargar/i,
+    );
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).toMatch(/si tienes el extracto original/);
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).toMatch(/de tu mensaje/);
   });
 
   it("never sends the user back to the upload that shut the door", () => {
