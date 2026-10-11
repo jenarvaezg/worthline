@@ -33,6 +33,7 @@ import { CANDIDATE_HOLDINGS_FIELD } from "@web/asistente/holding-id-provenance";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
 import { userFacingRefusal } from "@web/asistente/proposal-refusal";
 import { isProposalToolName } from "@web/asistente/tool-parts";
+import { holdingsNamedIn } from "@web/asistente/transfer-book";
 import { unvalidatedEvidenceClassFor } from "@web/asistente/unvalidated-evidence-gate";
 
 import { type AssistantAnswer, mentionsAny } from "./graders";
@@ -208,6 +209,7 @@ export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
       .filter((result) => !isProposalToolName(result.name))
       .map((result) => result.output),
     ...answer.toolResults.flatMap(candidateHoldingsIn).map((candidate) => candidate.id),
+    ...(answer.promptHoldings ?? []).map((holding) => holding.id),
   ]);
   const proposed = answer.toolCalls
     .filter((call) => isProposalToolName(call.name))
@@ -232,6 +234,12 @@ export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
 function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
   const labels = new Map<string, string>();
   const walk = (value: unknown): void => {
+    if (typeof value === "string") {
+      // A traspaso paper read in full names what worthline found as «Nombre» (id)
+      // inside a sentence (#1793): read back through the writer's own format.
+      for (const holding of holdingsNamedIn(value)) labels.set(holding.id, holding.label);
+      return;
+    }
     if (Array.isArray(value)) {
       value.forEach(walk);
       return;
@@ -241,9 +249,9 @@ function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
     const id = record["id"];
     const label = record["label"];
     if (
-      record["object"] === "holding" &&
       typeof id === "string" &&
-      typeof label === "string"
+      typeof label === "string" &&
+      namesAHolding(record, id)
     ) {
       labels.set(id, label);
     }
@@ -255,7 +263,23 @@ function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
       labels.set(candidate.id, candidate.label);
     }
   }
+  for (const holding of answer.promptHoldings ?? [])
+    labels.set(holding.id, holding.label);
   return labels;
+}
+
+/**
+ * Whether an `id` + `label` row is a holding: tagged as one, or — on a row that carries
+ * no tag at all, like the compact context the chat trims to `id` + `label` — wearing a
+ * holding's public-id prefix. A row tagged as anything else never is, whatever its id.
+ *
+ * Every source `groundedIds` counts as a read has to be one this can name, or the turn
+ * that wrote the right traspaso is scored «? → ?» — which is what the live run of
+ * 2026-10-12 recorded, on ids that came from the trimmed context.
+ */
+function namesAHolding(record: Record<string, unknown>, id: string): boolean {
+  if (record["object"] !== undefined) return record["object"] === "holding";
+  return id.startsWith("wl_hld_");
 }
 
 /**

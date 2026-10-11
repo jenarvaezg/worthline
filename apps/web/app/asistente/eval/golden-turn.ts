@@ -35,6 +35,12 @@ import {
   readAttachmentTurn,
 } from "@web/asistente/attachment-turn";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
+import {
+  EMPTY_TRANSFER_BOOK,
+  type TransferBook,
+  transferBookHoldings,
+} from "@web/asistente/transfer-book";
+import type { CandidateHolding } from "@web/asistente/transfer-identity";
 import { turnPromptBudget } from "@web/asistente/turn-prompt-budget";
 import {
   NO_TYPED_BALANCE_SERIES,
@@ -45,6 +51,10 @@ import {
   type TypedHoldingEventReading,
   typedHoldingEventInTurn,
 } from "@web/asistente/typed-holding-event";
+import {
+  type TypedTransferReading,
+  typedTransferInTurn,
+} from "@web/asistente/typed-transfer";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 
@@ -252,11 +262,10 @@ export async function buildTurnMessages(
   reading: AttachmentTurnReading | null,
   candidate: EvalCandidate,
   history: UIMessage[] = [],
+  /** What worthline found for a traspaso paper's funds (#1793), as the route reads it. */
+  transferBook: TransferBook = EMPTY_TRANSFER_BOOK,
 ): Promise<ModelMessage[]> {
-  const messages: UIMessage[] = [
-    ...history,
-    { id: question.id, role: "user", parts: [{ type: "text", text: question.question }] },
-  ];
+  const messages: UIMessage[] = [...history, questionMessage(question)];
   return await convertToModelMessages(
     prepareAttachmentMessagesForModel(
       messages,
@@ -267,8 +276,35 @@ export async function buildTurnMessages(
       reading?.unstructured ?? null,
       turnPromptBudget({ modelId: candidate.model, provider: candidate.provider })
         .attachmentChars,
+      transferBook,
     ),
   );
+}
+
+/** The question as the user turn the route receives last. */
+function questionMessage(question: GoldenQuestion): UIMessage {
+  return {
+    id: question.id,
+    role: "user",
+    parts: [{ type: "text", text: question.question }],
+  };
+}
+
+/**
+ * The traspaso the turn states, through the route's own walk (#1482, #1798) — over the
+ * history AND the question, exactly as `chat-turn-context` reads the raw history: the
+ * figures may sit in an earlier user message that no traspaso card has spent.
+ *
+ * Ungated like the dictated operation: it is the lane's only source when no paper is on
+ * the table, and the runner used to forward none, so every dictated traspaso was refused
+ * «no he visto cuánto» by the harness's own hole (review of #1793).
+ */
+export function typedTransferFor(
+  question: GoldenQuestion,
+  today: string,
+  history: UIMessage[] = [],
+): TypedTransferReading {
+  return typedTransferInTurn([...history, questionMessage(question)], today);
 }
 
 /**
@@ -328,6 +364,15 @@ export interface GoldenTurn {
   typedBalanceSeries: TypedBalanceSeriesReading;
   /** The operation the question's own text dictates, if it dictates one (#1466). */
   typedHoldingEvent: TypedHoldingEventReading;
+  /** The traspaso the turn states, as the route reads it (review of #1793). */
+  typedTransfer: TypedTransferReading;
+  /**
+   * The holdings worthline's own lookup printed next to a traspaso paper (#1793): the
+   * route grounds their ids, and the graders count them as read.
+   */
+  promptHoldings: CandidateHolding[];
+  /** Those holdings' ids, as the route seeds them into the turn's grounded ids. */
+  groundedHoldingIds: string[];
   /** The rows a document lane may write from (#1373, #1376). */
   validatedDocuments: ExtractedDocument[];
   /** Same documents with file names, for `get_extracted_document` (#1492). */
@@ -348,6 +393,13 @@ export async function prepareGoldenTurn(
   question: GoldenQuestion,
   candidate: EvalCandidate,
   today: string,
+  /**
+   * The route's lookup of a traspaso paper's funds, over the persona's store (#1793).
+   * Absent for a caller with no store — the paper then travels alone, as before.
+   */
+  readTransferBook?: (
+    attachments: readonly ValidatedAttachment[],
+  ) => Promise<TransferBook>,
 ): Promise<GoldenTurn> {
   // Both readings assert what the question DECLARES before anything is composed: a
   // mismatch throws here, and the runner records the question as errored with every
@@ -361,12 +413,26 @@ export async function prepareGoldenTurn(
       : null,
   );
   const unvalidatedEvidence = unvalidatedEvidenceFor(reading);
+  const validatedAttachments = validatedAttachmentsFor(reading, history);
+  const transferBook = readTransferBook
+    ? await readTransferBook(validatedAttachments)
+    : EMPTY_TRANSFER_BOOK;
+  const promptHoldings = transferBookHoldings(validatedAttachments, transferBook);
   return {
-    messages: await buildTurnMessages(question, reading, candidate, history),
+    groundedHoldingIds: promptHoldings.map((holding) => holding.id),
+    messages: await buildTurnMessages(
+      question,
+      reading,
+      candidate,
+      history,
+      transferBook,
+    ),
+    promptHoldings,
     typedBalanceSeries: typedBalanceSeriesFor(question, unvalidatedEvidence),
     typedHoldingEvent: typedHoldingEventFor(question, today),
+    typedTransfer: typedTransferFor(question, today, history),
     unvalidatedEvidence,
     validatedDocuments: validatedDocumentsFor(reading, history),
-    validatedAttachments: validatedAttachmentsFor(reading, history),
+    validatedAttachments,
   };
 }

@@ -35,6 +35,13 @@ export interface AssistantAnswer {
   toolResults: EvalToolResult[];
   /** The typed quick actions it proposed (parsed through the S3 validator). */
   quickActions: QuickAction[];
+  /**
+   * The holdings worthline ITSELF named in the turn's prompt (#1793): what its lookup
+   * found for a traspaso paper's funds, printed next to the paper. Production counts
+   * them as read (#1263), so the graders do too — a turn that goes from the paper
+   * straight to the lane has read them. Absent for a question with no such paper.
+   */
+  promptHoldings?: { id: string; label: string }[];
 }
 
 /** Lowercase + strip accents so matches ignore casing and diacritics. */

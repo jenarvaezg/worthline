@@ -616,6 +616,90 @@ describe("proposedTransfers (#1801)", () => {
     ]);
   });
 
+  /** Well-formed ids, the shape every real read hands back. */
+  const EUROPA = `wl_hld_${"e".repeat(32)}`;
+  const RENTA_FIJA = `wl_hld_${"f".repeat(32)}`;
+
+  test("names the sides of the live run's turn: one id only in a refusal's candidates, the other only in the paper read in full", () => {
+    // The 2026-10-12 report scored the right card «? → ?»: the grader learnt labels from
+    // tagged rows only, and the turn's ids came by the other roads `groundedIds` counts
+    // as reads. Here neither id appears in any tagged row.
+    const turn = answer({
+      toolCalls: [
+        {
+          input: { destinationHoldingId: RENTA_FIJA, originHoldingId: EUROPA },
+          name: "propose_transfer",
+        },
+      ],
+      toolResults: [
+        {
+          name: "get_extracted_document",
+          output: {
+            card: {
+              documentType: "transfer",
+              foundByWorthline: {
+                destination: `en tu patrimonio: «Fondo indexado renta fija» (${RENTA_FIJA})`,
+              },
+            },
+          },
+        },
+        {
+          name: "propose_transfer",
+          output: {
+            ...modelRefusal("transfer_identity_mismatch", "No es ese fondo."),
+            candidateHoldings: [{ id: EUROPA, label: "Fondo indexado Europa" }],
+          },
+        },
+      ],
+    });
+
+    expect(ungroundedProposalIds(turn)).toEqual([]);
+    expect(proposedTransfers(turn)).toEqual([
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
+  });
+
+  test("names a side by the compact context row, which carries no `object` tag", () => {
+    // `get_financial_context` trims its rows for the chat to `id` + `label`: the id's
+    // own prefix says it is a holding.
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [transfer(EUROPA, RENTA_FIJA)],
+          toolResults: [
+            {
+              name: "get_financial_context",
+              output: {
+                holdings: [
+                  { id: EUROPA, label: "Fondo indexado Europa" },
+                  { id: RENTA_FIJA, label: "Fondo indexado renta fija" },
+                ],
+                scope: { id: "wl_scp_hogar", label: "Hogar" },
+              },
+            },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
+  });
+
+  test("names and grounds the holdings worthline printed in the prompt itself (#1793)", () => {
+    const turn = answer({
+      promptHoldings: [
+        { id: EUROPA, label: "Fondo indexado Europa" },
+        { id: RENTA_FIJA, label: "Fondo indexado renta fija" },
+      ],
+      toolCalls: [transfer(EUROPA, RENTA_FIJA)],
+    });
+
+    expect(ungroundedProposalIds(turn)).toEqual([]);
+    expect(proposedTransfers(turn)).toEqual([
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
+  });
+
   test("lists every traspaso the turn asked for, and nothing from other lanes", () => {
     expect(
       proposedTransfers(

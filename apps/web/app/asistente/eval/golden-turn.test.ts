@@ -23,6 +23,7 @@ import {
   readGoldenValidatedDocument,
   typedBalanceSeriesFor,
   typedHoldingEventFor,
+  typedTransferFor,
   unvalidatedEvidenceFor,
   validatedAttachmentsFor,
   validatedDocumentsFor,
@@ -310,6 +311,23 @@ describe("typedHoldingEventFor (#1466, #1753)", () => {
 
   it("stays absent for a question that dictates no operation", () => {
     expect(typedHoldingEventFor(question("¿cuánto vale mi cartera?"), TODAY)).toEqual({
+      status: "absent",
+    });
+  });
+
+  it("hands the tools the traspaso the turn dictates, read off the history as the route reads it (review of #1793)", () => {
+    // `run.ts` forwarded no `typedTransfer`, so a dictated traspaso was refused with
+    // «no he visto cuánto» by the harness's own hole — #1265 and #1373 in a new place.
+    const reading = typedTransferFor(
+      question("Hoy he traspasado 739,22 € del Fondo Europa al de renta fija"),
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      status: "read",
+      transfer: { executedAt: TODAY, portion: { amountMinor: 73_922, kind: "amount" } },
+    });
+    expect(typedTransferFor(question("¿cuánto vale mi cartera?"), TODAY)).toEqual({
       status: "absent",
     });
   });

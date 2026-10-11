@@ -4,7 +4,7 @@
  * provider's free-tier limits, and emits one machine-readable report.
  *
  * Usage (from the repo root):
- *   bun run eval:assistant -- --provider google --model gemini-3.1-flash-lite
+ *   bun run eval:assistant -- --provider google --model gemini-3.5-flash-lite
  */
 
 import { writeFile } from "node:fs/promises";
@@ -12,6 +12,7 @@ import { chatAsOf } from "@web/asistente/chat-clock";
 import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
 import { resolveProviderModel } from "@web/asistente/provider-model";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
+import { readTransferBook } from "@web/asistente/transfer-identity";
 import { withStore } from "@web/store";
 import type { StoreTarget } from "@web/store-resolver";
 import { generateText, type LanguageModel, stepCountIs } from "ai";
@@ -54,7 +55,17 @@ async function askAssistant(
   // document turn carries and not the rest, and each one graded the hole as a model
   // defect (#1265, #1373).
   const asOf = chatAsOf(persona);
-  const turn = await prepareGoldenTurn(question, candidate, asOf);
+  // The route's own lookup of a traspaso paper's funds (#1793), over the persona.
+  const turn = await prepareGoldenTurn(question, candidate, asOf, (attachments) =>
+    withStore(
+      (store) =>
+        readTransferBook(
+          { agentView: store.agentView, assets: store.assets },
+          attachments,
+        ),
+      persona,
+    ),
+  );
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
@@ -66,8 +77,15 @@ async function askAssistant(
       // because what came back was the harness's hole rather than the model.
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf,
+      // The ids worthline printed next to a traspaso paper, grounded as the route
+      // grounds them (#1793).
+      groundedHoldingIds: turn.groundedHoldingIds,
       typedBalanceSeries: turn.typedBalanceSeries,
       typedHoldingEvent: turn.typedHoldingEvent,
+      // The traspaso the turn states, the lane's only source with no paper on the
+      // table — the hole the review of #1793 found: without it every dictated traspaso
+      // was refused by the harness, not by the model.
+      typedTransfer: turn.typedTransfer,
       unvalidatedEvidence: turn.unvalidatedEvidence,
       validatedAttachments: turn.validatedAttachments,
       validatedDocuments: turn.validatedDocuments,
@@ -83,6 +101,7 @@ async function askAssistant(
     output: toolResult.output,
   }));
   return {
+    promptHoldings: turn.promptHoldings,
     text: result.text,
     toolCalls: result.toolCalls.map((call) => ({
       input: call.input,

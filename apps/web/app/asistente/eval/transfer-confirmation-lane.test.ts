@@ -19,6 +19,7 @@
 
 import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
+import { readTransferBook } from "@web/asistente/transfer-identity";
 import { seedPersona } from "@web/demo/seed-persona";
 import { INVERSOR_SPEC } from "@web/demo/specs/inversor";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
@@ -88,6 +89,52 @@ describe("the traspaso lane over attachment-registers-the-transfer (#1801)", () 
       validatedDocuments: turn.validatedDocuments,
     });
   }
+
+  it(
+    "the composed turn names both funds as worthline found them, and going straight to the lane with those ids scores whole (#1793)",
+    async () => {
+      const turn = await prepareGoldenTurn(QUESTION, PRIMARY, AS_OF, (attachments) =>
+        readTransferBook(
+          { agentView: store.agentView, assets: store.assets },
+          attachments,
+        ),
+      );
+      const prompt = JSON.stringify(turn.messages);
+      const byLabel = new Map(turn.promptHoldings.map((h) => [h.label, h.id]));
+      const origin = byLabel.get(ORIGIN_LABEL)!;
+      const destination = byLabel.get(DESTINATION_LABEL)!;
+
+      expect(prompt).toContain(`en tu patrimonio: «${ORIGIN_LABEL}» (${origin})`);
+      expect(prompt).toContain(
+        `en tu patrimonio: «${DESTINATION_LABEL}» (${destination})`,
+      );
+
+      // The shortest honest turn: no read at all, the paper's own lines are enough.
+      const tools = createChatTools({
+        asOf: AS_OF,
+        groundedHoldingIds: turn.groundedHoldingIds,
+        runWithStore: (run) => run(chatToolStores(store)),
+        unvalidatedEvidence: turn.unvalidatedEvidence,
+        validatedAttachments: turn.validatedAttachments,
+        validatedDocuments: turn.validatedDocuments,
+      });
+      const input = { destinationHoldingId: destination, originHoldingId: origin };
+      const output = await tools["propose_transfer"]?.execute?.(input, toolCallContext());
+      const answer: AssistantAnswer = {
+        promptHoldings: turn.promptHoldings,
+        quickActions: [],
+        text:
+          "Te dejo preparado el traspaso del Fondo indexado Europa al Fondo indexado " +
+          "renta fija con las cifras del justificante. Revisa la tarjeta y confírmalo.",
+        toolCalls: [{ input, name: "propose_transfer" }],
+        toolResults: [{ name: "propose_transfer", output }],
+      };
+
+      expect(proposalCardFrom("propose_transfer", output)).not.toBeNull();
+      expect(QUESTION.grade(answer).filter((check) => !check.pass)).toEqual([]);
+    },
+    LANE_TEST_TIMEOUT_MS,
+  );
 
   it(
     "leaves the destination below the summary's cut and keeps the origin in it",
