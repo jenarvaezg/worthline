@@ -1,5 +1,6 @@
 import { auth, signIn } from "@web/auth";
 import LegalLinks from "@web/legal/legal-links";
+import { PROVISIONING_CLOSED_FLAG } from "@web/provisioning-cap";
 import { parseReturnTo } from "@web/return-to";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -29,6 +30,11 @@ export default async function LoginPage({
     ? resolved?.returnTo[0]
     : resolved?.returnTo;
   const returnTo = parseReturnTo(rawReturnTo);
+  // A new sign-up the daily provisioning cap refused comes back here (#1175).
+  const rawRegistro = resolved?.[PROVISIONING_CLOSED_FLAG.name];
+  const provisioningClosed =
+    (Array.isArray(rawRegistro) ? rawRegistro[0] : rawRegistro) ===
+    PROVISIONING_CLOSED_FLAG.value;
 
   // Local no-auth mode (ADR 0030): Google is absent, so there is no session to
   // resolve — the page advertises the local entry instead of a live sign-in.
@@ -59,6 +65,15 @@ export default async function LoginPage({
         </div>
 
         <div className="loginCard coverSheet">
+          {provisioningClosed ? (
+            // Honest about why (#1175): no new workspace today, nothing broken,
+            // and an account that already exists is not affected.
+            <p className="loginNotice" role="status">
+              <strong>Hoy estamos llenos.</strong> Ya se han abierto todas las cuentas
+              nuevas que caben hoy, así que no hemos podido crear la tuya: vuelve mañana y
+              lo intentamos de nuevo. Si ya tenías cuenta, entra con normalidad.
+            </p>
+          ) : null}
           <form
             action={async () => {
               "use server";

@@ -216,8 +216,19 @@
   border-bottom-color: var(--gold);
 }
 
-/* Honest paywall (#1162): a paper aviso opened by a gold left rule, never a
-   card and never a wall — a permanent premium reminder beside free data. */
+/* Paper aviso (#1162, #1175): opened by a gold left rule over a gold tint,
+   never a card and never a wall. One recipe, two uses: the honest paywall
+   beside free data and the login's «hoy estamos llenos». */
+.premiumNotice,
+.loginNotice {
+  padding: 0.75rem 1rem;
+  border-left: 2px solid var(--gold);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
+  color: var(--ink);
+}
+
+/* Honest paywall (#1162): a permanent premium reminder beside free data. */
 .premiumNotice {
   display: flex;
   flex-wrap: wrap;
@@ -225,11 +236,6 @@
   justify-content: space-between;
   gap: 0.75rem;
   margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border-left: 2px solid var(--gold);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--gold) 12%, var(--paper));
-  color: var(--ink);
 }
 .premiumNoticeText {
   flex: 1 1 16rem;
@@ -4031,6 +4037,14 @@ code {
 
 .loginCard button {
   width: 100%;
+}
+
+/* Alta rechazada por el cupo diario (#1175): el aviso de papel compartido con el
+   paywall (ver .premiumNotice), solo con su sitio dentro de la hoja. */
+.loginNotice {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 /* Entrada local (modo no-auth, ADR 0030): botón secundario del registro de

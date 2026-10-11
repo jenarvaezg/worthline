@@ -79,9 +79,11 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           hay dentro.
         </li>
         <li>
-          <strong>Errores técnicos</strong>: cuando el registro de errores esté activo
-          (ver la tabla del apartado 4), el informe del fallo, con los datos personales
-          filtrados antes de enviarse.
+          <strong>Errores técnicos</strong>: cuando algo falla en el servidor, un aviso
+          del fallo con el tipo de error, el punto del código y la pantalla en que
+          ocurrió. No lleva el texto del error, ni tu correo, ni tu dirección IP, ni
+          cookies, ni el contenido de tu workspace. Solo errores: no se registran
+          sesiones, ni grabaciones de pantalla, ni trazas de lo que haces.
         </li>
       </ul>
 
@@ -155,9 +157,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
 
       <p>
         Los marcados <strong>«aún no activo»</strong> están declarados porque entrarán con
-        la función que los usa (el correo transaccional y el registro de errores);
-        mientras tanto <strong>no reciben ningún dato</strong>. Esta página se actualizará
-        el día que empiecen a recibirlo.
+        la función que los usa (el correo transaccional); mientras tanto{" "}
+        <strong>no reciben ningún dato</strong>. Esta página se actualizará el día que
+        empiecen a recibirlo.
       </p>
 
       <p>

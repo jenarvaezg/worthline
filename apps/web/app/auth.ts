@@ -1,6 +1,6 @@
 import config from "@web/auth.config";
-import { provisionWorkspaceForEmail } from "@web/provisioning";
-import NextAuth from "next-auth";
+import { admitSignIn, workspaceForSessionToken } from "@web/provisioning";
+import NextAuth, { AuthError } from "next-auth";
 
 /**
  * Full (Node-runtime) Auth.js config (ADR 0030). The edge-safe half lives in
@@ -8,19 +8,39 @@ import NextAuth from "next-auth";
  * below run only here — in the sign-in route and `auth()` — because they touch
  * the control-plane database and the Turso Platform API, neither edge-safe.
  *
- * Provision-on-first-login happens in the `jwt` callback: on the sign-in event
- * (`account` present) we resolve the user's workspace — creating and migrating a
- * fresh one the first time — and pin its id + URL + per-database Turso token
- * (#1185) into the JWT. The `session` callback exposes that to server code, so
- * the store resolver reads the workspace straight off the session with no
- * per-request control-plane query.
+ * Provision-on-first-login happens in the `signIn` callback (#1175, ADR 0110):
+ * it resolves the user's workspace — creating and migrating a fresh one the
+ * first time — and is the one callback that can REFUSE with a redirect, which
+ * is how a new identity past the daily provisioning cap reaches the honest «hoy
+ * estamos llenos» instead of a server error. An existing user is never refused.
+ *
+ * The `jwt` callback then pins the workspace id + URL + per-database Turso
+ * token (#1185) into the JWT, taking the workspace `signIn` handed off in the
+ * same request (`sign-in-handoff.ts`), so a login opens the control plane once.
+ * The `session` callback exposes that to server code, so the store resolver
+ * reads the workspace straight off the session with no per-request
+ * control-plane query.
  */
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...config,
   callbacks: {
+    async signIn({ user, account }) {
+      if (!account || !user.email) return true;
+      try {
+        return await admitSignIn(user.email);
+      } catch (error) {
+        // A real provisioning failure (a Turso outage, …). Auth.js reads a plain
+        // throw from `signIn` as AccessDenied — «no tienes permiso» — which would
+        // lie; an AuthError lands on the server-error page, exactly what a
+        // provisioning failure showed when it ran in `jwt`.
+        throw new AuthError("Workspace provisioning failed during sign-in.", {
+          cause: error,
+        });
+      }
+    },
     async jwt({ token, account }) {
       if (account && token.email) {
-        const workspace = await provisionWorkspaceForEmail(token.email);
+        const workspace = await workspaceForSessionToken(token.email);
         token.workspaceId = workspace.id;
         token.dbUrl = workspace.dbUrl;
         if (workspace.dbAuthToken) {

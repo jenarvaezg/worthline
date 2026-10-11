@@ -5,6 +5,10 @@ import type {
 } from "@worthline/db";
 import { parseDailyCapturePass } from "@worthline/db";
 
+import {
+  provisioningCapDayFromHoldingId,
+  provisioningCapDayLabel,
+} from "./provisioning-cap-alert";
 import { sourceSyncWorkspaceFromHoldingId } from "./source-sync-alert";
 
 /**
@@ -76,6 +80,20 @@ export function maintainerAlertSubject(alert: {
       : null;
   if (pass !== null) {
     return { isFleet: true, subject: dailyCapturePassLabel(pass), workspace: "flota" };
+  }
+
+  // A refused sign-up (#1175) belongs to no tenant either: its subject is the
+  // day whose provisioning cap turned it away.
+  const capDay =
+    alert.category === "provisioning_cap"
+      ? provisioningCapDayFromHoldingId(alert.holdingId)
+      : null;
+  if (capDay !== null) {
+    return {
+      isFleet: true,
+      subject: `altas del ${provisioningCapDayLabel(capDay)}`,
+      workspace: "flota",
+    };
   }
 
   // A `sync_source` alert raised by the cron (#1755) also carries a sentinel

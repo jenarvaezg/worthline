@@ -56,6 +56,15 @@ describe("maintainer-alert category helpers", () => {
     expect(isMaintainerAlertCategory("missed_capture")).toBe(false);
   });
 
+  it("keeps the sign-in fuse's category out of the assistant's vocabulary (#1175)", () => {
+    // `provisioning_cap` is raised by sign-in when the day's cap refuses a new
+    // workspace; no model may raise it.
+    expect(isMaintainerAlertCategory("provisioning_cap")).toBe(false);
+    expect(maintainerAlertCategoryLabel("provisioning_cap")).toMatch(
+      /cupo diario de altas/i,
+    );
+  });
+
   it("labels each category in Spanish", () => {
     expect(maintainerAlertCategoryLabel("infidelity")).toMatch(/infidelidad/i);
     expect(maintainerAlertCategoryLabel("residual")).toMatch(/residuo/i);
