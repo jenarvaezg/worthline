@@ -396,9 +396,17 @@ export function deriveExposureAndReturns(
   // aggregation — never re-implemented here. Twice: once full-portfolio, once
   // equity-restricted; the client lens toggles between the two pre-rendered
   // results (interaction-patterns §2). It is a lens, never a snapshot/figure.
+  //
+  // `valueMinor` is the row's value, already in the base currency (the projection
+  // converted it through the FX layer, #1065, and dropped what it could not);
+  // `currency` is the holding's real denomination, so a directly held foreign
+  // position reads as the currency risk it is (ADR 0039) instead of as euros.
+  const currencyByAsset = new Map(
+    assets.map((asset) => [asset.id, asset.currentValue.currency]),
+  );
   const exposureHoldings: ExposureLookthroughHolding[] = projection
     ? projection.sections[0].rows.map((row) => ({
-        currency: baseCurrency,
+        currency: currencyByAsset.get(row.id) ?? baseCurrency,
         geography: null,
         id: row.id,
         instrument: row.instrument,
@@ -422,23 +430,11 @@ export function deriveExposureAndReturns(
     assetClassFilter: "equity",
   });
 
-  // What the portfolio costs a year (#1717): the same rows and the same catalog
-  // the look-through reads, so the coverage it declares is over the same gross.
-  // The rows are already in the base currency — the projection converted them
-  // through the FX layer (#1065) and excluded what it could not convert — so
-  // nothing reaches the lens 1:1. A lens, never a figure: the returns above
+  // What the portfolio costs a year (#1717, ADR 0109): the look-through's very
+  // input, so its coverage is over the same gross and a position the FX layer
+  // excluded is out of both alike. A lens, never a figure: the returns above
   // never see a TER (the NAV is already net of it).
-  const cost = portfolioCost({
-    grossAssets: exposureInput.grossAssets,
-    holdings: exposureHoldings.map((holding) => ({
-      id: holding.id,
-      instrument: holding.instrument,
-      providerSymbol: holding.providerSymbol ?? null,
-      securityId: holding.securityId ?? null,
-      value: { amountMinor: holding.valueMinor, currency: baseCurrency },
-    })),
-    profiles: exposureProfileByKey,
-  });
+  const cost = portfolioCost(exposureInput);
 
   return { exposureEquity, exposureFull, portfolioCost: cost, returnsByClass };
 }

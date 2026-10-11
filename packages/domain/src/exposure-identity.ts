@@ -47,6 +47,16 @@ export interface RawGlobalExposureProfileIdentityInput {
 export const INVESTMENT_PROFILE_INSTRUMENTS: ReadonlySet<Instrument> =
   new Set<Instrument>(["fund", "etf", "stock", "index", "pension_plan"]);
 
+/**
+ * The catalog instruments that wrap a portfolio and charge for running it — every
+ * {@link INVESTMENT_PROFILE_INSTRUMENTS} member but the directly held share, which
+ * has no ongoing charge (#1717, ADR 0109). Derived, not listed, so a new market
+ * instrument lands here by default and someone has to decide to take it out.
+ */
+export const FUND_WRAPPER_INSTRUMENTS: ReadonlySet<Instrument> = new Set<Instrument>(
+  [...INVESTMENT_PROFILE_INSTRUMENTS].filter((instrument) => instrument !== "stock"),
+);
+
 /** The provider vocabulary as a set, derived from the single list in `./prices`. */
 const PROVIDER_SET: ReadonlySet<InvestmentPriceProvider> = new Set(
   INVESTMENT_PRICE_PROVIDERS,

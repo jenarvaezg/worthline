@@ -50,7 +50,17 @@ export interface ExposureProfile {
 
 export interface ExposureLookthroughHolding {
   id: string;
+  /**
+   * The holding's value in the GROSS currency, already converted by the FX layer
+   * (#1065) — never a native foreign amount, which every lens over these rows
+   * would otherwise sum 1:1.
+   */
   valueMinor: number;
+  /**
+   * The currency the holding is DENOMINATED in — exposure information (a
+   * directly held USD position is USD currency risk), not the unit of
+   * `valueMinor`.
+   */
   currency: CurrencyCode;
   instrument: Instrument;
   geography?: ExposureGeographyBucket | null;

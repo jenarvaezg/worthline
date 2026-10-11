@@ -2,43 +2,45 @@ import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
 import { divideUnits, toMinorInt } from "./decimal";
+import { FUND_WRAPPER_INSTRUMENTS } from "./exposure-identity";
 import {
-  type ExposureCoverage,
-  type ExposureLookthroughHolding,
-  type ExposureProfile,
+  type ExposureLookthroughInput,
   resolveExposureProfile,
 } from "./exposure-lookthrough";
-import type { Instrument } from "./instrument-catalog";
 import type { MoneyMinor } from "./money";
 
 /**
- * Lo que la cartera cuesta (#1717): the value-weighted mean TER and its reading
- * in money per year (Σ value × TER), a lens derived from the exposure catalog like
- * geography or currency — never a figure the math reads.
+ * Lo que la cartera cuesta (#1717, ADR 0109): the value-weighted mean TER and its
+ * reading in money per year (Σ value × TER), a lens derived from the exposure
+ * catalog like geography or currency — never a figure the math reads.
  *
  * THE invariant: no return reads a TER. A fund's net asset value is already net
  * of its ongoing charges, so subtracting the TER from a rentabilidad would charge
- * it twice. This module is the only consumer of `ExposureProfile.ter`, and
- * `portfolio-cost.guardian.test.ts` keeps every returns module from reaching it.
+ * it twice. `tests/portfolio-cost-ter.guardian.test.ts` holds the closed lists of
+ * the files allowed to reach this lens and to read a `ter` at all.
  */
 
-/** One holding the lens prices: its catalog identity and its value. */
-export interface PortfolioCostHolding
-  extends Pick<
-    ExposureLookthroughHolding,
-    "id" | "instrument" | "securityId" | "providerSymbol"
-  > {
-  /**
-   * Already in the gross currency: a foreign holding crosses the FX layer (#1065)
-   * before it reaches this lens — it is never summed 1:1.
-   */
-  value: MoneyMinor;
-}
+/**
+ * The look-through's own input, minus what only the look-through reads: the same
+ * rows, gross and catalog, so the coverage this lens declares is over the same
+ * gross the exposure section shows. Each holding's `valueMinor` is already in the
+ * gross currency — the FX layer (#1065) converted it upstream; the lens never sees
+ * a native foreign amount, so nothing is summed 1:1.
+ */
+export type PortfolioCostInput = Pick<
+  ExposureLookthroughInput,
+  "grossAssets" | "holdings" | "profiles"
+>;
 
-export interface PortfolioCostInput {
-  grossAssets: MoneyMinor;
-  holdings: readonly PortfolioCostHolding[];
-  profiles: ReadonlyMap<string, ExposureProfile>;
+/**
+ * The look-through's three-way coverage in TER words: `declared` carries a TER,
+ * `notApplicable` has no fund wrapper to charge one, `undeclared` is a fund whose
+ * TER nobody declared — the gap, never counted as 0.
+ */
+export interface PortfolioCostCoverage {
+  declared: MoneyMinor;
+  notApplicable: MoneyMinor;
+  undeclared: MoneyMinor;
 }
 
 export interface PortfolioCost {
@@ -48,31 +50,18 @@ export interface PortfolioCost {
   weightedTer: DecimalString | null;
   /** The fraction of gross whose TER is declared (4 dp). */
   declaredShare: DecimalString;
-  /**
-   * The look-through's three-way split: `classified` carries a declared TER,
-   * `notApplicable` has no fund wrapper to charge one, `unknown` is a fund
-   * whose TER nobody declared — the gap, never counted as 0.
-   */
-  coverage: ExposureCoverage;
+  coverage: PortfolioCostCoverage;
 }
-
-/**
- * The instruments that wrap a portfolio and charge for running it. Without a
- * declared TER one of these is the gap; anything else — cash, property, crypto,
- * metals, coins and a directly held share — has no ongoing charge to declare and
- * is not applicable. A TER the catalog DOES declare is priced whatever the
- * instrument says: it is a fact about the security, and the label may be wrong.
- */
-const FUND_WRAPPER_INSTRUMENTS: ReadonlySet<Instrument> = new Set<Instrument>([
-  "fund",
-  "etf",
-  "index",
-  "pension_plan",
-]);
 
 const WEIGHTED_TER_DECIMALS = 6;
 const SHARE_DECIMALS = 4;
 
+/**
+ * Price the portfolio's year. A TER the catalog declares is priced whatever the
+ * instrument label says — it is a fact about the security, and the label may be
+ * wrong (ADR 0109). Without one, a fund wrapper is the gap and anything else has
+ * no ongoing charge to declare.
+ */
 export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   const currency = input.grossAssets.currency;
   let declaredMinor = 0;
@@ -81,30 +70,25 @@ export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   let annualCost = new Big(0);
 
   for (const holding of input.holdings) {
-    if (holding.value.currency !== currency) {
-      throw new Error(
-        `Portfolio cost: holding ${holding.id} is valued in ${holding.value.currency}, not ${currency}; convert it through the FX layer first.`,
-      );
-    }
     const ter = resolveExposureProfile(holding, input.profiles)?.ter;
     if (ter == null) {
       if (FUND_WRAPPER_INSTRUMENTS.has(holding.instrument)) {
-        undeclaredMinor += holding.value.amountMinor;
+        undeclaredMinor += holding.valueMinor;
       } else {
-        notApplicableMinor += holding.value.amountMinor;
+        notApplicableMinor += holding.valueMinor;
       }
       continue;
     }
-    declaredMinor += holding.value.amountMinor;
-    annualCost = annualCost.plus(new Big(holding.value.amountMinor).times(ter));
+    declaredMinor += holding.valueMinor;
+    annualCost = annualCost.plus(new Big(holding.valueMinor).times(ter));
   }
 
   return {
     annualCost: { amountMinor: toMinorInt(annualCost), currency },
     coverage: {
-      classified: { amountMinor: declaredMinor, currency },
+      declared: { amountMinor: declaredMinor, currency },
       notApplicable: { amountMinor: notApplicableMinor, currency },
-      unknown: { amountMinor: undeclaredMinor, currency },
+      undeclared: { amountMinor: undeclaredMinor, currency },
     },
     declaredShare: ratioOrZero(declaredMinor, input.grossAssets.amountMinor),
     // A mean over nothing does not exist: printing 0 % would claim a free

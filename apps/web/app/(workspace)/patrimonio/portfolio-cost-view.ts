@@ -1,53 +1,51 @@
+import { formatFinePercent } from "@web/_components/fine-percent";
 import type {
   DecimalString,
-  ExposureCoverage,
   MoneyMinor,
   PortfolioCost,
+  PortfolioCostCoverage,
 } from "@worthline/domain";
 
-import { type ExposureCoveragePart, formatExposureWeight } from "./exposure-view";
+import {
+  type CoverageLabels,
+  coverageParts,
+  type ExposureCoveragePart,
+  formatExposureWeight,
+} from "./exposure-view";
 
 /**
  * Pure presentation logic for the portfolio-cost line of the /patrimonio
- * exposure section (#1717, interaction-patterns §7). The figures come already
- * derived from the domain `portfolioCost`; this module only decides which of the
- * three readings applies and how its numbers print, so it unit-tests in the node
- * env with no React.
+ * exposure section (#1717, ADR 0109, interaction-patterns §7). The figures come
+ * already derived from the domain `portfolioCost`; this module only decides which
+ * of the three readings applies and how its numbers print, so it unit-tests in the
+ * node env with no React.
  */
 
-/** What the cost line says: an estimate, the gap, or that nothing charges a TER. */
+/**
+ * What the cost line says, by the coverage trio: a declared TER prices the year,
+ * funds without one are the gap, and a portfolio with nothing to charge says so.
+ */
 export type PortfolioCostReading =
-  | { kind: "estimated"; annualCost: MoneyMinor; terLabel: string; shareLabel: string }
+  | { kind: "declared"; annualCost: MoneyMinor; terLabel: string; shareLabel: string }
   | { kind: "undeclared" }
-  | { kind: "none" };
+  | { kind: "notApplicable" };
 
 export function readPortfolioCost(cost: PortfolioCost): PortfolioCostReading {
   if (cost.weightedTer !== null) {
     return {
       annualCost: cost.annualCost,
-      kind: "estimated",
+      kind: "declared",
       shareLabel: formatDeclaredShare(cost.declaredShare),
-      terLabel: formatTerPercent(cost.weightedTer),
+      // TERs live in hundredths of a percent: a whole-percent weight would print
+      // every index fund as «0 %».
+      terLabel: formatFinePercent(Number(cost.weightedTer)),
     };
   }
   // No mean exists. Funds without a TER are the gap the catalog has to close;
   // with none at all (cash, a house, shares) there is simply nothing to charge.
-  return cost.coverage.unknown.amountMinor !== 0
+  return cost.coverage.undeclared.amountMinor !== 0
     ? { kind: "undeclared" }
-    : { kind: "none" };
-}
-
-/**
- * A TER fraction as an es-ES percent with two decimals (`"0.0018"` → `"0,18 %"`):
- * TERs live in hundredths of a percent, so the whole-percent exposure weight
- * would print every index fund as «0 %».
- */
-export function formatTerPercent(ter: DecimalString): string {
-  const percent = (Number(ter) * 100).toLocaleString("es-ES", {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  });
-  return `${percent} %`;
+    : { kind: "notApplicable" };
 }
 
 /** The declared share of gross as a whole percent, never a misleading «0 %». */
@@ -56,16 +54,26 @@ function formatDeclaredShare(share: DecimalString): string {
   return Number(share) > 0 && label === "0 %" ? "menos del 1 %" : label;
 }
 
+const TER_COVERAGE_LABELS: CoverageLabels = {
+  classified: "Con TER",
+  notApplicable: "No aplica",
+  unknown: "Sin declarar",
+};
+
 /**
- * The look-through's three-way coverage in TER words, zero parts kept so an
- * undeclared remainder is never hidden (#543's rule, applied to the TER).
+ * The cost's coverage through the look-through's one readout rule, in TER words:
+ * declared → «Con TER», undeclared → «Sin declarar», which keeps the gap's warning
+ * hue (#543's rule, applied to the TER).
  */
 export function portfolioCostCoverageParts(
-  coverage: ExposureCoverage,
+  coverage: PortfolioCostCoverage,
 ): ExposureCoveragePart[] {
-  return [
-    { kind: "classified", label: "Con TER", value: coverage.classified },
-    { kind: "notApplicable", label: "No aplica", value: coverage.notApplicable },
-    { kind: "unknown", label: "Sin declarar", value: coverage.unknown },
-  ];
+  return coverageParts(
+    {
+      classified: coverage.declared,
+      notApplicable: coverage.notApplicable,
+      unknown: coverage.undeclared,
+    },
+    TER_COVERAGE_LABELS,
+  );
 }

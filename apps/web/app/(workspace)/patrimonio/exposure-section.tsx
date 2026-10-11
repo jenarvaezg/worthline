@@ -14,6 +14,7 @@ import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import ExposureLensPanel, { type ExposureLensTab } from "./exposure-lens";
 import {
   coverageParts,
+  type ExposureCoveragePart,
   formatExposureWeight,
   geographyForLens,
   geographyLabel,
@@ -114,7 +115,7 @@ export default function ExposureSection({
 }
 
 /**
- * What the portfolio costs a year (#1717): the value-weighted mean TER read in
+ * What the portfolio costs a year (#1717, ADR 0109): the value-weighted mean TER read in
  * euros, over the share of gross whose TER is declared, with the look-through's
  * three-way coverage so a fund nobody declared stays visible instead of being
  * priced at 0. Portfolio-level like the currency risk, so it sits outside the
@@ -133,7 +134,7 @@ function PortfolioCostBlock({
   return (
     <div className="exposureCost">
       <h3>Coste de la cartera</h3>
-      {reading.kind === "estimated" ? (
+      {reading.kind === "declared" ? (
         <>
           <p className="exposureCostLine">
             Tu cartera cuesta{" "}
@@ -144,27 +145,23 @@ function PortfolioCostBlock({
             </span>
           </p>
           <p className="exposureCostNote">
-            Es una estimación: el valor liquidativo ya lo descuenta, así que no se resta
-            otra vez de la rentabilidad.
+            Aproximado con el valor de hoy. El valor liquidativo ya lo descuenta, así que
+            no se resta otra vez de la rentabilidad.
           </p>
         </>
       ) : reading.kind === "undeclared" ? (
         <p className="emptyLine">
-          Ningún fondo de la cartera tiene TER declarado: sin ese dato no se estima su
-          coste.
+          Ningún fondo de la cartera tiene TER declarado: sin ese dato no hay coste que
+          calcular.
         </p>
       ) : (
         <p className="emptyLine">Nada en esta cartera cobra TER.</p>
       )}
 
-      <dl className="exposureCoverage">
-        {portfolioCostCoverageParts(cost.coverage).map((part) => (
-          <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
-            <dt>{part.label}</dt>
-            <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>
-          </div>
-        ))}
-      </dl>
+      <CoverageReadout
+        parts={portfolioCostCoverageParts(cost.coverage)}
+        privacyMode={privacyMode}
+      />
     </div>
   );
 }
@@ -234,14 +231,10 @@ function GeographyBlock({
         <p className="emptyLine">Sin exposición geográfica clasificada.</p>
       )}
 
-      <dl className="exposureCoverage">
-        {coverageParts(geography.coverage).map((part) => (
-          <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
-            <dt>{part.label}</dt>
-            <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>
-          </div>
-        ))}
-      </dl>
+      <CoverageReadout
+        parts={coverageParts(geography.coverage)}
+        privacyMode={privacyMode}
+      />
     </div>
   );
 }
@@ -299,15 +292,31 @@ function SectorBlock({
         <p className="emptyLine">Sin exposición por sector clasificada.</p>
       )}
 
-      <dl className="exposureCoverage">
-        {coverageParts(sector.coverage).map((part) => (
-          <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
-            <dt>{part.label}</dt>
-            <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>
-          </div>
-        ))}
-      </dl>
+      <CoverageReadout parts={coverageParts(sector.coverage)} privacyMode={privacyMode} />
     </div>
+  );
+}
+
+/**
+ * The three-way coverage readout every exposure block closes with: one `<dl>` of
+ * labelled parts, the gap in the warning hue via its `unknown` class (#543).
+ */
+function CoverageReadout({
+  parts,
+  privacyMode,
+}: {
+  parts: readonly ExposureCoveragePart[];
+  privacyMode: boolean;
+}) {
+  return (
+    <dl className="exposureCoverage">
+      {parts.map((part) => (
+        <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
+          <dt>{part.label}</dt>
+          <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

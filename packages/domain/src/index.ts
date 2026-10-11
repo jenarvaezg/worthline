@@ -983,7 +983,7 @@ export {
 } from "./payouts";
 export type {
   PortfolioCost,
-  PortfolioCostHolding,
+  PortfolioCostCoverage,
   PortfolioCostInput,
 } from "./portfolio-cost";
 export { portfolioCost } from "./portfolio-cost";

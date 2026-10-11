@@ -87,26 +87,8 @@ const equity = lookThroughExposure({
   profiles,
 });
 
-/** The portfolio-cost lens over the same rows and catalog (#1717). */
-function costOf(
-  rows: readonly ExposureLookthroughHolding[],
-  catalog: ReadonlyMap<string, ExposureProfile>,
-  gross = grossAssets,
-): PortfolioCost {
-  return portfolioCost({
-    grossAssets: gross,
-    holdings: rows.map((row) => ({
-      id: row.id,
-      instrument: row.instrument,
-      providerSymbol: row.providerSymbol ?? null,
-      securityId: null,
-      value: { amountMinor: row.valueMinor, currency: EUR },
-    })),
-    profiles: catalog,
-  });
-}
-
-const cost = costOf(holdings, profiles);
+// The portfolio-cost lens reads the look-through's very input (#1717).
+const cost = portfolioCost({ grossAssets, holdings, profiles });
 
 function render(initialLens: "all" | "equity"): string {
   return renderToStaticMarkup(
@@ -165,7 +147,7 @@ describe("ExposureSection", () => {
     expect(unknownFull.geography.coverage.unknown.amountMinor).toBe(100_000);
     const html = renderToStaticMarkup(
       <ExposureSection
-        cost={costOf(lone, new Map())}
+        cost={portfolioCost({ grossAssets, holdings: lone, profiles: new Map() })}
         currentUrl="/patrimonio"
         equity={unknownFull}
         full={unknownFull}
@@ -247,7 +229,11 @@ describe("ExposureSection", () => {
     expect(usdFull.currencyRisk.map((s) => s.key)).toEqual(["USD"]);
     const html = renderToStaticMarkup(
       <ExposureSection
-        cost={costOf(usd, new Map(), { amountMinor: 50_000, currency: EUR })}
+        cost={portfolioCost({
+          grossAssets: { amountMinor: 50_000, currency: EUR },
+          holdings: usd,
+          profiles: new Map(),
+        })}
         currentUrl="/patrimonio"
         equity={usdFull}
         full={usdFull}
@@ -296,7 +282,11 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
     terProfile("BONDS", "0.001"),
   ]);
   const costGross = { amountMinor: 100_000_00, currency: EUR };
-  const priced = costOf(costHoldings, costProfiles, costGross);
+  const priced = portfolioCost({
+    grossAssets: costGross,
+    holdings: costHoldings,
+    profiles: costProfiles,
+  });
   const costLook = lookThroughExposure({
     baseCurrency: EUR,
     grossAssets: costGross,
@@ -347,7 +337,13 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
   });
 
   test("with no TER declared it names the gap instead of pricing the portfolio at 0", () => {
-    const html = renderCost(costOf(costHoldings, new Map(), costGross));
+    const html = renderCost(
+      portfolioCost({
+        grossAssets: costGross,
+        holdings: costHoldings,
+        profiles: new Map(),
+      }),
+    );
     expect(html).toContain("Coste de la cartera");
     expect(html).not.toContain("Tu cartera cuesta");
     expect(html).toContain("Ningún fondo de la cartera tiene TER declarado");
