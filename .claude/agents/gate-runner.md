@@ -153,7 +153,7 @@ log: <absolute path of the full log>
 ```
 
 The `cause:` line is a diagnosis, for example
-`cause: gateProbe in apps/web/app/active-section.ts is typed number but assigned a string`.
+`cause: readFxRate in packages/pricing/src/fx.ts now returns number | null, and two callers still expect number`.
 It never suggests a fix: fixing is the caller's job.
 
 The red lines and the closing gate lines are copied verbatim from the log, never
