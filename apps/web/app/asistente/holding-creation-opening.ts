@@ -144,7 +144,12 @@ export function resolveHoldingCreationOpening(
     return {
       ok: false,
       error:
-        "El importe de la apertura va en CÉNTIMOS enteros y positivos (164,64 € son 16464). No redondeo un importe con decimales: comprueba la cifra.",
+        "El importe de la apertura va en CÉNTIMOS enteros y positivos (164,64 € son 16464). No redondeo un importe con decimales: comprueba la cifra." +
+        // The other reading of a 0 (#1800): the fund a traspaso is about to fill is
+        // born empty, and the model said so with a zero instead of with silence.
+        (openingValueMinor === 0
+          ? " Y si la inversión nace sin apertura —la que va a recibir un traspaso, por ejemplo—, no pases 0: omite openingValueMinor (y pricePerUnit y units)."
+          : ""),
     };
   }
   if (
