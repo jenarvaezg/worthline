@@ -107,3 +107,4 @@ Each agent registers itself here as it lands. The first tranche is tracked in #1
   lines when green, or the failing step, package and red lines when red. Brief it with
   the tree path. Tools: `Bash`, `Read`, `Grep`, plus a `PreToolUse` hook that blocks
   Bash commands that change state. It never edits.
+- [`calc-reviewer`](../../.claude/agents/calc-reviewer.md) (#1624): read-only review of a calc, db or figure-preview diff against the financial-domain invariants; brief it with the issue and the diff.
