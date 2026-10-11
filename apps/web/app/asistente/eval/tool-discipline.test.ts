@@ -10,6 +10,7 @@ import {
   fakesProposalCeremony,
   proposedHoldingLabels,
   proposedThroughTool,
+  proposedTransfers,
   reachedForBulkImportTool,
   refusalWrittenForTheUser,
   ungroundedProposalIds,
@@ -380,6 +381,67 @@ describe("ungroundedProposalIds", () => {
     ).toEqual(["wl_hld_inventado"]);
   });
 
+  test("counts the holdings a traspaso refusal looked up as read (#1800)", () => {
+    // The lane checks the paper's ISIN and, when the pick is wrong, answers with the
+    // holdings that DO carry it. Production grounds those ids (`holding-id-provenance`),
+    // so a turn that follows the refusal is the design working, not an invention.
+    expect(
+      ungroundedProposalIds(
+        answer({
+          toolCalls: [
+            {
+              input: {
+                destinationHoldingId: "liability_familia_car",
+                originHoldingId: "asset_familia_etf",
+              },
+              name: "propose_transfer",
+            },
+            {
+              input: {
+                destinationHoldingId: "wl_hld_rf",
+                originHoldingId: "asset_familia_etf",
+              },
+              name: "propose_transfer",
+            },
+          ],
+          toolResults: [
+            { name: "get_financial_context", output: CONTEXT_OUTPUT },
+            {
+              name: "propose_transfer",
+              output: {
+                ...userRefusal("transfer_identity_mismatch", "No es ese fondo."),
+                candidateHoldings: [
+                  { id: "wl_hld_rf", label: "Fondo indexado renta fija" },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  test("a refusal's prose grounds nothing, only its looked-up holdings", () => {
+    expect(
+      ungroundedProposalIds(
+        answer({
+          toolCalls: [
+            {
+              input: { destinationHoldingId: "wl_hld_rf", originHoldingId: "wl_hld_x" },
+              name: "propose_transfer",
+            },
+          ],
+          toolResults: [
+            {
+              name: "propose_transfer",
+              output: userRefusal("transfer_identity_mismatch", "wl_hld_rf wl_hld_x"),
+            },
+          ],
+        }),
+      ),
+    ).toEqual(["wl_hld_rf", "wl_hld_x"]);
+  });
+
   test("ignores ids the proposal never carried", () => {
     expect(ungroundedProposalIds(answer())).toEqual([]);
   });
@@ -471,6 +533,105 @@ describe("proposedHoldingLabels", () => {
         answer({ toolResults: [{ name: "find_holdings", output: SIBLINGS }] }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("proposedTransfers (#1801)", () => {
+  /** The two funds of the traspaso question, as `find_holdings` hands them back. */
+  const FUNDS = {
+    matches: [
+      { id: "wl_hld_europa", label: "Fondo indexado Europa", object: "holding" },
+      { id: "wl_hld_rf", label: "Fondo indexado renta fija", object: "holding" },
+    ],
+  };
+  const transfer = (originHoldingId: string, destinationHoldingId: string) => ({
+    input: { destinationHoldingId, originHoldingId },
+    name: "propose_transfer",
+  });
+
+  test("names both sides of the traspaso, as the reads named them", () => {
+    // The fields `proposedHoldingLabels` cannot see: a traspaso points at two holdings,
+    // and neither is called `holdingId`.
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [transfer("wl_hld_europa", "wl_hld_rf")],
+          toolResults: [{ name: "find_holdings", output: FUNDS }],
+        }),
+      ),
+    ).toEqual([
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
+  });
+
+  test("keeps the direction: a swapped pair is a different traspaso", () => {
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [transfer("wl_hld_rf", "wl_hld_europa")],
+          toolResults: [{ name: "find_holdings", output: FUNDS }],
+        }),
+      ),
+    ).toEqual([
+      { destination: "Fondo indexado Europa", origin: "Fondo indexado renta fija" },
+    ]);
+  });
+
+  test("leaves a side no read ever surfaced unnamed", () => {
+    // Unnamed rather than dropped: the call still happened, and the invented id is
+    // `ungroundedProposalIds`' finding, not this one's.
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [transfer("wl_hld_europa", "wl_hld_inventado")],
+          toolResults: [{ name: "find_holdings", output: FUNDS }],
+        }),
+      ),
+    ).toEqual([{ destination: null, origin: "Fondo indexado Europa" }]);
+  });
+
+  test("names a side by the holding a traspaso refusal looked up (#1800)", () => {
+    // The refusal's `candidateHoldings` is worthline's own lookup, so the side a turn
+    // corrected onto is named even when no read listed it.
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [transfer("wl_hld_europa", "wl_hld_rf")],
+          toolResults: [
+            { name: "find_holdings", output: { matches: [FUNDS.matches[0]] } },
+            {
+              name: "propose_transfer",
+              output: {
+                ...userRefusal("transfer_identity_mismatch", "No es ese fondo."),
+                candidateHoldings: [
+                  { id: "wl_hld_rf", label: "Fondo indexado renta fija" },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
+  });
+
+  test("lists every traspaso the turn asked for, and nothing from other lanes", () => {
+    expect(
+      proposedTransfers(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_hld_rf" }, name: "propose_operation" },
+            transfer("wl_hld_rf", "wl_hld_europa"),
+            transfer("wl_hld_europa", "wl_hld_rf"),
+          ],
+          toolResults: [{ name: "find_holdings", output: FUNDS }],
+        }),
+      ),
+    ).toEqual([
+      { destination: "Fondo indexado Europa", origin: "Fondo indexado renta fija" },
+      { destination: "Fondo indexado renta fija", origin: "Fondo indexado Europa" },
+    ]);
   });
 });
 

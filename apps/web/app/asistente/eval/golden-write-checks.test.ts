@@ -3,7 +3,7 @@ import { typedHoldingEventGapMessage } from "@web/asistente/typed-holding-event"
 import { describe, expect, test } from "vitest";
 
 import { TOOL_DISCIPLINE_QUESTIONS } from "./golden-tool-discipline";
-import { relaysTheRefusal } from "./golden-write-checks";
+import { relaysTheRefusal, transfersBetween } from "./golden-write-checks";
 import type { AssistantAnswer } from "./graders";
 
 function answer(over: Partial<AssistantAnswer> = {}): AssistantAnswer {
@@ -66,6 +66,70 @@ describe("relaysTheRefusal (#1753)", () => {
       relaysTheRefusal(answer({ text: "¿Cuál de las dos cifras es el importe?" }), TERMS)
         .pass,
     ).toBe(true);
+  });
+});
+
+describe("transfersBetween (#1801)", () => {
+  const FUNDS = {
+    name: "find_holdings",
+    output: {
+      matches: [
+        { id: "wl_hld_europa", label: "Fondo indexado Europa", object: "holding" },
+        { id: "wl_hld_rf", label: "Fondo indexado renta fija", object: "holding" },
+        { id: "wl_hld_small", label: "ETF MSCI Small Cap", object: "holding" },
+      ],
+    },
+  };
+  const transfer = (originHoldingId: string, destinationHoldingId: string) => ({
+    input: { destinationHoldingId, originHoldingId },
+    name: "propose_transfer",
+  });
+  const grade = (calls: AssistantAnswer["toolCalls"]) =>
+    transfersBetween(
+      answer({ toolCalls: calls, toolResults: [FUNDS] }),
+      ["europa"],
+      ["renta fija"],
+    );
+
+  test("passes the traspaso from the paper's origin to the paper's destination", () => {
+    const result = grade([transfer("wl_hld_europa", "wl_hld_rf")]);
+
+    expect(result).toEqual({
+      name: "el traspaso va del fondo de origen al de destino que nombra el documento",
+      pass: true,
+    });
+  });
+
+  test("fails the swapped pair, and says which way it went", () => {
+    const result = grade([transfer("wl_hld_rf", "wl_hld_europa")]);
+
+    expect(result.pass).toBe(false);
+    expect(result.name).toContain(
+      "(traspaso: Fondo indexado renta fija → Fondo indexado Europa)",
+    );
+  });
+
+  test("fails a turn that never asked for a traspaso", () => {
+    // Silence is not a right answer on a question whose sanctioned move is to write.
+    const result = grade([
+      { input: { holdingId: "wl_hld_rf" }, name: "propose_operation" },
+    ]);
+
+    expect(result.pass).toBe(false);
+    expect(result.name).toContain("(traspaso: ninguno)");
+  });
+
+  test("passes a turn that corrected course after the lane refused its first pick", () => {
+    // The lane refuses a holding whose ISIN is not the paper's and names the right one
+    // (#1800): a wrong first pick never becomes a card, and following the refusal is the
+    // design working — the reading `attachment-imports-the-broker-statement` makes of a
+    // turn that tries the reconcile lane first.
+    const result = grade([
+      transfer("wl_hld_europa", "wl_hld_small"),
+      transfer("wl_hld_europa", "wl_hld_rf"),
+    ]);
+
+    expect(result.pass).toBe(true);
   });
 });
 

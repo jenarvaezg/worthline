@@ -1,6 +1,7 @@
 import { extractedDocumentSchema } from "@web/asistente/attachment-extraction-contract";
 import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
 import { holdingEventInContext } from "@web/asistente/operation-document-frontier";
+import { transferDocumentInContext } from "@web/asistente/transfer-document-source";
 import { describe, expect, it } from "vitest";
 
 import { BROKER_TRANSACTIONS_FIXTURE_FILE } from "./broker-transactions-fixture";
@@ -8,6 +9,7 @@ import {
   ATTACHMENT_QUESTIONS,
   BROKER_TRANSACTIONS_IN_CONTEXT,
   SUBSCRIPTION_RECEIPT,
+  TRANSFER_CONFIRMATION,
 } from "./golden-attachments";
 import type { GoldenQuestion } from "./golden-question";
 import { READING_QUESTIONS } from "./golden-reading";
@@ -22,6 +24,7 @@ import {
   typedBalanceSeriesFor,
   typedHoldingEventFor,
   unvalidatedEvidenceFor,
+  validatedAttachmentsFor,
   validatedDocumentsFor,
 } from "./golden-turn";
 
@@ -174,6 +177,26 @@ describe("golden validated documents (#1376)", () => {
     expect(event?.amount).toBe(480);
     expect(event?.units).toBe(13.7213);
     expect(event?.label).toContain("SMALL CAP");
+  });
+
+  it("hands the traspaso confirmation to `propose_transfer` as the paper it reads (#1801)", async () => {
+    // The lane's second source reads the ATTACHMENTS (it needs the file name for the
+    // card's provenance), not the bare documents — so this is the list the harness has
+    // to forward, and the four facts below are the ones that keep the question about
+    // the model: a commission, a date after the pinned clock or a missing identifier
+    // would each be refused or unchecked by the lane, whatever the turn did.
+    const history = documentHistoryMessages(
+      await readGoldenValidatedDocument(TRANSFER_CONFIRMATION),
+    );
+
+    const paper = transferDocumentInContext(validatedAttachmentsFor(null, history));
+
+    expect(paper?.fileName).toBe("confirmacion-traspaso.pdf");
+    expect(paper?.transfer.confirms).toBe("redemption");
+    expect(paper!.transfer.date < TODAY).toBe(true);
+    expect(paper?.transfer.fees?.amount ?? 0).toBe(0);
+    expect(paper?.transfer.origin.isin).toMatch(/^ES/);
+    expect(paper?.transfer.destination.isin).toMatch(/^ES/);
   });
 
   it("carries the broker's ledger into the NEXT turn, gate down (#1516)", async () => {
