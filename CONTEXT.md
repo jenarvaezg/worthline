@@ -458,6 +458,10 @@ real. Its **provenance** names an official simulation or a user estimate, dated 
 the information's cut-off date; its **assumed contribution through** date names how
 long that amount assumes the owner keeps contributing. Absence declares none of these
 facts. It may carry **declared expenses** and **lease terms**.
+It is declared through one door with two entrances — the Rentas surface, with no
+holding, and a holding's Cobros section, with it linked — and that door requires the
+provenance and its cut-off date; nature and basis open undeclared. Every income,
+linked or not, is listed on Rentas, saying whether it counts and why not.
 Only past occurrences, up to today, are derived as truth; a future start is preserved
 without inventing received money. An income adds no **net worth** or **snapshot**.
 UI label: "Renta"; the holding's existing declaration surface says "Cobro recurrente".

@@ -7,17 +7,23 @@
  * Prior art: inversiones/exposure-profile-action.test.ts.
  */
 
+import { createIncomeAction } from "@web/objetivos/rentas/income-actions";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
-
 import {
   createPayoutAction,
-  createPayoutScheduleAction,
   deletePayoutAction,
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
 } from "./cobros-actions";
+
+/**
+ * The ficha's recurring-income door is the shared income declaration action
+ * (#1673), which requires a provenance and its cut-off date. These tests are about
+ * what the ficha does to the schedule afterwards, so they declare one.
+ */
+const PROVENANCE = { provenance: "user_estimate", provenanceAsOf: "2026-01-01" };
 
 const HOLDING = "h1";
 
@@ -46,7 +52,7 @@ function form(entries: Record<string, string>): FormData {
 
 /** Run an action and return its NEXT_REDIRECT digest (the redirect URL). */
 async function run(
-  action: (id: string, fd: FormData, store: WorthlineStore) => Promise<void>,
+  action: (id: string, fd: FormData, store: WorthlineStore) => Promise<unknown>,
   fd: FormData,
   store: WorthlineStore,
 ): Promise<string> {
@@ -106,8 +112,9 @@ describe("payout schedule actions", () => {
     await seedHolding(store);
 
     const created = await run(
-      createPayoutScheduleAction,
+      createIncomeAction,
       form({
+        ...PROVENANCE,
         label: "Alquiler piso",
         amount: "1000",
         cadence: "monthly",
@@ -173,8 +180,14 @@ describe("payout schedule actions", () => {
     await seedHolding(store);
 
     const digest = await run(
-      createPayoutScheduleAction,
-      form({ label: "X", amount: "10", cadence: "daily", startISO: "2024-01-01" }),
+      createIncomeAction,
+      form({
+        ...PROVENANCE,
+        label: "X",
+        amount: "10",
+        cadence: "daily",
+        startISO: "2024-01-01",
+      }),
       store,
     );
     expect(digest).toContain("error=");
@@ -247,8 +260,9 @@ describe("updatePayoutScheduleAction — declared expenses (#1448)", () => {
     await seedHolding(store);
 
     await run(
-      createPayoutScheduleAction,
+      createIncomeAction,
       form({
+        ...PROVENANCE,
         amount: "1000",
         cadence: "monthly",
         expenses: "180",
@@ -379,8 +393,9 @@ describe("updatePayoutScheduleAction — lease terms (#1521)", () => {
     await seedHolding(store);
 
     await run(
-      createPayoutScheduleAction,
+      createIncomeAction,
       form({
+        ...PROVENANCE,
         amount: "1000",
         cadence: "monthly",
         label: "Alquiler",

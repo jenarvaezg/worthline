@@ -14,11 +14,11 @@
 
 import {
   createPayoutAction,
-  createPayoutScheduleAction,
   deletePayoutAction,
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/cobros-actions";
+import { createIncomeAction } from "@web/objetivos/rentas/income-actions";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
 import type { ManualAsset } from "@worthline/domain";
@@ -38,7 +38,7 @@ export async function loadPayoutsPanel(
     scopeId: string | undefined;
   },
 ): Promise<ReactNode> {
-  const { currentUrl, formError, id, privacyMode, store, today } = ficha;
+  const { currentUrl, formError, id, isDemo, privacyMode, store, today } = ficha;
   const { asset, scopeId } = input;
 
   const [payouts, schedules, fireConfig] = await Promise.all([
@@ -59,9 +59,12 @@ export async function loadPayoutsPanel(
     await deletePayoutAction(id, formData);
   }
 
+  // The income declaration door with this holding bound (#1673): the same action as
+  // the Rentas surface. It RETURNS a refusal (#1311 split terminal), so the binding
+  // hands it back instead of swallowing it.
   async function boundCreatePayoutScheduleAction(formData: FormData) {
     "use server";
-    await createPayoutScheduleAction(id, formData);
+    return createIncomeAction(id, formData);
   }
 
   async function boundUpdatePayoutScheduleAction(formData: FormData) {
@@ -83,11 +86,14 @@ export async function loadPayoutsPanel(
       deletePayoutAction={boundDeletePayoutAction}
       deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
       error={formError?.formId === "payout" ? formError.message : null}
+      errorValues={formError?.formId === "payout" ? formError.values : {}}
+      holdingId={id}
       monthlySpendingMinor={
         scopeId ? (fireConfig?.[scopeId]?.monthlySpendingMinor ?? null) : null
       }
       payouts={payouts}
       privacyMode={privacyMode}
+      readOnly={isDemo}
       schedules={schedules}
       showLeaseTerms={isHousingAsset(asset)}
       today={today}

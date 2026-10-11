@@ -50,3 +50,30 @@ documents default missing declarations to NULL, deliberately unlike the live
 database migration: a transfer parser does not invent facts the document lacks.
 Declaring standalone income through a new form, requiring provenance there, and
 the dated future-income card remain S2/S3 work.
+
+## Amendment (#1673) — the declaration door
+
+S2 opens the door, and it is ONE door with two entrances: `/objetivos/rentas`
+declares an income with no holding, and a holding's Cobros section binds its own id
+into the same action. Same parser, same refusal, same write — so a requirement of the
+door cannot be skipped by declaring from the other side, and "no two paths for one
+concept" holds at the form as it holds in the table.
+
+- **Provenance and its cut-off date are required at the door**, on both entrances.
+  The cut-off is the date of the data, so it has no default and cannot be later than
+  today. Incomes migrated by v71 keep `provenance = NULL` — the door does not
+  retro-invent one — and gain it the first time their declaration is corrected, which
+  also requires it. The ficha's other affordances (end, exclusions, expenses, lease
+  terms) stay patches that never ask for it.
+- **Nature and amount basis open undeclared**, as visible three-state choices
+  (`Sin declarar` checked), never a select preselecting a value nobody chose. Saving
+  without touching them writes NULL.
+- **Every income is listed on Rentas**, linked or not, and every row — there and on
+  the ficha — says whether it counts and why not, from one pure view. A standalone
+  income that is passive and real still says it does not count: no figure reads it
+  until S3, and saying otherwise would be the lie this ADR exists to stop.
+- **Correcting** an income edits only the declaration proper (nature, basis,
+  provenance, cut-off, condition). The recurrence keeps its ficha affordances,
+  because amending it re-derives past payouts.
+
+Standalone incomes carry no owner or scope yet; which scope consumes one is S3's call.

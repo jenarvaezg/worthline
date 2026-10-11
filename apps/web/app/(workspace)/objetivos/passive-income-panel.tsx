@@ -117,6 +117,16 @@ export function PassiveIncomePanel({
           </Link>
         </div>
       )}
+
+      {/* #1673: una renta que no sale de un activo tiene su propia puerta, y la
+          lista de TODAS las rentas vive allí — también las de esta tarjeta. */}
+      <p className="objetivosPasivaNote">
+        Una pensión o una nómina no salen de ningún activo: se declaran aparte, con su
+        procedencia.{" "}
+        <Link className="actionLink" href="/objetivos/rentas">
+          Ver y declarar tus rentas →
+        </Link>
+      </p>
     </section>
   );
 }
