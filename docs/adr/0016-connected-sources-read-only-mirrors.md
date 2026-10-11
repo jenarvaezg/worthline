@@ -29,7 +29,7 @@ holding maintained by hand.
 
 ## The MVP "no cloud sync" constraint
 
-CONTEXT lists _"No auth … or cloud sync … in the MVP."_ A connected source is an
+GLOSSARY lists _"No auth … or cloud sync … in the MVP."_ A connected source is an
 **outbound, read-only** mirror — the same kind of external read that **price
 providers** already perform (Yahoo, CoinGecko, ECB) — not the prohibited thing,
 which is inbound app-login or syncing worthline's own data up to a cloud. We

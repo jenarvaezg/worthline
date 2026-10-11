@@ -5,7 +5,7 @@ production LLM agent that can propose changes to the ledger, and an eval harness
 that decides which models are allowed to.
 
 Live: [worthline-web.vercel.app](https://worthline-web.vercel.app) ·
-Domain model: [`CONTEXT.md`](CONTEXT.md) · Decisions: [ADRs](docs/adr/)
+Domain model: [`GLOSSARY.md`](GLOSSARY.md) · Decisions: [ADRs](docs/adr/)
 
 ## The agent
 
@@ -148,7 +148,7 @@ The package boundaries are intentionally mobile-ready: the future Expo app shoul
 `packages/domain`, `packages/contracts`, and provider contracts instead of copying web logic.
 
 Decisions live in [`docs/adr/`](docs/adr/), the domain vocabulary in
-[`CONTEXT.md`](CONTEXT.md), and how the UI is meant to look and feel in
+[`GLOSSARY.md`](GLOSSARY.md), and how the UI is meant to look and feel in
 [`docs/design-system.md`](docs/design-system.md) and
 [`docs/interaction-patterns.md`](docs/interaction-patterns.md).
 

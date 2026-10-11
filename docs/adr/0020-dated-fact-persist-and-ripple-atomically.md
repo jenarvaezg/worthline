@@ -95,7 +95,7 @@ place that owns "a declared fact re-derives snapshots," whichever axis it moves.
   ADR 0012's behaviour. ADR 0012's rules (generation density, modify/delete
   recalculates from D inclusive, import never re-derives) are unchanged.
 - No new domain noun: "dated fact about the past" and "ripple recalculation"
-  already name the concepts (CONTEXT.md, ADR 0012). The seam is an
+  already name the concepts (GLOSSARY.md, ADR 0012). The seam is an
   implementation home for them, not a new term.
 
 ## Amendment (#1599): an alta is one unit of work too

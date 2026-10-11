@@ -6,7 +6,7 @@ failure, and which Auth.js callback owns provision-on-first-login (ADR 0030).
 
 ## 1. Error monitoring: server only, errors only, no free text
 
-worthline promises no usage telemetry (#1131, CONTEXT.md). The product needs to know when
+worthline promises no usage telemetry (#1131, GLOSSARY.md). The product needs to know when
 the server breaks, and Sentry is the one processor admitted for it. It is declared in the
 privacy policy, and it receives exactly this:
 

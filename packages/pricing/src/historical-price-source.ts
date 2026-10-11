@@ -68,7 +68,7 @@ function resolveCoinGeckoIdForBackfill(providerSymbol: string): string | null {
 /**
  * The CoinGecko historical source. Reuses `fetchCoinGeckoHistoryEur`, which is
  * demo-key aware and never throws (empty series on a miss/outage). The public
- * endpoint's ~365-day range limit (CONTEXT.md / ADR 0021) means a long backdated
+ * endpoint's ~365-day range limit (GLOSSARY.md / ADR 0021) means a long backdated
  * range yields gaps the plan reports — the CSV source is the long-range fallback.
  */
 export const coingeckoHistoricalSource: HistoricalPriceSource = {

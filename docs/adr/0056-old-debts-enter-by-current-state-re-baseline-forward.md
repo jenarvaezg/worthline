@@ -64,7 +64,7 @@ re-entering the plan.
   anchor sits where the purchase happened and the declared current value lands as a
   **market appraisal** dated today; without it the alta stays por estado actual, anchored
   today. Volunteering a fact stays optional — inventing one never becomes acceptable.
-- `CONTEXT.md` gains **balance re-baseline** (UI: "Recalibrar con saldo real" /
+- `GLOSSARY.md` gains **balance re-baseline** (UI: "Recalibrar con saldo real" /
   entry mode "Alta por estado actual") and the **amortization plan** entry
   documents the current-state entry mode.
 - ADR 0019's two-date rule is untouched for debts declared from origin; a

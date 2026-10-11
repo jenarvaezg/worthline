@@ -1312,7 +1312,7 @@ describe("createHoldingAction — debt ownership inheritance (#171)", () => {
     expect(await ownershipByMember(store)).toEqual({ mJ: 6_500, mA: 3_500 });
 
     // Changing the asset's split afterwards must NOT follow into the liability:
-    // the inheritance is a copy at creation, not a live link (CONTEXT.md).
+    // the inheritance is a copy at creation, not a live link (GLOSSARY.md).
     await store.assets.updateAsset("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 9_000 },

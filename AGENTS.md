@@ -26,7 +26,7 @@ close with. See `docs/agents/subagents.md`. Repo-specific agents live in
 
 ### Domain docs
 
-This is a single-context repo with domain docs rooted at `CONTEXT.md` and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+This is a single-context repo with domain docs rooted at `GLOSSARY.md` and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
 
 ### Design system
 

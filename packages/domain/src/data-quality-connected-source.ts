@@ -53,7 +53,7 @@ export function sourceIsInScope(
  * `sync_run` is ever opened, so it leaves NO run to read — its only trace is the
  * source's freshness row. A surface that looked solely at `sync_run` would inherit
  * the last good run's verdict and claim health while the source has been dark for
- * days, contradicting this collection (which CONTEXT.md requires every consumer to
+ * days, contradicting this collection (which GLOSSARY.md requires every consumer to
  * agree with). `/ajustes/conexiones` calls this for exactly that reason.
  */
 export function sourceFreshnessStatus(

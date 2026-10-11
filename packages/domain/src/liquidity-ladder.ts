@@ -17,7 +17,7 @@ export const LIQUIDITY_LADDER = [
   "housing",
 ] as const;
 
-/** A holding's rung on the ladder. (CONTEXT.md keeps "tier" as a synonym for "rung".) */
+/** A holding's rung on the ladder. (GLOSSARY.md keeps "tier" as a synonym for "rung".) */
 export type LiquidityTier = (typeof LIQUIDITY_LADDER)[number];
 
 /**

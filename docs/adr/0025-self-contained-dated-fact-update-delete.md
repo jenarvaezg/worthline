@@ -140,7 +140,7 @@ better-sqlite3 transaction, so the read and write never straddle another commit.
   and `liabilityId` opts. Their `expect(changes).toBe(1)` / `toBe(0)` assertions are
   unchanged — the contract narrows, it does not move.
 - No new domain noun. "Dated fact," "ripple recalculation," and "from-date" already
-  name the concepts (CONTEXT.md, ADR 0012, ADR 0020); this decision only relocates
+  name the concepts (GLOSSARY.md, ADR 0012, ADR 0020); this decision only relocates
   the old-date read to the side of the seam that always owned it.
 
 ## Amendment (#1590): the seam ripples with a band, not a kind

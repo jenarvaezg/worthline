@@ -76,7 +76,7 @@ unchanged from ADR 0018.
   file, one chosen investment, reject mixed ISINs) is replaced by this routing;
   its merge-by-date, preview-then-confirm, and ripple semantics remain accepted
   and are unchanged.
-- `CONTEXT.md`'s **Statement** entry is re-worded: a statement lists one fund's
+- `GLOSSARY.md`'s **Statement** entry is re-worded: a statement lists one fund's
   or a whole account's movements; per-holding upload is the one-fund case.
 - The `MISSING_PROVIDER_SYMBOL` warning lands on the existing warnings system
   (per-holding, overrideable) and flows into data-quality signals automatically

@@ -92,6 +92,6 @@ affected debts were already corrected by hand against their bank tables.)
   carries the full capital.
 - The whole class of "fixed-rate mortgage I didn't touch drifts in the past" bugs
   is fixed at the model level, with no per-loan hand-alignment.
-- CONTEXT.md's **Amortization plan** definition is updated to name both dates.
+- GLOSSARY.md's **Amortization plan** definition is updated to name both dates.
 - `start_date` is replaced, not supplemented; there is no third "schedule anchor"
   concept to reason about.

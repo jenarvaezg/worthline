@@ -67,7 +67,7 @@ export interface MissedCapturePayload {
 /**
  * A run key in maintainer-readable Spanish: `2026-07-28:pm` →
  * «28-07-2026, captura de tarde (≈21:00 UTC)». Says «captura», not «pasada», so it
- * never reads as the **value update pass** CONTEXT.md already defines. Degrades to
+ * never reads as the **value update pass** GLOSSARY.md already defines. Degrades to
  * the raw key for anything the parser rejects — the surface must never lie or
  * crash over a stored string.
  */

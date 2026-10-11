@@ -113,7 +113,7 @@ refinement left to the chart layer, not part of this decision.
 - `revolving` and `informal` now share a curve shape (step on anchors); they
   remain distinct **debt models** by intent and by what a future interpolation
   opt-in would mean.
-- The affected CONTEXT.md glossary entries — **Valuation anchor**, **Market
+- The affected GLOSSARY.md glossary entries — **Valuation anchor**, **Market
   appraisal**, **Appreciation rate**, **Debt model**, **Balance anchor** — are
   updated to describe the step as the default and interpolation as the opt-in, and
   a new **Valuation cadence** term is added.

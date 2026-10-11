@@ -3,7 +3,7 @@
  *
  * A rate change must recalculate EVERY snapshot the appreciation rate values —
  * including ones dated BEFORE the first market appraisal, where the housing curve
- * compounds the rate backward (CONTEXT.md: "extrapolate where no market appraisal
+ * compounds the rate backward (GLOSSARY.md: "extrapolate where no market appraisal
  * exists — before the first appraisal or after the last"). The action used to
  * ripple only from the first anchor's date, so a pre-appraisal snapshot kept its
  * stale value. The fix moves the earliest-affected-date derivation (ADR 0020)

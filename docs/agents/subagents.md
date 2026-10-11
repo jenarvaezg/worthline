@@ -29,7 +29,7 @@ criterion has to keep working.
 | --- | --- |
 | `database-reviewer` | Speaks PostgreSQL and Supabase — RLS policies, `EXPLAIN ANALYZE`, connection pooling. The stack is libsql/Turso with Drizzle: there is no Postgres planner to advise on, migrations are ordered SQL replayed by `packages/db`, and interactive transactions do not work over `:memory:` — `store-context.ts` hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK` for local clients. Its advice is not wrong so much as addressed to a different database. |
 | `python-reviewer` | There is no application Python to review. The only Python in the tree lives under `.local/`, which is gitignored because it holds real data. |
-| `doc-updater` | It runs `/update-codemaps` and writes `docs/CODEMAPS/*`, which does not exist here. Domain documentation is `CONTEXT.md` plus `docs/adr/` — see [`domain.md`](domain.md). |
+| `doc-updater` | It runs `/update-codemaps` and writes `docs/CODEMAPS/*`, which does not exist here. Domain documentation is `GLOSSARY.md` plus `docs/adr/` — see [`domain.md`](domain.md). |
 
 **The criterion.** Before invoking a global agent, check three things about its own
 description: does it name the stack this repo actually runs, do the paths it writes
@@ -59,7 +59,7 @@ nothing to judge, so it gets neither claim nor evidence. It gets the tree to act
 reasoning.
 
 Everything else the agent needs it reads itself, from the paths the diff names. Point
-it at the canon rather than pasting the canon: [`CONTEXT.md`](../../CONTEXT.md),
+it at the canon rather than pasting the canon: [`GLOSSARY.md`](../../GLOSSARY.md),
 the relevant `docs/adr/`, [`design-system.md`](../design-system.md),
 [`interaction-patterns.md`](../interaction-patterns.md). Duplicated canon goes stale
 in exactly the place nobody looks.

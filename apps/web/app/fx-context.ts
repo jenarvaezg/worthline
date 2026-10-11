@@ -10,7 +10,7 @@ import { resolveFxRateSnapshot } from "@worthline/pricing";
  * Resolve the FX context an aggregation needs to count non-base-currency holdings
  * honestly (#1065). It is HARD-GATED on a foreign currency actually being present:
  *
- *   - all-EUR portfolio (today's only case — CONTEXT.md: "no FX layer, stays in
+ *   - all-EUR portfolio (today's only case — GLOSSARY.md: "no FX layer, stays in
  *     EUR", and import rejects a non-EUR base) → returns `undefined`, so the GET
  *     stays strictly cache-only (#785/#788/#895): NO ECB call, no behavior change.
  *   - a foreign-currency holding present → one live ECB fetch for the currencies

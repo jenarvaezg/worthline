@@ -104,7 +104,7 @@ interface TransferLegs {
  *   EXTERNAL ENTRY (#1541): a plan brought in from another institution, whose
  *   outgoing half lives in that institution's ledger and can never be written
  *   here. Its own id exists precisely "so a reader finds one row and names it
- *   «desde otra entidad» instead of reporting a broken pair" (CONTEXT.md, ADR
+ *   «desde otra entidad» instead of reporting a broken pair" (GLOSSARY.md, ADR
  *   0083 decisión 7). This audit reads the same evidence the ficha reads and must
  *   reach the same verdict (#1422) — otherwise the row says «desde otra entidad»
  *   on one screen and «roto» on another. Its inherited cost is DECLARED by the

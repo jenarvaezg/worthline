@@ -196,7 +196,7 @@ export interface ExtractedIdentifiers {
 }
 
 /**
- * A reading declares AT MOST ONE identifier — CONTEXT.md, «Security id»: an ISIN or a
+ * A reading declares AT MOST ONE identifier — GLOSSARY.md, «Security id»: an ISIN or a
  * Código DGS, «mutually exclusive, never both at once».
  *
  * A row carrying both is not a richer reading, it is a contradictory one: the two name

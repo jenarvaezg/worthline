@@ -4,7 +4,7 @@ Thanks for your interest in worthline — a local-first net worth dashboard for
 personal and household tracking. Contributions are welcome, whether that's a bug
 fix, a feature, docs, or just a well-reported issue.
 
-Before diving in, skim [`CONTEXT.md`](CONTEXT.md): it defines the domain
+Before diving in, skim [`GLOSSARY.md`](GLOSSARY.md): it defines the domain
 vocabulary (net worth, liquidity ladder, scopes, snapshots, FIRE) that the whole
 codebase and these conventions assume.
 
@@ -111,7 +111,7 @@ documented in the verification gate.
   [`docs/adr/`](docs/adr/). If your change makes or changes a structural
   decision, add or update an ADR in the same PR.
 - **An ADR number is an address.** Files are `NNNN-kebab-case-title.md` and the
-  number is cited from code, tests and `CONTEXT.md`, so it must resolve to
+  number is cited from code, tests and `GLOSSARY.md`, so it must resolve to
   exactly one file: take the next unused number, never one already on disk. The
   gate enforces this (`tests/tooling/adr-numbering.test.ts`). Renumbering an
   existing ADR means updating every citation of it in the same commit.
