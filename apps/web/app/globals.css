@@ -4573,6 +4573,13 @@ code {
   color: var(--paper-strong);
 }
 
+/* The radio of a segmented control is hidden, so its focus is drawn on the
+   segment — inset, because the control clips its overflow (canon §5). */
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: -3px;
+}
+
 /* Debt current-state entry — mini "unmodelled past" timeline (ADR 0056, #677).
    Two facts, not prose under each field: what stays unmodelled, what's derived. */
 .debtBaselineTimeline {
@@ -7105,18 +7112,45 @@ td.rowActions > * {
   color: var(--blue);
 }
 
-.exposureCurrencyRisk {
+/* Currency risk and the portfolio cost (#1717) are the two portfolio-level
+   readouts under the lens: same rule, same small-caps label. */
+.exposureCurrencyRisk,
+.exposureCost {
   margin-top: 20px;
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
 
-.exposureCurrencyRisk h3 {
+.exposureCurrencyRisk h3,
+.exposureCost h3 {
   color: var(--muted);
   font-size: 0.78rem;
   letter-spacing: 0.05em;
   margin: 0 0 12px;
   text-transform: uppercase;
+}
+
+/* The cost is a static estimate, so it stays in ink — green/red are reserved
+   for movement (design-system §6); only the figure takes the numeric face. */
+.exposureCostLine {
+  color: var(--ink);
+  margin: 0;
+}
+
+.exposureCostLine b {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.exposureCostLine span {
+  color: var(--muted);
+}
+
+.exposureCostNote {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 6px 0 0;
 }
 
 /* Per-asset-class returns (#552): same panel frame as exposure; each class row
@@ -11288,4 +11322,149 @@ td.rowActions > * {
   letter-spacing: 0.04em;
   margin-left: 6px;
   text-transform: uppercase;
+}
+
+/* Rentas (#1673, S2 of #1522): the list where every declared income is seen —
+   the ones no asset generates have no ficha to live on — and the declaration door.
+   An inventory of lines ruled between rows, the carteras register: hierarchy by
+   space and rule, never by card or shadow (canon §4). */
+.rentasPage {
+  display: grid;
+  gap: 16px;
+}
+
+.rentasBack {
+  justify-self: start;
+}
+
+.incomeList {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.incomeRow {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+}
+
+.incomeRow:first-child {
+  border-top: none;
+}
+
+.incomeRowTop {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.incomeRowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The declared amount is a figure: Iosevka, tabular, right-aligned (canon §3). */
+.incomeRowAmount {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Whether the income counts, said in a word AND a sentence: the word is the
+   aviso register (gold, small caps) when it does not, ink when it does — colour
+   is never the only signal (canon §6). Same grammar as `.returnsClassAttributed`. */
+.incomeStatus {
+  font-size: 0.85rem;
+  margin: 0;
+  max-width: 72ch;
+}
+
+.incomeStatusMark {
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+  text-transform: uppercase;
+}
+
+.incomeStatusOff .incomeStatusMark {
+  color: var(--gold);
+}
+
+.incomeRowActions {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+}
+
+.incomeCorrect {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.incomeCorrect summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* A three-state declaration (#1673): a fieldset whose «Sin declarar» is an
+   option you can see, never a select with a value nobody chose. */
+.incomeChoice {
+  border: 0;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.incomeChoice legend {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+/* On a phone the longest option row would overflow: the segments shrink and
+   their labels wrap instead of pushing the page sideways. */
+.incomeChoice .segmented {
+  max-width: 100%;
+}
+
+.incomeChoice .segmented label {
+  flex: 1 1 auto;
+  justify-content: center;
+  text-align: center;
+}
+
+.incomeChoiceNote {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+  max-width: 72ch;
+}
+
+/* The row the ficha's door shows while the declaration is on its way (§4). */
+.incomePendingList {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.85rem;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }

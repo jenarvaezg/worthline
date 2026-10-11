@@ -168,6 +168,18 @@ export async function AnadirHoldingContent({
                   a medida— en una sola pantalla. Aquí no hacen falta.
                 </small>
               </div>
+              {/* #1673: la única puerta a declarar una renta estaba en la ficha de un
+                  activo, y una pensión se dio de alta como piso para llegar a ella.
+                  Aquí, justo donde se buscaría, la salida correcta. */}
+              <div className="simpleIntroAdvanced">
+                <Link className="actionLink" href="/objetivos/rentas">
+                  Declarar una renta
+                </Link>
+                <small>
+                  Una pensión, una nómina o una renta vitalicia no son activos: se
+                  declaran en Rentas, sin darlas de alta en tu patrimonio.
+                </small>
+              </div>
             </div>
 
             {formError?.formId === "holding" ? (

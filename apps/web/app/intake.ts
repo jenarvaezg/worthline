@@ -614,6 +614,10 @@ export function okMessage(key: string | undefined): string | null {
     payout_schedule_saved: "Cobro recurrente guardado.",
     payout_schedule_updated: "Cobro recurrente actualizado.",
     payout_schedule_deleted: "Cobro recurrente eliminado.",
+    // Rentas (#1673): the same declaration, said in the surface's own word.
+    income_saved: "Renta guardada.",
+    income_updated: "Declaración de la renta guardada.",
+    income_deleted: "Renta eliminada.",
     plan_deleted: "Plan de amortización eliminado.",
     plan_saved: "Plan de amortización guardado.",
     price_backfill_done: "Histórico de precios rellenado.",
