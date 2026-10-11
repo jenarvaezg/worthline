@@ -507,4 +507,96 @@ describe("confirmTransferProposalAction — the pair the gate writes", () => {
     expect(second.error).toContain("ya está anotado");
     store.close();
   });
+
+  test("the refusal names the traspaso already noted, with its participaciones", async () => {
+    const store = await seed();
+    const first = await draft(store, DICTATED);
+    if (!first.ok) throw new Error(first.error);
+    await confirmTransferProposalAction(first.proposal.draft, store, clock);
+
+    const second = await draft(store, DICTATED);
+
+    if (second.ok) throw new Error("expected a refusal");
+    expect(second.error).toContain("Indexado PP");
+    expect(second.error).toContain("Cartera Permanente PP");
+    expect(second.error).toContain("14/08/2026");
+    expect(second.error).toContain("participaciones");
+    store.close();
+  });
+
+  test("another date, another destination or a loose operation do not trigger it", async () => {
+    const store = await seed();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "otro",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Otro PP",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await price(store, "otro", "9");
+    const first = await draft(store, DICTATED);
+    if (!first.ok) throw new Error(first.error);
+    await confirmTransferProposalAction(first.proposal.draft, store, clock);
+
+    // A loose sale on the origin the same day is not a traspaso.
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: ORIGIN,
+        currency: "EUR",
+        executedAt: DATE,
+        feesMinor: 0,
+        id: "op_venta_suelta",
+        kind: "sell",
+        pricePerUnit: "12",
+        units: "1",
+      },
+      { today: TODAY },
+    );
+
+    const otherDate = await draft(
+      store,
+      "El 15/08/2026 traspasé 100 € del Indexado al Cartera Permanente",
+    );
+    expect(otherDate.ok).toBe(true);
+
+    const reading = parseTypedTransfer(
+      "El 14/08/2026 traspasé 100 € del Indexado al Otro",
+      TODAY,
+    );
+    if (reading.status !== "read") throw new Error("unread");
+    const otherDestination = await buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: "otro",
+        destinationHolding: "wl_hld_otro",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        transfer: reading.transfer,
+      },
+      TODAY,
+    );
+    expect(otherDestination.ok).toBe(true);
+    store.close();
+  });
+
+  test("a loose operation alone on the same day never reads as a traspaso", async () => {
+    const store = await seed();
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: DESTINATION,
+        currency: "EUR",
+        executedAt: DATE,
+        feesMinor: 0,
+        id: "op_compra_suelta",
+        kind: "buy",
+        pricePerUnit: "14.5",
+        units: "5",
+      },
+      { today: TODAY },
+    );
+
+    expect((await draft(store, DICTATED)).ok).toBe(true);
+    store.close();
+  });
 });

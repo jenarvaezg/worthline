@@ -234,7 +234,7 @@ export async function projectTransferWrite(
   const counterparts = await store.operations.readTransferCounterparts(
     write.originAssetId,
   );
-  const alreadyThere = originOperations.some(
+  const alreadyThere = originOperations.find(
     (operation) =>
       operation.kind === "transfer_out" &&
       operation.executedAt.slice(0, 10) === dateKey &&
@@ -245,7 +245,9 @@ export async function projectTransferWrite(
     return {
       error:
         `Ese traspaso ya está anotado: «${origin.name}» tiene una salida por traspaso del ` +
-        `${formatIsoDayEs(dateKey)} hacia «${destination.name}», así que no lo duplico. Si de ` +
+        `${formatIsoDayEs(dateKey)} hacia «${destination.name}» (${formatUnits(alreadyThere.units)} ` +
+        "participaciones), así que no lo duplico. Para corregir las participaciones que entraron, " +
+        "usa la ficha de la posición. Si de " +
         "verdad hiciste dos ese día, el segundo se registra desde «Traspasar» en la ficha de " +
         "la posición de origen.",
       ok: false,
