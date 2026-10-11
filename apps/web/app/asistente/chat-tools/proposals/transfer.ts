@@ -134,9 +134,10 @@ function transferSource(
       ok: false,
       refusal: {
         error: "transfer_not_in_message",
-        message: typedTransferGapMessage(
-          typed?.status === "incomplete" ? typed.missing : ["amount", "date"],
-        ),
+        message:
+          typed?.status === "incomplete"
+            ? typedTransferGapMessage(typed.missing, typed.unsettledFigure)
+            : typedTransferGapMessage(["amount", "date"]),
       },
     };
   }

@@ -99,7 +99,13 @@ export type TypedTransferGap =
    * A pasted confirmation that charged a commission (#1794): the importe that left and
    * the one that arrived differ, and only the screen has a field for each.
    */
-  | "fee";
+  | "fee"
+  /**
+   * A pasted figure like «37.203» whose block never says whether its point is the
+   * decimal or the thousands (#1794): no other figure of the paper settles it, so the
+   * app does not pick.
+   */
+  | "unsettled_decimal";
 
 export type TypedTransferReading =
   | {
@@ -114,7 +120,12 @@ export type TypedTransferReading =
       earlierMessage?: string;
     }
   /** Something was written, but not enough — or not unambiguously. Never a silent guess. */
-  | { status: "incomplete"; missing: TypedTransferGap[] }
+  | {
+      status: "incomplete";
+      missing: TypedTransferGap[];
+      /** The figure as printed, when the gap is `unsettled_decimal`: the refusal names it. */
+      unsettledFigure?: string;
+    }
   /**
    * The message states nothing about a traspaso: no figure, no date, no «todo», no
    * legible pasted block (#1798). Kept apart from `incomplete` because it is the one
@@ -157,7 +168,21 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
     "lo que me has pegado trae una comisión, y un traspaso con comisión no lo anoto a " +
     "medias desde el chat: regístralo desde «Traspasar» en la ficha de la posición de " +
     "origen, que tiene un campo para cada cifra",
+  unsettled_decimal:
+    "en lo que me has pegado hay una cifra con tres decimales tras un punto o una coma, " +
+    "y ninguna otra del bloque dice si ese signo es el decimal o el de los miles",
 };
+
+/** {@link GAP_MESSAGES}' `unsettled_decimal`, naming the figure it could not settle. */
+function unsettledDecimalMessage(figure: string): string {
+  const [whole, decimals] = figure.split(/[.,]/u) as [string, string];
+  return (
+    `en lo que me has pegado no sé leer «${figure}»: puede ser ${whole},${decimals} o ` +
+    `${whole}${decimals}, y ninguna otra cifra del bloque dice si ese signo es el decimal ` +
+    "o el de los miles. Escríbemelo en una frase con la fecha, el importe y esa cifra con " +
+    `coma decimal («el 14/08/2026, ${whole},${decimals} participaciones, 739,22 €»)`
+  );
+}
 
 /**
  * The refusal for a dictated traspaso worthline could not read, as the model relays it.
@@ -165,12 +190,20 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
  * One sentence with every gap in it, not one round trip per gap: a person who has to be
  * asked three times for one traspaso has been asked to fill in a form badly.
  */
-export function typedTransferGapMessage(missing: readonly TypedTransferGap[]): string {
+export function typedTransferGapMessage(
+  missing: readonly TypedTransferGap[],
+  /** The figure behind an `unsettled_decimal` gap, as printed (#1794). */
+  unsettledFigure?: string,
+): string {
   // A commission is not something to write again: the way out is the screen, so the
   // sentence about how the chat reads a message would point the wrong way (#1794).
   if (missing.includes("fee")) return `Te preparo el traspaso, pero ${GAP_MESSAGES.fee}.`;
   const listed = joinRefusalGaps(
-    missing.map((gap) => GAP_MESSAGES[gap]),
+    missing.map((gap) =>
+      gap === "unsettled_decimal" && unsettledFigure !== undefined
+        ? unsettledDecimalMessage(unsettledFigure)
+        : GAP_MESSAGES[gap],
+    ),
     GAP_MESSAGES.amount,
   );
   return (
@@ -308,6 +341,17 @@ function receiptReading(
   // traspaso, charged or not.
   if (figures.fees !== undefined && figures.fees !== 0) {
     return { missing: ["fee"], status: "incomplete" };
+  }
+  // A figure the traspaso stands on whose decimal mark the paper never settled
+  // («37.203» in a block with no other figure to say, #1794): named, never guessed. The
+  // VL is not one of them — this lane derives its own, and never reads the printed one.
+  const unsettled = figures.unsettled?.find((figure) => figure.field !== "price");
+  if (unsettled !== undefined) {
+    return {
+      missing: ["unsettled_decimal"],
+      status: "incomplete",
+      unsettledFigure: unsettled.printed,
+    };
   }
   // «Fecha Operación» wins; a paper that labels no date falls back to the day the
   // message names, and silence is still never «hoy». Except when the paper prints a

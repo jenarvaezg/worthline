@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { PASTED_REEMBOLSO } from "./pasted-transfer-receipt-fixture";
+import {
+  PASTED_REEMBOLSO,
+  pastedTransferReceipt,
+} from "./pasted-transfer-receipt-fixture";
 import { parseTypedHoldingEvent } from "./typed-holding-event";
 import { operationReceiptFigures } from "./typed-operation-receipt";
 
@@ -101,6 +104,40 @@ describe("operationReceiptFigures, on a pasted traspaso (#1794)", () => {
       operation: "REEMB.POR TRASPASO I",
       pricePerUnit: 12.0003,
       units: "61.6",
+    });
+  });
+
+  it("settles a three-decimal figure by the block's own decimal mark (#1794)", () => {
+    const pointBlock = pastedTransferReceipt({
+      commission: "0.00",
+      gross: "739.22",
+      net: "739.22",
+      operation: "REEMB.POR TRASPASO I",
+      operationDay: "14/08/2026",
+      price: "19.8700",
+      units: "37.203",
+      valueDay: "13/08/2026",
+    });
+
+    expect(operationReceiptFigures(pointBlock)).toMatchObject({ units: "37.203" });
+    expect(operationReceiptFigures(pointBlock)?.unsettled).toBeUndefined();
+  });
+
+  it("names the figure it could not settle, read the es-ES way, when the block says nothing (#1794)", () => {
+    const silentBlock = pastedTransferReceipt({
+      commission: "0",
+      gross: "739",
+      net: "739",
+      operation: "REEMB.POR TRASPASO I",
+      operationDay: "14/08/2026",
+      price: "20",
+      units: "37.203",
+      valueDay: "13/08/2026",
+    });
+
+    expect(operationReceiptFigures(silentBlock)).toMatchObject({
+      units: "37203",
+      unsettled: [{ field: "units", printed: "37.203" }],
     });
   });
 

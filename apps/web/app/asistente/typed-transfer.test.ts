@@ -284,6 +284,74 @@ describe("parseTypedTransfer, on a pasted confirmation (#1794)", () => {
     expect(typedTransferGapMessage(["fee"])).toContain("«Traspasar»");
   });
 
+  /** The reembolso block with three-decimal participaciones and the other figures given. */
+  function reembolsoWith(figures: {
+    units: string;
+    price: string;
+    gross: string;
+    commission: string;
+  }) {
+    return pastedTransferReceipt({
+      ...figures,
+      net: figures.gross,
+      operation: "REEMB.POR TRASPASO I",
+      operationDay: "14/08/2026",
+      valueDay: "13/08/2026",
+    });
+  }
+
+  it("reads «37.203» as decimal when the block's own figures write the decimal with a point", () => {
+    // «739.22 EUR» settles it: this paper writes decimals with a point, so «37.203» is
+    // thirty-seven participaciones and change, not thirty-seven thousand.
+    const reading = parseTypedTransfer(
+      reembolsoWith({
+        commission: "0.00",
+        gross: "739.22",
+        price: "19.8700",
+        units: "37.203",
+      }),
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({
+      status: "read",
+      transfer: { portion: { amountMinor: 73_922, kind: "units", units: "37.203" } },
+    });
+  });
+
+  it("reads «37.203» as thousands when the block writes its decimals with a comma", () => {
+    const reading = parseTypedTransfer(
+      reembolsoWith({
+        commission: "0,00",
+        gross: "739,22",
+        price: "0,0199",
+        units: "37.203",
+      }),
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({
+      status: "read",
+      transfer: { portion: { kind: "units", units: "37203" } },
+    });
+  });
+
+  it("refuses «37.203» by name when nothing in the block says which mark is the decimal", () => {
+    const reading = parseTypedTransfer(
+      reembolsoWith({ commission: "0", gross: "739", price: "20", units: "37.203" }),
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      missing: ["unsettled_decimal"],
+      status: "incomplete",
+      unsettledFigure: "37.203",
+    });
+    const message = typedTransferGapMessage(["unsettled_decimal"], "37.203");
+    expect(message).toContain("«37.203»");
+    expect(message).toContain("coma decimal");
+  });
+
   it("never dates the traspaso with the fecha valor when the block labels no other", () => {
     // The person copied the block from «Fecha Valor» on. Its day is the one the money
     // settled, and borrowing it as the operation's would date the pair a day off.
