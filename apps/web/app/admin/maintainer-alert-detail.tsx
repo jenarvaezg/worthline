@@ -20,6 +20,11 @@ import {
   isMissedCapturePayload,
   type MissedCapturePayload,
 } from "./missed-capture-alert";
+import {
+  isProvisioningCapPayload,
+  type ProvisioningCapPayload,
+  provisioningCapDayLabel,
+} from "./provisioning-cap-alert";
 import { isUserFeedbackPayload, type UserFeedbackPayload } from "./user-feedback-alert";
 
 /**
@@ -187,6 +192,29 @@ function MissedCaptureView({ payload }: { payload: MissedCapturePayload }) {
   );
 }
 
+/**
+ * A sign-up the daily provisioning cap turned away (#1175). No holding, no trace:
+ * the forensic material is the day, the cap and the count — and deliberately
+ * nothing about who asked.
+ */
+function ProvisioningCapView({ payload }: { payload: ProvisioningCapPayload }) {
+  return (
+    <>
+      <p className="alertSummary">{payload.summary}</p>
+      <p className="alertMeta">
+        Día <strong>{provisioningCapDayLabel(payload.dayKey)}</strong> (UTC) · Cupo{" "}
+        <strong>{payload.limit}</strong> · altas ya concedidas ese día{" "}
+        {payload.provisionedToday}
+        {payload.cause === "misconfigured"
+          ? ` · valor configurado «${payload.configuredValue ?? ""}» ilegible`
+          : payload.cause === "unset_in_production"
+            ? " · variable sin definir en producción"
+            : null}
+      </p>
+    </>
+  );
+}
+
 interface CatalogCollisionPayload {
   dgsCode: string;
   canonicalIdentityKey: string;
@@ -300,6 +328,8 @@ function OccurrenceView({
         <UserFeedbackView payload={payload} />
       ) : isMissedCapturePayload(payload) ? (
         <MissedCaptureView payload={payload} />
+      ) : isProvisioningCapPayload(payload) ? (
+        <ProvisioningCapView payload={payload} />
       ) : payload === null ? (
         <p className="alertMeta">Payload ilegible.</p>
       ) : (

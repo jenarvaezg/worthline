@@ -38,6 +38,7 @@ import type {
   Instrument,
   ManualAsset,
   MonthlyCloseValue,
+  PortfolioCost,
   PortfolioGroup,
   PortfolioGroupKey,
   PortfolioProjection,
@@ -56,6 +57,7 @@ import {
   lookThroughExposure,
   monthlyCloseValuesByHolding,
   netUnitsByAsset,
+  portfolioCost,
   projectPortfolio,
   resolveAssetClassBreakdown,
   returnsByAssetClassView,
@@ -323,11 +325,12 @@ export async function loadPatrimonio(
 
 /**
  * Derive the two streamed /patrimonio analytics sub-sections (#1195): the
- * present-time exposure look-through (PRD #539 S3, ADR 0039) and the per-
- * asset-class decomposition of the portfolio returns (#552, ADR 0040 fast-
- * follow). Pure given `ctx` (from {@link loadPatrimonio}) and the exposure-
- * profile catalog — reproduces exactly the derivation that used to run inline
- * in `loadPatrimonio` before the board/analytics split.
+ * present-time exposure look-through (PRD #539 S3, ADR 0039) — with its
+ * portfolio-cost lens (#1717) — and the per-asset-class decomposition of the
+ * portfolio returns (#552, ADR 0040 fast-follow). Pure given `ctx` (from
+ * {@link loadPatrimonio}) and the exposure-profile catalog — reproduces exactly
+ * the derivation that used to run inline in `loadPatrimonio` before the
+ * board/analytics split.
  */
 export function deriveExposureAndReturns(
   ctx: PatrimonioExposureContext,
@@ -335,6 +338,7 @@ export function deriveExposureAndReturns(
 ): {
   exposureFull: ExposureLookthrough;
   exposureEquity: ExposureLookthrough;
+  portfolioCost: PortfolioCost;
   returnsByClass: AssetClassReturnsViewResult | null;
 } {
   const {
@@ -392,9 +396,17 @@ export function deriveExposureAndReturns(
   // aggregation — never re-implemented here. Twice: once full-portfolio, once
   // equity-restricted; the client lens toggles between the two pre-rendered
   // results (interaction-patterns §2). It is a lens, never a snapshot/figure.
+  //
+  // `valueMinor` is the row's value, already in the base currency (the projection
+  // converted it through the FX layer, #1065, and dropped what it could not);
+  // `currency` is the holding's real denomination, so a directly held foreign
+  // position reads as the currency risk it is (ADR 0039) instead of as euros.
+  const currencyByAsset = new Map(
+    assets.map((asset) => [asset.id, asset.currentValue.currency]),
+  );
   const exposureHoldings: ExposureLookthroughHolding[] = projection
     ? projection.sections[0].rows.map((row) => ({
-        currency: baseCurrency,
+        currency: currencyByAsset.get(row.id) ?? baseCurrency,
         geography: null,
         id: row.id,
         instrument: row.instrument,
@@ -418,5 +430,11 @@ export function deriveExposureAndReturns(
     assetClassFilter: "equity",
   });
 
-  return { exposureEquity, exposureFull, returnsByClass };
+  // What the portfolio costs a year (#1717, ADR 0109): the look-through's very
+  // input, so its coverage is over the same gross and a position the FX layer
+  // excluded is out of both alike. A lens, never a figure: the returns above
+  // never see a TER (the NAV is already net of it).
+  const cost = portfolioCost(exposureInput);
+
+  return { exposureEquity, exposureFull, portfolioCost: cost, returnsByClass };
 }

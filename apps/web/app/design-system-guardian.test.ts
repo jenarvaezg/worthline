@@ -281,6 +281,12 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "border-left": "2px solid var(--gold)",
       "border-radius": "var(--radius-sm)",
     });
+    // The login's «hoy estamos llenos» (#1175) is the same aviso, sharing the
+    // recipe rather than copying it.
+    expectRecipe(".loginNotice", {
+      "border-left": "2px solid var(--gold)",
+      "border-radius": "var(--radius-sm)",
+    });
   });
 
   test("every consumed custom property resolves to a real definition (#913)", () => {

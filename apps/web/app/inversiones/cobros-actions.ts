@@ -5,49 +5,34 @@
  *
  * A payout is a dated attribution record that a holding paid its owner an amount —
  * a pure fact, NEVER a figure: it touches no snapshot, no ripple, no net-worth
- * path, only the `store.payouts` methods. These five actions mirror the exposure
+ * path, only the `store.payouts` methods. These four actions mirror the exposure
  * surface: `guardDemoWrite` first (through the combinator), an optional `_store`
  * seam for tests, and a redirect-with-message. Validation errors render at the
  * "payout" section (its own formId), not on the holding-edit form at the top of
  * the page. Its own module since #1606.
+ *
+ * Declaring a recurring income is NOT here any more (#1673): the ficha binds its
+ * holding into `createIncomeAction`, the one declaration door it shares with the
+ * Rentas surface, so the provenance that door requires cannot be skipped from this
+ * side. What stays is what only the ficha does to an income — end it, exclude a
+ * month, declare its costs and lease terms, delete it.
  */
 
+import { parseScheduleExpenses } from "@web/_income/income-recurrence";
+import { parseLeaseTerms } from "@web/_income/lease-terms-form";
 import { formAction } from "@web/form-action";
 import { errorRedirectUrl, successRedirectUrl } from "@web/intake";
 import { currentUrlOf } from "@web/inversiones/return-url";
 import {
   buildPayoutResult,
-  buildPayoutScheduleResult,
   type PayoutFields,
-  type PayoutScheduleFields,
-  parseScheduleExpenses,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
-import { parseLeaseTerms } from "@web/patrimonio/[id]/editar/_surfaces/lease-terms-form";
 
 /** Lift the one-off payout inputs off the FormData into the pure field map. */
 function parsePayoutFieldsFromForm(formData: FormData): PayoutFields {
   const str = (name: string) => String(formData.get(name) ?? "");
   return { dateISO: str("dateISO"), amount: str("amount"), note: str("note") };
-}
-
-/** Lift the schedule inputs off the FormData into the pure field map. */
-function parsePayoutScheduleFieldsFromForm(formData: FormData): PayoutScheduleFields {
-  const str = (name: string) => String(formData.get(name) ?? "");
-  return {
-    label: str("label"),
-    amount: str("amount"),
-    cadence: str("cadence"),
-    startISO: str("startISO"),
-    endISO: str("endISO"),
-    expenses: str("expenses"),
-    // The lease terms (#1521). A form that never carried them yields "" three times,
-    // which parses to «no declarado» — the state every schedule was in before v66.
-    leaseRegime: str("leaseRegime"),
-    rentRevision: str("rentRevision"),
-    rentRevisionReference: str("rentRevisionReference"),
-    postMandatoryTermPolicy: str("postMandatoryTermPolicy"),
-  };
 }
 
 export async function createPayoutAction(
@@ -102,42 +87,6 @@ export async function deletePayoutAction(
     requireId: false,
     run: async (store, { extra }) => {
       await store.payouts.deletePayout(extra.payoutId!);
-      return { ok: true };
-    },
-  })(formData, ..._testArgs);
-}
-
-export async function createPayoutScheduleAction(
-  routeAssetId: string,
-  formData: FormData,
-  ..._testArgs: unknown[]
-) {
-  const returnUrl = currentUrlOf(formData);
-
-  return formAction({
-    datedFact: false,
-    guardUrl: () => returnUrl,
-    onError: ({ error }) =>
-      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
-    onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_saved"),
-    parse: () => {
-      const result = buildPayoutScheduleResult(
-        parsePayoutScheduleFieldsFromForm(formData),
-      );
-      if (!result.ok) {
-        return {
-          ok: false,
-          redirect: errorRedirectUrl(returnUrl, {
-            formId: "payout",
-            message: result.error,
-          }),
-        };
-      }
-      return { ok: true, value: result.schedule };
-    },
-    requireId: false,
-    run: async (store, { parsed }) => {
-      await store.payouts.createPayoutSchedule({ holdingId: routeAssetId, ...parsed });
       return { ok: true };
     },
   })(formData, ..._testArgs);

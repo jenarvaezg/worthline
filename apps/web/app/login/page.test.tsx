@@ -62,6 +62,35 @@ describe("LoginPage", () => {
     ).rejects.toThrow("REDIRECT:/patrimonio");
   });
 
+  test("a sign-up refused by the daily cap is told the truth: full today, come back tomorrow (#1175)", async () => {
+    process.env.AUTH_GOOGLE_ID = "test-id";
+    process.env.AUTH_GOOGLE_SECRET = "test-secret";
+    authMock.mockResolvedValue(null);
+
+    const html = await renderToStaticMarkup(
+      await LoginPage({ searchParams: Promise.resolve({ registro: "lleno" }) }),
+    );
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Hoy estamos llenos");
+    expect(html).toContain("vuelve mañana");
+    // The sign-in stays available: an existing account is never refused.
+    expect(html).toContain("Iniciar sesión con Google");
+    expect(html).not.toContain('disabled=""');
+  });
+
+  test("without the flag there is no capacity notice", async () => {
+    process.env.AUTH_GOOGLE_ID = "test-id";
+    process.env.AUTH_GOOGLE_SECRET = "test-secret";
+    authMock.mockResolvedValue(null);
+
+    const html = await renderToStaticMarkup(
+      await LoginPage({ searchParams: Promise.resolve({ registro: "otra-cosa" }) }),
+    );
+
+    expect(html).not.toContain("Hoy estamos llenos");
+  });
+
   test("rejects hostile returnTo and falls back to /app", async () => {
     process.env.AUTH_GOOGLE_ID = "test-id";
     process.env.AUTH_GOOGLE_SECRET = "test-secret";

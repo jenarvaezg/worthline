@@ -168,16 +168,30 @@ export interface ExposureCoveragePart {
   value: MoneyMinor;
 }
 
+/** The words each coverage part prints under, by part. */
+export type CoverageLabels = Record<ExposureCoveragePart["kind"], string>;
+
+const LOOKTHROUGH_COVERAGE_LABELS: CoverageLabels = {
+  classified: "Clasificado",
+  notApplicable: "No aplica",
+  unknown: "Sin clasificar",
+};
+
 /**
  * The coverage split as three ordered, labelled parts. Every part is kept even
  * at zero: the point of the three-way readout is that an `unknown` remainder is
  * never hidden and `not-applicable` (crypto/cash) is labelled as such, not as
- * missing (#543 acceptance).
+ * missing (#543 acceptance). A lens with its own vocabulary for the same three
+ * parts (the portfolio cost, #1717) passes its labels; the order and the
+ * zero-keeping stay this one rule.
  */
-export function coverageParts(coverage: ExposureCoverage): ExposureCoveragePart[] {
+export function coverageParts(
+  coverage: ExposureCoverage,
+  labels: CoverageLabels = LOOKTHROUGH_COVERAGE_LABELS,
+): ExposureCoveragePart[] {
   return [
-    { kind: "classified", label: "Clasificado", value: coverage.classified },
-    { kind: "notApplicable", label: "No aplica", value: coverage.notApplicable },
-    { kind: "unknown", label: "Sin clasificar", value: coverage.unknown },
+    { kind: "classified", label: labels.classified, value: coverage.classified },
+    { kind: "notApplicable", label: labels.notApplicable, value: coverage.notApplicable },
+    { kind: "unknown", label: labels.unknown, value: coverage.unknown },
   ];
 }

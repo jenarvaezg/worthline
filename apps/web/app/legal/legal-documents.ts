@@ -69,8 +69,9 @@ export const LEGAL_DOCUMENTS: readonly LegalDocument[] = [
     summary:
       "Qué datos se tratan, con qué base jurídica, quién los procesa y cómo ejercer tus derechos.",
     title: "Política de privacidad",
-    // #1174: Resend pasa a encargado activo y se declara el feedback.
-    // #1173: se declaran los correos del ciclo de prueba y su «no recibir recordatorios».
+    // Sentry (#1175) y Resend (#1174) pasan a encargados activos; se declaran los
+    // informes de error y el feedback. #1173: los correos del ciclo de prueba y su
+    // «no recibir recordatorios».
     updatedAt: "2026-10-11",
   },
   {

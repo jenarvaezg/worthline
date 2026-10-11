@@ -224,14 +224,13 @@ async function PatrimonioAnalytics({
   privacyMode: boolean;
 }) {
   const profiles = await readExposureProfilesFromCatalog();
-  const { exposureFull, exposureEquity, returnsByClass } = deriveExposureAndReturns(
-    exposureContext,
-    profiles,
-  );
+  const { exposureFull, exposureEquity, portfolioCost, returnsByClass } =
+    deriveExposureAndReturns(exposureContext, profiles);
 
   return (
     <>
       <ExposureSection
+        cost={portfolioCost}
         currentUrl={currentUrl}
         equity={exposureEquity}
         full={exposureFull}

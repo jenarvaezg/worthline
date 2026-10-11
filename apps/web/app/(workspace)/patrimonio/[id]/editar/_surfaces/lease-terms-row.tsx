@@ -12,9 +12,9 @@
  * exactly what it says, and there is no regime to declare (ADR 0076 point 4).
  */
 
+import { LeaseTermFields } from "@web/_income/lease-term-fields";
+import { leaseTermsSpec } from "@web/_income/lease-terms-form";
 import type { PayoutSchedule } from "@worthline/domain";
-import { LeaseTermFields } from "./lease-term-fields";
-import { leaseTermsSpec } from "./lease-terms-form";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 

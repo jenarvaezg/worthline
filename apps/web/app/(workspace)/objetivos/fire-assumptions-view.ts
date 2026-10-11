@@ -11,6 +11,7 @@
  * the shifted rates — so the fold can never quote a rate the chart did not use.
  */
 
+import { formatFinePercent } from "@web/_components/fine-percent";
 import type {
   FireAgeSource,
   FireProjection,
@@ -19,11 +20,7 @@ import type {
   ScopeFireResult,
 } from "@worthline/domain";
 import { isManualFireReturn, monthlySavingsCapacityForFire } from "@worthline/domain";
-import {
-  formatFineFirePercent,
-  formatRatePercent,
-  formatRatePoints,
-} from "./fire-percent";
+import { formatRatePercent, formatRatePoints } from "./fire-percent";
 import { fireAgeProvenance } from "./fire-provenance";
 
 /** One printed line of the assumptions fold: what it is, its value, where it comes from. */
@@ -186,12 +183,12 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
  */
 export function fireReturnMixPrintRows(mix: FireReturnMix): FireReturnMixPrintRow[] {
   return mix.rows.map((row) => ({
-    contribution: formatFineFirePercent(row.contribution),
+    contribution: formatFinePercent(row.contribution),
     isAsset: row.kind === "asset",
     key: row.key,
     label: row.label,
     rate: formatRatePercent(row.rate),
-    weight: formatFineFirePercent(row.weightFraction),
+    weight: formatFinePercent(row.weightFraction),
   }));
 }
 
@@ -205,9 +202,7 @@ export function fireReturnMixTotal(mix: FireReturnMix): {
   contribution: string;
 } {
   return {
-    contribution: formatFineFirePercent(mix.rate),
-    weight: formatFineFirePercent(
-      mix.rows.reduce((sum, row) => sum + row.weightFraction, 0),
-    ),
+    contribution: formatFinePercent(mix.rate),
+    weight: formatFinePercent(mix.rows.reduce((sum, row) => sum + row.weightFraction, 0)),
   };
 }

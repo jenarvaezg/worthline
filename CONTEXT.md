@@ -67,7 +67,11 @@ The one small libSQL database that maps **users** → **workspaces** → **grant
 records each workspace's database name/URL. It is the only place that knows which
 workspace a signed-in user owns; each per-workspace database holds exactly one
 `id = 'default'` row and knows nothing of users. On first login a user with no grant
-is _provisioned_ a fresh workspace database here (ADR 0030).
+is _provisioned_ a fresh workspace database here (ADR 0030). Provisioning is the one
+step a **daily provisioning cap** (UI: «cupo diario de altas», #1175) can refuse: it
+meters new workspaces per UTC day, never a returning user's sign-in. Outside production
+it is off unless the deployment sets it; a production deploy without it refuses new
+workspaces, like one with an unreadable value (ADR 0110).
 _Avoid_: admin database, master DB.
 
 **Scope**:
@@ -304,6 +308,22 @@ EUR, never a 1:1 guess (#1065). This currency-risk lens is exposure information,
 from that aggregation-time conversion.
 _Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
 
+**Portfolio cost** (_coste de la cartera_):
+What a scope's portfolio pays a year to the products that wrap it: the value-weighted mean
+TER of its **holdings** and its reading in euros (Σ value × TER), derived from the **exposure
+profiles** through the look-through's own input — same key, same gross, same three-way
+**coverage** (#1717, [ADR 0109](docs/adr/0109-the-ter-is-a-lens-and-never-enters-a-return.md)).
+A holding whose profile declares a TER is **declared**, and a declared TER is priced whatever
+the **instrument** label says; a fund, ETF, index or **pension plan** with none is
+**undeclared** — the gap, never summed as 0, which would print a cheaper portfolio than the
+one held; cash, **property**, crypto, metals, coins and a directly held share have no ongoing
+charge and are **not applicable**. A lens, never a figure: the **TER never enters a return**,
+because a fund's NAV is already net of it and subtracting it again would charge it twice — a
+guardian with a closed list of the files allowed to reach the lens or read a TER enforces it.
+Other fees the model does not know (custody, brokerage) are not part of it.
+_Avoid_: comisiones (custody and brokerage are not counted), TER «estimado» (an undeclared TER
+is never estimated: the gap shows in the catalog).
+
 **Attributed class** (_clase atribuida_):
 An **asset class** that holds value today but not one euro of it in a product wholly of
 that class — every euro is a sleeve inside mixed products. The **look-through** splits a
@@ -458,6 +478,10 @@ real. Its **provenance** names an official simulation or a user estimate, dated 
 the information's cut-off date; its **assumed contribution through** date names how
 long that amount assumes the owner keeps contributing. Absence declares none of these
 facts. It may carry **declared expenses** and **lease terms**.
+It is declared through one door with two entrances — the Rentas surface, with no
+holding, and a holding's Cobros section, with it linked — and that door requires the
+provenance and its cut-off date; nature and basis open undeclared. Every income,
+linked or not, is listed on Rentas, saying whether it counts and why not.
 Only past occurrences, up to today, are derived as truth; a future start is preserved
 without inventing received money. An income adds no **net worth** or **snapshot**.
 UI label: "Renta"; the holding's existing declaration surface says "Cobro recurrente".
@@ -1437,4 +1461,4 @@ _Avoid_: imported history (implies verified), synced history.
 - Money amounts are represented as integer minor units.
 - Decimal quantities, FX rates, and prices should use decimal strings.
 - Local data must stay outside git.
-- No telemetry or personal-spreadsheet assumptions. Auth and per-**workspace** cloud storage — originally excluded in the MVP — are now part of the **hosted, multi-user** product (see ADR 0030): a **user** signs in and is granted access to workspaces. They add no figure and change no calculation; the app stays local-first and runs identically with auth off.
+- No telemetry or personal-spreadsheet assumptions. Auth and per-**workspace** cloud storage — originally excluded in the MVP — are now part of the **hosted, multi-user** product (see ADR 0030): a **user** signs in and is granted access to workspaces. They add no figure and change no calculation; the app stays local-first and runs identically with auth off. The one exception to «no telemetry» is an **error processor** (Sentry, ADR 0110): server errors only, reduced to their type, code location and route pattern — never their text, never usage, sessions, traces or replays — and only when the deployment configures it.

@@ -12,6 +12,11 @@ import {
   type DailyCaptureLog,
 } from "./control-plane/daily-capture-log";
 import {
+  createDailyProvisioningCap,
+  DAILY_PROVISIONING_CAP_SCHEMA,
+  type DailyProvisioningCap,
+} from "./control-plane/daily-provisioning-cap";
+import {
   createEntitlementDirectory,
   ENTITLEMENT_SCHEMA,
   type EntitlementDirectory,
@@ -66,6 +71,10 @@ export type {
   BenchmarkPriceCache,
 } from "./control-plane/benchmark-price-cache";
 export type { DailyCaptureLog } from "./control-plane/daily-capture-log";
+export type {
+  DailyProvisioningCap,
+  DailyProvisioningClaim,
+} from "./control-plane/daily-provisioning-cap";
 export type {
   EntitlementDirectory,
   GrantPremiumInput,
@@ -136,6 +145,7 @@ export interface ControlPlaneStore
     DailyCaptureLog,
     BenchmarkPriceCache,
     UsageLimits,
+    DailyProvisioningCap,
     ExposureProfileCatalog,
     MaintainerAlertLog,
     JobStore,
@@ -173,6 +183,7 @@ const SCHEMA = [
   ENTITLEMENT_SCHEMA,
   DAILY_CAPTURE_SCHEMA,
   USAGE_SCHEMA,
+  DAILY_PROVISIONING_CAP_SCHEMA,
   BENCHMARK_PRICE_SCHEMA,
   EXPOSURE_PROFILE_SCHEMA,
   MAINTAINER_ALERT_SCHEMA,
@@ -194,6 +205,7 @@ async function buildControlPlaneStore(
     ...createDailyCaptureLog(client),
     ...createBenchmarkPriceCache(client),
     ...createUsageLimits(client),
+    ...createDailyProvisioningCap(client),
     ...createExposureProfileCatalog(client),
     ...createMaintainerAlertLog(client, newId),
     ...createJobStore(client, newId),

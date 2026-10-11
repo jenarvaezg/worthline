@@ -140,8 +140,11 @@ Lo que además se gana al no navegar, y que la jornada 52 fija: los importes
 tecleados dejan de viajar en la barra de direcciones, el pliegue que la persona
 abrió sigue abierto, y lo escrito sigue en su campo sin round-trip.
 
-Primer llamante: el formulario de operación. Los demás caminos de error siguen
-redirigiendo; migrarlos es trabajo pendiente, y el patrón ya está probado.
+Primer llamante: el formulario de operación. Segundo: la puerta de declaración de
+una renta (#1673), en Rentas y en la sección Cobros de la ficha, que además decide el
+rechazo en el cliente con el mismo parser puro del servidor antes de enviar nada. Los
+demás caminos de error siguen redirigiendo; migrarlos es trabajo pendiente, y el
+patrón ya está probado.
 
 **Excepción: un éxito que no cambia nada de la página también vuelve como
 estado.** «Enviar feedback» (#1174) escribe en el control plane y en el correo,

@@ -13,19 +13,20 @@
  * monthly-spending figure; otherwise it is omitted rather than invented.
  */
 
-import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
+import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
+import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
+import { PAYOUT_CADENCE_LABELS } from "@web/_income/income-recurrence";
+import type { IncomeAction } from "@web/_income/optimistic-incomes";
 import { PendingSubmit } from "@web/pending-submit";
 import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
 import {
   formatMoneyInput,
   formatMoneyMinorPrivacy,
-  incomeExclusionReason,
   passiveIncomeTrailing,
 } from "@worthline/domain";
-import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
+import Link from "next/link";
 import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
-import { LeaseTermFields } from "./lease-term-fields";
 import { LeaseTermsRow } from "./lease-terms-row";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
@@ -41,11 +42,6 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
   timeZone: "UTC",
 });
 const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
-
-function IncomeDeclarationNotice({ schedule }: { schedule: PayoutSchedule }) {
-  const reason = incomeExclusionReason(schedule);
-  return reason ? <p className="infoNote">{INCOME_EXCLUSION_COPY[reason]}</p> : null;
-}
 
 /** A one-line human spec for a schedule row (amount · cadence · window · costs). */
 function scheduleSpec(
@@ -67,33 +63,47 @@ function scheduleSpec(
 }
 
 export function CobrosSection({
+  createIncomeAction,
   createPayoutAction,
-  createPayoutScheduleAction,
   currency,
   currentUrl,
   deletePayoutAction,
   deletePayoutScheduleAction,
   error,
+  errorValues = {},
+  holdingId,
   monthlySpendingMinor,
   payouts,
   privacyMode,
+  readOnly = false,
   schedules,
   showLeaseTerms,
   today,
   updatePayoutScheduleAction,
 }: {
+  /**
+   * The income declaration door with this holding bound (#1673): the same action,
+   * parser and required provenance as the Rentas surface. Redirects on success and
+   * hands a refusal back as state (#1311).
+   */
+  createIncomeAction: IncomeAction;
   createPayoutAction: FormAction;
-  createPayoutScheduleAction: FormAction;
   currency: CurrencyCode;
   currentUrl: string;
   deletePayoutAction: FormAction;
   deletePayoutScheduleAction: FormAction;
   /** A validation error to surface at this section (formId "payout"). */
   error?: string | null;
+  /** What a refused no-JS declaration had typed, to refill the door with. */
+  errorValues?: Readonly<Record<string, string>>;
+  /** The holding this section sits on — the link every income declared here gets. */
+  holdingId: string;
   /** Declared monthly spending for the holding's scope, or null to omit coverage. */
   monthlySpendingMinor: number | null;
   payouts: Payout[];
   privacyMode: boolean;
+  /** Demo: the declaration door posts plainly and fakes no optimism (§10). */
+  readOnly?: boolean;
   schedules: PayoutSchedule[];
   /**
    * Whether this holding's income can be a LEASE (#1521) — decided by the caller,
@@ -214,77 +224,26 @@ export function CobrosSection({
         </div>
       </form>
 
-      {/* Recurring schedule (a fixed rent, a fixed coupon). */}
-      <form action={createPayoutScheduleAction} className="stackForm cobrosForm">
-        <input name="currentUrl" type="hidden" value={currentUrl} />
-        <h4>Declarar un cobro recurrente</h4>
-        <div className="cobrosFormGrid">
-          <label>
-            Concepto
-            <input
-              aria-label="Concepto del cobro recurrente"
-              autoComplete="off"
-              defaultValue=""
-              name="label"
-              placeholder="Alquiler, cupón…"
-            />
-          </label>
-          <label>
-            Importe
-            <input
-              aria-label="Importe del cobro recurrente"
-              defaultValue=""
-              inputMode="decimal"
-              name="amount"
-              placeholder="0,00"
-            />
-          </label>
-          <label>
-            Cadencia
-            <select defaultValue="monthly" name="cadence">
-              {PAYOUT_CADENCE_LABELS.map(({ cadence, label }) => (
-                <option key={cadence} value={cadence}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Desde
-            <input defaultValue={today} name="startISO" type="date" />
-          </label>
-          <label>
-            Hasta
-            <input aria-label="Fecha de fin (opcional)" name="endISO" type="date" />
-          </label>
-          <label>
-            Gastos
-            <input
-              aria-label="Gastos del cobro recurrente"
-              defaultValue=""
-              inputMode="decimal"
-              name="expenses"
-              placeholder="opcional"
-            />
-          </label>
-          {/* The lease terms, only where a lease is what this income is (#1521).
-              Every one of them opens on «Sin declarar»: the form asks, it never
-              guesses, and what an undeclared field implies is spelled out on the
-              declared row below. */}
-          {showLeaseTerms ? <LeaseTermFields values={null} /> : null}
-        </div>
-        <p className="cobrosCap">
-          Los gastos van en la misma cadencia que el importe (comunidad, IBI, seguro,
-          agencia, mantenimiento…). Con naturaleza pasiva e importe en euros de hoy
-          declarados, si es un inmueble alquilado tu FIRE usará el
-          <strong> alquiler neto</strong> sobre su valor como rentabilidad real en vez del
-          retorno por defecto de su tramo. Sin gastos declarados no se usa el bruto: se
-          queda ese retorno por defecto.
-        </p>
-        <div className="formActions">
-          <PendingSubmit pendingLabel="Guardando…">Añadir recurrente</PendingSubmit>
-        </div>
-      </form>
+      {/* Recurring income (a fixed rent, a fixed coupon) — the same declaration
+          door as the Rentas surface, with this holding already linked (#1673): same
+          parser, same required provenance, nature and basis opening on «Sin
+          declarar». The lease terms appear only where a lease is what this income is
+          (#1521). */}
+      <div className="cobrosForm">
+        <IncomeDeclarationForm
+          accessibleSuffix=" del cobro recurrente"
+          action={createIncomeAction}
+          currentUrl={currentUrl}
+          holdingId={holdingId}
+          initialError={null}
+          initialValues={errorValues}
+          readOnly={readOnly}
+          showLeaseTerms={showLeaseTerms}
+          submitLabel="Añadir recurrente"
+          title="Declarar un cobro recurrente"
+          today={today}
+        />
+      </div>
 
       {/* Declared schedules — end ("terminar hoy") or delete, per row. */}
       {schedules.length > 0 ? (
@@ -353,7 +312,13 @@ export function CobrosSection({
                   </form>
                 </div>
               </div>
-              <IncomeDeclarationNotice schedule={schedule} />
+              {/* Whether it counts and why not, what it declares and where its figure
+                  comes from — the same summary the Rentas list prints (#1673). The
+                  declaration is corrected there. */}
+              <IncomeDeclarationSummary income={schedule} today={today}>
+                {" · "}
+                <Link href="/objetivos/rentas">Corregir su declaración en Rentas</Link>
+              </IncomeDeclarationSummary>
               {/* What the end date MEANS, and what happens after it (#1521). Below
                   the row rather than inside it: the sentence it prints is about the
                   rent's future, not another button. */}

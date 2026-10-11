@@ -1,3 +1,6 @@
+import { errorMonitoringDsn } from "@web/error-monitoring";
+import type { Instrumentation } from "next";
+
 /**
  * Next.js startup hook (runs once per server boot per runtime, never at build or
  * in tests). Fails a misconfigured hosted deployment fast, on two counts:
@@ -12,13 +15,22 @@
  * message is the actionable one (the encryption guard keys off auth being
  * configured, so it would stay silent in exactly that deploy).
  *
+ * Before both, error monitoring starts (#1175) — but only with a DSN; without
+ * one the Sentry SDK is never imported. `error-monitoring.ts` is pure (type-only
+ * Sentry imports), so the static import above is safe in any runtime.
+ *
  * Gated to the Node.js runtime: the encryption check imports `@worthline/db`
  * (for the env key name), which pulls in `node:fs`/libsql and cannot load in the
- * Edge runtime that the proxy also boots — so both are dynamically imported only
- * when `NEXT_RUNTIME === "nodejs"`, keeping them out of the Edge bundle entirely.
+ * Edge runtime — so everything is dynamically imported only when
+ * `NEXT_RUNTIME === "nodejs"`, keeping it out of any Edge bundle entirely.
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const dsn = errorMonitoringDsn(process.env);
+  if (dsn) {
+    const { startErrorMonitoring } = await import("@web/error-monitoring-runtime");
+    startErrorMonitoring(dsn);
+  }
   const { assertProductionConfigured } = await import("@web/production-config");
   assertProductionConfigured(process.env);
   const { assertSecretEncryptionConfigured } = await import("@web/encryption-config");
@@ -30,3 +42,18 @@ export async function register(): Promise<void> {
   preheatLibsqlStack();
   await import("big.js");
 }
+
+/**
+ * Server errors Next.js caught — RSC renders, route handlers, server actions and
+ * the proxy — go to Sentry when, and only when, a DSN is configured (#1175).
+ */
+export const onRequestError: Instrumentation.onRequestError = async (
+  error,
+  request,
+  context,
+) => {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  if (!errorMonitoringDsn(process.env)) return;
+  const { reportRequestError } = await import("@web/error-monitoring-runtime");
+  reportRequestError(error, request, context);
+};

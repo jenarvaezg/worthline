@@ -22,7 +22,7 @@
  * silently degrades to open local mode), the control-plane coordinates (without
  * them no workspace can be resolved or opened), and the Turso Platform
  * credentials provision-on-first-login writes with (without them every new
- * user's first sign-in fails — see `provisionWorkspaceForEmail`).
+ * user's first sign-in fails — see `resolveWorkspaceForSignIn`).
  */
 const REQUIRED_PRODUCTION_ENV = [
   "AUTH_GOOGLE_ID",
