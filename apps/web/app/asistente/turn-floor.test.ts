@@ -313,6 +313,19 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
  * untouched. Eighth PR in a row to say so.
+ *
+ * **Raised to 46.400 on 2026-10-11 by #1174**, for 196 characters of system prompt and
+ * nothing else: one entry in the destination map (`capability-destinations.ts`) that
+ * sends a user who wants to report something to the new «Enviar feedback» button. It is
+ * the #1524 kind of raise — a measured prose failure no code boundary can close: on
+ * 2026-08-21 a real user asked twice for an incident and its ticket number, and the
+ * assistant, with nowhere true to point, invented both. No tool or schema moved. The
+ * floor it started from was 46.196, FOUR under the old ceiling, so any sentence at all
+ * had to come here. The new ceiling leaves 8 to spare, tight on purpose like #1753
+ * left it: the next rule that needs room raises it and writes down why.
+ *
+ * `propose_holding` and `propose_correction` remain the ranking's head, untouched. Ninth
+ * PR in a row to say so.
  */
 
 describe("measureTurnFloor", () => {

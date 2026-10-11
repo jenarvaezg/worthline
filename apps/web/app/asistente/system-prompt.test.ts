@@ -308,7 +308,19 @@ describe("buildChatSystemPrompt", () => {
     // conclude «dos activos» — and the alta that follows splits one position in two. The
     // sentence names the other reading (the ficha may hold the wrong ISIN) and hands the
     // choice back. The prompt now sits at 10.317, with THIRTEEN to spare.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(10_330);
+    //
+    // #1174 raises it to 10.520 for 196 characters, all of them ONE entry of the
+    // destination map — the one that did not exist on 2026-08-21, when a user asked
+    // twice to «levantar una incidencia» and for its ticket number, and the assistant,
+    // with nowhere true to point, invented one. The in-app «Enviar feedback» button is
+    // that place now, and the entry says the three things the honest answer needs: the
+    // button by the label and place the UI shares, that the USER sends it with a session
+    // (no tool can, #1525 accuses a turn that says it did, and the demo has no button),
+    // and that no ticket number comes back. The map is one string read here and by the
+    // alert refusal, so this pays once for both. Deliberately NOT bought: anything about
+    // what happens after the send — the button's own dialog says it, to the person who
+    // is about to press it. The prompt now sits at 10.513, with SEVEN to spare.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(10_520);
   });
 
   /**

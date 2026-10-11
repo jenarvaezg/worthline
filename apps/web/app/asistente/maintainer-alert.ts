@@ -49,6 +49,8 @@ export function maintainerAlertCategoryLabel(category: MaintainerAlertCategory):
       return "Colisión de identidad del catálogo";
     case "provisioning_cap":
       return "Cupo diario de altas: alta rechazada";
+    case "user_feedback":
+      return "Feedback de usuario";
   }
 }
 

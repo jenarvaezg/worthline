@@ -11,6 +11,7 @@ import ReembolsosDocument from "./_documents/reembolsos";
 import TerminosDocument from "./_documents/terminos";
 import { LEGAL_DOCUMENTS, type LegalDocumentSlug } from "./legal-documents";
 import { type LegalIdentity, resolveLegalIdentity } from "./legal-identity";
+import { LEGAL_PROCESSORS } from "./legal-processors";
 
 /**
  * Los cinco textos legales (#1172) llevan cláusulas que no son estilo: las exige
@@ -166,11 +167,15 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "Sentry",
       "Google (Gemini API)",
       "Cerebras",
-      // Resend es un slice posterior del PRD #1171: declarado, pero sin recibir
-      // aún ni un dato.
-      "aún no activo",
-      "no reciben ningún dato",
     ]);
+  });
+
+  test("marks no processor as pending once every declared one receives data", () => {
+    // Resend (#1174) and Sentry (#1175) both receive data now. The «aún no activo»
+    // note only renders while some processor is still pending, so it cannot
+    // announce a pending one that does not exist.
+    expect(LEGAL_PROCESSORS.every((processor) => processor.active !== false)).toBe(true);
+    expect(html("privacidad")).not.toContain("aún no activo");
   });
 
   test("declares Sentry as active, and says what an error report does and does not carry (#1175)", () => {
@@ -187,6 +192,37 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "ni el contenido de tu workspace",
       "Solo errores",
     ]);
+  });
+
+  test("declares Resend as active once the feedback channel sends through it (#1174)", () => {
+    const resend = LEGAL_PROCESSORS.find((processor) => processor.name === "Resend");
+    const sentry = LEGAL_PROCESSORS.find((processor) => processor.name === "Sentry");
+
+    // Resend recibe datos desde el primer feedback: callarlo sería callar una cesión
+    // que ya ocurre. Sentry también es activo desde #1175.
+    expect(resend?.active).not.toBe(false);
+    expect(resend?.purpose).toMatch(/feedback/i);
+    expect(sentry?.active).not.toBe(false);
+    expect(html("privacidad")).not.toMatch(/Resend[^<]*<span class="legalPending"/);
+  });
+
+  test("says what happens to the feedback a user sends, and where it lives (#1174)", () => {
+    expectAll("privacidad", [
+      "Enviar feedback",
+      "fuera de tu workspace",
+      "el feedback que decidas enviar",
+    ]);
+  });
+
+  test("gives the feedback its own legal basis and keeps «nothing optional» true (#1174)", () => {
+    const text = html("privacidad");
+
+    // §3 has to name a basis for every treatment §2 lists, feedback included.
+    expect(text).toMatch(/feedback[^<]*<\/strong>[^]*?artículo 6\.1\.f/);
+    // «No hay nada opcional que aceptar» and «el feedback que decidas enviar» used
+    // to sit side by side: the voluntary send is now said out loud, not contradicted.
+    expect(text).not.toContain("no hay nada opcional que aceptar.");
+    expect(text).toContain("Lo único voluntario es el feedback");
   });
 
   test("does not declare a provider that receives nothing (#1278)", () => {

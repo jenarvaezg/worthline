@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  FEEDBACK_BUTTON_LABEL,
+  FEEDBACK_BUTTON_PLACE,
+} from "@web/feedback/feedback-message";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +12,7 @@ import {
   renderCapabilityDestinations,
   renderCapabilityDestinationsForPrompt,
 } from "./capability-destinations";
+import { FABRICATED_ALERT_NOTE } from "./fabricated-maintainer-alert";
 import { MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE } from "./maintainer-alert-evidence";
 import { buildChatSystemPrompt } from "./system-prompt";
 
@@ -117,6 +122,65 @@ describe("capability destinations (#1524)", () => {
         );
       }
     }
+  });
+
+  it("sends a user who wants to report something to the feedback button (#1174)", () => {
+    // 2026-08-21: «levanta una incidencia sobre esto … ¿hay un número de ticket?». The
+    // assistant invented one, then had to confess there was nowhere to send it. Now there
+    // is, and the honest answer has three halves: the button, by its own words; that the
+    // USER sends it (the assistant cannot, and #1525 accuses it if it says it did); and
+    // that no ticket number comes back, which is what he asked for twice.
+    const feedback = CAPABILITY_DESTINATIONS.find(
+      (entry) => entry.id === "user-feedback",
+    );
+
+    expect(feedback).toBeDefined();
+    expect(feedback?.where).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
+    expect(feedback?.where).toContain(FEEDBACK_BUTTON_PLACE);
+    // The public demo has no button: the sentence must not promise one there.
+    expect(feedback?.where).toMatch(/sesión iniciada/i);
+    expect(feedback?.where).toMatch(/propio usuario/i);
+    expect(feedback?.where).toMatch(/no puedes enviarla/i);
+    expect(feedback?.where).toMatch(/sin número de ticket/i);
+  });
+
+  it("points the faked-incident note at the same button", () => {
+    // The note painted under a turn that claimed an incident it never filed used to end
+    // in «hoy worthline no puede tramitar un aviso por ti». That was the truth until
+    // #1174; left as is, it would now send the user away from the channel that exists.
+    expect(FABRICATED_ALERT_NOTE).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
+    expect(FABRICATED_ALERT_NOTE).toContain(FEEDBACK_BUTTON_PLACE);
+    expect(FABRICATED_ALERT_NOTE).toContain("no hay ticket");
+    expect(FABRICATED_ALERT_NOTE).not.toMatch(/no puede tramitar un aviso por ti\.$/);
+  });
+
+  it.each([
+    // Every top bar the assistant can be read under by a session that may send: the
+    // workspace topbar, the error page that replaces it, the estreno and /empezar
+    // mastheads, and the legal cover. «En la barra superior» has to be true on all
+    // of them — that is why the phrase is one constant and this list pins each mount
+    // inside its own <header>.
+    ["(workspace)/layout.tsx", "<FeedbackMount />"],
+    ["error.tsx", "<FeedbackSlot />"],
+    ["empezar/page.tsx", "<FeedbackMount />"],
+    ["legal/layout.tsx", "<FeedbackSlot />"],
+    ["asistente/assistant-layer.tsx", "{onboardingMastheadAction}"],
+  ])("mounts the button in the top bar of %s", (file, mount) => {
+    const text = source(file);
+    const at = text.indexOf(mount);
+    const header = text.lastIndexOf("<header", at);
+
+    expect(at, file).toBeGreaterThan(-1);
+    expect(header, file).toBeGreaterThan(-1);
+    expect(text.lastIndexOf("</header>", at), file).toBeLessThan(header);
+  });
+
+  it("hands the estreno masthead the launcher, which prints the shared label", () => {
+    const bienvenida = source("bienvenida/page.tsx");
+
+    expect(bienvenida).toContain("onboardingMastheadAction={");
+    expect(bienvenida).toContain("<FeedbackLauncher />");
+    expect(source("feedback/feedback-launcher.tsx")).toContain("{FEEDBACK_BUTTON_LABEL}");
   });
 
   it("names the accordion the UI actually renders", () => {

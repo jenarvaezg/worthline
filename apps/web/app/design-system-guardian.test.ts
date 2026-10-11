@@ -424,7 +424,11 @@ describe("Libro mayor design-system guardian (#906)", () => {
       ["demo/page.tsx", 'className="demoPersonaCard coverSheet"'],
       ["not-found.tsx", 'className="notFoundPage coverSurface"'],
       ["workspace-footer.tsx", 'className="persistenceBar coverSurface"'],
-      ["empezar/page.tsx", 'className="coverSurface coverMasthead empezarMasthead"'],
+      // Carries «Enviar feedback» on its right since #1174 (`.coverActionBar`).
+      [
+        "empezar/page.tsx",
+        'className="coverSurface coverMasthead empezarMasthead coverActionBar"',
+      ],
       // Los textos legales (#1172) son remate público, no trabajo: cubierta
       // fuera, hoja luminosa para el cuerpo del documento.
       ["legal/layout.tsx", 'className="legalPage coverSurface"'],

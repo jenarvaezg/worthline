@@ -69,7 +69,8 @@ export const LEGAL_DOCUMENTS: readonly LegalDocument[] = [
     summary:
       "Qué datos se tratan, con qué base jurídica, quién los procesa y cómo ejercer tus derechos.",
     title: "Política de privacidad",
-    // Sentry pasa de declarado a activo (#1175): recibe informes de error.
+    // Sentry (#1175) y Resend (#1174) pasan a encargados activos; se declaran los
+    // informes de error y el feedback.
     updatedAt: "2026-10-11",
   },
   {

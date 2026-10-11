@@ -8,9 +8,7 @@
  *
  * Dos precisiones que el research (#1136) traía mal y el código desmiente:
  * quien autentica la web es **Google** vía next-auth (`auth.config.ts`), no
- * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034); y **Resend**
- * todavía no está instalado (es un slice posterior del PRD #1171), así que va
- * marcado `active: false` hasta que trate su primer dato.
+ * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034).
  *
  * **Sentry** entró con #1175 (ADR 0110): recibe los errores del servidor
  * reducidos por `error-monitoring.ts` a su tipo, su punto del código y el patrón
@@ -18,6 +16,10 @@
  * contenido del workspace — y solo si el despliegue configura `SENTRY_DSN`. Se declara activo
  * sin condicionarlo a esa variable: declarar un encargado que algún día no
  * recibe nada es la imprecisión menor; callar uno que sí recibe, la grave.
+ *
+ * **Resend** entró con el feedback de un toque (#1174): desde el primer mensaje
+ * recibe su texto y la dirección de quien lo envía, así que también es un
+ * encargado activo, con la misma regla sobre `RESEND_API_KEY`.
  *
  * Fuentes de cada DPA y de la postura de entrenamiento de los LLM: el research
  * `docs/research/2026-07-18-minimo-legal-salida.md` (#1136).
@@ -61,10 +63,10 @@ export const LEGAL_PROCESSORS: readonly LegalProcessor[] = [
     purpose: "OAuth del servidor MCP: solo si conectas un cliente de agente a tus datos.",
   },
   {
-    active: false,
     mechanism: "DPA publicado",
     name: "Resend",
-    purpose: "Correo transaccional: tu dirección y el contenido del propio aviso.",
+    purpose:
+      "Correo: entrega al desarrollador el feedback que envías desde la aplicación, con su texto y tu dirección.",
   },
   {
     mechanism: "DPA con Data Privacy Framework y cláusulas contractuales tipo",

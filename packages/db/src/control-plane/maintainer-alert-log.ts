@@ -56,6 +56,10 @@ CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
  * `provisioning_cap` (#1175) is raised by sign-in itself when a new identity is
  * turned away because the day's provisioning cap is reached (or misconfigured).
  * Fleet-wide too, one alert per UTC day; it never carries who was refused.
+ *
+ * `user_feedback` (#1174) is the first category a PERSON raises: the in-app
+ * «Enviar feedback» button. It belongs to the user's workspace, and its holding
+ * slot is a per-message sentinel so every message is its own alert.
  */
 export type MaintainerAlertCategory =
   | "catalog_identity_collision"
@@ -63,7 +67,8 @@ export type MaintainerAlertCategory =
   | "missed_capture"
   | "provisioning_cap"
   | "residual"
-  | "sync_source";
+  | "sync_source"
+  | "user_feedback";
 
 /** An alert's lifecycle state (#1050): `open` accumulates occurrences; `resolved`/`dismissed` close it. */
 export type MaintainerAlertStatus = "open" | "resolved" | "dismissed";

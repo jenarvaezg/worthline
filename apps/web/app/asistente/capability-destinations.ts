@@ -22,10 +22,15 @@
  * one copy cannot.
  */
 
+import {
+  FEEDBACK_BUTTON_LABEL,
+  FEEDBACK_BUTTON_PLACE,
+} from "@web/feedback/feedback-message";
+
 /** A capability the user asks about, and the surface that owns it. */
 export interface CapabilityDestination {
   /** Stable key, so a caller or a test names an entry without matching its prose. */
-  id: "holding-identity" | "connected-source" | "rent-expenses";
+  id: "holding-identity" | "connected-source" | "rent-expenses" | "user-feedback";
   /** The capability in the user's words plus where worthline does it. */
   where: string;
   /**
@@ -68,6 +73,20 @@ export const CAPABILITY_DESTINATIONS: CapabilityDestination[] = [
     neverInstead:
       "meter el alquiler NETO en el campo Importe no vale: estropea el libro de cobros, " +
       "que registra lo que LLEGÓ (ADR 0054), y encima no arregla el cálculo (ADR 0076)",
+  },
+  {
+    id: "user-feedback",
+    // The destination that did not exist on 2026-08-21 (#1174): «levanta una
+    // incidencia … ¿hay un número de ticket?», and the assistant invented one because
+    // there was nowhere true to point. Three halves, all needed: the button by its own
+    // label and place (shared with the UI, so a rename or a move reaches here; «con
+    // sesión iniciada» because the public demo has no button); that the USER sends it —
+    // the chat has no tool for it, and claiming otherwise is what #1525 accuses; and
+    // that no ticket number comes back, which is what he asked for twice.
+    where:
+      "un fallo o una petición para el desarrollador la envía el propio usuario, con " +
+      `sesión iniciada, desde «${FEEDBACK_BUTTON_LABEL}», ${FEEDBACK_BUTTON_PLACE}: ` +
+      "sin número de ticket, y tú no puedes enviarla por él",
   },
 ];
 

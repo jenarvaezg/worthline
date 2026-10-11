@@ -79,6 +79,12 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           hay dentro.
         </li>
         <li>
+          <strong>El feedback que envías</strong>: si usas «Enviar feedback», el texto que
+          escribes, la pantalla desde la que lo envías y tu correo, para que el
+          desarrollador pueda leerlo y, si hace falta, contestarte. Se guarda fuera de tu
+          workspace y le llega por correo.
+        </li>
+        <li>
           <strong>Errores técnicos</strong>: cuando algo falla en el servidor, un aviso
           del fallo con el tipo de error, el punto del código y la pantalla en que
           ocurrió. No lleva el texto del error, ni tu correo, ni tu dirección IP, ni
@@ -91,7 +97,7 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         worthline funciona <strong>sin telemetría de uso ni analytics de terceros</strong>
         : no se miden páginas vistas, ni clics, ni el contenido de tu patrimonio. Solo se
         registra lo mínimo para operar el servicio: cuenta, plan y pago, las marcas de
-        tiempo de arriba y los errores técnicos.
+        tiempo de arriba, los errores técnicos y el feedback que decidas enviar.
       </p>
 
       <h3>3. Con qué base jurídica y para qué</h3>
@@ -107,6 +113,11 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           del servicio, corrección de errores y prevención de abuso y fraude.
         </li>
         <li>
+          <strong>El feedback que nos envías</strong>: interés legítimo (
+          <strong>artículo 6.1.f</strong>) en leer lo que nos cuentas, contestarte y
+          corregir lo que señalas. Solo existe si tú decides enviarlo.
+        </li>
+        <li>
           <strong>Obligación legal</strong>: conservar los registros contables y fiscales
           de las ventas durante los plazos que marca la ley.
         </li>
@@ -115,7 +126,8 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
       <p>
         Como no hay publicidad, perfilado ni analítica,{" "}
         <strong>no pedimos consentimiento</strong> para nada del funcionamiento básico: no
-        hay nada opcional que aceptar.
+        hay casillas que marcar. Lo único voluntario es el feedback, y no necesita una
+        casilla aparte: enviarlo es ya la decisión, y si no lo envías no existe.
       </p>
 
       <h3>4. Quién más trata tus datos</h3>
@@ -155,12 +167,14 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         </table>
       </div>
 
-      <p>
-        Los marcados <strong>«aún no activo»</strong> están declarados porque entrarán con
-        la función que los usa (el correo transaccional); mientras tanto{" "}
-        <strong>no reciben ningún dato</strong>. Esta página se actualizará el día que
-        empiecen a recibirlo.
-      </p>
+      {LEGAL_PROCESSORS.some((processor) => processor.active === false) ? (
+        <p>
+          Los marcados <strong>«aún no activo»</strong> están declarados porque entrarán
+          con la función que los usa; mientras tanto{" "}
+          <strong>no reciben ningún dato</strong>. Esta página se actualizará el día que
+          empiecen a recibirlo.
+        </p>
+      ) : null}
 
       <p>
         Además, <strong>{MERCHANT_OF_RECORD.name}</strong> trata los datos del pago como{" "}
@@ -209,7 +223,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         El contenido de tu workspace se conserva mientras la cuenta exista; cuando lo
         eliminas, se borra. Los registros de facturación se conservan el tiempo que exigen
         las obligaciones contables y fiscales. Los informes de error se conservan un plazo
-        corto, el necesario para diagnosticar el fallo.
+        corto, el necesario para diagnosticar el fallo. El feedback que envías se conserva
+        el tiempo necesario para atenderlo y, como no vive en tu workspace, no se borra
+        con él: si quieres que se elimine, pídelo en la dirección de contacto.
       </p>
 
       <h3>8. Tus derechos</h3>

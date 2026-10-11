@@ -1,9 +1,11 @@
+import FeedbackMount from "@web/feedback/feedback-mount";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { parseFormError } from "@web/intake";
 import LegalLinks from "@web/legal/legal-links";
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import { Suspense } from "react";
 import { initHogarAction, initSoloAction } from "./actions";
 
 /**
@@ -73,9 +75,14 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
     <main className="workspace empezarPage">
       {/* Masthead híbrido (#829/#909): banda de cubierta sobre cuerpo de
           papel — el login es la cubierta; /empezar, la primera página. */}
-      <header className="coverSurface coverMasthead empezarMasthead">
-        <p className="empezarEyebrow">Patrimonio neto local</p>
-        <h1>worthline</h1>
+      <header className="coverSurface coverMasthead empezarMasthead coverActionBar">
+        <div>
+          <p className="empezarEyebrow">Patrimonio neto local</p>
+          <h1>worthline</h1>
+        </div>
+        <Suspense fallback={null}>
+          <FeedbackMount />
+        </Suspense>
       </header>
 
       <section className="empezarSection" aria-label="Crear workspace">

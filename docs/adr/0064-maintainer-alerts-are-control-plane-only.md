@@ -158,6 +158,44 @@ either. Raising is best-effort — the refusal and its honest «hoy estamos llen
 vuelve mañana» never wait on the alert. An existing user's sign-in is resolved
 before the cap is consulted, so it can neither be refused nor raise.
 
+## Amendment (#1174): a person may raise one too, and it is the first one pushed
+
+The in-app «Enviar feedback» button adds a seventh category, `user_feedback`, and the
+first raiser that is neither the assistant nor a system job: the user. It stays out
+of the chat tool's enum. The assistant cannot send feedback for the user, only point
+at the button (its destination map says so, and the faked-incident guard of #1525
+still accuses a turn that claims it filed one).
+
+The alert belongs to the user's REAL workspace — who wrote is half the answer — and
+its holding slot is a per-message sentinel, `feedback:<id>`. A per-workspace subject
+would turn a second, unrelated message into an «occurrence» of the first and close
+both together; a message is an incident of its own, which the existing dedup key
+expresses exactly once the subject is the message. The id is minted by the client
+once per draft, so a retry of the same draft lands on the same alert (and reuses
+the email's idempotency key) instead of minting duplicates.
+
+Because no dedup collapses messages, sends are capped per workspace: five per UTC
+hour, counted with the same atomic increment-then-check counter as ADR 0051, before
+anything is written. Without it one account in a loop would fill the control plane
+and spend the mail quota the trial emails also need. The payload is the text verbatim,
+the pathname it was sent from (never the query string, which can carry typed
+amounts), the signed-in address to answer, and the timestamp. Only a signed-in
+user's own session can send: not the public demo, not the local no-auth mode, not
+an admin impersonating a workspace.
+
+It is also the first alert with a **push** channel, lifting the v1 deferral below
+for this category only: the same submission is mailed to the maintainer (the
+`WORTHLINE_ADMIN_EMAIL` address, the one that can open the `/admin` detail the mail
+links to) through Resend. One write, two destinations, and neither waits on the
+other — the alert is written first as the durable copy, the mail goes out whatever
+happened to it, a missing `RESEND_API_KEY` skips the mail with a log line, and only
+when neither destination took the message is the user told it was not sent (the
+draft stays in the form for a retry). Every other category remains pull-only.
+
+There is deliberately no GitHub issue: the message can carry personal financial
+context and the repository is public. That is the same reason the text never goes
+to the server logs.
+
 ## Considered options
 
 - **Store alerts in the workspace database** — rejected. Any export/transfer would

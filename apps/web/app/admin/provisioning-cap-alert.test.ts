@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { maintainerAlertSubject } from "./missed-capture-alert";
+import { maintainerAlertSubject } from "./maintainer-alert-subject";
 import {
   buildProvisioningCapAlert,
   isProvisioningCapPayload,
@@ -130,7 +130,7 @@ describe("maintainerAlertSubject for a provisioning-cap alert (#1175)", () => {
       holdingId: "provisioning-cap:2026-03-14",
       workspaceId: "fleet",
     });
-    expect(subject.isFleet).toBe(true);
+    expect(subject.kind).toBe("global");
     expect(subject.workspace).toBe("flota");
     expect(subject.subject).toBe("altas del 14-03-2026");
   });

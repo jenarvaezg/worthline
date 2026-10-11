@@ -1,6 +1,6 @@
 import { guardAdmin } from "@web/admin/guard-admin";
 import { listAdminMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
-import { maintainerAlertSubject } from "@web/admin/missed-capture-alert";
+import { maintainerAlertSubject } from "@web/admin/maintainer-alert-subject";
 import { maintainerAlertCategoryLabel } from "@web/asistente/maintainer-alert";
 import type { MaintainerAlertStatus } from "@worthline/db";
 
@@ -54,8 +54,9 @@ export default async function AdminAlertsPage() {
           ) : null}
         </h1>
         <p className="demoLede">
-          Sospechas de bug del asistente, solo-mantenedor. La reparación nunca espera a la
-          alerta. <a href="/admin">← Usuarios</a>
+          Sospechas de bug, fallos de los procesos nocturnos y feedback de usuarios;
+          solo-mantenedor. La reparación nunca espera a la alerta.{" "}
+          <a href="/admin">← Usuarios</a>
         </p>
       </header>
 

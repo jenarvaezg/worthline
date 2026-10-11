@@ -1,5 +1,6 @@
 "use client";
 
+import FeedbackSlot from "@web/feedback/feedback-slot";
 import Link from "next/link";
 
 type ErrorPageProps = {
@@ -20,6 +21,9 @@ export default function ErrorPage({ unstable_retry }: ErrorPageProps) {
             <p>Patrimonio neto local</p>
           </div>
         </div>
+        {/* This boundary replaces the workspace top bar exactly when something
+            broke — the moment a user most wants to say so (#1174). */}
+        <FeedbackSlot />
       </header>
 
       <section className="section errorRecovery">

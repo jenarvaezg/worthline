@@ -12,16 +12,20 @@ import type {
 import { formatMoneyMinor } from "@worthline/domain";
 
 import {
+  maintainerAlertScopeLine,
+  maintainerAlertSubject,
+} from "./maintainer-alert-subject";
+import {
   dailyCapturePassLabel,
   isMissedCapturePayload,
   type MissedCapturePayload,
-  maintainerAlertSubject,
 } from "./missed-capture-alert";
 import {
   isProvisioningCapPayload,
   type ProvisioningCapPayload,
   provisioningCapDayLabel,
 } from "./provisioning-cap-alert";
+import { isUserFeedbackPayload, type UserFeedbackPayload } from "./user-feedback-alert";
 
 /**
  * The forensic detail of one maintainer alert (#1050, ADR 0064): the trace
@@ -265,6 +269,43 @@ function CatalogCollisionView({ payload }: { payload: unknown }) {
   );
 }
 
+/**
+ * A user's feedback (#1174): the forensic material IS the message, so it renders
+ * as the text they typed — as text, line breaks kept by CSS — plus who to answer
+ * and which screen they were on. The reply link opens the maintainer's own mail
+ * client; worthline sends nothing back on its own.
+ */
+function UserFeedbackView({ payload }: { payload: unknown }) {
+  if (!isUserFeedbackPayload(payload)) {
+    return (
+      <>
+        <p className="alertMeta">Feedback ilegible.</p>
+        <details suppressHydrationWarning className="alertExtracted">
+          <summary>Datos del feedback (formato no reconocido)</summary>
+          <pre>{JSON.stringify(payload, null, 2)}</pre>
+        </details>
+      </>
+    );
+  }
+  return <UserFeedbackMessage payload={payload} />;
+}
+
+function UserFeedbackMessage({ payload }: { payload: UserFeedbackPayload }) {
+  const reply = payload.email
+    ? `mailto:${encodeURIComponent(payload.email)}?subject=${encodeURIComponent("Re: tu feedback en worthline")}`
+    : null;
+  return (
+    <>
+      <p className="alertFeedbackMessage">{payload.message}</p>
+      <p className="alertMeta">
+        De {reply ? <a href={reply}>{payload.email}</a> : "correo no disponible"} ·
+        pantalla {payload.page ? <code>{payload.page}</code> : "desconocida"} · enviado{" "}
+        {payload.submittedAt}
+      </p>
+    </>
+  );
+}
+
 function OccurrenceView({
   category,
   payload,
@@ -283,6 +324,8 @@ function OccurrenceView({
       </h3>
       {category === "catalog_identity_collision" ? (
         <CatalogCollisionView payload={payload} />
+      ) : category === "user_feedback" ? (
+        <UserFeedbackView payload={payload} />
       ) : isMissedCapturePayload(payload) ? (
         <MissedCaptureView payload={payload} />
       ) : isProvisioningCapPayload(payload) ? (
@@ -363,18 +406,14 @@ export function MaintainerAlertDetail({
   alert: MaintainerAlertWithOccurrences;
 }) {
   const isOpen = alert.status === "open";
-  const subject = maintainerAlertSubject(alert);
+  const scope = maintainerAlertScopeLine(maintainerAlertSubject(alert));
   return (
     <main className="demoLanding maintainerAlerts">
       <header className="demoLandingHead">
         <p className="demoKicker">worthline · admin · alertas</p>
         <h1>{maintainerAlertCategoryLabel(alert.category)}</h1>
         <p className="demoLede">
-          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) ·{" "}
-          {subject.isFleet || subject.isCatalog
-            ? // Global incidents name their catalog identity or capture pass.
-              `${subject.workspace} · ${subject.subject}`
-            : `workspace ${subject.workspace} · holding ${subject.subject}`}
+          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) · {scope}
         </p>
         <p className="alertMeta">
           <a href="/admin/alertas">← Todas las alertas</a>
