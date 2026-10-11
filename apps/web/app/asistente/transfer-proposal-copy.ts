@@ -92,6 +92,15 @@ export function transferEarlierMessageCaption(message: string): string {
   return `Lo que he leído en un mensaje anterior tuyo: «${openingOf(message)}»`;
 }
 
+/**
+ * The caption when the figures come off a validated confirmation (#1799): the file by
+ * its name, so the echo above is checked against the paper and not hunted for in a
+ * message the person never wrote.
+ */
+export function transferDocumentCaption(fileName: string): string {
+  return `Lo que he leído en el documento «${fileName}»`;
+}
+
 /** The first words of a message, cut at a word boundary and marked when cut. */
 function openingOf(message: string): string {
   const chars = Array.from(message.replace(/\s+/gu, " ").trim());

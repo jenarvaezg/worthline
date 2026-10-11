@@ -1293,6 +1293,7 @@ describe("createChatTools · propose_transfer (#1482)", () => {
   async function transferTools(
     store: WorthlineStore,
     typedTransfer: Parameters<typeof createChatTools>[0]["typedTransfer"],
+    validatedAttachments?: Parameters<typeof createChatTools>[0]["validatedAttachments"],
   ) {
     const publicIds = await store.agentView.readPublicIds();
     const idOf = (entityId: string) =>
@@ -1313,6 +1314,12 @@ describe("createChatTools · propose_transfer (#1482)", () => {
             operations: store.operations,
           }),
         ...(typedTransfer ? { typedTransfer } : {}),
+        ...(validatedAttachments
+          ? {
+              validatedAttachments,
+              validatedDocuments: validatedAttachments.map(({ document }) => document),
+            }
+          : {}),
       }),
     };
   }
@@ -1494,6 +1501,225 @@ describe("createChatTools · propose_transfer (#1482)", () => {
     // And the sibling points back, which is what stops a venta + compra (#1393).
     expect(tools["propose_operation"]?.description ?? "").toContain("propose_transfer");
     store.close();
+  });
+
+  describe("from the validated confirmation (#1799)", () => {
+    /**
+     * The bank's notice of ONE traspaso, as the vision seam validates it (#1795).
+     * Invented figures: the incident's paper stays out of a public repo.
+     */
+    function confirmation(overrides: Record<string, unknown> = {}) {
+      return extractedDocumentSchema.parse({
+        documentType: "transfer",
+        transfer: {
+          amount: 739.22,
+          confirms: "redemption",
+          currency: "EUR",
+          date: "2026-08-14",
+          destination: { name: "CARTERA PERMANENTE EJEMPLO PP" },
+          fees: { amount: 0, currency: "EUR" },
+          label: "REEMB.POR TRASPASO I",
+          origin: { name: "INDEXADO EJEMPLO PP" },
+          pricePerUnit: { amount: 12.0003, currency: "EUR" },
+          units: 61.6,
+          ...overrides,
+        },
+        warnings: [],
+      });
+    }
+
+    it("the description names the paper as a source, so a turn with only the notice reaches the lane", async () => {
+      const store = await transferStore();
+      const { tools } = await transferTools(store, undefined);
+
+      expect(tools["propose_transfer"]?.description ?? "").toContain(
+        "documentType transfer",
+      );
+      store.close();
+    });
+
+    it("a reembolso builds the card with the participaciones that left, the gross importe and the fecha de operación", async () => {
+      const store = await transferStore();
+      // Nothing typed at all: the paper alone opens the lane.
+      const { destination, origin, tools } = await transferTools(store, undefined, [
+        { document: confirmation(), fileName: "aviso-traspaso.pdf" },
+      ]);
+
+      const result = await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        dictated: "14/08/2026 · 61,6 participaciones · 739,22 €",
+        origin: { positionLine: "Salen de «Indexado PP»: 100 → 38,4 participaciones" },
+        proposalType: "investment_transfer",
+      });
+      store.close();
+    });
+
+    it("a suscripción declares the participaciones that ARRIVED, and the origin is divided at its own price", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, undefined, [
+        {
+          document: confirmation({
+            confirms: "subscription",
+            label: "SUSCR.POR TRASPASO I",
+            units: 50.98,
+          }),
+          fileName: "aviso-suscripcion.pdf",
+        },
+      ]);
+
+      const result = (await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      )) as { notes?: string[] };
+
+      expect(result).toMatchObject({
+        dictated: "14/08/2026 · 739,22 € · entraron 50,98 participaciones",
+        destination: {
+          positionLine: "Entran en «Cartera Permanente PP»: 0 → 50,98 participaciones",
+        },
+        // 739,22 € ÷ 12 € — the origin's own price, the one the paper does not print.
+        origin: {
+          positionLine: "Salen de «Indexado PP»: 100 → 38,398333 participaciones",
+        },
+      });
+      // And the card says whose VL divided the origin; the destination's needs no note.
+      expect(result.notes?.join(" ")).toContain("VL de origen");
+      expect(result.notes?.join(" ")).not.toContain("VL de destino");
+      store.close();
+    });
+
+    it("the paper wins over other figures the user typed in the same turn", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(
+        store,
+        typedTransferInTurn(
+          [
+            {
+              id: "u1",
+              parts: [{ text: "Anota el traspaso de ayer, unos 500 €", type: "text" }],
+              role: "user",
+            },
+          ],
+          "2026-08-21",
+        ),
+        [{ document: confirmation(), fileName: "aviso-traspaso.pdf" }],
+      );
+
+      const result = await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        dictated: "14/08/2026 · 61,6 participaciones · 739,22 €",
+      });
+      store.close();
+    });
+
+    it("says the figures come from the file, and records the draft as read off it", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, undefined, [
+        { document: confirmation(), fileName: "aviso-traspaso.pdf" },
+      ]);
+
+      const result = (await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      )) as { draft: { proposalId: string }; sourceCaption: string };
+
+      expect(result.sourceCaption).toBe(
+        "Lo que he leído en el documento «aviso-traspaso.pdf»",
+      );
+      // Provenance `agent`: worthline read these figures off a paper, the person typed
+      // none of them — the operation's justificante is recorded the same way.
+      const draft = await store.assistantProposals.read(result.draft.proposalId);
+      expect(draft?.documents[0]?.document).toMatchObject({
+        name: "aviso-traspaso.pdf",
+        provenance: "agent",
+      });
+      store.close();
+    });
+
+    it("a commission is sent to «Traspasar», where each figure has its field", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, DICTATED, [
+        {
+          document: confirmation({ fees: { amount: 2.5, currency: "EUR" } }),
+          fileName: "aviso-traspaso.pdf",
+        },
+      ]);
+
+      const result = (await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      )) as { audience?: string; error?: string; message?: string };
+
+      // Not half-written from the chat, and not quietly rebuilt from the typed figures
+      // either: the paper is the source, and the paper charged a commission.
+      expect(result.error).toBe("transfer_fee_in_document");
+      expect(result.audience).toBe("user");
+      expect(result.message).toContain("2,50 €");
+      expect(result.message).toContain("«Traspasar»");
+      store.close();
+    });
+
+    it("refuses a paper in another currency instead of reading it as euros", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, undefined, [
+        {
+          document: confirmation({
+            currency: "USD",
+            fees: { amount: 0, currency: "USD" },
+            pricePerUnit: { amount: 12.0003, currency: "USD" },
+          }),
+          fileName: "aviso-traspaso.pdf",
+        },
+      ]);
+
+      const result = (await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      )) as { error?: string };
+
+      expect(result.error).toContain("USD");
+      expect(result.error).toContain("no convierto divisas");
+      store.close();
+    });
+
+    it("a validated document of another kind leaves the user's message as the source", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, DICTATED, [
+        {
+          document: extractedDocumentSchema.parse({
+            documentType: "holding_event",
+            event: {
+              amount: 300,
+              currency: "EUR",
+              date: "2026-08-10",
+              kind: "deposit",
+              label: "Aportación",
+            },
+            warnings: [],
+          }),
+          fileName: "aportacion.pdf",
+        },
+      ]);
+
+      const result = await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        dictated: "14/08/2026 · 739,22 €",
+        sourceCaption: "Lo que he leído en tu mensaje",
+      });
+      store.close();
+    });
   });
 });
 

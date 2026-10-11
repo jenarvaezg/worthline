@@ -40,8 +40,9 @@ export interface TransferProposal {
    */
   dictated: string;
   /**
-   * Where {@link dictated} was read, printed under it: the turn's own message, or an
-   * earlier one quoted by its opening when «sí, procede» reached back to it (#1798). A
+   * Where {@link dictated} was read, printed under it: the turn's own message, an
+   * earlier one quoted by its opening when «sí, procede» reached back to it (#1798), or
+   * the validated confirmation named by its file (#1799). A
    * field rather than a constant in the component for the operation card's reason
    * (#1466): a card that says «tu mensaje» about one the person wrote three turns ago
    * makes them hunt for figures that are not in the message they just sent.

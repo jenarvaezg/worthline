@@ -14,7 +14,10 @@
  * The frontiers, all in code and not in the tool's prose (ADR 0067):
  *
  * - **The figures come from the USER's message, parsed by worthline**, never from the
- *   model's arguments ({@link ../typed-transfer} carries that whole argument).
+ *   model's arguments ({@link ../typed-transfer} carries that whole argument) — or,
+ *   since #1799, from the bank's confirmation worthline validated
+ *   ({@link ../transfer-document-source}), and then the draft says so: provenance
+ *   `agent`, the file's name, and a caption that names it.
  * - **Both holdings must be MANUAL investments of this workspace.** A sync-owned
  *   position is the source's to write, and the gate THROWS on one — so it is refused
  *   here, with a sentence, before anything is persisted.
@@ -73,6 +76,7 @@ import {
   TRANSFER_IMPACT_CAPTION,
   TRANSFER_NEUTRALITY_NOTE,
   transferDictatedLine,
+  transferDocumentCaption,
   transferEarlierMessageCaption,
   transferHalfLine,
   transferInheritedCostLine,
@@ -97,15 +101,38 @@ export interface TransferArgs {
   /** The `wl_hld_…` pair echoed back to the card. */
   originHolding: string;
   destinationHolding: string;
-  /** The traspaso worthline read in the user's own message. Never the model's args. */
-  transfer: TypedTransfer;
   /**
-   * The earlier user message those figures were read from, when it was not the turn's
-   * own (#1798): «sí, procede» reaches back to them, and the card says so.
+   * The traspaso worthline READ — in the user's own message, or off a validated
+   * confirmation (#1799). Never the model's args.
    */
-  earlierMessage?: string;
+  transfer: TypedTransfer;
+  /** Where {@link transfer} was read. Absent means the turn's own message. */
+  source?: TransferSource;
   summary?: string;
 }
+
+/**
+ * Where the figures of a traspaso were read, which is what the card says under them and
+ * what the draft records as its provenance. Two doors, one builder — the operation's
+ * shape (#1374, #1466).
+ */
+export type TransferSource =
+  | {
+      from: "message";
+      /**
+       * The earlier user message those figures were read from, when it was not the
+       * turn's own (#1798): «sí, procede» reaches back to them, and the card says so.
+       */
+      earlierMessage?: string;
+    }
+  | {
+      /** A confirmation worthline extracted and validated (#1795, #1799). */
+      from: "document";
+      /** The file it came in: the card names it, and so does the draft. */
+      fileName: string;
+      /** The currency the paper prints the importe in. */
+      currency: string;
+    };
 
 /**
  * The route offered when a side of the traspaso is not a manual investment with
@@ -423,6 +450,22 @@ export async function buildTransferProposal(
 
   const { destination, origin, pair } = projected;
   const currency = origin.currency;
+  const source: TransferSource = args.source ?? { from: "message" };
+  // A paper's importe is in the paper's currency, and the pair is written in the
+  // holdings': no rate is ever invented (ADR 0065), so a confirmation in another one is
+  // refused rather than read as if it were the same money.
+  if (
+    source.from === "document" &&
+    source.currency.toUpperCase() !== currency.toUpperCase()
+  ) {
+    return {
+      error:
+        `El justificante está en ${source.currency} y «${origin.name}» se lleva en ` +
+        `${currency}: no convierto divisas por mi cuenta, así que este traspaso regístralo ` +
+        "desde «Traspasar» en la ficha de la posición de origen.",
+      ok: false,
+    };
+  }
 
   const plan: InvestmentTransferPlan = {
     currency,
@@ -438,11 +481,14 @@ export async function buildTransferProposal(
   const proposal = await store.assistantProposals.create({ kind: "investment_transfer" });
   await store.assistantProposals.appendDocument(proposal.id, {
     document: {
-      // Provenance `user`: what backs this write is the user's OWN message, read by
-      // worthline (#1418's rule) — there is no document, and naming one would put a
-      // file's name on a write no file grounds.
-      name: TRANSFER_DICTATED_DOCUMENT_NAME,
-      provenance: "user",
+      // Provenance `agent` and the file's own name when worthline READ the figures off a
+      // validated confirmation (#1799), as the operation records its justificante.
+      // Provenance `user` otherwise: what backs this write is the user's OWN message,
+      // read by worthline (#1418's rule) — there is no document, and naming one would
+      // put a file's name on a write no file grounds.
+      ...(source.from === "document"
+        ? { name: source.fileName, provenance: "agent" as const }
+        : { name: TRANSFER_DICTATED_DOCUMENT_NAME, provenance: "user" as const }),
       sha256: createHash("sha256").update(JSON.stringify(plan)).digest("hex"),
     },
     facts: [{ kind: "investment_transfer", row: plan }],
@@ -477,10 +523,7 @@ export async function buildTransferProposal(
         portion,
         ...(destinationUnits === undefined ? {} : { destinationUnits }),
       }),
-      sourceCaption:
-        args.earlierMessage === undefined
-          ? TRANSFER_DICTATED_CAPTION
-          : transferEarlierMessageCaption(args.earlierMessage),
+      sourceCaption: transferSourceCaption(source),
       draft: { proposalId: proposal.id },
       folio: TRANSFER_FOLIO,
       impact: {
@@ -545,6 +588,14 @@ export async function buildTransferProposal(
  * the typed balance series' (#1418): what backs these figures is the user's message.
  */
 export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
+
+/** The caption under the echo: the file, an earlier message, or the turn's own. */
+function transferSourceCaption(source: TransferSource): string {
+  if (source.from === "document") return transferDocumentCaption(source.fileName);
+  return source.earlierMessage === undefined
+    ? TRANSFER_DICTATED_CAPTION
+    : transferEarlierMessageCaption(source.earlierMessage);
+}
 
 /**
  * The VLs the arithmetic still needs, or the refusal that names the holding without one.
