@@ -342,7 +342,7 @@ provider. Review that provider's data terms before running it.
 ```bash
 bun run eval:assistant -- \
   --provider google \
-  --model gemini-3.1-flash-lite \
+  --model gemini-3.5-flash-lite \
   --output /tmp/google-admission.json
 
 bun run eval:assistant -- \
@@ -509,11 +509,11 @@ entry, Groq, was retired in #1278 because its free tier can no longer accept one
 request of the current turn (12.000 tokens per minute against 14.285 measured),
 which also retired the one `grandfathered` mark the pool used to carry.
 
-- **Gemini — 2026-08-16, 70/91, all three dimensions.** Re-run by #1376 (the question
-  set changed): 31/42 reading, 19/23 tool-discipline, 20/26 attachments. It replaces
-  the #1342 mark (2026-08-03, 62/83 — 28/42, 18/23, 16/18), which measured the
-  22-question set; the totals are not comparable and the baseline below is how the
-  difference was read.
+- **Gemini 3.5 Flash-Lite — 2026-10-11, 111/129, all three dimensions.** The primary
+  changed model (see the closing note of this section): 42/47 reading, 30/40
+  tool-discipline, 39/42 attachments, on the full 28-question set. It replaces the
+  `gemini-3.1-flash-lite` mark of #1376 (2026-08-16, 70/91 — 31/42, 19/23, 20/26), which
+  had itself replaced the #1342 one (2026-08-03, 62/83 — 28/42, 18/23, 16/18).
 - **Cerebras — 2026-07-27, 49/65, two dimensions. Revalidation pending.** #1342
   changed its contract too, so this mark is stale and knowingly carried. Two attempts
   that day failed to complete — the first died at question 20 of 22, the second lost
@@ -595,12 +595,27 @@ operation, so every dictated compra was refused with `operation_document_require
 for whoever takes it: over a message with two euro figures in it, does the model relay the
 refusal or invent a card?
 
+**2026-10-11: the primary moved to `gemini-3.5-flash-lite`, and that run is the Gemini
+mark.** It is the successor Google's deprecations page names for 3.1 (whose earliest
+shutdown is 2027-05-07), free of charge on the free tier, with the same window. Both
+models ran the full 28-question set the same night on the same tree: 3.5 111/129 with no
+provider error; 3.1 90/129 with five questions dead on Google's 503 «high demand», so a
+floor, never a mark. On the 104 checks both answered it is 93 against 90 — noise by the
+measure below — and read check by check the trade is `reading` +3 and `attachments` +3
+(the broker statement now reaches its card) against `tool-discipline` −3, all three of
+them rule-shaped: a proposal over an ambiguous holding in `write-asks-which-holding`, no
+request for the real amount in `write-asks-for-the-figure`, and no document route over an
+unvalidated series. Those are the questions to re-read on the next run. The answer to the
+#1753 question above is still open: `write-relays-the-refusal` scored 3/6 on 3.5 and died
+on a 503 on 3.1. **Cerebras's mark is still stale.**
+
 #1801 fires it on the set count and on one persona: `attachment-registers-the-transfer`
 takes the set to 29 questions and 137 checks (`attachments` from 42 to 50), and
 `inversor` gained two funds. **No mark above was edited.** The live run this slice took
-(see «The traspaso confirmation») is a record of a run, not a mark: nine of its questions
-died on provider overload, two attachment questions never ran for want of quota, and there
-was no same-day `main` baseline to read it against check by check.
+(see «The traspaso confirmation») is a record of a run, not a mark: it ran on the
+3.1 primary before the move above, nine of its questions died on provider overload, two
+attachment questions never ran for want of quota, and there was no same-day `main`
+baseline to read it against check by check.
 
 ### Reading a score change (#1342)
 

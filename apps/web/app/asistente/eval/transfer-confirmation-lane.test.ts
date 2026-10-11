@@ -28,7 +28,7 @@ import { ATTACHMENT_QUESTIONS, TRANSFER_CONFIRMATION } from "./golden-attachment
 import { prepareGoldenTurn, readGoldenValidatedDocument } from "./golden-turn";
 import type { AssistantAnswer } from "./graders";
 
-const PRIMARY = { model: "gemini-3.1-flash-lite", provider: "google" };
+const PRIMARY = { model: "gemini-3.5-flash-lite", provider: "google" };
 /** The harness's pinned clock (`run.ts`'s `WORTHLINE_DEMO_NOW` default). */
 const AS_OF = "2026-06-01";
 const LANE_TEST_TIMEOUT_MS = 30_000;

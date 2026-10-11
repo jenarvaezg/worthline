@@ -61,7 +61,7 @@ export async function eligibleProvidersFor(
 
 /**
  * ONE prompt PER PROVIDER (#1408). The history is fitted to the budget of the model
- * that is about to read it, so `gemini-3.1-flash-lite` — 1 048 576 input tokens —
+ * that is about to read it, so `gemini-3.5-flash-lite` — 1 048 576 input tokens —
  * keeps a whole conversation where a 30 000-tokens-per-minute fallback gets a cut
  * one. Before this, both were held to a single 16 000-character ceiling that
  * REFUSED, and one recited document ended the conversation for good.

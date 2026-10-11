@@ -11,7 +11,7 @@ describe("validated assistant provider allowlist", () => {
     expect(
       DEFAULT_PROVIDER_ALLOWLIST.map(({ provider, modelId }) => ({ provider, modelId })),
     ).toEqual([
-      { provider: "google", modelId: "gemini-3.1-flash-lite" },
+      { provider: "google", modelId: "gemini-3.5-flash-lite" },
       { provider: "cerebras", modelId: "gpt-oss-120b" },
     ]);
     expect(() => validateProviderAllowlist(DEFAULT_PROVIDER_ALLOWLIST)).not.toThrow();

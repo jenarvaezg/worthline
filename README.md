@@ -42,7 +42,7 @@ threshold — because one blended ratio is how a model scored 88% on the day it 
 a proposal card in prose and invented a holding id. Two numbers hid one defect.
 
 ```bash
-bun run eval:assistant -- --provider google --model gemini-3.1-flash-lite
+bun run eval:assistant -- --provider google --model gemini-3.5-flash-lite
 ```
 
 **The graders call the production rules.** The fabrication grader invokes
@@ -57,7 +57,7 @@ still scores respectably — read the number next to the tool trace).
 [`provider-pool.ts`](apps/web/app/asistente/provider-pool.ts) types every entry with
 its `AdmissionEvidence`: run date, per-dimension scores, whether the run was
 complete. Marks are validated at import time. Today the pool is Google
-`gemini-3.1-flash-lite` and Cerebras `gpt-oss-120b`, with failover and per-provider
+`gemini-3.5-flash-lite` and Cerebras `gpt-oss-120b`, with failover and per-provider
 cooldown; Groq's Llama 3.3 70B was retired on a measurement, not a hunch — its free
 tier allows 12,000 tokens/minute and the bare turn measures 14,285 in its own
 tokenizer (`bun run eval:floor -- --live`).
@@ -127,7 +127,7 @@ bun run test:related
 The three eval harnesses (all live, all opt-in — they cost provider calls):
 
 ```bash
-bun run eval:assistant -- --provider google --model gemini-3.1-flash-lite
+bun run eval:assistant -- --provider google --model gemini-3.5-flash-lite
 bun run eval:extractor      # document extraction, apps/web/app/asistente/eval/extractor
 bun run eval:floor -- --live  # what one turn costs
 ```

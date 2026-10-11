@@ -14,7 +14,7 @@ import { countPdfPages } from "./attachment-pdf-bytes";
  * contract, prompt and user-facing failure copy.
  */
 
-export const VISION_EXTRACTOR_DEFAULT_MODEL = "gemini-3.1-flash-lite";
+export const VISION_EXTRACTOR_DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 /** Which file family carries the document. It decides transport and guards only. */
 export type VisionAttachmentKind = "image" | "pdf";
