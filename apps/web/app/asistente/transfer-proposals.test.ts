@@ -21,6 +21,7 @@ import { createInMemoryStore } from "@worthline/db";
 import { derivePosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
+import { PASTED_SUSCRIPCION } from "./pasted-transfer-receipt-fixture";
 import { confirmTransferProposalAction } from "./transfer-proposal-action";
 import {
   buildTransferProposal,
@@ -398,6 +399,35 @@ describe("buildTransferProposal — the card of a dictated traspaso", () => {
     );
 
     expect(built.ok).toBe(false);
+    store.close();
+  });
+});
+
+describe("buildTransferProposal — a pasted confirmation (#1794)", () => {
+  test("a suscripción's participaciones land on the destination, and the pair writes them", async () => {
+    // No price for the destination at all: the paper states the participaciones that
+    // arrived, so its VL is derived from them and the importe, and nothing is missing.
+    const store = await seed({ priceDestination: false });
+
+    const built = await draft(store, PASTED_SUSCRIPCION);
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.dictated).toBe(
+      "14/08/2026 · 739,22 € · entraron 50,98 participaciones",
+    );
+    expect(built.proposal.destination.positionLine).toBe(
+      "Entran en «Cartera Permanente PP»: 0 → 50,98 participaciones",
+    );
+    // The origin is divided at its own price — 739,22 € ÷ 12 € — as before.
+    expect(built.proposal.origin.positionLine).toBe(
+      "Salen de «Indexado PP»: 100 → 38,398333 participaciones",
+    );
+    expect(built.proposal.notes.join(" ")).not.toContain("VL de destino");
+
+    expect(
+      await confirmTransferProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
+    expect((await positionOf(store, DESTINATION)).currentUnits).toBe("50.98");
     store.close();
   });
 });

@@ -54,6 +54,8 @@ export function transferDictatedLine(dictated: {
   executedAt: string;
   portion: TransferPortion;
   currency: string;
+  /** The participaciones that ARRIVED, when a pasted suscripción stated them (#1794). */
+  destinationUnits?: string;
 }): string {
   const money = (amountMinor: number) =>
     formatDocumentMoney(amountMinor, dictated.currency);
@@ -65,7 +67,40 @@ export function transferDictatedLine(dictated: {
           // place where a misread participación can still be caught.
           `${formatUnits(dictated.portion.units)} participaciones · ${money(dictated.portion.amountMinor)}`
         : money(dictated.portion.amountMinor);
-  return `${formatIsoDayEs(dictated.executedAt)} · ${portion}`;
+  // Named as the ones that ARRIVED: the same count read as the ones that left is the
+  // misreading this echo exists to catch.
+  const arrived =
+    dictated.destinationUnits === undefined
+      ? ""
+      : ` · entraron ${formatUnits(dictated.destinationUnits)} participaciones`;
+  return `${formatIsoDayEs(dictated.executedAt)} · ${portion}${arrived}`;
+}
+
+/** The caption under {@link transferDictatedLine} when the figures are the turn's own. */
+export const TRANSFER_DICTATED_CAPTION = "Lo que he leído en tu mensaje";
+
+/** How much of an earlier message the caption quotes: enough to recognise it by. */
+const QUOTED_OPENING_CHARS = 40;
+
+/**
+ * The caption when the figures come from an EARLIER message (#1798) — «sí, procede»
+ * reached back to them — quoting its opening so the person knows which one to check
+ * the echo against. Whitespace is flattened first: a pasted block is all tabs and
+ * line breaks, and a caption is one line.
+ */
+export function transferEarlierMessageCaption(message: string): string {
+  return `Lo que he leído en un mensaje anterior tuyo: «${openingOf(message)}»`;
+}
+
+/** The first words of a message, cut at a word boundary and marked when cut. */
+function openingOf(message: string): string {
+  const chars = Array.from(message.replace(/\s+/gu, " ").trim());
+  if (chars.length <= QUOTED_OPENING_CHARS) return chars.join("");
+  const head = chars.slice(0, QUOTED_OPENING_CHARS + 1).join("");
+  const space = head.lastIndexOf(" ");
+  const cut =
+    space > 0 ? head.slice(0, space) : chars.slice(0, QUOTED_OPENING_CHARS).join("");
+  return `${cut.trimEnd()}…`;
 }
 
 /**

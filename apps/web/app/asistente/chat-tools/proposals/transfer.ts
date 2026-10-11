@@ -45,12 +45,14 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
         // The user's-own-message frontier (#1482, #1418's doctrine): the importe and the
         // date come from the parse, never from the arguments — so a turn where the app
         // read nothing is refused BEFORE the store is opened, naming what is missing.
+        // Nothing written since the last traspaso card is nothing to read (#1798): both
+        // figures are asked for, never the ones that card already spent.
         const typed = input.typedTransfer;
         if (typed === undefined || typed.status !== "read") {
           return Promise.resolve({
             error: "transfer_not_in_message",
             message: typedTransferGapMessage(
-              typed === undefined ? ["amount", "date"] : typed.missing,
+              typed?.status === "incomplete" ? typed.missing : ["amount", "date"],
             ),
           });
         }
@@ -75,6 +77,9 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
               originAssetId,
               originHolding: originHoldingId,
               transfer: typed.transfer,
+              ...(typed.earlierMessage === undefined
+                ? {}
+                : { earlierMessage: typed.earlierMessage }),
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },
             input.asOf,

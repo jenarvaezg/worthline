@@ -81,7 +81,9 @@ export function buildTurnToolsFactory(input: {
   const typedBalanceSeries = unvalidatedEvidence
     ? typedBalanceSeriesInTurn(messages)
     : NO_TYPED_BALANCE_SERIES;
-  // The traspaso dictated this turn (#1482). Read on EVERY turn, unlike the series
+  // The traspaso the user has written and no card has spent yet (#1482, #1798): the
+  // turn's own message, or an earlier one when this turn's states nothing about it
+  // («sí, procede»). Read on EVERY turn, unlike the series
   // above: this is not an escape from a gate, it is the only source the lane has — its
   // importe and date are not tool arguments at all. From the RAW history for the same
   // reason: what grounds the figures is what the person wrote, and a per-provider

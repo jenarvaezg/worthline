@@ -21,10 +21,12 @@ import {
   requiresGroundedHoldingIds,
 } from "@web/asistente/holding-id-provenance";
 import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
+import { PASTED_REEMBOLSO } from "@web/asistente/pasted-transfer-receipt-fixture";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
+import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -1337,6 +1339,100 @@ describe("createChatTools · propose_transfer (#1482)", () => {
       proposalType: "investment_transfer",
       draft: { proposalId: expect.any(String) },
     });
+    store.close();
+  });
+
+  it("builds the card from the bank's block the user pasted, figures and all (#1794)", async () => {
+    // The incident's block, as the route reads it: the user's own last message, through
+    // `typedTransferInTurn`. It used to come back as `ambiguous_amount`.
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(
+      store,
+      typedTransferInTurn(
+        [{ id: "u1", parts: [{ text: PASTED_REEMBOLSO, type: "text" }], role: "user" }],
+        "2026-08-21",
+      ),
+    );
+
+    const result = await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      // The day of «Fecha Operación», never the fecha valor printed beside it.
+      dictated: "14/08/2026 · 61,6 participaciones · 739,22 €",
+      origin: { positionLine: "Salen de «Indexado PP»: 100 → 38,4 participaciones" },
+      proposalType: "investment_transfer",
+    });
+    store.close();
+  });
+
+  it("«sí, procede» after the figures builds the card from them, and the card says whose they are (#1798)", async () => {
+    const written = "Hoy he traspasado 739,22 € del Indexado al Cartera Permanente";
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(
+      store,
+      typedTransferInTurn(
+        [
+          { id: "u1", parts: [{ text: written, type: "text" }], role: "user" },
+          {
+            id: "a1",
+            parts: [{ text: "¿Lo anoto como traspaso?", type: "text" }],
+            role: "assistant",
+          },
+          {
+            id: "u2",
+            parts: [{ text: "Sí, procede con el traspaso", type: "text" }],
+            role: "user",
+          },
+        ],
+        "2026-08-21",
+      ),
+    );
+
+    const result = await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      dictated: "21/08/2026 · 739,22 €",
+      proposalType: "investment_transfer",
+      sourceCaption:
+        "Lo que he leído en un mensaje anterior tuyo: «Hoy he traspasado 739,22 € del Indexado…»",
+    });
+    store.close();
+  });
+
+  it("the turn's own message is not called an earlier one", async () => {
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(store, DICTATED);
+
+    const result = await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ sourceCaption: "Lo que he leído en tu mensaje" });
+    store.close();
+  });
+
+  it("«hazlo otra vez» after a card asks for the figures instead of repeating the traspaso (#1798)", async () => {
+    // What the walk returns once a traspaso card spent the figures written before it.
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(store, {
+      status: "absent",
+    });
+
+    const result = (await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("transfer_not_in_message");
+    expect(result.message).toContain("no he visto cuánto se ha traspasado");
+    expect(result.message).toContain("no he visto la fecha");
     store.close();
   });
 
