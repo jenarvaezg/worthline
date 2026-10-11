@@ -281,15 +281,15 @@ export const MAX_UNVALIDATED_PROPOSALS_PER_TURN = 1;
  * — positions and movements still have one honest route, the file.
  */
 export const UNVALIDATED_EVIDENCE_MESSAGE =
-  "Ese archivo no puedo llevarlo en bloque al patrimonio. Un hecho fechado " +
-  "suelto (un traspaso, una compra o venta, un saldo) sí puedo prepararlo como " +
-  "tarjeta para que lo confirmes, si el usuario lo escribe o lo pega en el chat. " +
-  "Para cargar el documento entero, en /patrimonio/importar-extracto entran " +
+  "Un hecho fechado suelto de ese archivo (un traspaso, una compra o venta, un saldo) " +
+  "sí puedo prepararlo como tarjeta para que lo confirmes: escríbemelo o pégame aquí " +
+  "sus cifras. Lo que no puedo es llevar el archivo en bloque al patrimonio. Para " +
+  "cargar el documento entero, en /patrimonio/importar-extracto entran " +
   `${STATEMENT_GATE_FORMATS.join(" o ")}, y nada más; ` +
-  "y si tiene el extracto original del banco o del broker, " +
-  "ése sí puedo leerlo. Y si lo que quiere cargar es el histórico de saldos de una " +
-  "deuda, que me escriba aquí las fechas y los saldos, una línea por fecha: eso sí " +
-  "lo leo de su mensaje.";
+  "y si tienes el extracto original del banco o del broker, " +
+  "ése sí puedo leerlo. Y si lo que quieres cargar es el histórico de saldos de una " +
+  "deuda, escríbeme aquí las fechas y los saldos, una línea por fecha: eso sí lo leo " +
+  "de tu mensaje.";
 
 /** The per-turn cap: a second proposal out of the same unvalidated document. */
 export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =

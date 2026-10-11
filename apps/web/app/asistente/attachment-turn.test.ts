@@ -408,6 +408,8 @@ describe("readAttachmentTurn", () => {
     // #1797: a PDF reaches this card too, so it speaks of «archivo», never «imagen».
     expect(UNSTRUCTURED_VISION_MESSAGE).toContain("este archivo");
     expect(UNSTRUCTURED_VISION_MESSAGE).not.toMatch(/imagen/i);
+    // And the pronoun agrees with it: «archivo» is masculine.
+    expect(UNSTRUCTURED_VISION_MESSAGE).toContain("de este archivo sale de mirarlo");
   });
 
   it("keeps the described empty reading visible to the #1248 history boundary", () => {

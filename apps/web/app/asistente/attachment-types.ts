@@ -64,7 +64,7 @@ export const UNIDENTIFIED_DOCUMENT_MESSAGE =
  * different job, and it needs the envelope to carry the text (#1261 first).
  */
 export const UNSTRUCTURED_VISION_MESSAGE =
-  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de este archivo sale de mirarla, no de datos comprobados.";
+  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de este archivo sale de mirarlo, no de datos comprobados.";
 
 /**
  * Card message when the vision seam DID identify the document, could not read a single

@@ -163,6 +163,25 @@ describe("the notes' copy (#1418)", () => {
     expect(UNVALIDATED_EVIDENCE_CAP_MESSAGE).not.toMatch(/tabla/i);
   });
 
+  it("the very first words are what CAN be done, before any «no puedo» (#1797)", () => {
+    for (const text of [UNVALIDATED_EVIDENCE_NOTE, UNVALIDATED_EVIDENCE_MESSAGE]) {
+      expect(text).toMatch(/^Un hecho fechado suelto/);
+      expect(text.indexOf("hecho fechado suelto")).toBeLessThan(
+        text.indexOf("en bloque"),
+      );
+    }
+  });
+
+  it("the twin the model relays speaks to the person in the second person, all of it (#1797)", () => {
+    // Written to be relayed verbatim: a sentence about «el usuario» read out to the user
+    // is the app talking about someone the person cannot see.
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).not.toMatch(
+      /el usuario|si tiene |que me escriba|su mensaje|quiere cargar/i,
+    );
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).toMatch(/si tienes el extracto original/);
+    expect(UNVALIDATED_EVIDENCE_MESSAGE).toMatch(/de tu mensaje/);
+  });
+
   it("never sends the user back to the upload that shut the door", () => {
     expect(UNVALIDATED_EVIDENCE_NOTE).not.toMatch(/vuelve a subir|súbelo otra vez/i);
   });

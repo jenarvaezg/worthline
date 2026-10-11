@@ -492,6 +492,8 @@ export function isValidatedDocument(
 const LEGACY_UNSTRUCTURED_EVIDENCE_MESSAGES: readonly string[] = [
   "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.",
   "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.",
+  // #1797: the capture's wording, before a PDF could reach the same card.
+  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de esta imagen sale de mirarla, no de datos comprobados.",
 ];
 
 /**

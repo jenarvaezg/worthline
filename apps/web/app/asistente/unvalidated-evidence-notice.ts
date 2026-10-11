@@ -46,9 +46,9 @@ import { unreadableTypedSeriesRejected } from "./unvalidated-evidence-gate";
  * mortgage schedule there was sending someone to a door that did not open.
  */
 export const UNVALIDATED_EVIDENCE_NOTE =
-  "Ese archivo no puedo llevarlo en bloque al patrimonio, pero un hecho " +
-  "fechado suelto —un traspaso, una compra o venta, un saldo— sí te lo preparo como " +
-  "tarjeta si me lo escribes o me pegas aquí sus cifras. Y si es el histórico de " +
+  "Un hecho fechado suelto de ese archivo —un traspaso, una compra o venta, un saldo— " +
+  "sí te lo preparo como tarjeta si me lo escribes o me pegas aquí sus cifras; lo que " +
+  "no puedo es llevar el archivo en bloque al patrimonio. Y si es el histórico de " +
   "saldos de una deuda, escríbemelo aquí, una línea por fecha con la fecha y el " +
   "saldo, y lo leo yo de tu mensaje. Para cargar un documento entero el camino es " +
   "/patrimonio/importar-extracto: la pestaña «Operaciones» para " +

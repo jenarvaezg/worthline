@@ -892,7 +892,10 @@ describe("attachment chat context", () => {
     test.each([
       "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.",
       "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.",
-    ])("still sees a card worded the way it was before #1287", (message) => {
+      // #1797 turned «esta imagen» into «este archivo»: a chat open during that deploy
+      // still carries the capture's wording, and the gate must not fail open for it.
+      "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de esta imagen sale de mirarla, no de datos comprobados.",
+    ])("still sees a card worded the way it was before #1287 or #1797", (message) => {
       const messages: UIMessage[] = [
         {
           id: "a1",
