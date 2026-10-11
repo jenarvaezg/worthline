@@ -24,6 +24,7 @@ const SKIP = [
   "/login",
   "/demo",
   "/demo/persona",
+  "/correo/recordatorios",
   "/api/auth/signin",
   "/api/auth/callback/google",
   "/api/cron/snapshot",

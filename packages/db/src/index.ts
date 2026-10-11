@@ -142,6 +142,11 @@ export {
   type RenewJobLeaseInput,
   type StartTrialInput,
   type TenancyDirectory,
+  TRIAL_EMAIL_KINDS,
+  type TrialEmailCandidate,
+  type TrialEmailClaim,
+  type TrialEmailKind,
+  type TrialEmailLedger,
   type UpdateMaintainerAlertStatusInput,
   type UpdateWorkspaceBillingInput,
   type UsageLimits,
@@ -244,6 +249,7 @@ export type {
 export {
   type ProvisionDeps,
   provisionWorkspaceForUser,
+  type StartedTrial,
   type TursoPort,
 } from "./provisioner";
 export type {

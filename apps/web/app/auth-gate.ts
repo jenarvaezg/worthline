@@ -63,11 +63,17 @@ export function isPublicPath(pathname: string): boolean {
   }
   // The public landing (`/`, estreno #954), sign-in route, public demo entry,
   // and Auth.js endpoints must stay reachable for a logged-out visitor.
+  //
+  // So must the links inside the trial emails (#1173): «no recibir
+  // recordatorios» has to work from the inbox, with no sign-in in between. The
+  // page acts only on the identity its signed token names, never on a session.
   return (
     pathname === "/" ||
     pathname.startsWith("/api/auth") ||
     pathname === "/demo" ||
     pathname.startsWith("/demo/") ||
+    pathname === "/correo" ||
+    pathname.startsWith("/correo/") ||
     PUBLIC_PATHS.has(pathname)
   );
 }

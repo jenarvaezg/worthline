@@ -154,6 +154,91 @@ describe("workspace provisioner", () => {
     }
   });
 
+  test("a fresh provision hands the started trial to onTrialStarted — the welcome's trigger (#1173)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-hook-"));
+    const started: unknown[] = [];
+    try {
+      const ws = await provisionWorkspaceForUser(
+        {
+          controlPlane: cp,
+          now: () => "2026-07-22T12:00:00.000Z",
+          onTrialStarted: (trial) => {
+            started.push(trial);
+          },
+          turso: port,
+        },
+        "ana@example.com",
+      );
+
+      const user = await cp.findOrCreateUser("ana@example.com");
+      expect(started).toEqual([
+        {
+          email: "ana@example.com",
+          trialEndsAt: "2026-07-25T12:00:00.000Z",
+          trialStartedAt: "2026-07-22T12:00:00.000Z",
+          userId: user.id,
+          workspaceId: ws.id,
+        },
+      ]);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("no trial, no announcement: an identity that already used its trial is not welcomed again (#1173)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-hook-used-"));
+    const started: unknown[] = [];
+    try {
+      const user = await cp.findOrCreateUser("ana@example.com");
+      const old = await cp.createWorkspace({
+        dbName: "wl-old",
+        dbUrl: "file:old.sqlite",
+      });
+      await cp.startTrialIfUnused({ userId: user.id, workspaceId: old.id });
+
+      await provisionWorkspaceForUser(
+        {
+          controlPlane: cp,
+          onTrialStarted: (trial) => {
+            started.push(trial);
+          },
+          turso: port,
+        },
+        "ana@example.com",
+      );
+
+      expect(started).toEqual([]);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("a failing onTrialStarted is swallowed: the login keeps its workspace and its trial (#1173)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-hook-fail-"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const ws = await provisionWorkspaceForUser(
+        {
+          controlPlane: cp,
+          onTrialStarted: async () => {
+            throw new Error("mail outage");
+          },
+          turso: port,
+        },
+        "ana@example.com",
+      );
+
+      expect((await cp.readWorkspaceEntitlement(ws.id))?.plan).toBe("trial");
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+      cp.close();
+    }
+  });
+
   test("is idempotent: a second login for the same account reuses the workspace, no new db", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port, created } = fakeTurso(tempDir("worthline-provision-idem-"));

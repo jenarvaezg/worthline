@@ -9,11 +9,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
  * `packages/db/src/daily-capture-queue.test.ts`.
  */
 
-const { enqueue } = vi.hoisted(() => ({ enqueue: vi.fn() }));
+const { enqueue, runTrialEmailPass } = vi.hoisted(() => ({
+  enqueue: vi.fn(),
+  runTrialEmailPass: vi.fn(),
+}));
 
 vi.mock("@web/sync-queue", () => ({
   productionSyncQueue: () => ({ enqueue, drain: vi.fn() }),
 }));
+
+// The trial emails (#1173) ride this cron; their own behavior is covered in
+// `app/trial-emails/`. Here only the route's part: run the pass, report it.
+vi.mock("@web/trial-emails/trial-email-wiring", () => ({ runTrialEmailPass }));
 
 import { dailyCaptureDescriptor } from "@worthline/db";
 import { GET, POST } from "./route";
@@ -34,6 +41,11 @@ describe("/api/cron/snapshot", () => {
       enqueued: true,
       job: { id: "job_1", dedupeKey: "dk", status: "pending" },
     });
+    runTrialEmailPass.mockReset();
+    runTrialEmailPass.mockResolvedValue({
+      reason: "no_control_plane",
+      status: "skipped",
+    });
   });
   afterEach(() => {
     if (original === undefined) delete process.env.CRON_SECRET;
@@ -44,6 +56,7 @@ describe("/api/cron/snapshot", () => {
     const res = await GET(new Request(URL));
     expect(res.status).toBe(401);
     expect(enqueue).not.toHaveBeenCalled();
+    expect(runTrialEmailPass).not.toHaveBeenCalled();
   });
 
   test("rejects a wrong bearer secret (401)", async () => {
@@ -81,7 +94,35 @@ describe("/api/cron/snapshot", () => {
       enqueued: true,
       jobId: "job_1",
       status: "pending",
+      trialEmails: { reason: "no_control_plane", status: "skipped" },
     });
+  });
+
+  test("runs the trial-email pass at the capture's own instant and reports it (#1173)", async () => {
+    runTrialEmailPass.mockResolvedValue({ status: "ran", summary: { sent: 2 } });
+
+    const res = await GET(bearer(SECRET));
+
+    expect(runTrialEmailPass).toHaveBeenCalledTimes(1);
+    const capturedAt = enqueue.mock.calls[0]![0].descriptor.payload.now;
+    expect(runTrialEmailPass.mock.calls[0]![0]).toEqual({ now: capturedAt });
+    expect((await res.json()).trialEmails).toEqual({
+      status: "ran",
+      summary: { sent: 2 },
+    });
+  });
+
+  test("a failing capture enqueue still fails the cron, after the trial emails settle (#1173)", async () => {
+    let settled = false;
+    runTrialEmailPass.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      settled = true;
+      return { status: "ran", summary: { sent: 0 } };
+    });
+    enqueue.mockRejectedValue(new Error("control plane down"));
+
+    await expect(GET(bearer(SECRET))).rejects.toThrow("control plane down");
+    expect(settled).toBe(true);
   });
 
   test("POST is also accepted for a manual token-holder trigger", async () => {

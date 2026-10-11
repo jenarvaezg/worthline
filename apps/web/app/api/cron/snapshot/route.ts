@@ -1,5 +1,6 @@
 import { cronBearerAuthorized } from "@web/cron-auth";
 import { productionSyncQueue } from "@web/sync-queue";
+import { runTrialEmailPass } from "@web/trial-emails/trial-email-wiring";
 import { dailyCaptureDescriptor } from "@worthline/db";
 
 export const maxDuration = 60;
@@ -16,6 +17,13 @@ export const maxDuration = 60;
  * the run-key single-flight + `runDailyCapture`'s finalization guard + latest-wins
  * capture compose so a re-delivered pass never captures twice.
  *
+ * The same pass also runs the trial emails (#1173) — the day-2 reminder, the
+ * expiry notice and any welcome whose send failed at provisioning — instead of a
+ * cron of their own: the hosted plan is Vercel Hobby. They run CONCURRENTLY with
+ * the capture, so neither eats the other's share of `maxDuration`, and the pass
+ * never throws: a mail outage cannot fail the capture. The response waits for
+ * both, so the function is not frozen with a send half done.
+ *
  * Guarded by a `CRON_SECRET` bearer: an anonymous caller cannot trigger this
  * expensive, cross-tenant-mutating job, while any scheduler holding the token can.
  * Fails closed — no secret configured means no trigger. Vercel Cron invokes with
@@ -27,15 +35,26 @@ async function handler(req: Request): Promise<Response> {
     return new Response("Unauthorized", { status: 401 });
   }
   const now = new Date().toISOString();
-  const { job, enqueued } = await productionSyncQueue().enqueue({
-    descriptor: dailyCaptureDescriptor(now),
-    workspaceId: null,
-  });
+  const [capture, trialEmails] = await Promise.allSettled([
+    productionSyncQueue().enqueue({
+      descriptor: dailyCaptureDescriptor(now),
+      workspaceId: null,
+    }),
+    runTrialEmailPass({ now }),
+  ]);
+  if (capture.status === "rejected") {
+    throw capture.reason;
+  }
+  const { job, enqueued } = capture.value;
   return Response.json({
     dedupeKey: job.dedupeKey,
     enqueued,
     jobId: job.id,
     status: job.status,
+    trialEmails:
+      trialEmails.status === "fulfilled"
+        ? trialEmails.value
+        : { error: String(trialEmails.reason), status: "failed" },
   });
 }
 

@@ -1,0 +1,151 @@
+/**
+ * The env-bound entry points of the trial emails (#1173): the welcome at
+ * provisioning, and the pass the capture cron runs. Everything decided lives in
+ * the pure modules beside this one; here only the coordinates are resolved —
+ * settings from the environment, the control plane, the real sender.
+ *
+ * Both entry points degrade the same way and never throw:
+ *  - no Resend key, no explicit verified sender or no signing secret → skipped
+ *    with one log line naming what to set (and the control plane is not even
+ *    opened, so no mark is consumed while mail is off);
+ *  - no control plane (local no-auth) → skipped: there is no trial to talk about;
+ *  - a control-plane or provider failure → logged, and the next pass retries.
+ */
+
+import {
+  type ControlPlaneEnv,
+  withOptionalControlPlaneStore,
+} from "@web/control-plane-store";
+import { sendEmail } from "@web/email/send-email";
+import { SITE_URL } from "@web/site-url";
+import type { StartedTrial, TrialEmailLedger } from "@worthline/db";
+import { after } from "next/server";
+
+import {
+  deliverTrialEmail,
+  type TrialEmailDeliveryDeps,
+  type TrialEmailOutcome,
+} from "./deliver-trial-email";
+import { trialEmailSettingsFromEnv } from "./trial-email-settings";
+import { runTrialEmailSweep, type TrialEmailSweepSummary } from "./trial-email-sweep";
+
+export interface TrialEmailWiringOptions {
+  env?: ControlPlaneEnv;
+  siteUrl?: string;
+  /** The reference instant; the wall clock by default. */
+  now?: string;
+  fetch?: typeof fetch;
+  log?: Pick<Console, "error" | "info" | "warn">;
+}
+
+type Skipped =
+  | { status: "skipped"; reason: "email_not_configured"; missing: string[] }
+  | { status: "skipped"; reason: "no_control_plane" };
+
+export type TrialEmailPassResult =
+  | Skipped
+  | { status: "ran"; summary: TrialEmailSweepSummary }
+  | { status: "failed"; error: string };
+
+export type WelcomeEmailResult = Skipped | { status: TrialEmailOutcome };
+
+/** Resolve settings + control plane and hand `run` the delivery deps, or say why not. */
+async function withTrialEmails<T>(
+  purpose: string,
+  options: TrialEmailWiringOptions,
+  run: (
+    deps: Omit<TrialEmailDeliveryDeps, "ledger"> & { ledger: TrialEmailLedger },
+  ) => Promise<T>,
+): Promise<T | Skipped> {
+  const env = options.env ?? process.env;
+  const log = options.log ?? console;
+  const resolution = trialEmailSettingsFromEnv(env, options.siteUrl ?? SITE_URL);
+  if (resolution.status === "not_configured") {
+    log.info(
+      `[trial-email] ${purpose} skipped: set ${resolution.missing.join(", ")} to send the trial emails`,
+    );
+    return {
+      missing: resolution.missing,
+      reason: "email_not_configured",
+      status: "skipped",
+    };
+  }
+  const { settings } = resolution;
+  const ran = await withOptionalControlPlaneStore<{ value: T }, TrialEmailLedger>(
+    async (ledger) => ({
+      value: await run({
+        ledger,
+        log,
+        now: options.now ?? new Date().toISOString(),
+        send: (message) =>
+          sendEmail(message, {
+            config: settings.email,
+            ...(options.fetch ? { fetch: options.fetch } : {}),
+          }),
+        settings,
+      }),
+    }),
+    { env },
+  );
+  return ran ? ran.value : { reason: "no_control_plane", status: "skipped" };
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The cron's pass over every trial in flight. Never throws. */
+export async function runTrialEmailPass(
+  options: TrialEmailWiringOptions = {},
+): Promise<TrialEmailPassResult> {
+  try {
+    const result = await withTrialEmails("pass", options, runTrialEmailSweep);
+    return "status" in result ? result : { status: "ran", summary: result };
+  } catch (error) {
+    (options.log ?? console).error("[trial-email] pass failed", {
+      error: describe(error),
+    });
+    return { error: describe(error), status: "failed" };
+  }
+}
+
+/** The welcome for a trial that just started. Never throws. */
+export async function sendWelcomeEmail(
+  trial: StartedTrial,
+  options: TrialEmailWiringOptions = {},
+): Promise<WelcomeEmailResult> {
+  try {
+    const result = await withTrialEmails("welcome", options, async (deps) => ({
+      status: await deliverTrialEmail("welcome", trial, deps),
+    }));
+    return result;
+  } catch (error) {
+    (options.log ?? console).error("[trial-email] welcome failed", {
+      error: describe(error),
+      userId: trial.userId,
+    });
+    return { status: "failed" };
+  }
+}
+
+/**
+ * Send the welcome AFTER the sign-in response, so a slow provider never holds
+ * the login. With no request scope to defer to (a script, a unit test) it does
+ * nothing: the cron's pass retries the welcome during the trial's first day.
+ */
+export function scheduleWelcomeEmail(
+  trial: StartedTrial,
+  options: TrialEmailWiringOptions & {
+    defer?: (task: () => Promise<unknown>) => void;
+  } = {},
+): void {
+  const { defer = after, ...wiring } = options;
+  try {
+    defer(() => sendWelcomeEmail(trial, wiring));
+  } catch {
+    (wiring.log ?? console).info(
+      "[trial-email] no request scope to defer the welcome to; the next cron pass sends it",
+      { userId: trial.userId },
+    );
+  }
+}

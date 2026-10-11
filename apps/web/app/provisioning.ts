@@ -1,4 +1,5 @@
 import { withControlPlaneStore } from "@web/control-plane-store";
+import { scheduleWelcomeEmail } from "@web/trial-emails/trial-email-wiring";
 import { createTursoPort } from "@web/turso-port";
 import { provisionWorkspaceForUser } from "@worthline/db";
 
@@ -8,6 +9,9 @@ import { provisionWorkspaceForUser } from "@worthline/db";
  * and resolves the signed-in user's workspace — creating and migrating a fresh
  * one on first login. Runs only in the Node runtime (the Auth.js `jwt` callback);
  * the local no-auth build never reaches it.
+ *
+ * The trial the provisioner starts triggers the welcome email (#1173), deferred
+ * past the sign-in response so the provider's latency never reaches the login.
  */
 
 export interface ResolvedWorkspace {
@@ -38,7 +42,14 @@ export async function provisionWorkspaceForEmail(
         token: tursoToken,
         ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
       });
-      const workspace = await provisionWorkspaceForUser({ controlPlane, turso }, email);
+      const workspace = await provisionWorkspaceForUser(
+        {
+          controlPlane,
+          onTrialStarted: (trial) => scheduleWelcomeEmail(trial, { env }),
+          turso,
+        },
+        email,
+      );
       return {
         id: workspace.id,
         dbUrl: workspace.dbUrl,

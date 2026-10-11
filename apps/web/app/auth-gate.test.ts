@@ -64,6 +64,29 @@ describe("shouldRedirectToLogin", () => {
     }
   });
 
+  test("the «no recibir recordatorios» link opens with no session: its signed token is the credential (#1173)", () => {
+    for (const pathname of ["/correo/recordatorios", "/correo"]) {
+      expect(
+        shouldRedirectToLogin({
+          authConfigured: true,
+          hasSession: false,
+          hasPersonaCookie: false,
+          pathname,
+        }),
+        pathname,
+      ).toBe(false);
+    }
+    // A prefix lookalike is not the email area.
+    expect(
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        hasPersonaCookie: false,
+        pathname: "/correos-falsos",
+      }),
+    ).toBe(true);
+  });
+
   test("never redirects PWA public assets behind the sign-in wall", () => {
     for (const pathname of ["/manifest.json", "/sw.js", "/mcp-icon.svg"]) {
       expect(

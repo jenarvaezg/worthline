@@ -194,6 +194,17 @@ describe("política de privacidad · RGPD (#1172)", () => {
     ]);
   });
 
+  test("declares the trial emails, what they carry and how to switch the reminders off (#1173)", () => {
+    expectAll("privacidad", [
+      "Los correos sobre tu prueba",
+      "un aviso antes de que termine y otro cuando termina",
+      "no recibir recordatorios",
+      "qué correos de la prueba se te han enviado",
+    ]);
+    const resend = LEGAL_PROCESSORS.find((processor) => processor.name === "Resend");
+    expect(resend?.purpose).toMatch(/prueba/);
+  });
+
   test("does not declare a provider that receives nothing (#1278)", () => {
     // Groq salió del pool el 2026-07-30: declararlo como encargado sería
     // declarar una cesión que no ocurre.

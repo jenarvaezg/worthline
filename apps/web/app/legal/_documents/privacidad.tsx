@@ -85,6 +85,14 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           workspace y le llega por correo.
         </li>
         <li>
+          <strong>Los correos sobre tu prueba</strong>: al crear la cuenta, uno de
+          bienvenida; durante la prueba de premium, un aviso antes de que termine y otro
+          cuando termina. Van a tu correo de inicio de sesión, no llevan nada de tu
+          patrimonio y de cada uno se guarda solo cuándo se envió, para no repetirlo. Los
+          dos avisos se desactivan desde el enlace «no recibir recordatorios» que traen
+          estos correos.
+        </li>
+        <li>
           <strong>Errores técnicos</strong>: cuando el registro de errores esté activo
           (ver la tabla del apartado 4), el informe del fallo, con los datos personales
           filtrados antes de enviarse.
@@ -95,7 +103,8 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         worthline funciona <strong>sin telemetría de uso ni analytics de terceros</strong>
         : no se miden páginas vistas, ni clics, ni el contenido de tu patrimonio. Solo se
         registra lo mínimo para operar el servicio: cuenta, plan y pago, las marcas de
-        tiempo de arriba, los errores técnicos y el feedback que decidas enviar.
+        tiempo de arriba, los errores técnicos, qué correos de la prueba se te han enviado
+        y el feedback que decidas enviar.
       </p>
 
       <h3>3. Con qué base jurídica y para qué</h3>
@@ -104,7 +113,8 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         <li>
           <strong>Ejecución del contrato</strong> (<strong>artículo 6.1.b</strong> del
           RGPD): prestarte el servicio. Sin tratar los datos de tu patrimonio no hay nada
-          que calcular ni mostrar.
+          que calcular ni mostrar. Incluye los correos sobre tu cuenta y tu prueba: son
+          avisos del propio servicio, no publicidad.
         </li>
         <li>
           <strong>Interés legítimo</strong> (<strong>artículo 6.1.f</strong>): seguridad
@@ -215,7 +225,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         las obligaciones contables y fiscales. Los informes de error se conservan un plazo
         corto, el necesario para diagnosticar el fallo. El feedback que envías se conserva
         el tiempo necesario para atenderlo y, como no vive en tu workspace, no se borra
-        con él: si quieres que se elimine, pídelo en la dirección de contacto.
+        con él: si quieres que se elimine, pídelo en la dirección de contacto. La
+        constancia de qué correos de la prueba se te enviaron, y tu decisión de no recibir
+        los avisos, se conservan mientras exista tu cuenta.
       </p>
 
       <h3>8. Tus derechos</h3>

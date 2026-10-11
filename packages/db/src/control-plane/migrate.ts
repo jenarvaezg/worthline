@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
 import { createMaintainerAlertLog } from "./maintainer-alert-log";
 
-export const CP_SCHEMA_VERSION = 9;
+export const CP_SCHEMA_VERSION = 10;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -362,5 +362,28 @@ export async function migrateControlPlane(client: Client): Promise<void> {
     } finally {
       tx.close();
     }
+  }
+
+  if (version < 10) {
+    // Trial emails (#1173, PRD #1171 S2): the set-once mark of each email of the
+    // trial cycle per identity, and the identity's «no recibir recordatorios».
+    // New tables only, no backfill: an identity with no row has been sent
+    // nothing and declined nothing. Mirror trial-email-ledger.ts's SCHEMA.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS trial_email_sends (
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      claimed_at TEXT NOT NULL,
+      sent_at TEXT,
+      provider_message_id TEXT,
+      PRIMARY KEY (user_id, kind),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS email_preferences (
+      user_id TEXT NOT NULL PRIMARY KEY,
+      trial_reminders_opted_out_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );`);
+    await writeControlPlaneSchemaVersion(client, 10);
   }
 }

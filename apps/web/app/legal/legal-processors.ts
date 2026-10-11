@@ -59,7 +59,7 @@ export const LEGAL_PROCESSORS: readonly LegalProcessor[] = [
     mechanism: "DPA publicado",
     name: "Resend",
     purpose:
-      "Correo: entrega al desarrollador el feedback que envías desde la aplicación, con su texto y tu dirección.",
+      "Correo: los correos sobre tu cuenta y tu prueba, a tu dirección, y el feedback que envías desde la aplicación, que llega al desarrollador con su texto y tu dirección.",
   },
   {
     active: false,
