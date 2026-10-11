@@ -5,7 +5,6 @@ import {
   dailyCapturePassLabel,
   isMissedCapturePayload,
   MISSED_CAPTURE_ALERT_WORKSPACE_ID,
-  maintainerAlertSubject,
   missedCapturePassFromHoldingId,
 } from "./missed-capture-alert";
 
@@ -91,32 +90,6 @@ describe("missedCapturePassFromHoldingId (#1339)", () => {
 
   it("returns null for a real holding id", () => {
     expect(missedCapturePassFromHoldingId("wl_hld_loan")).toBeNull();
-  });
-});
-
-describe("maintainerAlertSubject (#1339)", () => {
-  it("names a tenant alert by workspace and holding", () => {
-    expect(
-      maintainerAlertSubject({
-        category: "infidelity",
-        workspaceId: "ws-ana",
-        holdingId: "wl_hld_loan",
-      }),
-    ).toEqual({ isFleet: false, subject: "wl_hld_loan", workspace: "ws-ana" });
-  });
-
-  it("translates a fleet alert's sentinels into the fleet and the pass", () => {
-    expect(
-      maintainerAlertSubject({
-        category: "missed_capture",
-        workspaceId: "fleet",
-        holdingId: "daily-capture:2026-07-28:pm",
-      }),
-    ).toEqual({
-      isFleet: true,
-      subject: "28-07-2026, captura de tarde (≈21:00 UTC)",
-      workspace: "flota",
-    });
   });
 });
 

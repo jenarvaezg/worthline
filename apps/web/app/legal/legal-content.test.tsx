@@ -194,6 +194,17 @@ describe("política de privacidad · RGPD (#1172)", () => {
     ]);
   });
 
+  test("gives the feedback its own legal basis and keeps «nothing optional» true (#1174)", () => {
+    const text = html("privacidad");
+
+    // §3 has to name a basis for every treatment §2 lists, feedback included.
+    expect(text).toMatch(/feedback[^<]*<\/strong>[^]*?artículo 6\.1\.f/);
+    // «No hay nada opcional que aceptar» and «el feedback que decidas enviar» used
+    // to sit side by side: the voluntary send is now said out loud, not contradicted.
+    expect(text).not.toContain("no hay nada opcional que aceptar.");
+    expect(text).toContain("Lo único voluntario es el feedback");
+  });
+
   test("does not declare a provider that receives nothing (#1278)", () => {
     // Groq salió del pool el 2026-07-30: declararlo como encargado sería
     // declarar una cesión que no ocurre.

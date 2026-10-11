@@ -38,16 +38,39 @@ describe("emailConfigFromEnv", () => {
 });
 
 describe("sendEmail", () => {
-  it("skips without a key and never touches the network", async () => {
+  it("skips a caller that resolved no config, and never touches the network", async () => {
     const fetchImpl = vi.fn();
 
     const result = await sendEmail(
       { subject: "Hola", text: "cuerpo", to: "maintainer@example.com" },
-      { env: {}, fetch: fetchImpl },
+      { config: null, fetch: fetchImpl },
     );
 
     expect(result).toEqual({ reason: "not_configured", status: "skipped" });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reads the config from the environment when the caller passes none", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(okResponse({ id: "email-env" }));
+    const message = { subject: "Hola", text: "cuerpo", to: "maintainer@example.com" };
+
+    vi.stubEnv("RESEND_API_KEY", "");
+    expect(await sendEmail(message, { fetch: fetchImpl })).toEqual({
+      reason: "not_configured",
+      status: "skipped",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    vi.stubEnv("RESEND_API_KEY", "re_from_env");
+    vi.stubEnv("WORTHLINE_EMAIL_FROM", "worthline <env@example.com>");
+    expect(await sendEmail(message, { fetch: fetchImpl })).toEqual({
+      id: "email-env",
+      status: "sent",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init.headers).toMatchObject({ Authorization: "Bearer re_from_env" });
+    expect(JSON.parse(init.body).from).toBe("worthline <env@example.com>");
+    vi.unstubAllEnvs();
   });
 
   it("posts to the Resend send endpoint with the documented field names", async () => {
@@ -55,7 +78,7 @@ describe("sendEmail", () => {
 
     const result = await sendEmail(
       {
-        idempotencyKey: "feedback-abc",
+        idempotencyKey: "feedback:abc",
         replyTo: "usuario@example.com",
         subject: "Feedback",
         tags: [{ name: "kind", value: "user_feedback" }],
@@ -73,7 +96,7 @@ describe("sendEmail", () => {
     expect(init.headers).toMatchObject({
       Authorization: "Bearer re_test_key",
       "Content-Type": "application/json",
-      "Idempotency-Key": "feedback-abc",
+      "Idempotency-Key": "feedback:abc",
     });
     // REST names are snake_case (`reply_to`); camelCase is only the SDK's spelling.
     expect(JSON.parse(init.body)).toEqual({

@@ -34,6 +34,15 @@ CREATE TABLE IF NOT EXISTS mcp_usage (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (rate_key, window_key)
 );
+-- In-app feedback sends (#1174): one row per workspace per UTC hour. Its own
+-- table so a feedback burst can never spend the assistant's or MCP's quota.
+CREATE TABLE IF NOT EXISTS feedback_usage (
+  rate_key TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (rate_key, window_key)
+);
 CREATE TABLE IF NOT EXISTS assistant_courtesy_usage (
   rate_key TEXT NOT NULL,
   window_key TEXT NOT NULL,
@@ -144,6 +153,14 @@ export interface UsageLimits {
    * interfere with the assistant counter.
    */
   recordMcpRequest(rateKey: string, windowKey: string): Promise<number>;
+  /**
+   * Count one in-app feedback send (#1174) and return the running count. Same
+   * increment-then-check contract as chat usage, in its own table: each message
+   * is its own maintainer alert and its own email, so this counter is what keeps
+   * one account in a loop from filling the control plane and spending the mail
+   * quota the trial emails also need.
+   */
+  recordFeedbackSubmission(rateKey: string, windowKey: string): Promise<number>;
   /**
    * Count one free-plan courtesy assistant turn for (rateKey, monthKey) and
    * return the running count (PRD #1160 S2, #1162): the free assistant's monthly
@@ -265,6 +282,19 @@ export function createUsageLimits(client: Client): UsageLimits {
     async recordMcpRequest(rateKey, windowKey) {
       const result = await client.execute({
         sql: `INSERT INTO mcp_usage (rate_key, window_key, count)
+              VALUES (?, ?, 1)
+              ON CONFLICT(rate_key, window_key) DO UPDATE SET
+                count = count + 1,
+                updated_at = CURRENT_TIMESTAMP
+              RETURNING count`,
+        args: [rateKey, windowKey],
+      });
+      return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async recordFeedbackSubmission(rateKey, windowKey) {
+      // One statement, so concurrent sends each read back a distinct count.
+      const result = await client.execute({
+        sql: `INSERT INTO feedback_usage (rate_key, window_key, count)
               VALUES (?, ?, 1)
               ON CONFLICT(rate_key, window_key) DO UPDATE SET
                 count = count + 1,

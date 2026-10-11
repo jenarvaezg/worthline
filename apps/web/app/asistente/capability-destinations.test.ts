@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FEEDBACK_BUTTON_LABEL } from "@web/feedback/feedback-message";
+import {
+  FEEDBACK_BUTTON_LABEL,
+  FEEDBACK_BUTTON_PLACE,
+} from "@web/feedback/feedback-message";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -133,7 +136,9 @@ describe("capability destinations (#1524)", () => {
 
     expect(feedback).toBeDefined();
     expect(feedback?.where).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
-    expect(feedback?.where).toMatch(/barra superior/i);
+    expect(feedback?.where).toContain(FEEDBACK_BUTTON_PLACE);
+    // The public demo has no button: the sentence must not promise one there.
+    expect(feedback?.where).toMatch(/sesión iniciada/i);
     expect(feedback?.where).toMatch(/propio usuario/i);
     expect(feedback?.where).toMatch(/no puedes enviarla/i);
     expect(feedback?.where).toMatch(/sin número de ticket/i);
@@ -144,21 +149,38 @@ describe("capability destinations (#1524)", () => {
     // in «hoy worthline no puede tramitar un aviso por ti». That was the truth until
     // #1174; left as is, it would now send the user away from the channel that exists.
     expect(FABRICATED_ALERT_NOTE).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
+    expect(FABRICATED_ALERT_NOTE).toContain(FEEDBACK_BUTTON_PLACE);
     expect(FABRICATED_ALERT_NOTE).toContain("no hay ticket");
     expect(FABRICATED_ALERT_NOTE).not.toMatch(/no puede tramitar un aviso por ti\.$/);
   });
 
-  it("names a button the workspace topbar actually mounts", () => {
-    // Same drift guard as the accordion below, pointed at the feedback button: the
-    // launcher prints the shared label, and the workspace layout mounts it in the topbar.
-    const launcher = source("feedback/feedback-launcher.tsx");
-    const layout = source("(workspace)/layout.tsx");
+  it.each([
+    // Every top bar the assistant can be read under by a session that may send: the
+    // workspace topbar, the error page that replaces it, the estreno and /empezar
+    // mastheads, and the legal cover. «En la barra superior» has to be true on all
+    // of them — that is why the phrase is one constant and this list pins each mount
+    // inside its own <header>.
+    ["(workspace)/layout.tsx", "<FeedbackMount />"],
+    ["error.tsx", "<FeedbackSlot />"],
+    ["empezar/page.tsx", "<FeedbackMount />"],
+    ["legal/layout.tsx", "<FeedbackSlot />"],
+    ["asistente/assistant-layer.tsx", "{onboardingMastheadAction}"],
+  ])("mounts the button in the top bar of %s", (file, mount) => {
+    const text = source(file);
+    const at = text.indexOf(mount);
+    const header = text.lastIndexOf("<header", at);
 
-    expect(launcher).toContain("{FEEDBACK_BUTTON_LABEL}");
-    expect(layout).toContain("<FeedbackMount />");
-    expect(layout.indexOf("<FeedbackMount />")).toBeGreaterThan(
-      layout.indexOf('className="topbarEnd"'),
-    );
+    expect(at, file).toBeGreaterThan(-1);
+    expect(header, file).toBeGreaterThan(-1);
+    expect(text.lastIndexOf("</header>", at), file).toBeLessThan(header);
+  });
+
+  it("hands the estreno masthead the launcher, which prints the shared label", () => {
+    const bienvenida = source("bienvenida/page.tsx");
+
+    expect(bienvenida).toContain("onboardingMastheadAction={");
+    expect(bienvenida).toContain("<FeedbackLauncher />");
+    expect(source("feedback/feedback-launcher.tsx")).toContain("{FEEDBACK_BUTTON_LABEL}");
   });
 
   it("names the accordion the UI actually renders", () => {

@@ -45,15 +45,17 @@ export default function WorkspaceLayout({
           <Suspense fallback={<SectionNavFallback />}>
             <SectionNav />
           </Suspense>
-          {/* «Enviar feedback» (#1174) reads the session to decide whether to
-              show, so it streams in like the sign-out control. */}
-          <Suspense fallback={null}>
-            <FeedbackMount />
-          </Suspense>
           <Suspense fallback={null}>
             <SignOutButton />
           </Suspense>
         </div>
+        {/* «Enviar feedback» (#1174): its own grid cell, outside the scrolling
+            strip, so on a phone it shares the brand's row instead of hiding at
+            the strip's end. It reads the session to decide whether to show, so
+            it streams in like the sign-out control. */}
+        <Suspense fallback={null}>
+          <FeedbackMount />
+        </Suspense>
       </header>
 
       {/* ── Scope bar (hidden for single-member workspaces) ─────────── */}

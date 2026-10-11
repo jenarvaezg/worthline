@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { maintainerAlertSubject } from "./missed-capture-alert";
-import {
-  buildUserFeedbackAlert,
-  isUserFeedbackPayload,
-  userFeedbackIdFromHoldingId,
-} from "./user-feedback-alert";
+import { buildUserFeedbackAlert, isUserFeedbackPayload } from "./user-feedback-alert";
 
 const SUBMISSION = {
   email: "usuario@example.com",
@@ -32,9 +27,8 @@ describe("buildUserFeedbackAlert (#1174, ADR 0064)", () => {
     const first = buildUserFeedbackAlert(SUBMISSION);
     const second = buildUserFeedbackAlert({ ...SUBMISSION, feedbackId: "fb-2" });
 
-    expect(first.holdingId).not.toBe(second.holdingId);
-    expect(userFeedbackIdFromHoldingId(first.holdingId)).toBe("fb-1");
-    expect(userFeedbackIdFromHoldingId("wl_hld_loan")).toBeNull();
+    expect(first.holdingId).toBe("feedback:fb-1");
+    expect(second.holdingId).toBe("feedback:fb-2");
   });
 
   it("carries the message verbatim with what the maintainer needs to answer it", () => {
@@ -62,18 +56,5 @@ describe("buildUserFeedbackAlert (#1174, ADR 0064)", () => {
         submittedAt: "2026-10-11T10:00:00.000Z",
       }),
     ).toBe(true);
-  });
-});
-
-describe("maintainerAlertSubject for feedback", () => {
-  it("names the workspace and the message, never a holding", () => {
-    const alert = buildUserFeedbackAlert(SUBMISSION);
-
-    const subject = maintainerAlertSubject(alert);
-
-    expect(subject.workspace).toBe("ws-ana");
-    expect(subject.isFeedback).toBe(true);
-    expect(subject.subject).toBe("mensaje del usuario");
-    expect(subject.subject).not.toContain("feedback:");
   });
 });

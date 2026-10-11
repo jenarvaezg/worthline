@@ -1,5 +1,7 @@
 import AssistantLayer from "@web/asistente/assistant-layer";
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
+import { canSendFeedback } from "@web/feedback/feedback-eligibility";
+import FeedbackLauncher from "@web/feedback/feedback-launcher";
 import { readOnboardingEntryRedirect } from "@web/onboarding-redirect";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
@@ -54,6 +56,7 @@ export default async function BienvenidaPage() {
     <AssistantLayer
       mutationsDisabled={mutationsDisabled}
       onboardingCompleteAction={markOnboardingCompleteAction}
+      onboardingMastheadAction={canSendFeedback(target) ? <FeedbackLauncher /> : null}
       onboardingSkipAction={skipOnboardingAction}
       variant="onboarding"
     />

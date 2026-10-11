@@ -136,6 +136,11 @@ abrió sigue abierto, y lo escrito sigue en su campo sin round-trip.
 Primer llamante: el formulario de operación. Los demás caminos de error siguen
 redirigiendo; migrarlos es trabajo pendiente, y el patrón ya está probado.
 
+**Excepción: un éxito que no cambia nada de la página también vuelve como
+estado.** «Enviar feedback» (#1174) escribe en el control plane y en el correo,
+nunca en el workspace, así que no hay nada que revalidar; un redirect solo
+cerraría su diálogo y tiraría el borrador justo cuando toca confirmarlo.
+
 ## 5. Navegación sin flash: shell prefetchado + scroll estable
 
 Moverse entre dashboard ↔ histórico ↔ drilldowns **no parpadea en blanco ni

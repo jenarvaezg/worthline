@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 
-import { maintainerAlertSubject } from "./missed-capture-alert";
 import {
   buildSourceSyncAlerts,
   sourceSyncWorkspaceFromHoldingId,
@@ -71,31 +70,5 @@ describe("the sentinel holding id", () => {
   test("round-trips its workspace, and ignores a real holding id", () => {
     expect(sourceSyncWorkspaceFromHoldingId("source-sync:ws-jose")).toBe("ws-jose");
     expect(sourceSyncWorkspaceFromHoldingId("hld-1234")).toBeNull();
-  });
-
-  test("/admin names the subject instead of printing the sentinel raw", () => {
-    expect(
-      maintainerAlertSubject({
-        category: "sync_source",
-        workspaceId: "ws-jose",
-        holdingId: "source-sync:ws-jose",
-      }),
-    ).toEqual({
-      isFleet: false,
-      subject: "sincronización de fuentes conectadas",
-      workspace: "ws-jose",
-    });
-  });
-
-  test("a sync_source alert about a REAL holding is left alone", () => {
-    // The assistant raises this category over an actual holding (ADR 0064); only
-    // the cron's sentinel gets translated.
-    expect(
-      maintainerAlertSubject({
-        category: "sync_source",
-        workspaceId: "ws-jose",
-        holdingId: "hld-1234",
-      }),
-    ).toEqual({ isFleet: false, subject: "hld-1234", workspace: "ws-jose" });
   });
 });

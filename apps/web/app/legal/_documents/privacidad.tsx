@@ -111,6 +111,11 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           del servicio, corrección de errores y prevención de abuso y fraude.
         </li>
         <li>
+          <strong>El feedback que nos envías</strong>: interés legítimo (
+          <strong>artículo 6.1.f</strong>) en leer lo que nos cuentas, contestarte y
+          corregir lo que señalas. Solo existe si tú decides enviarlo.
+        </li>
+        <li>
           <strong>Obligación legal</strong>: conservar los registros contables y fiscales
           de las ventas durante los plazos que marca la ley.
         </li>
@@ -119,7 +124,8 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
       <p>
         Como no hay publicidad, perfilado ni analítica,{" "}
         <strong>no pedimos consentimiento</strong> para nada del funcionamiento básico: no
-        hay nada opcional que aceptar.
+        hay casillas que marcar. Lo único voluntario es el feedback, y no necesita una
+        casilla aparte: enviarlo es ya la decisión, y si no lo envías no existe.
       </p>
 
       <h3>4. Quién más trata tus datos</h3>

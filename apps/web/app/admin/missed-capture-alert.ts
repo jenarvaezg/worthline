@@ -1,11 +1,8 @@
 import type {
   DailyCaptureMissedPassReport,
-  MaintainerAlertCategory,
   RaiseMaintainerAlertInput,
 } from "@worthline/db";
 import { parseDailyCapturePass } from "@worthline/db";
-
-import { sourceSyncWorkspaceFromHoldingId } from "./source-sync-alert";
 
 /**
  * The missed-capture maintainer-alert contract (#1339, ADR 0064 amended).
@@ -49,68 +46,6 @@ export function missedCapturePassFromHoldingId(holdingId: string): string | null
   return holdingId.startsWith(HOLDING_ID_PREFIX)
     ? holdingId.slice(HOLDING_ID_PREFIX.length)
     : null;
-}
-
-/**
- * How a maintainer surface names an alert's subject. Global incidents translate
- * their sentinels: missed captures name the fleet and pass (#1339), catalog
- * collisions name the shared catalog and identity (#1744). Shared by the alert
- * index and detail header so the two never disagree.
- */
-export function maintainerAlertSubject(alert: {
-  category: MaintainerAlertCategory;
-  workspaceId: string;
-  holdingId: string;
-}): {
-  isFleet: boolean;
-  isCatalog?: boolean;
-  isFeedback?: boolean;
-  subject: string;
-  workspace: string;
-} {
-  // A user's feedback (#1174) carries a per-message sentinel in the holding slot;
-  // the workspace stays named because who wrote is half the answer.
-  if (alert.category === "user_feedback") {
-    return {
-      isFleet: false,
-      isFeedback: true,
-      subject: "mensaje del usuario",
-      workspace: alert.workspaceId,
-    };
-  }
-  if (alert.category === "catalog_identity_collision") {
-    return {
-      isFleet: false,
-      isCatalog: true,
-      subject: alert.holdingId,
-      workspace: "catálogo compartido",
-    };
-  }
-  const pass =
-    alert.category === "missed_capture"
-      ? missedCapturePassFromHoldingId(alert.holdingId)
-      : null;
-  if (pass !== null) {
-    return { isFleet: true, subject: dailyCapturePassLabel(pass), workspace: "flota" };
-  }
-
-  // A `sync_source` alert raised by the cron (#1755) also carries a sentinel
-  // rather than a holding — its subject is the workspace's sync phase, since the
-  // capture isolates that phase per workspace and not per holding. It is NOT
-  // fleet-wide: the failure belongs to one tenant, and which one is half the
-  // diagnosis, so the workspace stays named.
-  if (
-    alert.category === "sync_source" &&
-    sourceSyncWorkspaceFromHoldingId(alert.holdingId) !== null
-  ) {
-    return {
-      isFleet: false,
-      subject: "sincronización de fuentes conectadas",
-      workspace: alert.workspaceId,
-    };
-  }
-
-  return { isFleet: false, subject: alert.holdingId, workspace: alert.workspaceId };
 }
 
 /** The forensic payload of one missed-pass occurrence (#1339). */

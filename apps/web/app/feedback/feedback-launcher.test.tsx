@@ -14,7 +14,7 @@ import { readStoreTarget } from "@web/read-store-target";
 import type { StoreTarget } from "@web/store-resolver";
 
 import FeedbackLauncher from "./feedback-launcher";
-import { FEEDBACK_BUTTON_LABEL, FEEDBACK_MAX_LENGTH } from "./feedback-message";
+import { FEEDBACK_BUTTON_LABEL } from "./feedback-message";
 import FeedbackMount from "./feedback-mount";
 
 const AUTHENTICATED = {
@@ -34,13 +34,17 @@ describe("FeedbackLauncher", () => {
   });
 
   test("opens a labelled native dialog: one textarea, zero friction", () => {
-    expect(html).toMatch(/<dialog[^>]*aria-labelledby="feedback-title"/);
-    expect(html).toContain('id="feedback-title"');
+    const labelledBy = html.match(/<dialog[^>]*aria-labelledby="([^"]+)"/)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(html).toContain(`<h2 id="${labelledBy}">${FEEDBACK_BUTTON_LABEL}</h2>`);
     expect(html).toMatch(/<textarea[^>]*name="message"/);
-    expect(html).toContain(`maxLength="${FEEDBACK_MAX_LENGTH}"`);
     // Exactly one field the user fills in.
     expect(html.match(/<textarea/g)).toHaveLength(1);
     expect(html).not.toMatch(/<input(?![^>]*type="hidden")/);
+  });
+
+  test("never cuts a long paste: no maxlength, the form says the limit in words", () => {
+    expect(html).not.toMatch(/maxLength|maxlength/);
   });
 
   test("says who reads it and that the reply goes to the user's own address", () => {
@@ -56,7 +60,9 @@ describe("FeedbackLauncher", () => {
   });
 
   test("rides the canon's paper sheet and button recipes", () => {
-    expect(html).toContain("feedbackSheet");
+    // `.coverSheet` restores the paper tokens when the dialog sits inside a cover
+    // masthead (estreno, /empezar, the legal cover).
+    expect(html).toContain('class="feedbackSheet coverSheet"');
     expect(html).toContain("stackForm");
     expect(html).toContain("btnSecondary");
   });

@@ -27,7 +27,11 @@ const HOLDING_ID_PREFIX = "feedback:";
 /** What the user sent, plus what the maintainer needs to answer it. */
 export interface UserFeedbackSubmission {
   workspaceId: string;
-  /** The message's own id: the alert's subject and the email's idempotency key. */
+  /**
+   * The message's own id — minted by the client once per draft, so a retry of the
+   * same draft accumulates on the same alert and reuses the email's idempotency
+   * key instead of minting duplicates of both.
+   */
   feedbackId: string;
   message: string;
   /** The signed-in address the user can be answered at, or null when unknown. */
@@ -48,13 +52,6 @@ export interface UserFeedbackPayload {
 
 function userFeedbackHoldingId(feedbackId: string): string {
   return `${HOLDING_ID_PREFIX}${feedbackId}`;
-}
-
-/** The message id behind a feedback alert's sentinel holding id, or null for any other id. */
-export function userFeedbackIdFromHoldingId(holdingId: string): string | null {
-  return holdingId.startsWith(HOLDING_ID_PREFIX)
-    ? holdingId.slice(HOLDING_ID_PREFIX.length)
-    : null;
 }
 
 /** One alert per message, ready for `raiseMaintainerAlert`. Pure. */

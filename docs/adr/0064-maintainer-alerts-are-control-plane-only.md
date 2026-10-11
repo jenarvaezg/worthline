@@ -149,7 +149,14 @@ The alert belongs to the user's REAL workspace — who wrote is half the answer 
 its holding slot is a per-message sentinel, `feedback:<id>`. A per-workspace subject
 would turn a second, unrelated message into an «occurrence» of the first and close
 both together; a message is an incident of its own, which the existing dedup key
-expresses exactly once the subject is the message. The payload is the text verbatim,
+expresses exactly once the subject is the message. The id is minted by the client
+once per draft, so a retry of the same draft lands on the same alert (and reuses
+the email's idempotency key) instead of minting duplicates.
+
+Because no dedup collapses messages, sends are capped per workspace: five per UTC
+hour, counted with the same atomic increment-then-check counter as ADR 0051, before
+anything is written. Without it one account in a loop would fill the control plane
+and spend the mail quota the trial emails also need. The payload is the text verbatim,
 the pathname it was sent from (never the query string, which can carry typed
 amounts), the signed-in address to answer, and the timestamp. Only a signed-in
 user's own session can send: not the public demo, not the local no-auth mode, not

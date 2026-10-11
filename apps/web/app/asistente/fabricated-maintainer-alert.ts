@@ -32,7 +32,10 @@
  * `maintainer_alert_unavailable`) means no incident exists and no number can be given.
  */
 
-import { FEEDBACK_BUTTON_LABEL } from "@web/feedback/feedback-message";
+import {
+  FEEDBACK_BUTTON_LABEL,
+  FEEDBACK_BUTTON_PLACE,
+} from "@web/feedback/feedback-message";
 import type { UIMessage } from "ai";
 
 import { assertedInAnySentence } from "./claim-sentences";
@@ -60,7 +63,7 @@ export const FABRICATED_ALERT_NOTE =
   "En este mensaje no se ha registrado ninguna incidencia: no hay ticket, ni número, " +
   "ni nadie a quien le haya llegado. El asistente no puede tramitar un aviso por ti: " +
   "si quieres que le llegue al desarrollador, escríbeselo tú en " +
-  `«${FEEDBACK_BUTTON_LABEL}», en la barra superior.`;
+  `«${FEEDBACK_BUTTON_LABEL}», ${FEEDBACK_BUTTON_PLACE}, con tu sesión iniciada.`;
 
 /**
  * What the model is told about its own previous turn, in the history it gets back.
