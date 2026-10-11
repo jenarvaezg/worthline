@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PASTED_REEMBOLSO } from "./pasted-transfer-receipt-fixture";
 import { parseTypedHoldingEvent } from "./typed-holding-event";
 import { operationReceiptFigures } from "./typed-operation-receipt";
 
@@ -78,6 +79,40 @@ describe("operationReceiptFigures", () => {
 
   it("is not a receipt on a single labelled figure inside a sentence", () => {
     expect(operationReceiptFigures("Te paso el importe:  312,55 €")).toBeNull();
+  });
+});
+
+describe("operationReceiptFigures, on a pasted traspaso (#1794)", () => {
+  it("reads «Operación» with its text beside it, so the two dates pair with their labels", () => {
+    // «Operación · REEMB.POR TRASPASO I · Fecha Operación · Fecha Valor» used to be one
+    // run of four labels against two dates, dropped whole. The day of the operation is
+    // the 14th; the 13th is the fecha valor, printed right after it.
+    expect(operationReceiptFigures(PASTED_REEMBOLSO)?.executedAt).toBe("2026-08-14");
+  });
+
+  it("reads the whole block: the operation's name and the commission row included", () => {
+    // «Gastos» prints its currency and no figure («0.00 EUR · EUR · 739.22 EUR»). That
+    // cell is an empty VALUE, not a label: read as a label, it made the commission row
+    // unequal and dropped it, and a commission nobody read is one nobody refuses.
+    expect(operationReceiptFigures(PASTED_REEMBOLSO)).toEqual({
+      amount: 739.22,
+      executedAt: "2026-08-14",
+      fees: 0,
+      operation: "REEMB.POR TRASPASO I",
+      pricePerUnit: 12.0003,
+      units: "61.6",
+    });
+  });
+
+  it("never lets «Operación» swallow the next header and shift the figures onto it", () => {
+    // A header row and its values, flattened: «Nº Títulos» is the next COLUMN, not the
+    // operation's name. Taking it as one would pair the price with 6 and the importe
+    // with 52,09 — an equal run of wrong figures. Unequal, it is dropped as always.
+    expect(
+      operationReceiptFigures(
+        "Operación  Nº Títulos  Precio  Importe  SUSCRIPCION  6  52,09 EUR  312,55 EUR",
+      ),
+    ).toBeNull();
   });
 });
 

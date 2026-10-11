@@ -21,10 +21,12 @@ import {
   requiresGroundedHoldingIds,
 } from "@web/asistente/holding-id-provenance";
 import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
+import { PASTED_REEMBOLSO } from "@web/asistente/pasted-transfer-receipt-fixture";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
+import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -1336,6 +1338,32 @@ describe("createChatTools · propose_transfer (#1482)", () => {
       dictated: "14/08/2026 · 739,22\u00a0€",
       proposalType: "investment_transfer",
       draft: { proposalId: expect.any(String) },
+    });
+    store.close();
+  });
+
+  it("builds the card from the bank's block the user pasted, figures and all (#1794)", async () => {
+    // The incident's block, as the route reads it: the user's own last message, through
+    // `typedTransferInTurn`. It used to come back as `ambiguous_amount`.
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(
+      store,
+      typedTransferInTurn(
+        [{ id: "u1", parts: [{ text: PASTED_REEMBOLSO, type: "text" }], role: "user" }],
+        "2026-08-21",
+      ),
+    );
+
+    const result = await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      // The day of «Fecha Operación», never the fecha valor printed beside it.
+      dictated: "14/08/2026 · 61,6 participaciones · 739,22 €",
+      origin: { positionLine: "Salen de «Indexado PP»: 100 → 38,4 participaciones" },
+      proposalType: "investment_transfer",
     });
     store.close();
   });

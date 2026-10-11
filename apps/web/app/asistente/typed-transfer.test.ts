@@ -2,6 +2,11 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  PASTED_REEMBOLSO,
+  PASTED_SUSCRIPCION,
+  pastedTransferReceipt,
+} from "./pasted-transfer-receipt-fixture";
+import {
   parseTypedTransfer,
   typedTransferGapMessage,
   typedTransferInTurn,
@@ -217,6 +222,62 @@ describe("parseTypedTransfer (#1482)", () => {
   });
 });
 
+describe("parseTypedTransfer, on a pasted confirmation (#1794)", () => {
+  it("reads the bank's block instead of refusing its four euro figures as ambiguous", () => {
+    expect(parseTypedTransfer(PASTED_REEMBOLSO, TODAY)).toEqual({
+      status: "read",
+      transfer: {
+        executedAt: "2026-08-14",
+        portion: { amountMinor: 73_922, kind: "units", units: "61.6" },
+      },
+    });
+  });
+
+  it("takes the participaciones of a suscripción block as the ones that ARRIVED", () => {
+    // The paper of the half that entered: its participaciones are the destination's,
+    // and the origin's are left for its own price to divide.
+    expect(parseTypedTransfer(PASTED_SUSCRIPCION, TODAY)).toEqual({
+      status: "read",
+      transfer: {
+        destinationUnits: "50.98",
+        executedAt: "2026-08-14",
+        portion: { amountMinor: 73_922, kind: "amount" },
+      },
+    });
+  });
+
+  it("refuses a block that charged a commission, and sends it to the screen", () => {
+    const reading = parseTypedTransfer(
+      pastedTransferReceipt({
+        commission: "1.50",
+        gross: "739.22",
+        net: "737.72",
+        operation: "REEMB.POR TRASPASO I",
+        operationDay: "14/08/2026",
+        price: "12.0003",
+        units: "61.60",
+        valueDay: "13/08/2026",
+      }),
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["fee"], status: "incomplete" });
+    expect(typedTransferGapMessage(["fee"])).toContain("comisión");
+    expect(typedTransferGapMessage(["fee"])).toContain("«Traspasar»");
+  });
+
+  it("never dates the traspaso with the fecha valor when the block labels no other", () => {
+    // The person copied the block from «Fecha Valor» on. Its day is the one the money
+    // settled, and borrowing it as the operation's would date the pair a day off.
+    const reading = parseTypedTransfer(
+      "Fecha Valor  13/08/2026  Número de Participaciones  Valor Liquidativo  Importe Bruto  61.60  12.0003 EUR  739.22 EUR",
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["date"], status: "incomplete" });
+  });
+});
+
 describe("typedTransferGapMessage (#1482)", () => {
   it("asks for every gap in ONE sentence, never one round trip per gap", () => {
     const message = typedTransferGapMessage(["amount", "date"]);
@@ -241,6 +302,7 @@ describe("typedTransferGapMessage (#1482)", () => {
       "ambiguous_amount",
       "ambiguous_units",
       "conflicting_portion",
+      "fee",
     ] as const) {
       expect(typedTransferGapMessage([gap])).not.toMatch(/worthline no/i);
       expect(typedTransferGapMessage([gap])).toMatch(/te preparo el traspaso/i);

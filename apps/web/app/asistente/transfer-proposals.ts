@@ -372,7 +372,7 @@ export async function buildTransferProposal(
   args: TransferArgs,
   today: string,
 ): Promise<{ ok: true; proposal: TransferProposal } | { ok: false; error: string }> {
-  const { executedAt, portion } = args.transfer;
+  const { destinationUnits, executedAt, portion } = args.transfer;
   if (executedAt > today) {
     return {
       error:
@@ -385,17 +385,32 @@ export async function buildTransferProposal(
   // The VLs the arithmetic still needs, and only those: a leg that DECLARES its
   // participaciones derives its own (#1544), so a holding with no price at all no
   // longer blocks a traspaso the user stated fully. The refusal has to name WHICH
-  // holding has no price — «no tengo precio» about an unnamed one is a dead end.
-  const prices = await readTransferPrices(store, args, portion.kind !== "units");
+  // holding has no price — «no tengo precio» about an unnamed one is a dead end. The
+  // same goes for the arriving leg when a pasted suscripción stated its
+  // participaciones (#1794): its VL is derived, and the destination's price is neither
+  // read nor missed.
+  const prices = await readTransferPrices(store, args, {
+    destination: destinationUnits === undefined,
+    origin: portion.kind !== "units",
+  });
   if (!prices.ok) return prices;
+
+  // What the user's figures STATE, frozen in the draft: a VL only for a leg whose
+  // participaciones were not stated, and the arriving participaciones when they were.
+  const stated = {
+    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
+    ...(prices.destination === null
+      ? {}
+      : { destinationPricePerUnit: prices.destination.pricePerUnit }),
+    ...(destinationUnits === undefined ? {} : { destinationUnits }),
+  };
 
   const projected = await projectTransferWrite(store, {
     destinationAssetId: args.destinationAssetId,
-    destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
     originAssetId: args.originAssetId,
-    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
     portion,
+    ...stated,
   });
   if (!projected.ok) return projected;
 
@@ -406,12 +421,11 @@ export async function buildTransferProposal(
     currency,
     destinationAssetId: destination.assetId,
     destinationHolding: args.destinationHolding,
-    destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
     originAssetId: origin.assetId,
     originHolding: args.originHolding,
     portion,
-    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
+    ...stated,
   };
 
   const proposal = await store.assistantProposals.create({ kind: "investment_transfer" });
@@ -450,7 +464,12 @@ export async function buildTransferProposal(
         projected: destination,
         units: pair.incoming.units,
       }),
-      dictated: transferDictatedLine({ currency, executedAt, portion }),
+      dictated: transferDictatedLine({
+        currency,
+        executedAt,
+        portion,
+        ...(destinationUnits === undefined ? {} : { destinationUnits }),
+      }),
       draft: { proposalId: proposal.id },
       folio: TRANSFER_FOLIO,
       impact: {
@@ -472,7 +491,8 @@ export async function buildTransferProposal(
         // traspaso states one unit count, and a message with two is refused as
         // ambiguous (`typed-transfer.ts`) and routed to the screen, which has a field
         // per leg. So the arriving half is still divided at the app's price, and still
-        // says so.
+        // says so — unless a pasted suscripción stated it (#1794), and then it is the
+        // ORIGIN that is divided and says so instead.
         ...[
           prices.origin === null
             ? null
@@ -482,12 +502,14 @@ export async function buildTransferProposal(
                 side: "origin",
                 ...prices.origin,
               }),
-          transferPriceProvenanceNote({
-            executedAt,
-            name: destination.name,
-            side: "destination",
-            ...prices.destination,
-          }),
+          prices.destination === null
+            ? null
+            : transferPriceProvenanceNote({
+                executedAt,
+                name: destination.name,
+                side: "destination",
+                ...prices.destination,
+              }),
         ].filter((note): note is string => note !== null),
       ],
       origin: side({
@@ -514,7 +536,7 @@ export async function buildTransferProposal(
 export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
 
 /**
- * Both VLs, or the refusal that names the holding without one.
+ * The VLs the arithmetic still needs, or the refusal that names the holding without one.
  *
  * It does NOT re-read the portfolio to name them: each side's row already came back
  * from `readTransferSidePrice`, and «no existe» is
@@ -525,30 +547,28 @@ async function readTransferPrices(
   store: TransferProjectionStore,
   args: TransferArgs,
   /**
-   * Whether the origin's VL is still part of the arithmetic. False when the message
-   * declared the participaciones that left (#1544): the origin's price is then neither
-   * read for the plan nor missed when the holding has none.
+   * Whether each side's VL is still part of the arithmetic. False for a side whose
+   * participaciones were stated — the origin's by the message (#1544), the
+   * destination's by a pasted suscripción (#1794): that price is then neither read for
+   * the plan nor missed when the holding has none.
    */
-  needsOriginPrice: boolean,
+  needs: { origin: boolean; destination: boolean },
 ): Promise<
-  | { ok: true; origin: TransferSidePrice | null; destination: TransferSidePrice }
+  | { ok: true; origin: TransferSidePrice | null; destination: TransferSidePrice | null }
   | { ok: false; error: string }
 > {
+  const unread = Promise.resolve({ name: null, price: null });
   const [origin, destination] = await Promise.all([
-    needsOriginPrice
-      ? readTransferSidePrice(store, args.originAssetId)
-      : Promise.resolve({ name: null, price: null }),
-    readTransferSidePrice(store, args.destinationAssetId),
+    needs.origin ? readTransferSidePrice(store, args.originAssetId) : unread,
+    needs.destination ? readTransferSidePrice(store, args.destinationAssetId) : unread,
   ]);
 
-  if ((needsOriginPrice && origin.price === null) || destination.price === null) {
+  const originMissing = needs.origin && origin.price === null;
+  const destinationMissing = needs.destination && destination.price === null;
+  if (originMissing || destinationMissing) {
     const without = [
-      ...(needsOriginPrice && origin.price === null
-        ? [origin.name ?? "la inversión de origen"]
-        : []),
-      ...(destination.price === null
-        ? [destination.name ?? "la inversión de destino"]
-        : []),
+      ...(originMissing ? [origin.name ?? "la inversión de origen"] : []),
+      ...(destinationMissing ? [destination.name ?? "la inversión de destino"] : []),
     ];
     return {
       error:

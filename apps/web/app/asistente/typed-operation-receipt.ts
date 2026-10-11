@@ -36,7 +36,9 @@
  * Pure and I/O-free. Returns figures, never an event: composing one — with the ISIN, the
  * currency and the direction read off the whole message — stays with
  * {@link ../typed-holding-event}, so a paste and a dictated sentence keep ONE way of
- * reporting what is missing.
+ * reporting what is missing. The dictated traspaso composes it the same way
+ * ({@link ../typed-transfer}, #1794), which is why the operation's NAME is read here
+ * too: a traspaso's paper says which half it confirms only in that cell.
  */
 
 import { normalizeExtractedNumber } from "./attachment-extraction-contract";
@@ -54,6 +56,12 @@ export interface OperationReceiptFigures {
   fees?: number;
   /** The day of «Fecha Operación» — never «Fecha Valor». */
   executedAt?: string;
+  /**
+   * What the paper calls the operation, as printed beside «Operación»: «REEMB.POR
+   * TRASPASO I», «SUSCRIPCION I.I.C.» (#1794). Text, not a figure, and present only when
+   * it was printed beside its label — see {@link TEXT_LABELS}.
+   */
+  operation?: string;
 }
 
 /**
@@ -145,6 +153,21 @@ const ROW_BREAK = /\r?\n/u;
 /** A cell that states a figure: it opens with a digit. */
 const FIGURE_CELL = /^[-+]?\s*\d/u;
 
+/**
+ * A cell that prints a currency and NO figure — «EUR» under «Gastos» when there were
+ * none, as the traspaso confirmation of #1794 does («0.00 EUR · EUR · 739.22 EUR»).
+ *
+ * It sits in the figures' row, so it is a VALUE, an empty one. Taken for a label it
+ * made its row unequal, and the row dropped whole was the commission row: the one whose
+ * reading decides whether the chat may write the traspaso at all.
+ */
+const EMPTY_FIGURE_CELL = /^(?:EUR|USD|GBP|CHF|€|\$|£)$/u;
+
+/** A cell on the figures' side of the pairing: a figure, or an empty one. */
+function isValueCell(cell: string): boolean {
+  return FIGURE_CELL.test(cell) || EMPTY_FIGURE_CELL.test(cell);
+}
+
 /** A footnote marker a label carries — «Importe Efectivo Neto (1)». */
 const FOOTNOTE = /\(\s*\d+\s*\)/gu;
 
@@ -158,6 +181,46 @@ function normalizeLabel(cell: string): string {
     .replace(/[.·•*]+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+/**
+ * The labels whose value is TEXT, not a figure (#1794): what the paper calls the
+ * operation.
+ *
+ * They exist for the pairing, not for what they read. A traspaso's confirmation prints
+ * «Operación · REEMB.POR TRASPASO I · Fecha Operación · Fecha Valor» and then the two
+ * dates — and to the run-against-run pairing every one of those four cells is a label,
+ * because none of them opens with a digit. Four labels against two dates is an unequal
+ * run, dropped whole, and the day of the operation went with it. Knowing that
+ * «Operación» carries its value beside it takes that pair out of the run, and the two
+ * dates land on their own labels.
+ */
+const TEXT_LABELS: ReadonlySet<string> = new Set([
+  "operacion",
+  "tipo de operacion",
+  "tipo operacion",
+]);
+
+/**
+ * What a cell has to say to be taken as the value of a text label: the NAME of an
+ * operation, normalised as {@link normalizeLabel} leaves it.
+ *
+ * Gated on the vocabulary, and not on «whatever cell comes next», because the next cell
+ * is just as often the following column's header. Jose's paste of #1751 prints
+ * «Operación · Referencia Operación» and only then the two values: a text label that
+ * swallowed «Referencia Operación» would shift every cell after it one place left, and
+ * a shifted run can come out EQUAL — a wrong figure on a right-looking label. A cell
+ * that names no operation leaves the label in its run, exactly as before.
+ */
+const OPERATION_NAME =
+  /\b(?:suscr\w*|reemb\w*|rescat\w*|traspas\w*|compra|venta|aportacion\w*)\b/u;
+
+/** Whether `cell` is the name of an operation a text label can take as its value. */
+function namesOperation(cell: string): boolean {
+  if (isValueCell(cell)) return false;
+  const label = normalizeLabel(cell);
+  if (LABELS.has(label) || TEXT_LABELS.has(label)) return false;
+  return OPERATION_NAME.test(label);
 }
 
 /**
@@ -194,11 +257,17 @@ interface PairedCell {
  * stack onto the header below would make every real row unequal and unreadable. A paste
  * that lost them — Jose's, one long line — is read by the runs alone, which is what the
  * module note describes.
+ *
+ * A text label ({@link TEXT_LABELS}) is held back one cell: when the next cell names an
+ * operation, the two are a pair of their own and join no run; when it does not, the
+ * label goes into its run exactly where it would have gone before (#1794).
  */
-function pairedCellsIn(text: string): PairedCell[] {
+function pairedCellsIn(text: string): { paired: PairedCell[]; operation?: string } {
   const paired: PairedCell[] = [];
   let labels: string[] = [];
   let figures: string[] = [];
+  let textLabel: string | null = null;
+  let operation: string | undefined;
 
   const flush = (): void => {
     if (labels.length > 0 && labels.length === figures.length) {
@@ -211,27 +280,48 @@ function pairedCellsIn(text: string): PairedCell[] {
     figures = [];
   };
 
+  const pushLabel = (cell: string): void => {
+    // A label after figures opens the NEXT row: the run that just closed is resolved.
+    if (figures.length > 0) flush();
+    labels.push(cell);
+  };
+
   for (const row of text.split(ROW_BREAK)) {
     const cells = cellsIn(row);
-    // A row of labels following a row of labels is a section title, not a header: it
-    // must not stack, or three columns of header would line up against two of figures.
-    // A row that OPENS with a figure is the continuation of the header above it, so the
-    // labels stay open across that break.
-    if (cells.length > 0 && !FIGURE_CELL.test(cells[0]!)) flush();
-    for (const cell of cells) {
-      if (FIGURE_CELL.test(cell)) {
+    for (const [index, cell] of cells.entries()) {
+      // The held-back text label is settled BEFORE this row's own break is honoured:
+      // unclaimed, it belongs to the run it was printed in, not to the next row's.
+      if (textLabel !== null) {
+        const held = textLabel;
+        textLabel = null;
+        if (namesOperation(cell)) {
+          flush();
+          operation ??= cell;
+          continue;
+        }
+        pushLabel(held);
+      }
+      // A row of labels following a row of labels is a section title, not a header: it
+      // must not stack, or three columns of header would line up against two of
+      // figures. A row that OPENS with a figure is the continuation of the header above
+      // it, so the labels stay open across that break.
+      if (index === 0 && !isValueCell(cell)) flush();
+      if (isValueCell(cell)) {
         // A figure with no label run open belongs to nothing: close and start over.
         if (labels.length === 0) flush();
         else figures.push(cell);
         continue;
       }
-      // A label after figures opens the NEXT row: the run that just closed is resolved.
-      if (figures.length > 0) flush();
-      labels.push(cell);
+      if (TEXT_LABELS.has(normalizeLabel(cell))) {
+        textLabel = cell;
+        continue;
+      }
+      pushLabel(cell);
     }
   }
+  if (textLabel !== null) pushLabel(textLabel);
   flush();
-  return paired;
+  return { paired, ...(operation === undefined ? {} : { operation }) };
 }
 
 /**
@@ -279,7 +369,9 @@ function roundToCent(amount: number): number {
  * table stays exactly as #1466 left it.
  */
 export function operationReceiptFigures(text: string): OperationReceiptFigures | null {
-  const paired = pairedCellsIn(text);
+  // The operation's name does not count towards the threshold: it is text, and what
+  // makes a paste a confirmation is figures paired with their labels.
+  const { operation, paired } = pairedCellsIn(text);
   if (paired.length < RECEIPT_THRESHOLD) return null;
 
   let gross: number | undefined;
@@ -319,5 +411,6 @@ export function operationReceiptFigures(text: string): OperationReceiptFigures |
     ...(pricePerUnit === undefined ? {} : { pricePerUnit }),
     ...(fees === undefined ? {} : { fees }),
     ...(executedAt === undefined ? {} : { executedAt }),
+    ...(operation === undefined ? {} : { operation }),
   };
 }

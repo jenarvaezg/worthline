@@ -54,6 +54,8 @@ export function transferDictatedLine(dictated: {
   executedAt: string;
   portion: TransferPortion;
   currency: string;
+  /** The participaciones that ARRIVED, when a pasted suscripción stated them (#1794). */
+  destinationUnits?: string;
 }): string {
   const money = (amountMinor: number) =>
     formatDocumentMoney(amountMinor, dictated.currency);
@@ -65,7 +67,13 @@ export function transferDictatedLine(dictated: {
           // place where a misread participación can still be caught.
           `${formatUnits(dictated.portion.units)} participaciones · ${money(dictated.portion.amountMinor)}`
         : money(dictated.portion.amountMinor);
-  return `${formatIsoDayEs(dictated.executedAt)} · ${portion}`;
+  // Named as the ones that ARRIVED: the same count read as the ones that left is the
+  // misreading this echo exists to catch.
+  const arrived =
+    dictated.destinationUnits === undefined
+      ? ""
+      : ` · entraron ${formatUnits(dictated.destinationUnits)} participaciones`;
+  return `${formatIsoDayEs(dictated.executedAt)} · ${portion}${arrived}`;
 }
 
 /**
