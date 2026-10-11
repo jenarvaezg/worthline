@@ -358,6 +358,13 @@ function toResult(result: ScopeFireResult): AgentViewFireResult {
   };
 }
 
+/** Con qué no se pudo contrastar la condición de una renta, en el vocabulario del contrato. */
+const CONDITION_GAP = {
+  birth_date: "no_birth_date",
+  birth_month: "no_birth_month",
+  retirement_age: "no_retirement_age",
+} as const;
+
 /**
  * Las rentas sin activo tal como las lee la tarjeta (#1674): mismas cuatro listas, mismo
  * reparto. Sin ninguna, el bloque no aparece — un asistente no tiene que distinguir
@@ -371,26 +378,26 @@ function standaloneIncomesOf(
   if (conditionBroken.length + current.length + upcoming.length + withheld.length === 0) {
     return {};
   }
-  const line = (income: FireSustainableIncome): AgentViewSustainableIncome => ({
+  const line = ({
+    condition,
+    income,
+    monthlyMinor,
+  }: FireSustainableIncome): AgentViewSustainableIncome => ({
     condition:
-      income.condition === null
+      condition === null
         ? null
         : {
-            assumedContributionThrough: income.condition.throughISO,
+            assumedContributionThrough: condition.throughISO,
             check:
-              income.condition.state === "holds"
-                ? "holds"
-                : income.condition.missing === "retirement_age"
-                  ? "no_retirement_age"
-                  : "no_birth_date",
+              condition.state === "holds" ? "holds" : CONDITION_GAP[condition.missing],
           },
-    endDate: income.income.endISO,
-    id: derivePublicId("psc", income.income.incomeId),
-    label: income.income.label,
-    monthly: moneyOf(income.monthlyMinor, currency),
-    provenance: income.income.provenance,
-    provenanceAsOf: income.income.provenanceAsOf,
-    startDate: income.income.startISO,
+    endDate: income.endISO,
+    id: derivePublicId("psc", income.incomeId),
+    label: income.label,
+    monthly: moneyOf(monthlyMinor, currency),
+    provenance: income.provenance,
+    provenanceAsOf: income.provenanceAsOf,
+    startDate: income.startISO,
   });
   return {
     standaloneIncomes: {

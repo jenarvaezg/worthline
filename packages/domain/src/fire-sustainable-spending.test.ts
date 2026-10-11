@@ -383,9 +383,8 @@ describe("fireSustainableSpending — la renta vigente hoy entra en las rentas",
     });
     expect(spending.perpetual.capital).toEqual(without.perpetual.capital);
     expect(spending.rents).toEqual(without.rents);
-    expect(spending.depletion!.total.annualMinor).toBe(
-      without.depletion!.total.annualMinor + 1_200_000,
-    );
+    // 5.785,24 € de anualidad (27 años al 3,5 %) + 11.750 € de alquiler + 12.000 €.
+    expect(spending.depletion!.total.annualMinor).toBe(2_953_524);
   });
 });
 
@@ -434,7 +433,7 @@ describe("fireSustainableSpending — la condición se comprueba contra la jubil
     ]);
   });
 
-  it("una vigente con la condición rota también sale del total", () => {
+  it("una vigente ya llega: su condición no se contrasta y sigue en el total", () => {
     const income = pension({
       annualMinor: 1_200_000,
       assumedContributionThrough: "2027-06-30",
@@ -443,23 +442,35 @@ describe("fireSustainableSpending — la condición se comprueba contra la jubil
     });
     const spending = withIncomes([income], { config: { targetRetirementAge: 62 } });
 
-    expect(spending.incomes.current).toEqual([]);
-    expect(spending.incomes.conditionBroken).toHaveLength(1);
-    expect(spending.perpetual.total).toEqual(spending.perpetual.capital);
+    expect(spending.incomes.conditionBroken).toEqual([]);
+    expect(spending.incomes.current).toEqual([
+      { annualMinor: 1_200_000, condition: null, income, monthlyMinor: 100_000 },
+    ]);
+    // 3.500 € del capital + 12.000 € de la pensión que ya llega.
+    expect(spending.perpetual.total.annualMinor).toBe(1_550_000);
   });
 
-  it("con solo el año de nacimiento, el mismo año no la rompe: no se inventa el mes", () => {
-    const spending = withIncomes(
+  it("con solo el año de nacimiento, caer el mismo año no se decide: falta el mes", () => {
+    const yearOnly = { referenceBirth: { birthYear: 1963 } };
+    const sameYear = withIncomes(
       [pension({ assumedContributionThrough: "2030-11-30" })],
-      {
-        referenceBirth: { birthYear: 1963 },
-      },
+      yearOnly,
     );
-    const later = withIncomes([pension({ assumedContributionThrough: "2031-01-31" })], {
-      referenceBirth: { birthYear: 1963 },
-    });
+    const earlier = withIncomes(
+      [pension({ assumedContributionThrough: "2029-06-30" })],
+      yearOnly,
+    );
+    const later = withIncomes(
+      [pension({ assumedContributionThrough: "2031-01-31" })],
+      yearOnly,
+    );
 
-    expect(spending.incomes.upcoming[0]?.condition?.state).toBe("holds");
+    expect(sameYear.incomes.upcoming[0]?.condition).toEqual({
+      missing: "birth_month",
+      state: "unchecked",
+      throughISO: "2030-11-30",
+    });
+    expect(earlier.incomes.upcoming[0]?.condition?.state).toBe("holds");
     expect(later.incomes.conditionBroken[0]?.retirement).toEqual({
       age: 67,
       month: null,

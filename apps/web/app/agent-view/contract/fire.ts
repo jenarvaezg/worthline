@@ -1,4 +1,5 @@
 import type {
+  FireDeclaredRetirement,
   FireStandaloneIncomeWithholding,
   IncomeProvenance,
 } from "@worthline/domain";
@@ -217,12 +218,13 @@ export interface AgentViewSustainableIncome {
   provenanceAsOf: string | null;
   /**
    * The contribution the amount assumes, and how it stands against the declared
-   * retirement: `holds`, or unchecked for lack of a declared retirement age or of a
-   * birth date. Null when the income declares no condition.
+   * retirement: `holds`, or unchecked for lack of a declared retirement age, of a
+   * birth date, or of the birth month when both fall in the same year. Null when the
+   * income declares no condition, and always on a `current` one: it already arrives.
    */
   condition: {
     assumedContributionThrough: string;
-    check: "holds" | "no_retirement_age" | "no_birth_date";
+    check: "holds" | "no_retirement_age" | "no_birth_date" | "no_birth_month";
   } | null;
 }
 
@@ -233,7 +235,7 @@ export interface AgentViewConditionBrokenIncome {
   startDate: string;
   assumedContributionThrough: string;
   /** The declared retirement placed on the calendar; `month` null when only the year is known. */
-  declaredRetirement: { age: number; year: number; month: number | null };
+  declaredRetirement: FireDeclaredRetirement;
 }
 
 /**

@@ -6,6 +6,7 @@
 
 import type { AssetType, MonthlyAllocationDestination } from "@worthline/domain";
 import { isContributionMonthKey } from "@worthline/domain";
+import { formatMonth } from "./format-day";
 
 export const ALLOCATION_MONTH_PARAM = "mes";
 
@@ -47,15 +48,8 @@ export function allocationMonthUrl(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-const monthLabelFormatter = new Intl.DateTimeFormat("es-ES", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
 export function formatAllocationMonthLabel(monthKey: string): string {
-  const label = monthLabelFormatter.format(new Date(`${monthKey}-01T00:00:00Z`));
-  return label.replace(" de ", " ");
+  return formatMonth(monthKey).replace(" de ", " ");
 }
 
 /** Share of the priced total, clamped to [0,100]; unpriced rows have no bar. */

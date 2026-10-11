@@ -3279,14 +3279,6 @@ code {
   padding-top: 8px;
 }
 
-.fireSustainableUpcomingTitle {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 /* El % financiado cuando ha dejado de ser el titular: sigue impreso y sigue siendo
    cierto — solo pierde el cuerpo de la cifra grande (#1428). */
 .fireFundedDemoted {
@@ -3511,13 +3503,20 @@ code {
   padding-top: 14px;
 }
 
-.fireLevelsTitle {
+/* El rótulo pequeño de un bloque del hero: los niveles FIRE y las rentas que llegarán
+   del gasto sostenible (#1674) son la misma etiqueta, no dos que deriven. */
+.fireLevelsTitle,
+.fireSustainableUpcomingTitle {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   margin: 0 0 10px;
   text-transform: uppercase;
+}
+
+.fireSustainableUpcomingTitle {
+  margin: 0;
 }
 
 .fireLevelsGrid {

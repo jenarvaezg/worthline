@@ -79,7 +79,9 @@ describe("the list", () => {
     expect(html).toContain("Sin activo");
     expect(html).toContain("Mensual · desde 1 nov 2030");
     expect(html).toContain("Contará");
-    expect(html).toContain("Contará en tu gasto sostenible desde el 1 nov 2030");
+    expect(html).toContain(
+      "Contará en el gasto sostenible de tu plan de jubilación desde el 1 nov 2030",
+    );
     expect(html).toContain("Simulación oficial, con datos a 18 ago 2026");
     expect(html).toContain("Supone seguir cotizando hasta el 31 oct 2030");
   });

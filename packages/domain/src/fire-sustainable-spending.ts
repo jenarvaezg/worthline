@@ -39,11 +39,11 @@
  *   más». No se suma a ninguna cifra de hoy: el titular es lo que el capital de HOY
  *   soporta, y sumarle una renta que aún no llega sería el segundo reloj de arriba.
  *
- * Y las dos solo mientras su **condición** se sostenga: una cifra que supone cotizar
- * hasta 2030 no aplica a quien declaró jubilarse antes (ADR 0074/0079). Se compara
- * contra la edad de jubilación DECLARADA —nunca contra el `?? 65` del motor ni contra
- * una fecha de cese inventada— y aquí, no en el informe, porque esa edad la teclea el
- * formulario de supuestos en vivo (#1450).
+ * La que llegará, solo mientras su **condición** se sostenga: una cifra que supone
+ * cotizar hasta 2030 no aplica a quien declaró jubilarse antes (ADR 0074/0079). Se
+ * contrasta aquí y no en el informe porque la edad de jubilación la teclea el
+ * formulario de supuestos en vivo (#1450). La vigente no se contrasta: ya llega, y el
+ * importe que llega no es una suposición.
  *
  * Puro: divide y anualiza lo que `calculateFireForScope` ya resolvió. No re-ensambla
  * el pool, no proyecta y no toca el número FIRE.
@@ -54,9 +54,12 @@ import type { FireCapitalAvailability } from "./fire-capital-availability";
 import { availabilityAwareAnnuity } from "./fire-capital-availability";
 import type { BirthDate } from "./fire-current-age";
 import type {
+  FireDeclaredRetirement,
+  FireIncomeCondition,
   FireStandaloneIncome,
   FireWithheldStandaloneIncome,
 } from "./fire-standalone-income";
+import { incomeContributionCondition } from "./fire-standalone-income";
 
 /** Una mitad del gasto sostenible: al año y al mes, la misma cifra. */
 export interface FireSustainableSpendingPart {
@@ -75,26 +78,15 @@ export interface FireSustainableSpendingSides {
   total: FireSustainableSpendingPart;
 }
 
-/**
- * Cómo está la condición de una renta frente a la jubilación declarada (#1674). Solo
- * las que se sostienen o no se pueden comprobar llegan a la tarjeta: la rota sale de
- * ella (`FireConditionBrokenIncome`).
- */
-export type FireIncomeCondition =
-  /** La jubilación declarada no es anterior: la cifra se enseña nombrando su condición. */
-  | { state: "holds"; throughISO: string }
-  /**
-   * No hay contra qué comprobarla. Las dos faltas son distintas y se arreglan en sitios
-   * distintos: la edad objetivo en los supuestos, la fecha de nacimiento en Ajustes.
-   */
-  | { state: "unchecked"; throughISO: string; missing: "retirement_age" | "birth_date" };
-
 /** Una renta sin activo dentro de la tarjeta: al año, al mes y la condición que supone. */
 export interface FireSustainableIncome extends FireSustainableSpendingPart {
   /** La declaración entera, con su procedencia y su fecha de corte (#1508). */
   income: FireStandaloneIncome;
-  /** Null cuando la renta no declara condición ninguna. */
-  condition: FireIncomeCondition | null;
+  /**
+   * Null cuando no declara condición, y siempre en una vigente: ya llega. Nunca
+   * `broken` — una renta con la condición rota no está en la tarjeta.
+   */
+  condition: Exclude<FireIncomeCondition, { state: "broken" }> | null;
 }
 
 /**
@@ -107,11 +99,8 @@ export interface FireConditionBrokenIncome extends FireSustainableSpendingPart {
   income: FireStandaloneIncome;
   /** Hasta cuándo supone cotizar la cifra. */
   throughISO: string;
-  /**
-   * La jubilación declarada situada en el calendario: la edad objetivo sobre la fecha
-   * de nacimiento de referencia. `month` es null cuando solo se conoce el año.
-   */
-  retirement: { age: number; year: number; month: number | null };
+  /** La jubilación declarada contra la que se rompe. */
+  retirement: FireDeclaredRetirement;
 }
 
 /** Las rentas sin activo del ámbito, repartidas por lo que la tarjeta hace con ellas. */
@@ -207,7 +196,7 @@ export function fireSustainableSpending(
   const rentAnnualMinor = rentReturns.netRentAnnualMinor;
   const rents = rentAnnualMinor === 0 ? null : partOf(rentAnnualMinor);
 
-  const incomes = sortIncomes({
+  const incomes = placeIncomes({
     referenceBirth: standaloneIncomes.referenceBirth,
     standalone: standaloneIncomes.readable,
     targetRetirementAge: config.targetRetirementAge,
@@ -272,81 +261,46 @@ export function fireSustainableSpending(
 }
 
 /**
- * Reparte las rentas sin activo legibles en vigentes, futuras y con la condición rota.
- * Las retenidas pasan tal cual: su razón la decidió el informe, no esta tarjeta.
+ * Coloca cada renta sin activo legible donde la tarjeta la lee: vigente, por venir o
+ * fuera por su condición. Las retenidas pasan tal cual: su razón la decidió el informe.
  */
-function sortIncomes(input: {
+function placeIncomes(input: {
   standalone: readonly FireStandaloneIncome[];
   referenceBirth: BirthDate | null;
-  /** La DECLARADA: el `?? 65` con el que el motor calcula no es una declaración. */
   targetRetirementAge: number | undefined;
   withheld: readonly FireWithheldStandaloneIncome[];
 }): FireSustainableSpendingIncomes {
-  const sorted: FireSustainableSpendingIncomes = {
+  const placed: FireSustainableSpendingIncomes = {
     conditionBroken: [],
     current: [],
     upcoming: [],
     withheld: [...input.withheld],
   };
-  const retirement = declaredRetirement(input.referenceBirth, input.targetRetirementAge);
 
   for (const income of input.standalone) {
-    const throughISO = income.assumedContributionThrough;
-    let condition: FireIncomeCondition | null = null;
-    if (throughISO !== null) {
-      if (input.targetRetirementAge === undefined) {
-        condition = { missing: "retirement_age", state: "unchecked", throughISO };
-      } else if (retirement === null) {
-        condition = { missing: "birth_date", state: "unchecked", throughISO };
-      } else if (retiresBefore(retirement, throughISO)) {
-        sorted.conditionBroken.push({
-          ...partOf(income.annualMinor),
-          income,
-          retirement,
-          throughISO,
-        });
-        continue;
-      } else {
-        condition = { state: "holds", throughISO };
-      }
+    const amounts = partOf(income.annualMinor);
+    if (!income.startsLater) {
+      placed.current.push({ ...amounts, condition: null, income });
+      continue;
     }
-    const line = { ...partOf(income.annualMinor), condition, income };
-    (income.startsLater ? sorted.upcoming : sorted.current).push(line);
+    const condition = incomeContributionCondition({
+      assumedContributionThrough: income.assumedContributionThrough,
+      referenceBirth: input.referenceBirth,
+      targetRetirementAge: input.targetRetirementAge,
+    });
+    if (condition?.state === "broken") {
+      placed.conditionBroken.push({
+        ...amounts,
+        income,
+        retirement: condition.retirement,
+        throughISO: condition.throughISO,
+      });
+      continue;
+    }
+    placed.upcoming.push({ ...amounts, condition, income });
   }
 
-  return sorted;
-}
-
-/**
- * La jubilación declarada en el calendario: el año (y el mes, si se conoce) en que el
- * miembro de referencia cumple la edad objetivo. El cumpleaños cuenta desde el día 1
- * de su mes, la misma convención que `ageOnDate`.
- */
-function declaredRetirement(
-  birth: BirthDate | null,
-  age: number | undefined,
-): FireConditionBrokenIncome["retirement"] | null {
-  if (birth === null || birth.birthYear === undefined || age === undefined) {
-    return null;
-  }
-  return { age, month: birth.birthMonth ?? null, year: birth.birthYear + age };
-}
-
-/**
- * ¿Se jubila antes de lo que la cifra supone cotizar? Al mes cuando se sabe el mes;
- * con solo el año, el mismo año NO rompe la condición: no se sabe cuál de los dos
- * llega antes, y afirmar que la rompe sería inventarse el mes de nacimiento.
- */
-function retiresBefore(
-  retirement: FireConditionBrokenIncome["retirement"],
-  throughISO: string,
-): boolean {
-  const throughYear = Number(throughISO.slice(0, 4));
-  if (retirement.month === null) {
-    return retirement.year < throughYear;
-  }
-  const throughMonth = Number(throughISO.slice(5, 7));
-  return retirement.year * 12 + retirement.month < throughYear * 12 + throughMonth;
+  return placed;
 }
 
 function partOf(annualMinor: number): FireSustainableSpendingPart {

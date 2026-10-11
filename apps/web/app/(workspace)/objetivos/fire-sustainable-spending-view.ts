@@ -22,9 +22,9 @@
  */
 
 import { incomeProvenanceLine } from "@web/_income/income-view";
+import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
 import type {
   FireConditionBrokenIncome,
-  FireIncomeCondition,
   FireRetirementProfile,
   FireStandaloneIncomeWithholding,
   FireSustainableIncome,
@@ -34,14 +34,14 @@ import type {
   RentReturnNotice,
 } from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
-import { formatDay } from "./format-day";
+import { formatDay, formatMonth } from "./format-day";
 
 /** Una fila de la tarjeta: de dónde sale el dinero, cuánto es y con qué aritmética. */
 export interface FireSustainableSpendingRow {
   /** Único en la tarjeta: puede haber varias rentas sin activo vigentes. */
   id: string;
-  /** Qué mitad es: alquileres, una renta sin activo o el capital. */
-  key: "rents" | "income" | "capital";
+  /** Qué es: los alquileres, una renta sin activo o el capital. Pinta la fila. */
+  kind: "rents" | "income" | "capital";
   label: string;
   /** «97,92 €/mes» — la cifra mensual, que es la que el usuario piensa. */
   value: string;
@@ -137,7 +137,7 @@ export function fireSustainableSpendingCopy(input: {
     rows.push({
       gloss: `alquiler neto declarado: ${formatMoney(spending.rents.annualMinor)}/año`,
       id: "rents",
-      key: "rents",
+      kind: "rents",
       label: "Tus rentas netas",
       value: monthly(spending.rents, formatMoney),
     });
@@ -145,10 +145,13 @@ export function fireSustainableSpendingCopy(input: {
   // Las rentas sin activo que ya llegan, en la misma mitad que los alquileres (#1674):
   // una fila cada una, porque cada una tiene su procedencia y su fecha de corte.
   for (const line of spending.incomes.current) {
+    // Una vigente con final lo dice junto a la cifra: suma hoy, y no para siempre.
+    const ends =
+      line.income.endISO === null ? "" : ` · termina el ${formatDay(line.income.endISO)}`;
     rows.push({
-      gloss: incomeGloss(line),
+      gloss: `${incomeGloss(line)}${ends}`,
       id: `income-${line.income.incomeId}`,
-      key: "income",
+      kind: "income",
       label: line.income.label,
       value: monthly(line, formatMoney),
     });
@@ -156,7 +159,7 @@ export function fireSustainableSpendingCopy(input: {
   rows.push({
     gloss: `${formatMoney(spending.sellableMinor)} de capital vendible × ${rate} ÷ 12`,
     id: "capital",
-    key: "capital",
+    kind: "capital",
     label: "Lo que soporta tu capital",
     value: monthly(spending.perpetual.capital, formatMoney),
   });
@@ -207,21 +210,22 @@ function incomeGloss(line: FireSustainableIncome): string {
     : `${provenance} · ${conditionClause(line.condition)}`;
 }
 
-function conditionClause(condition: FireIncomeCondition): string {
+function conditionClause(
+  condition: NonNullable<FireSustainableIncome["condition"]>,
+): string {
   const premise = `supone seguir cotizando hasta el ${formatDay(condition.throughISO)}`;
   if (condition.state === "holds") {
     return premise;
   }
-  return condition.missing === "retirement_age"
-    ? `${premise}, y sin edad de jubilación declarada no podemos contrastarlo`
-    : `${premise}, y sin tu fecha de nacimiento no podemos situar tu jubilación para contrastarlo`;
+  switch (condition.missing) {
+    case "retirement_age":
+      return `${premise}, y sin edad de jubilación declarada no podemos contrastarlo`;
+    case "birth_date":
+      return `${premise}, y sin tu fecha de nacimiento no podemos situar tu jubilación para contrastarlo`;
+    case "birth_month":
+      return `${premise}, y con solo tu año de nacimiento no sabemos si te jubilas antes o después`;
+  }
 }
-
-const retirementMonthFormatter = new Intl.DateTimeFormat("es-ES", {
-  month: "long",
-  timeZone: "UTC",
-  year: "numeric",
-});
 
 /**
  * Las rentas que la jubilación declarada deja fuera (ADR 0074/0079): la cifra suponía
@@ -238,8 +242,8 @@ function conditionNoteOf(broken: readonly FireConditionBrokenIncome[]): string |
       const when =
         retirement.month === null
           ? `${retirement.year}`
-          : retirementMonthFormatter.format(
-              new Date(Date.UTC(retirement.year, retirement.month - 1, 1)),
+          : formatMonth(
+              `${retirement.year}-${String(retirement.month).padStart(2, "0")}`,
             );
       return `«${income.label}» no está en esta tarjeta: supone seguir cotizando hasta el ${formatDay(throughISO)}, y declaraste jubilarte a los ${retirement.age}, en ${when}. Falta una cifra que suponga dejar de cotizar al jubilarte: una simulación a esa fecha, o tu edad de jubilación corregida.`;
     })
@@ -344,21 +348,17 @@ function exclusionNoteOf(input: {
 }
 
 /**
- * Por qué una renta sin activo no suma (#1674, ADR 0108). Por nombre, no por razón
- * agregada como los alquileres: son pocas, no tienen ficha de activo donde verse, y
- * «una pensión no suma» sin decir cuál obliga a buscarla.
+ * Por qué una renta sin activo no suma (#1674), por nombre y no por razón agregada como
+ * los alquileres: son pocas, no tienen ficha de activo donde verse, y «una pensión no
+ * suma» sin decir cuál obliga a buscarla. Las razones de la declaración son la MISMA
+ * frase que la lista de Rentas pone junto a la renta (ADR 0108); la del dueño es de
+ * esta tarjeta, porque solo existe mirando un ámbito.
  */
-const WITHHELD_INCOME_REASON: Record<FireStandaloneIncomeWithholding, string> = {
-  missing_amount_basis: "su importe está sin declarar como real o nominal",
-  missing_nature: "su naturaleza está sin declarar",
-  // El aviso del ticket: un importe fijo a fecha futura no es real, y tratarlo como tal
-  // se equivoca en la dirección peligrosa. Nunca se le inventa una tasa de decaimiento.
-  nominal_amount:
-    "su importe es nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará",
-  ownerless_in_partial_scope:
-    "no tiene dueño declarado y este ámbito no incluye a todos los miembros",
-  work_income: "es renta del trabajo, no vivir de tus activos",
-};
+function withheldReasonOf(reason: FireStandaloneIncomeWithholding): string {
+  return reason === "ownerless_in_partial_scope"
+    ? "Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno."
+    : INCOME_EXCLUSION_COPY[reason];
+}
 
 function withheldIncomesClause(
   withheld: readonly FireWithheldStandaloneIncome[],
@@ -367,9 +367,9 @@ function withheldIncomesClause(
     return null;
   }
   const clauses = withheld.map(
-    (income) => `«${income.label}», porque ${WITHHELD_INCOME_REASON[income.reason]}`,
+    (income) => `«${income.label}» — ${withheldReasonOf(income.reason)}`,
   );
-  return `Rentas sin activo que no suman aquí: ${clauses.join("; ")}.`;
+  return `Rentas sin activo que no suman aquí. ${clauses.join(" ")}`;
 }
 
 /**

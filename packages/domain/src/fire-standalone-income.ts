@@ -7,12 +7,13 @@
  * ninguna cifra las leía. Este módulo decide, una vez y para todas las superficies,
  * cuáles puede leer la tarjeta y cuáles no, con su razón.
  *
- * Lo que decide aquí es lo que los supuestos NO mueven: la declaración (naturaleza,
- * base del importe), la ventana y a qué ámbito pertenece la renta. La condición —si la
+ * El informe decide lo que los supuestos NO mueven: la declaración (naturaleza, base
+ * del importe), la ventana y a qué ámbito pertenece la renta. La condición —si la
  * jubilación declarada contradice lo que la cifra supone cotizar— depende de la edad
- * objetivo, que el formulario de supuestos deja teclear en vivo (#1450), así que se
- * resuelve después, en `fireSustainableSpending`, contra la fecha de nacimiento que
- * este informe lleva.
+ * objetivo, que el formulario de supuestos deja teclear en vivo (#1450): por eso
+ * `incomeContributionCondition` vive aquí pero se llama después, desde
+ * `fireSustainableSpending`, con el `config` que esté en pantalla y la fecha de
+ * nacimiento que este informe lleva.
  *
  * Tres reglas:
  *
@@ -34,7 +35,7 @@
  */
 
 import type { BirthDate } from "./fire-current-age";
-import { scopeAgeSource } from "./fire-current-age";
+import { parseCalendarMonth, scopeAgeSource } from "./fire-current-age";
 import { annualizedMinor } from "./fire-rent-return";
 import type { Income, IncomeExclusionReason, IncomeProvenance } from "./payouts";
 import { incomeExclusionReason } from "./payouts";
@@ -174,4 +175,93 @@ function scopeCoversEveryMember(workspace: Workspace, scopeId: string): boolean 
   const inScope = new Set(findScopeMemberIds(workspace, scopeId) ?? []);
   const everyone = findScopeMemberIds(workspace, "household") ?? [];
   return everyone.every((memberId) => inScope.has(memberId));
+}
+
+// ── la condición (ADR 0074/0079) ──────────────────────────────────────────────
+
+/**
+ * La jubilación declarada situada en el calendario: el año (y el mes, si se conoce) en
+ * que el miembro de referencia cumple la edad objetivo DECLARADA.
+ */
+export interface FireDeclaredRetirement {
+  age: number;
+  year: number;
+  /** Null cuando del miembro de referencia solo se conoce el año de nacimiento. */
+  month: number | null;
+}
+
+/**
+ * Cómo está la condición de una renta —«supone cotizar hasta 2030»— frente a la
+ * jubilación declarada. Una cifra que supone cotizar más allá del día en que el usuario
+ * dijo que se jubila no aplica; una que no se puede contrastar se enseña nombrando con
+ * qué no se pudo.
+ */
+export type FireIncomeCondition =
+  /** La jubilación declarada no es anterior: la cifra se enseña nombrando su condición. */
+  | { state: "holds"; throughISO: string }
+  /**
+   * No hay contra qué contrastarla, y cada falta se arregla en un sitio distinto: la
+   * edad objetivo en los supuestos, la fecha de nacimiento en Ajustes, y el mes de
+   * nacimiento cuando con solo el año la jubilación y la condición caen el mismo año.
+   */
+  | {
+      state: "unchecked";
+      throughISO: string;
+      missing: "retirement_age" | "birth_date" | "birth_month";
+    }
+  /** La jubilación declarada es anterior: la cifra supone cotizar de más. */
+  | { state: "broken"; throughISO: string; retirement: FireDeclaredRetirement };
+
+/**
+ * Contrasta la condición de una renta con la jubilación declarada. Null cuando la renta
+ * no declara condición ninguna.
+ *
+ * La edad es la DECLARADA: el `?? 65` con el que el motor calcula no es una declaración
+ * (ADR 0081), y comparar contra él le diría a quien nunca tocó el campo que su pensión
+ * no aplica por una edad que no escribió. Y nunca contra una fecha de cese inventada:
+ * worthline no tiene escenarios de cese.
+ *
+ * La granularidad es el mes, porque es la del dato: del cumpleaños se sabe el mes, no
+ * el día. Jubilarse el mismo mes en que la cifra deja de cotizar es el caso coherente —
+ * una simulación hecha a la fecha de jubilación supone cotizar hasta ese mes— y se
+ * sostiene. Con solo el año, caer el mismo año no se puede decidir sin inventarse el
+ * mes, y se dice así.
+ */
+export function incomeContributionCondition(input: {
+  assumedContributionThrough: string | null;
+  referenceBirth: BirthDate | null;
+  targetRetirementAge: number | undefined;
+}): FireIncomeCondition | null {
+  const throughISO = input.assumedContributionThrough;
+  if (throughISO === null) {
+    return null;
+  }
+  const age = input.targetRetirementAge;
+  if (age === undefined) {
+    return { missing: "retirement_age", state: "unchecked", throughISO };
+  }
+  const birthYear = input.referenceBirth?.birthYear;
+  if (birthYear === undefined) {
+    return { missing: "birth_date", state: "unchecked", throughISO };
+  }
+
+  const retirement: FireDeclaredRetirement = {
+    age,
+    month: parseCalendarMonth(input.referenceBirth?.birthMonth) ?? null,
+    year: birthYear + age,
+  };
+  const throughYear = Number(throughISO.slice(0, 4));
+  const throughMonth = parseCalendarMonth(Number(throughISO.slice(5, 7)));
+
+  if (retirement.month === null || throughMonth === undefined) {
+    if (retirement.year === throughYear) {
+      return { missing: "birth_month", state: "unchecked", throughISO };
+    }
+    return retirement.year < throughYear
+      ? { retirement, state: "broken", throughISO }
+      : { state: "holds", throughISO };
+  }
+  return retirement.year * 12 + retirement.month < throughYear * 12 + throughMonth
+    ? { retirement, state: "broken", throughISO }
+    : { state: "holds", throughISO };
 }

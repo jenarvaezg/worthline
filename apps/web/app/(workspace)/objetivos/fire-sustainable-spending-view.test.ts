@@ -98,7 +98,7 @@ describe("fireSustainableSpendingCopy", () => {
     expect(copy.rows[0]).toEqual({
       gloss: "100000.00 € de capital vendible × 3,5 % ÷ 12",
       id: "capital",
-      key: "capital",
+      kind: "capital",
       label: "Lo que soporta tu capital",
       value: "291.67 €/mes",
     });
@@ -118,7 +118,7 @@ describe("fireSustainableSpendingCopy", () => {
       }),
     });
 
-    expect(copy.rows.map((row) => row.key)).toEqual(["rents", "capital"]);
+    expect(copy.rows.map((row) => row.kind)).toEqual(["rents", "capital"]);
     expect(copy.rows[0]?.gloss).toContain("alquiler neto declarado");
     expect(copy.headline).toBe("1270.83 €/mes");
   });
@@ -477,7 +477,7 @@ describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => 
   test("sin ninguna, la tarjeta es la de siempre: ni filas, ni línea con fecha, ni notas", () => {
     const copy = copyWith({});
 
-    expect(copy.rows.map((row) => row.key)).toEqual(["capital"]);
+    expect(copy.rows.map((row) => row.kind)).toEqual(["capital"]);
     expect(copy.upcoming).toEqual([]);
     expect(copy.conditionNote).toBeNull();
     expect(copy.exclusionNote).toBeNull();
@@ -495,11 +495,11 @@ describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => 
       ],
     });
 
-    expect(copy.rows.map((row) => row.key)).toEqual(["income", "capital"]);
+    expect(copy.rows.map((row) => row.kind)).toEqual(["income", "capital"]);
     expect(copy.rows[0]).toEqual({
       gloss: "Simulación oficial, con datos a 18 ago 2026",
       id: "income-inc_pension",
-      key: "income",
+      kind: "income",
       label: "Pensión",
       value: "1000.00 €/mes",
     });
@@ -553,8 +553,26 @@ describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => 
     });
   });
 
+  test("una vigente con final lo dice junto a la cifra: suma hoy, no para siempre", () => {
+    const income = pension({
+      annualMinor: 1_200_000,
+      endISO: "2035-12-31",
+      startISO: "2024-01-01",
+      startsLater: false,
+    });
+    const copy = copyWith({
+      current: [
+        { annualMinor: 1_200_000, condition: null, income, monthlyMinor: 100_000 },
+      ],
+    });
+
+    expect(copy.rows[0]?.gloss).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · termina el 31 dic 2035",
+    );
+  });
+
   test("una condición sin contrastar nombra el dato con el que se contrastaría", () => {
-    const line = (missing: "retirement_age" | "birth_date") =>
+    const line = (missing: "retirement_age" | "birth_date" | "birth_month") =>
       copyWith({
         upcoming: [
           {
@@ -571,6 +589,9 @@ describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => 
     );
     expect(line("birth_date")).toBe(
       "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030, y sin tu fecha de nacimiento no podemos situar tu jubilación para contrastarlo",
+    );
+    expect(line("birth_month")).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030, y con solo tu año de nacimiento no sabemos si te jubilas antes o después",
     );
   });
 
@@ -621,7 +642,7 @@ describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => 
     });
 
     expect(copy.exclusionNote).toBe(
-      "Rentas sin activo que no suman aquí: «Nómina», porque es renta del trabajo, no vivir de tus activos; «Pensión», porque su importe es nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará; «Renta vitalicia», porque su naturaleza está sin declarar; «Usufructo», porque su importe está sin declarar como real o nominal; «Pensión de Ana», porque no tiene dueño declarado y este ámbito no incluye a todos los miembros.",
+      "Rentas sin activo que no suman aquí. «Nómina» — Renta del trabajo: no cuenta como renta pasiva. «Pensión» — Importe nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará, así que no cuenta en las cifras. «Renta vitalicia» — Naturaleza sin declarar: esta renta no cuenta en las cifras. «Usufructo» — Importe sin declarar como real o nominal: esta renta no cuenta en las cifras. «Pensión de Ana» — Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno.",
     );
   });
 });

@@ -42,11 +42,12 @@ const PASSIVE_WINDOW_MONTHS = 12;
  * Papelera — and only then the calendar.
  *
  * An income without an asset is read by one figure only: the sustainable spending
- * (#1674, ADR 0111) — in its net rents while in force, as its dated line before it
+ * (#1674, ADR 0111) — in its income half while in force, as its dated line before it
  * starts. The passive-income figures sum a holding's payouts and never see it, so
- * its sentence names that card and nothing else. Its condition is checked against
- * the declared retirement there, on the card that knows it; here it is named as the
- * rule, so the list never promises what the card withholds.
+ * its sentence names that card — the retirement plan's, on Objetivos — and nothing
+ * else. A future one's condition is checked against the declared retirement there,
+ * on the card that knows it; here it is named as the rule, so the list never
+ * promises what the card withholds.
  *
  * The calendar is read the way the figure reads it (#1673 review): the renta
  * pasiva sums the payouts of the trailing 12 months (`passiveIncomeTrailing`), so
@@ -130,24 +131,26 @@ function standaloneCountingStatus(
     return {
       counts: false,
       mark: "No cuenta",
-      text: `Terminó el ${formatDay(income.endISO)}: ya no suma en tu gasto sostenible.`,
+      text: `Terminó el ${formatDay(income.endISO)}: ya no suma en el gasto sostenible.`,
+    };
+  }
+  if (income.startISO <= todayISO) {
+    // Ya llega: su condición, si la declaró, dejó de ser una suposición.
+    return {
+      counts: true,
+      mark: "Cuenta",
+      text: "Cuenta en el gasto sostenible de tu plan de jubilación, en Objetivos: suma a lo que ya te llega cada mes.",
     };
   }
   const condition =
     income.assumedContributionThrough === null
       ? ""
       : " Si declaras jubilarte antes de lo que supone cotizar, sale de la tarjeta.";
-  return income.startISO > todayISO
-    ? {
-        counts: true,
-        mark: "Contará",
-        text: `Contará en tu gasto sostenible desde el ${formatDay(income.startISO)}, como una línea con fecha que no se suma a lo de hoy.${condition}`,
-      }
-    : {
-        counts: true,
-        mark: "Cuenta",
-        text: `Cuenta en tu gasto sostenible: suma a tus rentas netas.${condition}`,
-      };
+  return {
+    counts: true,
+    mark: "Contará",
+    text: `Contará en el gasto sostenible de tu plan de jubilación desde el ${formatDay(income.startISO)}, como una línea con fecha que no se suma a lo de hoy.${condition}`,
+  };
 }
 
 const NATURE_LABEL = new Map<string, string>(

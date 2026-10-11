@@ -1266,10 +1266,11 @@ async function resolveFire(
     facts.assets,
   );
 
-  // Same declared rents `get_fire_context` reads (#1448): an explanation that
-  // quoted the tier default while the tool quoted the rent-derived rate would be
-  // explaining a figure nothing on screen holds. Skipped when a manual rate is set,
-  // which wins over the derivation anyway.
+  // The declared rents the rate reads (#1448), as `get_fire_context` reads them: an
+  // explanation that quoted the tier default while the tool quoted the rent-derived
+  // rate would be explaining a figure nothing on screen holds. Skipped when a manual
+  // rate is set, which wins over the derivation anyway. `get_fire_context` reads them
+  // even then (#1674) — for the sustainable spending, which no figure here explains.
   const payoutSchedules =
     config.expectedRealReturn === undefined ? await store.readPayoutSchedules() : [];
 

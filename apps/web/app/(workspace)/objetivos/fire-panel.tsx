@@ -376,7 +376,7 @@ export function FirePanel({
 
                 <ul className="fireSustainableRows">
                   {sustainableCopy.rows.map((row) => (
-                    <li className={`fireSustainableRow is-${row.key}`} key={row.id}>
+                    <li className={`fireSustainableRow is-${row.kind}`} key={row.id}>
                       <span className="fireSustainableLabel">{row.label}</span>
                       <span className="fireSustainableGloss">{row.gloss}</span>
                       <strong>{row.value}</strong>

@@ -105,7 +105,7 @@ describe("incomeCountingStatus", () => {
       "Renta del trabajo: no cuenta como renta pasiva.",
     );
     expect(incomeCountingStatus(income({ amountBasis: "nominal" }), TODAY).text).toBe(
-      "Importe nominal: esta renta no se cuenta como euros de hoy en las cifras.",
+      "Importe nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará, así que no cuenta en las cifras.",
     );
   });
 
@@ -115,7 +115,7 @@ describe("incomeCountingStatus", () => {
     expect(incomeCountingStatus(income({ holdingId: null }), TODAY)).toEqual({
       counts: true,
       mark: "Cuenta",
-      text: "Cuenta en tu gasto sostenible: suma a tus rentas netas.",
+      text: "Cuenta en el gasto sostenible de tu plan de jubilación, en Objetivos: suma a lo que ya te llega cada mes.",
     });
   });
 
@@ -132,7 +132,7 @@ describe("incomeCountingStatus", () => {
     ).toEqual({
       counts: true,
       mark: "Contará",
-      text: "Contará en tu gasto sostenible desde el 1 nov 2030, como una línea con fecha que no se suma a lo de hoy. Si declaras jubilarte antes de lo que supone cotizar, sale de la tarjeta.",
+      text: "Contará en el gasto sostenible de tu plan de jubilación desde el 1 nov 2030, como una línea con fecha que no se suma a lo de hoy. Si declaras jubilarte antes de lo que supone cotizar, sale de la tarjeta.",
     });
   });
 
@@ -142,7 +142,7 @@ describe("incomeCountingStatus", () => {
     ).toEqual({
       counts: false,
       mark: "No cuenta",
-      text: "Terminó el 31 dic 2025: ya no suma en tu gasto sostenible.",
+      text: "Terminó el 31 dic 2025: ya no suma en el gasto sostenible.",
     });
   });
 

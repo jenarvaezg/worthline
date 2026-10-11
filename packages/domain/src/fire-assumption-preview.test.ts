@@ -240,8 +240,8 @@ describe("la condición de una renta sin activo responde a la edad tecleada (#16
       { rents: { schedules: [pension], todayISO: "2026-10-11" } },
     );
 
-    // Nacido en 1963 y sin mes: a los 67 se jubila en 2030, el año en que supone
-    // dejar de cotizar — no la rompe. A los 65 (2028), sí.
+    // Nacido en 1963 y sin mes: a los 67 se jubila en 2030, el mismo año en que supone
+    // dejar de cotizar — sin el mes no se decide, y se enseña. A los 65 (2028), la rompe.
     expect(fireSustainableSpending(server)!.incomes.upcoming).toHaveLength(1);
     const typed = fireSustainableSpending(
       previewFireWithAssumptions(server, { targetRetirementAge: 65 }),
