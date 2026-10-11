@@ -80,7 +80,7 @@ describe("shared provider model resolution", () => {
       }).map(({ provider, modelId }) => ({ provider, modelId })),
     ).toEqual([
       { provider: "cerebras", modelId: "gpt-oss-120b" },
-      { provider: "google", modelId: "gemini-3.1-flash-lite" },
+      { provider: "google", modelId: "gemini-3.5-flash-lite" },
     ]);
   });
 });

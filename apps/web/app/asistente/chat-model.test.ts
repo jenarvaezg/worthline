@@ -22,8 +22,8 @@ describe("chat model resolution", () => {
   it.each([
     [
       { GOOGLE_GENERATIVE_AI_API_KEY: "google-key" },
-      "gemini-3.1-flash-lite",
-      "google · gemini-3.1-flash-lite",
+      "gemini-3.5-flash-lite",
+      "google · gemini-3.5-flash-lite",
     ],
     [{ CEREBRAS_API_KEY: "cerebras-key" }, "gpt-oss-120b", "cerebras · gpt-oss-120b"],
   ])("resolves one credential-backed candidate", (env, modelId, label) => {
