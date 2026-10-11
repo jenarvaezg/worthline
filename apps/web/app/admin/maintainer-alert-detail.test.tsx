@@ -303,6 +303,22 @@ describe("MaintainerAlertDetail", () => {
     expect(html).toContain("2");
   });
 
+  test("heads the cron's sync alert by workspace and phase, never as a «holding» (#1755)", () => {
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "sync_source",
+          workspaceId: "ws-jose",
+          holdingId: "source-sync:ws-jose",
+          occurrences: [],
+        }),
+      }),
+    );
+
+    expect(html).toContain("workspace ws-jose · sincronización de fuentes conectadas");
+    expect(html).not.toContain("holding sincronización");
+  });
+
   test("renders a user's feedback as the message itself, answerable by mail (#1174)", () => {
     const feedback = buildUserFeedbackAlert({
       email: "usuario@example.com",

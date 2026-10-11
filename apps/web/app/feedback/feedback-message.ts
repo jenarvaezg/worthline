@@ -14,10 +14,21 @@
  */
 export const FEEDBACK_BUTTON_LABEL = "Enviar feedback";
 
+/**
+ * Where the button lives, in the words the assistant uses. Shared for the same
+ * reason as the label: every surface that mounts the button puts it in its top
+ * bar (the workspace topbar, the estreno and /empezar mastheads, the legal cover,
+ * the error page), and `capability-destinations.test.ts` holds that list against
+ * the code.
+ */
+export const FEEDBACK_BUTTON_PLACE = "en la barra superior";
+
 /** Long enough for a real report with steps; short enough to stay a message. */
 export const FEEDBACK_MAX_LENGTH = 4000;
 
 const PAGE_MAX_LENGTH = 200;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The `useActionState` state of the feedback form. */
 export type FeedbackFormState =
@@ -32,19 +43,20 @@ export type ParsedFeedbackMessage =
   | { ok: false; error: string };
 
 /**
- * The message as the user typed it, trimmed at the edges only. Over the cap is a
- * refusal, never a silent truncation: cutting what someone wrote and saying
- * «recibido» would deliver a different message than the one they sent.
+ * The message as the user typed it, trimmed at the edges only. Line breaks are
+ * normalized to LF BEFORE measuring: a form post turns each one into CRLF, and
+ * counting those twice would refuse on the server a message the textarea
+ * accepted. Over the cap is a refusal, never a silent truncation: cutting what
+ * someone wrote and saying «recibido» would deliver a different message.
  */
 export function parseFeedbackMessage(raw: unknown): ParsedFeedbackMessage {
-  const message = typeof raw === "string" ? raw.trim() : "";
+  const message = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n").trim() : "";
   if (message.length === 0) {
     return { error: "Escribe qué has visto o qué echas en falta.", ok: false };
   }
   if (message.length > FEEDBACK_MAX_LENGTH) {
     return {
-      // Grouped by hand: es-ES ICU data leaves four-digit numbers ungrouped.
-      error: `El mensaje pasa de ${String(FEEDBACK_MAX_LENGTH).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} caracteres: acórtalo o envíalo en dos.`,
+      error: "El mensaje pasa de 4.000 caracteres: acórtalo o envíalo en dos.",
       ok: false,
     };
   }
@@ -65,18 +77,38 @@ export function parseFeedbackPage(raw: unknown): string | null {
   return path;
 }
 
+/**
+ * The id the client minted for this draft, or null when it is not a uuid. Stable
+ * across retries of the same draft, so a resend lands on the same alert and the
+ * same email idempotency key instead of minting duplicates.
+ */
+export function parseFeedbackId(raw: unknown): string | null {
+  return typeof raw === "string" && UUID.test(raw) ? raw.toLowerCase() : null;
+}
+
+type FeedbackStatus = { text: string; tone: "pending" | "sent" | "error" };
+
 export interface FeedbackFormView {
   canSubmit: boolean;
   submitLabel: string;
   /** The line the form announces (`aria-live`), or null when it has nothing to say. */
-  status: { text: string; tone: "pending" | "sent" | "error" } | null;
+  status: FeedbackStatus | null;
+  /** The canon recipe for that line: a success or error band, or bare text. */
+  statusClassName: string;
 }
+
+const STATUS_CLASS: Record<FeedbackStatus["tone"], string> = {
+  error: "feedbackStatus formError",
+  pending: "feedbackStatus",
+  sent: "feedbackStatus successBand",
+};
 
 /**
  * What the form shows. The send is NOT optimistic (interaction-patterns §4): the
  * server decides whether the message reached anywhere, so the form shows an
  * honest pending and confirms only what came back. The confirmation stays until
- * the user starts a new message; an error stays while its draft is there to retry.
+ * the user starts a new message; an error stays while its draft is there to
+ * retry. Sendability is `parseFeedbackMessage` itself — the server's own rule.
  */
 export function feedbackFormView({
   draft,
@@ -87,19 +119,36 @@ export function feedbackFormView({
   pending: boolean;
   state: FeedbackFormState;
 }): FeedbackFormView {
-  if (pending) {
+  const status = feedbackStatus({ draft, pending, state });
+  return {
+    canSubmit: !pending && parseFeedbackMessage(draft).ok,
+    status,
+    statusClassName: status ? STATUS_CLASS[status.tone] : "feedbackStatus",
+    submitLabel: pending ? "Enviando…" : "Enviar",
+  };
+}
+
+function feedbackStatus({
+  draft,
+  pending,
+  state,
+}: {
+  draft: string;
+  pending: boolean;
+  state: FeedbackFormState;
+}): FeedbackStatus | null {
+  if (pending) return { text: "Enviando…", tone: "pending" };
+  const hasDraft = draft.trim().length > 0;
+  const parsed = parseFeedbackMessage(draft);
+  // Only the length refusal speaks before a send: «escribe algo» over an empty
+  // field the user has not touched would scold before they started.
+  if (hasDraft && !parsed.ok) return { text: parsed.error, tone: "error" };
+  if (state.status === "error") return { text: state.error, tone: "error" };
+  if (state.status === "sent" && !hasDraft) {
     return {
-      canSubmit: false,
-      status: { text: "Enviando…", tone: "pending" },
-      submitLabel: "Enviando…",
+      text: "Recibido, gracias. Ya le ha llegado al desarrollador.",
+      tone: "sent",
     };
   }
-  const hasDraft = draft.trim().length > 0;
-  const status: FeedbackFormView["status"] =
-    state.status === "error"
-      ? { text: state.error, tone: "error" }
-      : state.status === "sent" && !hasDraft
-        ? { text: "Recibido, gracias. Ya le ha llegado al desarrollador.", tone: "sent" }
-        : null;
-  return { canSubmit: hasDraft, status, submitLabel: "Enviar" };
+  return null;
 }

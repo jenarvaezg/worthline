@@ -51,10 +51,26 @@ describe("deliverFeedback (#1174)", () => {
     expect(email.text).toContain("/patrimonio/wl_hld_casa/editar");
     expect(email.text).toContain("ws-ana");
     expect(email.text).toContain("https://worthline.example/admin/alertas/alert-9");
-    // A retried send must not mail twice: the key is the message's own id.
-    expect(email.idempotencyKey).toBe("feedback-fb-1");
+    // A retried send must not mail twice: the key is the draft's own id, stable
+    // across retries, never a fresh uuid per call.
+    expect(email.idempotencyKey).toBe("feedback:fb-1");
     expect(email.subject).toContain("La ficha del inmueble no tiene campo de gastos.");
     expect(email.subject).not.toContain("\n");
+  });
+
+  it("keeps every line separator out of the subject", async () => {
+    // A header line ends at CR as much as at LF, and U+2028/U+2029 render as breaks
+    // in some clients: none of them may reach a Subject built from user text.
+    const d = deps();
+
+    await deliverFeedback(
+      { ...SUBMISSION, message: "Primera\rcola\u2028más\u2029aún\r\nsegunda línea" },
+      d,
+    );
+
+    const { subject } = vi.mocked(d.sendEmail).mock.calls[0]![0];
+    expect(subject).toBe("Feedback de worthline: Primera cola más aún");
+    expect(subject).not.toMatch(/[\r\n\u2028\u2029]/);
   });
 
   it("without a Resend key the alert is still written and the skip is logged", async () => {

@@ -12,10 +12,13 @@ import type {
 import { formatMoneyMinor } from "@worthline/domain";
 
 import {
+  maintainerAlertScopeLine,
+  maintainerAlertSubject,
+} from "./maintainer-alert-subject";
+import {
   dailyCapturePassLabel,
   isMissedCapturePayload,
   type MissedCapturePayload,
-  maintainerAlertSubject,
 } from "./missed-capture-alert";
 import { isUserFeedbackPayload, type UserFeedbackPayload } from "./user-feedback-alert";
 
@@ -373,21 +376,14 @@ export function MaintainerAlertDetail({
   alert: MaintainerAlertWithOccurrences;
 }) {
   const isOpen = alert.status === "open";
-  const subject = maintainerAlertSubject(alert);
+  const scope = maintainerAlertScopeLine(maintainerAlertSubject(alert));
   return (
     <main className="demoLanding maintainerAlerts">
       <header className="demoLandingHead">
         <p className="demoKicker">worthline · admin · alertas</p>
         <h1>{maintainerAlertCategoryLabel(alert.category)}</h1>
         <p className="demoLede">
-          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) ·{" "}
-          {subject.isFleet || subject.isCatalog
-            ? // Global incidents name their catalog identity or capture pass.
-              `${subject.workspace} · ${subject.subject}`
-            : subject.isFeedback
-              ? // A message belongs to a workspace and to no holding (#1174).
-                `workspace ${subject.workspace} · ${subject.subject}`
-              : `workspace ${subject.workspace} · holding ${subject.subject}`}
+          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) · {scope}
         </p>
         <p className="alertMeta">
           <a href="/admin/alertas">← Todas las alertas</a>

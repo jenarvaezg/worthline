@@ -1,3 +1,4 @@
+import FeedbackSlot from "@web/feedback/feedback-slot";
 import Link from "next/link";
 
 import { LEGAL_DOCUMENTS, LEGAL_INDEX_PATH, legalPath } from "./legal-documents";
@@ -16,7 +17,7 @@ export default function LegalLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <main className="legalPage coverSurface">
-      <header className="legalMasthead">
+      <header className="legalMasthead coverActionBar">
         <Link className="brand legalBrand" href="/">
           <span className="brandMark" aria-hidden="true">
             wl
@@ -26,6 +27,8 @@ export default function LegalLayout({
             <p>Textos legales</p>
           </div>
         </Link>
+        {/* Asks after mount, so these routes stay static (#1174). */}
+        <FeedbackSlot />
       </header>
 
       {children}

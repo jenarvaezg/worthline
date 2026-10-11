@@ -46,7 +46,12 @@ const SUBJECT_PREVIEW_LENGTH = 70;
 
 /** The first line, cut short: enough to triage from the inbox. */
 function subjectPreview(message: string): string {
-  const firstLine = message.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  // A Subject is one header line: CR ends it as much as LF does, and U+2028/U+2029
+  // render as breaks in some clients. Every other control character goes too.
+  const firstLine = (message.split("\n", 1)[0] ?? "")
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return firstLine.length > SUBJECT_PREVIEW_LENGTH
     ? `${firstLine.slice(0, SUBJECT_PREVIEW_LENGTH - 1)}…`
     : firstLine;
@@ -70,7 +75,7 @@ function feedbackEmail(
       : "En /admin: la alerta NO se pudo escribir; este correo es la única copia.",
   ];
   return {
-    idempotencyKey: `feedback-${submission.feedbackId}`,
+    idempotencyKey: `feedback:${submission.feedbackId}`,
     subject: `Feedback de worthline: ${subjectPreview(submission.message)}`,
     tags: [{ name: "kind", value: "user_feedback" }],
     text: lines.join("\n"),

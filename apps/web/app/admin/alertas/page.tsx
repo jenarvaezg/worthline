@@ -1,6 +1,6 @@
 import { guardAdmin } from "@web/admin/guard-admin";
 import { listAdminMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
-import { maintainerAlertSubject } from "@web/admin/missed-capture-alert";
+import { maintainerAlertSubject } from "@web/admin/maintainer-alert-subject";
 import { maintainerAlertCategoryLabel } from "@web/asistente/maintainer-alert";
 import type { MaintainerAlertStatus } from "@worthline/db";
 

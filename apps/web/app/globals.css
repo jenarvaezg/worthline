@@ -819,13 +819,22 @@ textarea {
   align-items: center;
   background: transparent;
   border-bottom: var(--rule-heavy);
-  display: flex;
-  flex-wrap: wrap;
+  /* Marca | tira de registro | acción (#1174). Rejilla, no flex con wrap: la tira
+     ocupa lo que quede y se desplaza dentro de su columna, así que nada salta de
+     línea según lo larga que sea una etiqueta. La columna de la acción solo
+     existe cuando hay acción (columna implícita), sin hueco fantasma. */
+  display: grid;
   gap: 12px 18px;
-  justify-content: space-between;
+  grid-auto-columns: auto;
+  grid-auto-flow: column;
+  grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 82px;
   padding: 6px 0 14px;
+}
+
+.topbar > .topbarEnd {
+  justify-self: end;
 }
 
 /* Shell topnav — pestañas de registro (.navTab, canon §5). El contenedor solo
@@ -898,28 +907,6 @@ textarea {
   white-space: nowrap;
 }
 
-/* En móvil el topbar apila la marca sobre la tira de pestañas, y esa tira se
-   desplaza en horizontal: el botón quedaría escondido al final, detrás de
-   «Ajustes». Se clava a la fila de la marca, que a esa anchura tiene sitio a la
-   derecha. Su bloque contenedor pasa a ser `.topbar`, no la tira, así que el
-   overflow de la tira no lo recorta; el relleno de la marca evita que su texto
-   se meta debajo en pantallas muy estrechas. */
-@media (max-width: 640px) {
-  .topbar:has(.feedbackLauncher) {
-    position: relative;
-  }
-
-  .topbar:has(.feedbackLauncher) .brand {
-    padding-right: 136px;
-  }
-
-  .feedbackLauncher {
-    position: absolute;
-    right: 0;
-    top: 11px;
-  }
-}
-
 /* La hoja del feedback: papel encartado sobre la página, abierta por regla gruesa
    como el panel del asistente; sin sombra de elevación (canon §4). Es un
    `<dialog>` modal: vive en la capa superior, así que la tira desplazable del
@@ -944,6 +931,32 @@ textarea {
 
 .feedbackForm {
   margin-top: 0;
+}
+
+/* Las cabeceras de cubierta que llevan la acción (la del estreno, /empezar y la
+   de los textos legales): el bloque de marca a la izquierda, el botón a la
+   derecha, centrados en la misma fila. */
+.coverActionBar {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.coverActionBar > :first-child {
+  min-width: 0;
+}
+
+/* Sobre la tinta de la cubierta el secundario toma sus tintas: regla clara y, al
+   pasar, se invierte a la hoja — el foco dorado ya es del canon. */
+.coverSurface .feedbackLauncher {
+  border-color: var(--cover-muted);
+  color: var(--cover-ink);
+}
+
+.coverSurface .feedbackLauncher:hover {
+  background: var(--cover-ink);
+  color: var(--cover);
 }
 
 .feedbackLede {
@@ -3910,10 +3923,28 @@ code {
     min-width: 680px;
   }
 
+  /* En móvil la marca y la acción comparten la primera fila y la tira de
+     registro baja entera a la segunda, donde se desplaza: el botón de feedback
+     no queda escondido al final de la tira (#1174). */
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 16px;
+    gap: 16px 12px;
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .topbar > .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .topbar > .feedbackLauncher {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .topbar > .topbarEnd {
+    grid-column: 1 / -1;
+    justify-self: stretch;
   }
 
   .topbarMeta {

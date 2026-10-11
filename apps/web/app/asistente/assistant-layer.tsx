@@ -452,6 +452,7 @@ export default function AssistantLayer({
   onboardingManualHref = "/patrimonio/anadir",
   onboardingSkipAction,
   onboardingCompleteAction,
+  onboardingMastheadAction,
 }: {
   mutationsDisabled?: boolean;
   mutationsDisabledMessage?: string;
@@ -467,6 +468,12 @@ export default function AssistantLayer({
   onboardingManualHref?: string;
   onboardingSkipAction?: (formData: FormData) => void | Promise<void>;
   onboardingCompleteAction?: () => void | Promise<void>;
+  /**
+   * What the estreno masthead carries on its right — «Enviar feedback» (#1174),
+   * passed by the route only when the session may send, so the onboarding user
+   * finds it in the same top bar the assistant names.
+   */
+  onboardingMastheadAction?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(initialOpen);
   const [draft, setDraft] = useState("");
@@ -613,9 +620,12 @@ export default function AssistantLayer({
             : "Onboarding de worthline. Arrastra tus extractos o cuéntame qué tienes."}
         </p>
 
-        <header className="coverSurface coverMasthead onboardingMasthead">
-          <p className="empezarEyebrow">Patrimonio neto</p>
-          <h1>worthline</h1>
+        <header className="coverSurface coverMasthead onboardingMasthead coverActionBar">
+          <div>
+            <p className="empezarEyebrow">Patrimonio neto</p>
+            <h1>worthline</h1>
+          </div>
+          {onboardingMastheadAction}
         </header>
 
         <div className="onboardingBody">

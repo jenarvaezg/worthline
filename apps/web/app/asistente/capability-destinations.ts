@@ -22,7 +22,10 @@
  * one copy cannot.
  */
 
-import { FEEDBACK_BUTTON_LABEL } from "@web/feedback/feedback-message";
+import {
+  FEEDBACK_BUTTON_LABEL,
+  FEEDBACK_BUTTON_PLACE,
+} from "@web/feedback/feedback-message";
 
 /** A capability the user asks about, and the surface that owns it. */
 export interface CapabilityDestination {
@@ -76,13 +79,14 @@ export const CAPABILITY_DESTINATIONS: CapabilityDestination[] = [
     // The destination that did not exist on 2026-08-21 (#1174): «levanta una
     // incidencia … ¿hay un número de ticket?», and the assistant invented one because
     // there was nowhere true to point. Three halves, all needed: the button by its own
-    // label (shared with the UI, so a rename reaches here); that the USER sends it —
+    // label and place (shared with the UI, so a rename or a move reaches here; «con
+    // sesión iniciada» because the public demo has no button); that the USER sends it —
     // the chat has no tool for it, and claiming otherwise is what #1525 accuses; and
     // that no ticket number comes back, which is what he asked for twice.
     where:
-      "un fallo o una petición para el desarrollador la envía el propio usuario con " +
-      `«${FEEDBACK_BUTTON_LABEL}», en la barra superior: sin número de ticket, y tú no ` +
-      "puedes enviarla por él",
+      "un fallo o una petición para el desarrollador la envía el propio usuario, con " +
+      `sesión iniciada, desde «${FEEDBACK_BUTTON_LABEL}», ${FEEDBACK_BUTTON_PLACE}: ` +
+      "sin número de ticket, y tú no puedes enviarla por él",
   },
 ];
 

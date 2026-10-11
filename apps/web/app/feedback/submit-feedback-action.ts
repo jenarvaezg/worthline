@@ -8,11 +8,14 @@ import { SITE_URL } from "@web/site-url";
 import { normalizeAdminEmail } from "@web/store-resolver";
 
 import { deliverFeedback } from "./deliver-feedback";
+import { canSendFeedback } from "./feedback-eligibility";
 import {
   type FeedbackFormState,
+  parseFeedbackId,
   parseFeedbackMessage,
   parseFeedbackPage,
 } from "./feedback-message";
+import { admitFeedbackSend, FEEDBACK_RATE_LIMITED_MESSAGE } from "./feedback-rate-limit";
 
 /**
  * «Enviar feedback» (#1174): the in-app button's server action.
@@ -23,9 +26,13 @@ import {
  * either: the message goes to the control plane and to the maintainer's inbox,
  * never into the workspace.
  *
- * Only a signed-in user's OWN session sends. The read-only demo has no one to
- * answer and is public, and an admin impersonating a workspace must not write in
- * that user's name — `isWriteBlocked` refuses both, before anything is read.
+ * Only a signed-in user's OWN session sends (`canSendFeedback`, the same rule
+ * every mount of the button reads). The read-only demo and an impersonating admin
+ * are refused by `isWriteBlocked` before anything else is read.
+ *
+ * Order matters: the text is validated BEFORE the hourly allowance is counted, so
+ * a refused draft does not spend it; the allowance is counted BEFORE anything is
+ * written, so a send over the limit leaves no alert and no email behind.
  */
 export async function submitFeedbackAction(
   _previous: FeedbackFormState,
@@ -39,7 +46,7 @@ export async function submitFeedbackAction(
   }
 
   const target = await readStoreTarget();
-  if (target.kind !== "authenticated") {
+  if (!canSendFeedback(target)) {
     return {
       error: "Para enviar feedback necesitas haber iniciado sesión.",
       status: "error",
@@ -49,10 +56,15 @@ export async function submitFeedbackAction(
   const parsed = parseFeedbackMessage(formData.get("message"));
   if (!parsed.ok) return { error: parsed.error, status: "error" };
 
+  if ((await admitFeedbackSend(target.workspaceId)) === "limited") {
+    return { error: FEEDBACK_RATE_LIMITED_MESSAGE, status: "error" };
+  }
+
   const delivery = await deliverFeedback(
     {
       email: await readSessionEmail(),
-      feedbackId: crypto.randomUUID(),
+      // The client mints one id per draft; a retry of the same draft reuses it.
+      feedbackId: parseFeedbackId(formData.get("feedbackId")) ?? crypto.randomUUID(),
       message: parsed.message,
       page: parseFeedbackPage(formData.get("page")),
       submittedAt: new Date().toISOString(),
@@ -76,4 +88,21 @@ export async function submitFeedbackAction(
           "No se ha podido enviar ahora mismo. Tu mensaje sigue aquí: vuelve a intentarlo en un rato.",
         status: "error",
       };
+}
+
+/**
+ * Whether this session may send feedback — for the surfaces that cannot ask on
+ * the server: the root error boundary (a client component) and the static legal
+ * cover. A refusal and a failure both answer false: the button simply stays away.
+ */
+export async function feedbackAvailableAction(): Promise<boolean> {
+  try {
+    if (await isWriteBlocked()) return false;
+    return canSendFeedback(await readStoreTarget());
+  } catch (error) {
+    console.error("[feedback] availability check failed: button hidden", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
 }

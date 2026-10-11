@@ -57,7 +57,12 @@ export interface EmailMessage {
   text: string;
   /** Where a reply goes — e.g. the user who wrote the feedback. */
   replyTo?: string;
-  /** Resend dedups sends that share this key for 24 h: a retried call mails once. */
+  /**
+   * Resend dedups sends that share this key for 24 h, so a retried call mails
+   * once. Only worth passing when it names WHAT is sent and survives a retry —
+   * `feedback:<id of the draft>`, `trial-day-2:<workspace>` — never a fresh uuid
+   * per call, which dedups nothing. ≤256 characters.
+   */
   idempotencyKey?: string;
   /** Resend tags: ASCII letters, digits, `_` and `-` only. */
   tags?: ReadonlyArray<{ name: string; value: string }>;
@@ -79,11 +84,15 @@ export function emailConfigFromEnv(env: EmailEnv = process.env): EmailConfig | n
   return { apiKey, from };
 }
 
+/**
+ * The two seams a caller (or a test) may replace. ONE way in for configuration:
+ * the resolved coordinates, read from `process.env` by {@link emailConfigFromEnv}
+ * when omitted. A caller that must not fall back to the sandbox sender — mail to
+ * users (#1173) — resolves and checks its own `from` and passes it here; `null`
+ * means «not configured» and skips.
+ */
 export interface SendEmailOptions {
-  /** Already-resolved coordinates; skips the env read. */
   config?: EmailConfig | null;
-  /** Where to read the coordinates from when `config` is absent. */
-  env?: EmailEnv;
   fetch?: typeof fetch;
 }
 
@@ -117,8 +126,7 @@ export async function sendEmail(
   message: EmailMessage,
   options: SendEmailOptions = {},
 ): Promise<SendEmailResult> {
-  const config =
-    options.config === undefined ? emailConfigFromEnv(options.env) : options.config;
+  const config = options.config === undefined ? emailConfigFromEnv() : options.config;
   if (!config) return { reason: "not_configured", status: "skipped" };
 
   const fetchImpl = options.fetch ?? fetch;
