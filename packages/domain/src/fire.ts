@@ -17,6 +17,8 @@ import { deriveRentRealReturns, scopedNetRentAnnualMinor } from "./fire-rent-ret
 import type { FireRetirementPlan } from "./fire-retirement-profile";
 import type { FireReturnMix } from "./fire-return";
 import { fireReturnMix } from "./fire-return";
+import type { FireStandaloneIncomeReport } from "./fire-standalone-income";
+import { deriveStandaloneIncomes, NO_STANDALONE_INCOMES } from "./fire-standalone-income";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
@@ -247,6 +249,15 @@ export interface ScopeFireResult extends FireResult {
    * que ninguna cifra de hoy se mueve.
    */
   readonly availability: FireCapitalAvailability;
+  /**
+   * Las rentas sin activo del ámbito (#1674, ADR 0111): las que el gasto sostenible
+   * puede leer —vigentes o por venir— y las que no, con su razón. Las consume SOLO
+   * esa tarjeta: ninguna cifra de este resultado las mira, porque la renta futura no
+   * mueve la fecha FIRE ni el porcentaje financiado (`calculateFire` es SWR puro).
+   *
+   * Vacío cuando no se trajo ninguna renta, y entonces la tarjeta es la de siempre.
+   */
+  readonly standaloneIncomes: FireStandaloneIncomeReport;
 }
 
 /**
@@ -699,10 +710,24 @@ export function calculateFireForScope(
     fireNumberMinor: base.fireNumber.amountMinor,
   };
 
+  // Las rentas sin activo (#1674) salen por la MISMA puerta que las rentas de un piso:
+  // quien trae las rentas trae el día, y la pantalla, las explicaciones y el MCP leen
+  // el mismo informe. No tocan nada de lo de arriba — ni pool, ni tasa, ni número.
+  const standaloneIncomes =
+    rents === undefined
+      ? NO_STANDALONE_INCOMES
+      : deriveStandaloneIncomes({
+          incomes: rents.schedules,
+          scopeId,
+          todayISO: rents.todayISO,
+          workspace,
+        });
+
   return {
     ...base,
     availability,
     excludedAssets,
+    standaloneIncomes,
     reservedForGoals: money(reserved, workspace.baseCurrency),
     context,
     capitalSplit,

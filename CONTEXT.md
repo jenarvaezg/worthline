@@ -481,7 +481,10 @@ facts. It may carry **declared expenses** and **lease terms**.
 It is declared through one door with two entrances — the Rentas surface, with no
 holding, and a holding's Cobros section, with it linked — and that door requires the
 provenance and its cut-off date; nature and basis open undeclared. Every income,
-linked or not, is listed on Rentas, saying whether it counts and why not.
+linked or not, is listed on Rentas, saying whether it counts and why not. One with no
+holding (in code, a *standalone income*) is read only by the **sustainable spending**,
+and, having no owner declared, only in a scope that covers every active member
+(ADR 0111).
 Only past occurrences, up to today, are derived as truth; a future start is preserved
 without inventing received money. An income adds no **net worth** or **snapshot**.
 UI label: "Renta"; the holding's existing declaration surface says "Cobro recurrente".
@@ -924,15 +927,20 @@ contributions stop**, a different question; "coast level" (it is not one).
 
 **Sustainable spending**:
 The inverse of the **FIRE number**: what a scope can spend without depleting its
-patrimony. Always two halves, never one figure — the declared **net rents** (ADR 0076)
-plus what the **sellable** side of the eligible pool supports at the withdrawal rate,
-with the **immobilized** side named as what it leaves out. It has a perpetual reading
+patrimony. Always two halves, never one figure — the **income half** (the declared
+**net rents**, ADR 0076, and the passive, real **incomes** with no holding in force
+today) plus what the **sellable** side of the eligible pool supports at the withdrawal
+rate, with the **immobilized** side named as what it leaves out. An income with no
+holding that starts later is its dated third line, added to no figure of today, and
+leaves the card when its contribution condition outlasts the declared retirement
+(ADR 0111). It has a perpetual reading
 (the principal untouched) and, when the user declares a **final age** — how long the
 capital must last, a declaration and never an estimated life expectancy — a depleting
 one (the same capital annuitized from today's **reference age** to that final age). It is the headline for a scope
 whose **retirement plan** is declared ordinary (ADR 0081).
-_Avoid_: "safe spending" (a withdrawal rate is not a guarantee), "renta" (that is the
-rent half alone).
+_Avoid_: "safe spending" (a withdrawal rate is not a guarantee), "renta" (that is one
+**income**, not the figure), "net rents" for the whole income half (an income with no
+holding is not rent).
 
 **Retirement plan**:
 Whether a scope's plan reads as FIRE or as an ordinary retirement — the user's
@@ -1420,7 +1428,7 @@ _Avoid_: imported history (implies verified), synced history.
   promising it.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE. The eligible pool is printed split by nature — what can be **sold in slices** (cash + market + term-locked) against what is **immobilized** (illiquid + housing), each side netting its own debt — and whether the immobilized side counts as FIRE capital at all is the user's declaration, defaulting to yes. Declaring it out takes those rungs out of the capital AND out of the return's weighting, through one predicate: dropping the capital while keeping the weight would quote a rate nobody's money holds (ADR 0078). The **sellable** side names how much of itself is **term-locked** capital: the rung stays sellable because a plazo does mature and a withdrawal rate is a decades-long rule, but the row no longer answers «sold in slices» without saying over what (ADR 0013, #1523).
 - A figure worthline **derives** is printed with the inputs it was derived from, and its explanation is a projection of the same computation — never a second one beside it (ADR 0077). Hence the **return mix** ships with the rate, and a **reference age** ships with the **birth date** it came from. An explanation that would describe a figure the app is not using (a weighting under a hand-fixed return) is not shown at all.
-- Not every plan is a FIRE plan, and for one that is not, "you are 31,5 % short" answers a question nobody asked. worthline **detects** that profile from declared data —a target retirement age at or above the user's own **ordinary retirement age**, or a Regular level the declared **savings capacity** never reaches— and **offers** to swap the question; the swap is the user's declaration, reversible, and it moves no figure (ADR 0081). The answer it leads with is the **sustainable spending**: the inverse of the FIRE formula, split into declared **net rents** plus what the **sellable** capital supports, with a depleting variant when the user says how long the capital must last. The public pension stays out of the engine — recurring income is already inside **savings capacity**, and a withdrawal rate stops applying once a pension covers part of the spending.
+- Not every plan is a FIRE plan, and for one that is not, "you are 31,5 % short" answers a question nobody asked. worthline **detects** that profile from declared data —a target retirement age at or above the user's own **ordinary retirement age**, or a Regular level the declared **savings capacity** never reaches— and **offers** to swap the question; the swap is the user's declaration, reversible, and it moves no figure (ADR 0081). The answer it leads with is the **sustainable spending**: the inverse of the FIRE formula, split into its income half (declared **net rents** and the **incomes** with no holding in force) plus what the **sellable** capital supports, with a depleting variant when the user says how long the capital must last. The public pension stays out of the engine — recurring income is already inside **savings capacity**, and a withdrawal rate stops applying once a pension covers part of the spending. Declared as an **income** with no holding, it reaches the sustainable spending and nothing else: in its income half while in force, as a dated line («desde 2030, X €/mes más») before it starts, with its provenance beside it, and off the card when, still to come, its contribution condition outlasts the declared retirement (ADR 0111).
 - **Coast FIRE** is a state of funding, not a level of life to fund, so it lives beside the progress bar whose tick draws it and never on the FIRE-levels rail (ADR 0079). Its age is the first year the projected trajectory crosses the coast requirement **with** the declared **savings capacity**; the age reached by leaving the capital alone is a different figure with its premise in its name (**FIRE age if contributions stop**). Every projected age prints in whole years.
 - A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.

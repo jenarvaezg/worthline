@@ -642,9 +642,19 @@ export {
 } from "./fire-return";
 export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 export type {
+  FireDeclaredRetirement,
+  FireIncomeCondition,
+  FireStandaloneIncome,
+  FireStandaloneIncomeWithholding,
+  FireWithheldStandaloneIncome,
+} from "./fire-standalone-income";
+export type {
+  FireConditionBrokenIncome,
   FireDepletionAbsence,
+  FireSustainableIncome,
   FireSustainableSpending,
   FireSustainableSpendingDepletion,
+  FireSustainableSpendingIncomes,
   FireSustainableSpendingPart,
   FireSustainableSpendingSides,
 } from "./fire-sustainable-spending";

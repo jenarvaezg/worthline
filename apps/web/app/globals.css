@@ -3269,6 +3269,16 @@ code {
   margin-top: 6px;
 }
 
+/* La tercera línea (#1674): rentas que llegarán. Bajo su propia regla y su rótulo,
+   aparte de las mitades que suman el titular — no están dentro de esa cifra. */
+.fireSustainableUpcoming {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
 /* El % financiado cuando ha dejado de ser el titular: sigue impreso y sigue siendo
    cierto — solo pierde el cuerpo de la cifra grande (#1428). */
 .fireFundedDemoted {
@@ -3493,13 +3503,20 @@ code {
   padding-top: 14px;
 }
 
-.fireLevelsTitle {
+/* El rótulo pequeño de un bloque del hero: los niveles FIRE y las rentas que llegarán
+   del gasto sostenible (#1674) son la misma etiqueta, no dos que deriven. */
+.fireLevelsTitle,
+.fireSustainableUpcomingTitle {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   margin: 0 0 10px;
   text-transform: uppercase;
+}
+
+.fireSustainableUpcomingTitle {
+  margin: 0;
 }
 
 .fireLevelsGrid {

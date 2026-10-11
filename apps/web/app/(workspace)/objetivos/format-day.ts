@@ -20,3 +20,14 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
 export function formatDay(iso: string): string {
   return dayFormatter.format(new Date(`${iso}T00:00:00Z`));
 }
+
+const monthFormatter = new Intl.DateTimeFormat("es-ES", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** `2029-11` → «noviembre de 2029». Un mes declarado, en UTC por la misma razón. */
+export function formatMonth(monthKey: string): string {
+  return monthFormatter.format(new Date(`${monthKey}-01T00:00:00Z`));
+}

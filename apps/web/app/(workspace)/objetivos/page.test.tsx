@@ -1593,6 +1593,79 @@ describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
   });
 });
 
+describe("ObjetivosPage una renta sin activo en el gasto sostenible (#1674)", () => {
+  function sustainableCard(html: string): string {
+    const opened = html.slice(html.indexOf('<section aria-label="Gasto sostenible"'));
+    return opened.slice(0, opened.indexOf("</section>"));
+  }
+
+  /** La pensión de la simulación oficial: 3.383,56 €/mes desde dic 2030. */
+  const pension: PayoutSchedule = {
+    amountBasis: "real",
+    amountMinor: 338_356,
+    assumedContributionThrough: "2030-11-30",
+    cadence: "monthly",
+    endISO: null,
+    exclusions: [],
+    holdingId: null,
+    id: "inc_pension",
+    label: "Pensión",
+    nature: "passive",
+    provenance: "official_simulation",
+    provenanceAsOf: "2026-08-18",
+    startISO: "2030-12-10",
+  };
+
+  function ordinary(targetRetirementAge: number): FireScopeConfig {
+    return {
+      currentAge: 62,
+      expectedRealReturn: 0.035,
+      monthlySavingsCapacityMinor: 0,
+      monthlySpendingMinor: 200_000,
+      retirementPlan: "ordinary",
+      safeWithdrawalRate: 0.035,
+      targetRetirementAge,
+    };
+  }
+
+  function bornNovember1963() {
+    calls.readWorkspace.mockResolvedValueOnce({
+      baseCurrency: "EUR",
+      groups: [],
+      members: [{ birthMonth: 11, birthYear: 1963, id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+  }
+
+  test("la pensión futura es la línea con fecha, con su procedencia, y el titular no se mueve", async () => {
+    bornNovember1963();
+    calls.readFireConfig.mockResolvedValueOnce({ household: ordinary(67) });
+    calls.readPayoutSchedules.mockResolvedValueOnce([pension]);
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).toContain("Más adelante");
+    expect(card).toContain("Desde el 10 dic 2030 · Pensión");
+    expect(card).toContain(`${euros(338_356)}/mes más`);
+    expect(card).toContain("Simulación oficial, con datos a 18 ago 2026");
+    expect(card).toContain("supone seguir cotizando hasta el 30 nov 2030");
+    // 50.000 € vendibles × 3,5 % ÷ 12: lo mismo que sin pensión.
+    expect(card).toContain(`${euros(14_583)}/mes`);
+  });
+
+  test("declarada una jubilación anterior a lo que supone cotizar, sale de la tarjeta diciendo por qué", async () => {
+    bornNovember1963();
+    calls.readFireConfig.mockResolvedValueOnce({ household: ordinary(66) });
+    calls.readPayoutSchedules.mockResolvedValueOnce([pension]);
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).not.toContain("Más adelante");
+    expect(card).toContain("«Pensión» no está en esta tarjeta");
+    expect(card).toContain("declaraste jubilarte a los 66, en noviembre de 2029");
+  });
+});
+
 describe("ObjetivosPage el supuesto del servicio de deuda (#1520)", () => {
   /** 100.000 € al 3 % a 240 meses: cuota 554,60 €, el 27,7 % de los 2.000 € declarados. */
   function withAmortizableDebt() {

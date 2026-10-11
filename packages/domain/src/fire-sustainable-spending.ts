@@ -31,6 +31,20 @@
  * porcentaje financiado de al lado: empezar el horizonte en una jubilación futura
  * mientras se anualiza el capital de hoy mezclaría dos relojes en la misma tarjeta.
  *
+ * **Las rentas sin activo** (#1674, ADR 0111) — una pensión pública, una renta
+ * vitalicia — entran por el mismo lado que los alquileres, y de dos maneras:
+ *
+ * - **Vigente hoy**: suma en la mitad de rentas, como un alquiler.
+ * - **Empieza más adelante**: la tercera línea, con fecha — «desde 2030, X €/mes
+ *   más». No se suma a ninguna cifra de hoy: el titular es lo que el capital de HOY
+ *   soporta, y sumarle una renta que aún no llega sería el segundo reloj de arriba.
+ *
+ * La que llegará, solo mientras su **condición** se sostenga: una cifra que supone
+ * cotizar hasta 2030 no aplica a quien declaró jubilarse antes (ADR 0074/0079). Se
+ * contrasta aquí y no en el informe porque la edad de jubilación la teclea el
+ * formulario de supuestos en vivo (#1450). La vigente no se contrasta: ya llega, y el
+ * importe que llega no es una suposición.
+ *
  * Puro: divide y anualiza lo que `calculateFireForScope` ya resolvió. No re-ensambla
  * el pool, no proyecta y no toca el número FIRE.
  */
@@ -38,6 +52,14 @@
 import type { ScopeFireResult } from "./fire";
 import type { FireCapitalAvailability } from "./fire-capital-availability";
 import { availabilityAwareAnnuity } from "./fire-capital-availability";
+import type { BirthDate } from "./fire-current-age";
+import type {
+  FireDeclaredRetirement,
+  FireIncomeCondition,
+  FireStandaloneIncome,
+  FireWithheldStandaloneIncome,
+} from "./fire-standalone-income";
+import { incomeContributionCondition } from "./fire-standalone-income";
 
 /** Una mitad del gasto sostenible: al año y al mes, la misma cifra. */
 export interface FireSustainableSpendingPart {
@@ -49,8 +71,48 @@ export interface FireSustainableSpendingPart {
 export interface FireSustainableSpendingSides {
   /** Lo que el capital vendible soporta. */
   capital: FireSustainableSpendingPart;
-  /** `capital` + las rentas netas, cuando hay. */
+  /**
+   * `capital` + los alquileres netos + las rentas sin activo vigentes hoy (#1674).
+   * Las que empiezan más adelante NO están aquí: son la línea con fecha.
+   */
   total: FireSustainableSpendingPart;
+}
+
+/** Una renta sin activo dentro de la tarjeta: al año, al mes y la condición que supone. */
+export interface FireSustainableIncome extends FireSustainableSpendingPart {
+  /** La declaración entera, con su procedencia y su fecha de corte (#1508). */
+  income: FireStandaloneIncome;
+  /**
+   * Null cuando no declara condición, y siempre en una vigente: ya llega. Nunca
+   * `broken` — una renta con la condición rota no está en la tarjeta.
+   */
+  condition: Exclude<FireIncomeCondition, { state: "broken" }> | null;
+}
+
+/**
+ * Una renta cuya condición contradice la jubilación declarada: supone cotizar hasta
+ * una fecha posterior al día en que el usuario dijo que se jubila. Sale de la tarjeta
+ * y la tarjeta dice por qué — una cifra que desaparece en silencio se lee como un
+ * fallo de la app, y una que se queda sobreestima lo que llegará.
+ */
+export interface FireConditionBrokenIncome extends FireSustainableSpendingPart {
+  income: FireStandaloneIncome;
+  /** Hasta cuándo supone cotizar la cifra. */
+  throughISO: string;
+  /** La jubilación declarada contra la que se rompe. */
+  retirement: FireDeclaredRetirement;
+}
+
+/** Las rentas sin activo del ámbito, repartidas por lo que la tarjeta hace con ellas. */
+export interface FireSustainableSpendingIncomes {
+  /** Vigentes hoy: suman en el total. */
+  current: FireSustainableIncome[];
+  /** Empiezan más adelante: la tercera línea, con fecha. No suman en nada de hoy. */
+  upcoming: FireSustainableIncome[];
+  /** Su condición contradice la jubilación declarada: fuera, nombrando por qué. */
+  conditionBroken: FireConditionBrokenIncome[];
+  /** Fuera por su declaración o por no tener dueño en este ámbito (ADR 0108). */
+  withheld: FireWithheldStandaloneIncome[];
 }
 
 export interface FireSustainableSpendingDepletion extends FireSustainableSpendingSides {
@@ -82,8 +144,10 @@ export type FireDepletionAbsence =
   | "final_age_reached";
 
 export interface FireSustainableSpending {
-  /** Las rentas netas declaradas del ámbito, o `null` si no hay ninguna. */
+  /** Los alquileres netos declarados del ámbito (ADR 0076), o `null` si no hay ninguno. */
   rents: FireSustainableSpendingPart | null;
+  /** Las rentas sin activo: las que suman hoy, las que llegarán y las que no (#1674). */
+  incomes: FireSustainableSpendingIncomes;
   /** Sin tocar el principal: `vendible × tasa de retirada`, para siempre. */
   perpetual: FireSustainableSpendingSides;
   /** Agotando el capital a la edad final declarada. `null` sin ese dato. */
@@ -108,7 +172,7 @@ export interface FireSustainableSpending {
 /** Lo que la tarjeta necesita del resultado FIRE — nada que ella pueda recalcular. */
 export type FireSustainableSpendingInput = Pick<
   ScopeFireResult,
-  "availability" | "capitalSplit" | "context" | "rentReturns"
+  "availability" | "capitalSplit" | "context" | "rentReturns" | "standaloneIncomes"
 >;
 
 /**
@@ -118,7 +182,7 @@ export type FireSustainableSpendingInput = Pick<
 export function fireSustainableSpending(
   input: FireSustainableSpendingInput,
 ): FireSustainableSpending | null {
-  const { availability, capitalSplit, context, rentReturns } = input;
+  const { availability, capitalSplit, context, rentReturns, standaloneIncomes } = input;
   const { config, realReturnUsed } = context;
   const withdrawalRate = config.safeWithdrawalRate;
 
@@ -132,7 +196,21 @@ export function fireSustainableSpending(
   const rentAnnualMinor = rentReturns.netRentAnnualMinor;
   const rents = rentAnnualMinor === 0 ? null : partOf(rentAnnualMinor);
 
-  const perpetual = sidesOf(Math.round(sellableMinor * withdrawalRate), rentAnnualMinor);
+  const incomes = placeIncomes({
+    referenceBirth: standaloneIncomes.referenceBirth,
+    standalone: standaloneIncomes.readable,
+    targetRetirementAge: config.targetRetirementAge,
+    withheld: standaloneIncomes.withheld,
+  });
+  // La mitad de rentas de HOY: los alquileres y las rentas sin activo que ya llegan.
+  const incomeAnnualMinor =
+    rentAnnualMinor +
+    incomes.current.reduce((total, line) => total + line.annualMinor, 0);
+
+  const perpetual = sidesOf(
+    Math.round(sellableMinor * withdrawalRate),
+    incomeAnnualMinor,
+  );
 
   const currentAge = config.currentAge;
   const untilAge = config.capitalLastsUntilAge;
@@ -152,7 +230,7 @@ export function fireSustainableSpending(
   const depletion =
     annuity !== null && untilAge !== undefined
       ? {
-          ...sidesOf(annuity.annualMinor, rentAnnualMinor),
+          ...sidesOf(annuity.annualMinor, incomeAnnualMinor),
           limitedByAvailability: annuity.limitedByAvailability,
           untilAge,
           years,
@@ -173,12 +251,56 @@ export function fireSustainableSpending(
           : currentAge === undefined
             ? "no_reference_age"
             : "final_age_reached",
+    incomes,
     perpetual,
     realReturnUsed,
     rents,
     sellableMinor,
     withdrawalRate,
   };
+}
+
+/**
+ * Coloca cada renta sin activo legible donde la tarjeta la lee: vigente, por venir o
+ * fuera por su condición. Las retenidas pasan tal cual: su razón la decidió el informe.
+ */
+function placeIncomes(input: {
+  standalone: readonly FireStandaloneIncome[];
+  referenceBirth: BirthDate | null;
+  targetRetirementAge: number | undefined;
+  withheld: readonly FireWithheldStandaloneIncome[];
+}): FireSustainableSpendingIncomes {
+  const placed: FireSustainableSpendingIncomes = {
+    conditionBroken: [],
+    current: [],
+    upcoming: [],
+    withheld: [...input.withheld],
+  };
+
+  for (const income of input.standalone) {
+    const amounts = partOf(income.annualMinor);
+    if (!income.startsLater) {
+      placed.current.push({ ...amounts, condition: null, income });
+      continue;
+    }
+    const condition = incomeContributionCondition({
+      assumedContributionThrough: income.assumedContributionThrough,
+      referenceBirth: input.referenceBirth,
+      targetRetirementAge: input.targetRetirementAge,
+    });
+    if (condition?.state === "broken") {
+      placed.conditionBroken.push({
+        ...amounts,
+        income,
+        retirement: condition.retirement,
+        throughISO: condition.throughISO,
+      });
+      continue;
+    }
+    placed.upcoming.push({ ...amounts, condition, income });
+  }
+
+  return placed;
 }
 
 function partOf(annualMinor: number): FireSustainableSpendingPart {

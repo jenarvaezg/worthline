@@ -72,14 +72,16 @@ describe("the list", () => {
     expect(html).toContain("no son activos");
   });
 
-  test("an income with no asset is listed whole, honest about not counting yet", () => {
+  test("an income with no asset is listed whole, saying when the sustainable spending reads it", () => {
     const html = render({ incomes: [income()] });
 
     expect(html).toContain("Pensión pública");
     expect(html).toContain("Sin activo");
     expect(html).toContain("Mensual · desde 1 nov 2030");
-    expect(html).toContain("No cuenta");
-    expect(html).toContain("todavía ninguna cifra lee las rentas sin activo");
+    expect(html).toContain("Contará");
+    expect(html).toContain(
+      "Contará en el gasto sostenible de tu plan de jubilación desde el 1 nov 2030",
+    );
     expect(html).toContain("Simulación oficial, con datos a 18 ago 2026");
     expect(html).toContain("Supone seguir cotizando hasta el 31 oct 2030");
   });

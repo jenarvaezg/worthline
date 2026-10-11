@@ -41,10 +41,13 @@ const PASSIVE_WINDOW_MONTHS = 12;
  * prints when it withholds the income), then the asset — missing, or in the
  * Papelera — and only then the calendar.
  *
- * An income without an asset is the honest odd one out: no figure reads it yet —
- * the passive-income figures sum a holding's payouts, and the dated card that will
- * consume standalone income is S3 of #1522. Saying «cuenta» there would be the
- * very lie this declaration exists to stop.
+ * An income without an asset is read by one figure only: the sustainable spending
+ * (#1674, ADR 0111) — in its income half while in force, as its dated line before it
+ * starts. The passive-income figures sum a holding's payouts and never see it, so
+ * its sentence names that card — the retirement plan's, on Objetivos — and nothing
+ * else. A future one's condition is checked against the declared retirement there,
+ * on the card that knows it; here it is named as the rule, so the list never
+ * promises what the card withholds.
  *
  * The calendar is read the way the figure reads it (#1673 review): the renta
  * pasiva sums the payouts of the trailing 12 months (`passiveIncomeTrailing`), so
@@ -67,11 +70,7 @@ export function incomeCountingStatus(
     return { counts: false, mark: "No cuenta", text: INCOME_EXCLUSION_COPY[reason] };
   }
   if (income.holdingId === null) {
-    return {
-      counts: false,
-      mark: "No cuenta",
-      text: "Sin activo enlazado: todavía ninguna cifra lee las rentas sin activo, así que de momento no cuenta.",
-    };
+    return standaloneCountingStatus(income, todayISO);
   }
   if (holdingInTrash) {
     return {
@@ -121,6 +120,37 @@ export function incomeCountingStatus(
         mark: "No cuenta",
         text: "Ningún cobro suyo cae en los últimos 12 meses: ahora mismo no suma en la renta pasiva.",
       };
+}
+
+/** An income no asset generates: the sustainable spending is the figure that reads it. */
+function standaloneCountingStatus(
+  income: Income,
+  todayISO: string,
+): IncomeCountingStatus {
+  if (income.endISO !== null && income.endISO < todayISO) {
+    return {
+      counts: false,
+      mark: "No cuenta",
+      text: `Terminó el ${formatDay(income.endISO)}: ya no suma en el gasto sostenible.`,
+    };
+  }
+  if (income.startISO <= todayISO) {
+    // Ya llega: su condición, si la declaró, dejó de ser una suposición.
+    return {
+      counts: true,
+      mark: "Cuenta",
+      text: "Cuenta en el gasto sostenible de tu plan de jubilación, en Objetivos: suma a lo que ya te llega cada mes.",
+    };
+  }
+  const condition =
+    income.assumedContributionThrough === null
+      ? ""
+      : " Si declaras jubilarte antes de lo que supone cotizar, sale de la tarjeta.";
+  return {
+    counts: true,
+    mark: "Contará",
+    text: `Contará en el gasto sostenible de tu plan de jubilación desde el ${formatDay(income.startISO)}, como una línea con fecha que no se suma a lo de hoy.${condition}`,
+  };
 }
 
 const NATURE_LABEL = new Map<string, string>(

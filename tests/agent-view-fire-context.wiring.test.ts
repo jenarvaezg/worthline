@@ -695,6 +695,80 @@ describe("GET fire-context — el perfil de jubilación ordinaria (#1428)", () =
     );
   });
 
+  // #1674: las rentas sin activo, como las lee la tarjeta. Un asistente que solo viera
+  // `totalMonthly` no sabría que hay una pensión en 2030; uno que la sumara a la cifra
+  // de hoy prometería dinero que todavía no llega.
+  test("publishes the incomes with no holding: dated, with their provenance, outside today's total", async () => {
+    await seedOrdinaryHousehold({ retirementPlan: "ordinary" });
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    await store.workspace.updateMemberProfile("member_jorge", {
+      birthMonth: 11,
+      birthYear: 1963,
+    });
+    const pension = await store.payouts.createPayoutSchedule({
+      amountBasis: "real",
+      amountMinor: 3_383_56,
+      assumedContributionThrough: "2030-11-30",
+      cadence: "monthly",
+      label: "Pensión",
+      nature: "passive",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-08-18",
+      startISO: "2030-12-10",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountBasis: "nominal",
+      amountMinor: 500_00,
+      cadence: "monthly",
+      label: "Renta nominal",
+      nature: "passive",
+      provenance: "user_estimate",
+      provenanceAsOf: "2026-08-18",
+      startISO: "2031-01-01",
+    });
+    store.close();
+
+    const { body } = await fireContext(await householdScopeId());
+    const spending = body.data.result.sustainableSpending;
+
+    // La de 2030 no está en el total de hoy: 100.000 € × 4 % ÷ 12, como sin ella.
+    expect(spending.totalMonthly).toEqual(eur(333_33));
+    expect(spending.standaloneIncomes).toEqual({
+      conditionBroken: [],
+      current: [],
+      upcoming: [
+        {
+          condition: { assumedContributionThrough: "2030-11-30", check: "holds" },
+          endDate: null,
+          id: expect.stringMatching(/^wl_psc_/),
+          label: "Pensión",
+          monthly: eur(3_383_56),
+          provenance: "official_simulation",
+          provenanceAsOf: "2026-08-18",
+          startDate: "2030-12-10",
+        },
+      ],
+      withheld: [
+        {
+          id: expect.stringMatching(/^wl_psc_/),
+          label: "Renta nominal",
+          reason: "nominal_amount",
+        },
+      ],
+    });
+    expect(spending.standaloneIncomes.upcoming[0].id).not.toBe(pension.id);
+  });
+
+  test("leaves the incomes block out when the scope declares none", async () => {
+    await seedOrdinaryHousehold({ retirementPlan: "ordinary" });
+
+    const { body } = await fireContext(await householdScopeId());
+
+    expect(body.data.result.sustainableSpending.standaloneIncomes).toBeUndefined();
+  });
+
   test("a declared `early` plan is published, and it silences the offer", async () => {
     await seedOrdinaryHousehold({ retirementPlan: "early" });
 

@@ -1,6 +1,8 @@
 import type {
   FireRetirementProfile,
+  FireStandaloneIncome,
   FireSustainableSpending,
+  FireSustainableSpendingIncomes,
   RentReturnNotice,
 } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
@@ -15,6 +17,13 @@ import {
 /** Euros en unidades menores, sin separadores: el test lee la aritmética, no el locale. */
 const formatMoney = (amountMinor: number) => `${(amountMinor / 100).toFixed(2)} €`;
 
+const NO_INCOMES: FireSustainableSpendingIncomes = {
+  conditionBroken: [],
+  current: [],
+  upcoming: [],
+  withheld: [],
+};
+
 function spending(
   overrides: Partial<FireSustainableSpending> = {},
 ): FireSustainableSpending {
@@ -28,6 +37,7 @@ function spending(
     },
     depletion: null,
     depletionAbsence: "no_final_age",
+    incomes: NO_INCOMES,
     perpetual: {
       capital: { annualMinor: 350_000, monthlyMinor: 29_167 },
       total: { annualMinor: 350_000, monthlyMinor: 29_167 },
@@ -87,7 +97,8 @@ describe("fireSustainableSpendingCopy", () => {
     expect(copy.rows).toHaveLength(1);
     expect(copy.rows[0]).toEqual({
       gloss: "100000.00 € de capital vendible × 3,5 % ÷ 12",
-      key: "capital",
+      id: "capital",
+      kind: "capital",
       label: "Lo que soporta tu capital",
       value: "291.67 €/mes",
     });
@@ -107,7 +118,7 @@ describe("fireSustainableSpendingCopy", () => {
       }),
     });
 
-    expect(copy.rows.map((row) => row.key)).toEqual(["rents", "capital"]);
+    expect(copy.rows.map((row) => row.kind)).toEqual(["rents", "capital"]);
     expect(copy.rows[0]?.gloss).toContain("alquiler neto declarado");
     expect(copy.headline).toBe("1270.83 €/mes");
   });
@@ -434,5 +445,204 @@ describe("fireSustainableSpendingCopy \u2014 la disponibilidad declarada (#1528)
     // Declarado o no, el importe se nombra: las dos salidas del escalón lo dicen.
     expect(conFecha.availabilityNote).toContain("10556.58 \u20ac");
     expect(sinFecha.availabilityNote).toContain("10556.58 \u20ac");
+  });
+});
+
+describe("fireSustainableSpendingCopy — las rentas sin activo (#1674)", () => {
+  /** La pensión de la simulación oficial de Jorge. */
+  function pension(overrides: Partial<FireStandaloneIncome> = {}): FireStandaloneIncome {
+    return {
+      annualMinor: 4_060_272,
+      assumedContributionThrough: null,
+      endISO: null,
+      incomeId: "inc_pension",
+      label: "Pensión",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-08-18",
+      startISO: "2030-12-10",
+      startsLater: true,
+      ...overrides,
+    };
+  }
+
+  function copyWith(incomes: Partial<FireSustainableSpendingIncomes>) {
+    return fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({ incomes: { ...NO_INCOMES, ...incomes } }),
+    });
+  }
+
+  test("sin ninguna, la tarjeta es la de siempre: ni filas, ni línea con fecha, ni notas", () => {
+    const copy = copyWith({});
+
+    expect(copy.rows.map((row) => row.kind)).toEqual(["capital"]);
+    expect(copy.upcoming).toEqual([]);
+    expect(copy.conditionNote).toBeNull();
+    expect(copy.exclusionNote).toBeNull();
+  });
+
+  test("la vigente es una fila de la mitad de rentas, con su procedencia y su fecha de corte al lado", () => {
+    const income = pension({
+      annualMinor: 1_200_000,
+      startISO: "2024-01-01",
+      startsLater: false,
+    });
+    const copy = copyWith({
+      current: [
+        { annualMinor: 1_200_000, condition: null, income, monthlyMinor: 100_000 },
+      ],
+    });
+
+    expect(copy.rows.map((row) => row.kind)).toEqual(["income", "capital"]);
+    expect(copy.rows[0]).toEqual({
+      gloss: "Simulación oficial, con datos a 18 ago 2026",
+      id: "income-inc_pension",
+      kind: "income",
+      label: "Pensión",
+      value: "1000.00 €/mes",
+    });
+  });
+
+  test("la futura es la línea con fecha: desde cuándo, cuánto más al mes y de dónde sale", () => {
+    const copy = copyWith({
+      upcoming: [
+        {
+          annualMinor: 4_060_272,
+          condition: { state: "holds", throughISO: "2030-11-30" },
+          income: pension({ assumedContributionThrough: "2030-11-30" }),
+          monthlyMinor: 338_356,
+        },
+      ],
+    });
+
+    expect(copy.upcoming).toEqual([
+      {
+        gloss:
+          "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030",
+        id: "income-inc_pension",
+        label: "Pensión",
+        value: "3383.56 €/mes más",
+        when: "Desde el 10 dic 2030",
+      },
+    ]);
+  });
+
+  test("una futura con final lo dice, y una sin procedencia lo dice en vez de inventarla", () => {
+    const copy = copyWith({
+      upcoming: [
+        {
+          annualMinor: 676_712,
+          condition: null,
+          income: pension({
+            endISO: "2063-11-10",
+            label: "Paga extra",
+            provenance: null,
+            provenanceAsOf: null,
+            startISO: "2030-11-10",
+          }),
+          monthlyMinor: 56_393,
+        },
+      ],
+    });
+
+    expect(copy.upcoming[0]).toMatchObject({
+      gloss: "Procedencia sin declarar",
+      when: "Del 10 nov 2030 al 10 nov 2063",
+    });
+  });
+
+  test("una vigente con final lo dice junto a la cifra: suma hoy, no para siempre", () => {
+    const income = pension({
+      annualMinor: 1_200_000,
+      endISO: "2035-12-31",
+      startISO: "2024-01-01",
+      startsLater: false,
+    });
+    const copy = copyWith({
+      current: [
+        { annualMinor: 1_200_000, condition: null, income, monthlyMinor: 100_000 },
+      ],
+    });
+
+    expect(copy.rows[0]?.gloss).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · termina el 31 dic 2035",
+    );
+  });
+
+  test("una condición sin contrastar nombra el dato con el que se contrastaría", () => {
+    const line = (missing: "retirement_age" | "birth_date" | "birth_month") =>
+      copyWith({
+        upcoming: [
+          {
+            annualMinor: 4_060_272,
+            condition: { missing, state: "unchecked", throughISO: "2030-11-30" },
+            income: pension(),
+            monthlyMinor: 338_356,
+          },
+        ],
+      }).upcoming[0]?.gloss;
+
+    expect(line("retirement_age")).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030, y sin edad de jubilación declarada no podemos contrastarlo",
+    );
+    expect(line("birth_date")).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030, y sin tu fecha de nacimiento no podemos situar tu jubilación para contrastarlo",
+    );
+    expect(line("birth_month")).toBe(
+      "Simulación oficial, con datos a 18 ago 2026 · supone seguir cotizando hasta el 30 nov 2030, y con solo tu año de nacimiento no sabemos si te jubilas antes o después",
+    );
+  });
+
+  test("la condición rota saca la renta de la tarjeta nombrando la jubilación declarada y el dato que falta", () => {
+    const copy = copyWith({
+      conditionBroken: [
+        {
+          annualMinor: 4_060_272,
+          income: pension(),
+          monthlyMinor: 338_356,
+          retirement: { age: 66, month: 11, year: 2029 },
+          throughISO: "2030-11-30",
+        },
+      ],
+    });
+
+    expect(copy.upcoming).toEqual([]);
+    expect(copy.conditionNote).toBe(
+      "«Pensión» no está en esta tarjeta: supone seguir cotizando hasta el 30 nov 2030, y declaraste jubilarte a los 66, en noviembre de 2029. Falta una cifra que suponga dejar de cotizar al jubilarte: una simulación a esa fecha, o tu edad de jubilación corregida.",
+    );
+  });
+
+  test("con solo el año de nacimiento la jubilación se sitúa en su año, sin inventar el mes", () => {
+    const copy = copyWith({
+      conditionBroken: [
+        {
+          annualMinor: 4_060_272,
+          income: pension(),
+          monthlyMinor: 338_356,
+          retirement: { age: 65, month: null, year: 2028 },
+          throughISO: "2030-11-30",
+        },
+      ],
+    });
+
+    expect(copy.conditionNote).toContain("declaraste jubilarte a los 65, en 2028.");
+  });
+
+  test("las que no entran se nombran con su razón, y la nominal avisa de en qué dirección se equivocaría", () => {
+    const copy = copyWith({
+      withheld: [
+        { incomeId: "a", label: "Nómina", reason: "work_income" },
+        { incomeId: "b", label: "Pensión", reason: "nominal_amount" },
+        { incomeId: "c", label: "Renta vitalicia", reason: "missing_nature" },
+        { incomeId: "d", label: "Usufructo", reason: "missing_amount_basis" },
+        { incomeId: "e", label: "Pensión de Ana", reason: "ownerless_in_partial_scope" },
+      ],
+    });
+
+    expect(copy.exclusionNote).toBe(
+      "Rentas sin activo que no suman aquí. «Nómina» — Renta del trabajo: no cuenta como renta pasiva. «Pensión» — Importe nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará, así que no cuenta en las cifras. «Renta vitalicia» — Naturaleza sin declarar: esta renta no cuenta en las cifras. «Usufructo» — Importe sin declarar como real o nominal: esta renta no cuenta en las cifras. «Pensión de Ana» — Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno.",
+    );
   });
 });
