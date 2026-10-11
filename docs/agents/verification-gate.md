@@ -52,6 +52,26 @@ and page types that plain `tsc --noEmit` cannot see. For everyday iteration and
 most CI checks, `bun run verify` is enough. The full `bun run build` stays as the
 deploy / pre-push correctness gate.
 
+## When `build` applies
+
+Run `bun run build` on top of `verify` when the change touches something only
+`next build` checks:
+
+- Next route files under `apps/web/app/`: `page`, `layout`, `route`, `default`,
+  `template`, `loading`, `error`, `not-found`. Next generates their prop types, and
+  `tsc --noEmit` never sees them.
+- Page props or `searchParams` (`PageProps`, `LayoutProps`), wherever they are read.
+- A `"use server"` file, such as `actions.ts`. Next's compiler, not `tsc`, enforces
+  that it exports only async functions.
+- `apps/web/next.config.ts`, `apps/web/proxy.ts`, `apps/web/instrumentation.ts`: Next
+  conventions that only the build compiles.
+- `apps/web/tsconfig.json`, `apps/web/package.json`, the root `package.json` or
+  `bun.lock`: resolution and dependency changes, which the bundler can see
+  differently from `tsc`.
+
+When in doubt, run it. A missed build means a red deploy; an extra one costs a few
+minutes.
+
 ## Turborepo
 
 - Remote cache via Vercel when `TURBO_CACHE_TOKEN` (or, as fallback, `VERCEL_TOKEN`) + `TURBO_TEAM` are configured (see [`turbo-remote-cache.md`](turbo-remote-cache.md)).
