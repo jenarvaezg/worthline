@@ -1285,7 +1285,7 @@ describe("POST /api/chat", () => {
       expect(streamed).toContain("importar-extracto");
       // The refusal must not name a document that never existed: the user
       // uploaded a capture, and until #1246 this copy said «esa hoja».
-      expect(streamed).toContain("Ese archivo");
+      expect(streamed).toContain("de ese archivo");
       expect(streamed).not.toContain("hoja");
     });
   });
@@ -1526,7 +1526,7 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(200);
     expect(streamed).toContain("unreadable_typed_series");
     // And never the copy that asks for what he has just written.
-    expect(streamed).not.toContain("Ese archivo");
+    expect(streamed).not.toContain("hecho fechado suelto");
   });
 
   it("keeps it closed when the same turn types no series (#1418)", async () => {
@@ -2124,6 +2124,99 @@ describe("POST /api/chat", () => {
       },
     );
     info.mockRestore();
+  });
+
+  it("a traspaso paper in the window tells the model which holdings worthline found, and those ids count as read (#1793)", async () => {
+    // A workspace of its own: the shared persona holds no fund with an ISIN.
+    const shared = currentStore;
+    currentStore = await createInMemoryStore();
+    try {
+      await currentStore.workspace.initializeWorkspace({
+        members: [{ id: "mJ", name: "Jorge" }],
+        mode: "individual",
+      });
+      for (const [id, name, isin] of [
+        ["mundo", "Fondo Mundo", "IE00B4L5Y983"],
+        ["emergentes", "Fondo Emergentes", "IE00B5BMR087"],
+      ] as const) {
+        await currentStore.assets.createInvestmentAsset({
+          currency: "EUR",
+          id,
+          instrument: "fund",
+          manualPricePerUnit: "12",
+          name,
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          securityId: { kind: "isin", value: isin },
+        });
+      }
+      await currentStore.command.recordInvestmentOperation(
+        {
+          assetId: "mundo",
+          currency: "EUR",
+          executedAt: "2026-01-15",
+          id: "op-seed",
+          kind: "buy",
+          pricePerUnit: "10",
+          units: "100",
+        },
+        { today: AS_OF },
+      );
+      const publicIds = await currentStore.agentView.readPublicIds();
+      const idOf = (entityId: string) =>
+        publicIds.find((row) => row.entityId === entityId)?.publicId ?? "";
+      // The model reads nothing: it goes straight from the paper to the lane.
+      const model = proposeToolModel("propose_transfer", {
+        destinationHoldingId: idOf("emergentes"),
+        originHoldingId: idOf("mundo"),
+      });
+      vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+      const paper = {
+        id: "a-paper",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-attachment-extraction",
+            data: {
+              fileName: "aviso-traspaso.pdf",
+              result: {
+                data: {
+                  documentType: "transfer",
+                  transfer: {
+                    amount: 739.22,
+                    confirms: "redemption",
+                    currency: "EUR",
+                    date: "2026-06-10",
+                    destination: {
+                      isin: "IE00B5BMR087",
+                      name: "FONDO EMERGENTES EJEMPLO",
+                    },
+                    label: "REEMB.POR TRASPASO I",
+                    origin: { isin: "IE00B4L5Y983", name: "FONDO MUNDO EJEMPLO" },
+                    units: 61.6,
+                  },
+                  warnings: [],
+                },
+                status: "valid",
+              },
+            },
+          },
+        ],
+      };
+
+      const response = await POST(
+        chatRequest({ messages: [paper, userMessage("Anótame este traspaso")] }),
+      );
+      const streamed = await response.text();
+
+      expect(turnsOf(model.doStreamCalls[0]!)).toContain(
+        `en tu patrimonio: «Fondo Emergentes» (${idOf("emergentes")})`,
+      );
+      expect(streamed).not.toContain("ungrounded_holding_id");
+      expect(streamed).toContain("investment_transfer");
+    } finally {
+      currentStore.close();
+      currentStore = shared;
+    }
   });
 
   it("streams a reconstruct proposal part through propose_reconstruction (#1053)", async () => {

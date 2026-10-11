@@ -2018,6 +2018,76 @@ describe("createChatTools · propose_transfer (#1482)", () => {
         store.close();
       });
 
+      it("candidateHoldings come only from worthline's own lookup, never from an id the model passed (#1263 frontier)", async () => {
+        // The field grounds ids, so it is a security frontier: if it could echo the
+        // model's input, an invented id would launder itself through one refusal.
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+          { id: "europa", isin: EUROPA, name: "Fondo Europa" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER), (all) => [
+          all["mundo"]!,
+          all["europa"]!,
+        ]);
+        const smuggled = `wl_hld_${"0".repeat(32)}`;
+
+        const refused = (await tools["propose_transfer"]?.execute?.(
+          {
+            candidateHoldings: [{ id: smuggled, label: "Inventado" }],
+            destinationHoldingId: ids["europa"],
+            originHoldingId: ids["mundo"],
+          } as never,
+          toolCallContext(),
+        )) as { candidateHoldings?: { id: string }[] };
+
+        // Exactly the holding the store says carries the paper's ISIN: neither the
+        // smuggled id, nor the two the model passed.
+        expect(refused.candidateHoldings).toEqual([
+          { id: ids["emergentes"], label: "Fondo Emergentes" },
+        ]);
+        const after = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: smuggled, originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        )) as { error?: string };
+        expect(after.error).toBe("ungrounded_holding_id");
+        store.close();
+      });
+
+      it("reading the paper in full says what worthline found for each fund, and those ids count as read (#1793)", async () => {
+        // The incident's shape: the destination inside a managed portfolio. The model
+        // has read NOTHING else — only the paper.
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+        ]);
+        await store.managedPortfolios.createManagedPortfolio({
+          containerOwnership: [{ memberId: "mJ", shareBps: 10_000 }],
+          memberHoldingIds: ["emergentes"],
+          name: "Cartera Gestionada Ejemplo",
+          scopeId: "household",
+        });
+        const { ids, tools } = await paperTools(store, confirmation(PAPER), () => []);
+
+        const read = (await tools["get_extracted_document"]?.execute?.(
+          { fileName: "aviso-traspaso.pdf" },
+          toolCallContext(),
+        )) as { card: { foundByWorthline?: Record<string, string> } };
+
+        expect(read.card.foundByWorthline).toEqual({
+          destination: `en tu patrimonio: «Fondo Emergentes» (${ids["emergentes"]})`,
+          origin: `en tu patrimonio: «Fondo Mundo» (${ids["mundo"]})`,
+        });
+
+        const proposal = await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["emergentes"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        );
+
+        expect(proposal).toMatchObject({ proposalType: "investment_transfer" });
+        store.close();
+      });
+
       it("several holdings with the paper's ISIN: the refusal lists their ids, and those count as read (#1263)", async () => {
         const store = await fundsStore([
           { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
@@ -3929,9 +3999,19 @@ describe("createChatTools · get_extracted_document (#1492)", () => {
       warnings: [],
     });
 
-    const result = (await toolsFor([{ document: transfer, fileName: "traspaso.pdf" }])[
-      "get_extracted_document"
-    ]?.execute?.({ fileName: "traspaso.pdf" }, toolCallContext())) as {
+    // A traspaso paper is the one document this read opens the book for (#1793): the
+    // funds are looked up by identifier. An empty workspace finds neither.
+    const store = await createWorthlineInMemoryStore();
+    const attachments = [{ document: transfer, fileName: "traspaso.pdf" }];
+    const result = (await createChatTools({
+      asOf: AS_OF,
+      runWithStore: (run) => run({ agentView: store.agentView, assets: store.assets }),
+      validatedAttachments: attachments,
+      validatedDocuments: [transfer],
+    })["get_extracted_document"]?.execute?.(
+      { fileName: "traspaso.pdf" },
+      toolCallContext(),
+    )) as {
       card: { documentType: string };
       detail: { columns: string[]; rows: unknown[][] };
     };
@@ -3959,6 +4039,8 @@ describe("createChatTools · get_extracted_document (#1492)", () => {
       pricePerUnit: { amount: 12.0951, currency: "EUR" },
       units: 84.21573,
     });
+    expect(JSON.stringify(result.card)).toContain("no está en tu patrimonio");
+    store.close();
   });
 
   it("refuses a fileName that is not among the documents in context", async () => {

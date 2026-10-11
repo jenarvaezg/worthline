@@ -22,6 +22,13 @@ import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
 import { groundedHoldingIdsInHistory } from "@web/asistente/holding-id-provenance";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
+  EMPTY_TRANSFER_BOOK,
+  type TransferBook,
+  transferBookHoldings,
+  transferPaperIds,
+} from "@web/asistente/transfer-book";
+import { readTransferBook } from "@web/asistente/transfer-identity";
+import {
   NO_TYPED_BALANCE_SERIES,
   typedBalanceSeriesInTurn,
 } from "@web/asistente/typed-balance-series";
@@ -31,6 +38,44 @@ import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evide
 import { withStore } from "@web/store";
 import type { StoreTarget } from "@web/store-resolver";
 import type { UIMessage } from "ai";
+
+import { operationalCause } from "./chat-responses";
+
+/**
+ * What worthline finds in the book for the funds of a traspaso paper in the window
+ * (#1793), read ONCE per turn and before any prompt is composed: the composition is
+ * pure, and every provider's prompt and tools must carry the same lookup.
+ *
+ * Paid only when such a paper is in the window — with no identifier to look for, the
+ * store is not even opened. Read from the RAW history, the widest window any provider
+ * gets: a provider whose fitted history dropped the paper simply never renders it.
+ *
+ * A failed read degrades to the paper alone — the turn the model had before #1793 —
+ * and says so in the log: losing the hint must not cost the user the whole answer.
+ */
+export async function readTransferBookForTurn(input: {
+  messages: UIMessage[];
+  preview: AttachmentPreviewData | null;
+  target: StoreTarget;
+}): Promise<TransferBook> {
+  const attachments = validatedAttachmentsForTools(input.messages, input.preview);
+  if (transferPaperIds(attachments).length === 0) return EMPTY_TRANSFER_BOOK;
+  try {
+    return await withStore(
+      (store) =>
+        readTransferBook(
+          { agentView: store.agentView, assets: store.assets },
+          attachments,
+        ),
+      input.target,
+    );
+  } catch (error) {
+    console.error("Assistant transfer book read failed", {
+      cause: operationalCause(error),
+    });
+    return EMPTY_TRANSFER_BOOK;
+  }
+}
 
 /**
  * The tools factory for one turn: hand it the history a given provider will read, get
@@ -51,9 +96,12 @@ export function buildTurnToolsFactory(input: {
   messages: UIMessage[];
   preview: AttachmentPreviewData | null;
   target: StoreTarget;
+  /** What worthline found for a traspaso paper's funds ({@link readTransferBookForTurn}). */
+  transferBook: TransferBook;
   unstructured: UnstructuredReading | null;
 }): TurnToolsFactory {
-  const { ingestionAllowed, messages, preview, target, unstructured } = input;
+  const { ingestionAllowed, messages, preview, target, transferBook, unstructured } =
+    input;
   // Maintainer alerts persist only for a real workspace (ADR 0064). Demo is
   // read-only and local dev has no control plane, so the closure is bound only
   // when authenticated; otherwise the tool reports the alert as unavailable.
@@ -124,8 +172,15 @@ export function buildTurnToolsFactory(input: {
       // Holding-id provenance (#1263): the ids worthline itself put in the history the
       // model is about to read — a payload dropped by the tool ceiling (#1260) or a
       // turn dropped by the prose budget (#1408) is no longer in its context either,
-      // so it has to read again.
-      groundedHoldingIds: groundedHoldingIdsInHistory(history),
+      // so it has to read again. Plus the ones its own lookup printed next to a
+      // traspaso paper this provider is handed (#1793): a read in all but name.
+      groundedHoldingIds: [
+        ...groundedHoldingIdsInHistory(history),
+        ...transferBookHoldings(
+          validatedAttachmentsForTools(history, preview),
+          transferBook,
+        ).map((holding) => holding.id),
+      ],
       // One line per refused call, with the offending strings: this is the frequency
       // of the invention, and it is invisible otherwise — the turn simply carries on
       // without the proposal. Unlike the history repairs above it cannot inflate with

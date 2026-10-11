@@ -55,6 +55,53 @@ function promptTextOf(messages: UIMessage[]): string {
 }
 
 describe("attachment chat context", () => {
+  test("a traspaso paper travels with what worthline found for each fund, by identifier (#1793)", () => {
+    const destinationId = `wl_hld_${"b".repeat(32)}`;
+    const transfer = {
+      fileName: "aviso-traspaso.pdf",
+      result: {
+        data: extractedDocumentSchema.parse({
+          documentType: "transfer",
+          transfer: {
+            amount: 739.22,
+            confirms: "redemption",
+            currency: "EUR",
+            date: "2026-08-14",
+            destination: { isin: "IE00B5BMR087", name: "FONDO EMERGENTES EJEMPLO" },
+            label: "REEMB.POR TRASPASO I",
+            origin: { isin: "IE00B4L5Y983", name: "FONDO MUNDO EJEMPLO" },
+            units: 61.6,
+          },
+          warnings: [],
+        }),
+        status: "valid",
+      },
+    } as const;
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [{ type: "data-attachment-extraction", data: transfer }],
+      },
+      { id: "u2", role: "user", parts: [{ type: "text", text: "Anótamelo" }] },
+    ];
+    const book = new Map([
+      ["isin:IE00B4L5Y983", []],
+      ["isin:IE00B5BMR087", [{ id: destinationId, label: "Fondo Emergentes" }]],
+    ]);
+
+    const prompt = promptTextOf(
+      prepareAttachmentMessagesForModel(messages, null, null, undefined, book),
+    );
+
+    expect(prompt).toContain(`en tu patrimonio: «Fondo Emergentes» (${destinationId})`);
+    expect(prompt).toContain("no está en tu patrimonio");
+    // Without a book (an older caller), the paper travels as before and claims nothing.
+    expect(promptTextOf(prepareAttachmentMessagesForModel(messages))).not.toContain(
+      "en tu patrimonio",
+    );
+  });
+
   test("validates preview data at the untrusted history boundary", () => {
     expect(parseAttachmentPreviewData(extraction)).toMatchObject(extraction);
     expect(

@@ -26,7 +26,10 @@ import {
   paywallResponse,
   previewOnlyResponse,
 } from "@web/api/chat/chat-responses";
-import { buildTurnToolsFactory } from "@web/api/chat/chat-turn-context";
+import {
+  buildTurnToolsFactory,
+  readTransferBookForTurn,
+} from "@web/api/chat/chat-turn-context";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import {
   classifyPreOutputProviderError,
@@ -124,17 +127,26 @@ export async function POST(request: Request): Promise<Response> {
       : jsonError("assistant_unavailable", 503);
   }
 
+  // What worthline finds for a traspaso paper's funds (#1793): read once, before any
+  // provider's prompt is composed, so every prompt and its tools carry the same lookup.
+  const transferBook = await readTransferBookForTurn({
+    messages: body.messages,
+    preview,
+    target,
+  });
   const prepared = await prepareTurnPerProvider({
     buildTools: buildTurnToolsFactory({
       ingestionAllowed: spend.ingestionAllowed,
       messages: body.messages,
       preview,
       target,
+      transferBook,
       unstructured,
     }),
     messages: repairHistoryForModel(body.messages, TOOL_PROMPT_BUDGET),
     preview,
     providers: eligibleProviders,
+    transferBook,
     unstructured,
   });
   if (prepared.size === 0) {

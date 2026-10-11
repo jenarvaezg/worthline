@@ -23,6 +23,7 @@ import {
 } from "@web/asistente/provider-cooldown-store";
 import type { ProviderRejection } from "@web/asistente/provider-failover";
 import type { ResolvedProviderModel } from "@web/asistente/provider-model";
+import type { TransferBook } from "@web/asistente/transfer-book";
 import { turnPromptBudget } from "@web/asistente/turn-prompt-budget";
 import { convertToModelMessages, type UIMessage } from "ai";
 
@@ -79,9 +80,11 @@ export async function prepareTurnPerProvider(input: {
   messages: UIMessage[];
   preview: AttachmentPreviewData | null;
   providers: readonly ResolvedProviderModel[];
+  /** What worthline found for a traspaso paper's funds (#1793), read once per turn. */
+  transferBook: TransferBook;
   unstructured: UnstructuredReading | null;
 }): Promise<Map<string, PreparedTurn>> {
-  const { buildTools, messages, preview, providers, unstructured } = input;
+  const { buildTools, messages, preview, providers, transferBook, unstructured } = input;
   const prepared = new Map<string, PreparedTurn>();
   for (const provider of providers) {
     const budget = turnPromptBudget(provider);
@@ -113,6 +116,7 @@ export async function prepareTurnPerProvider(input: {
             // notebook share one ceiling instead of stacking (#1492, #1419).
             unstructured ?? null,
             budget.attachmentChars,
+            transferBook,
           ),
         ),
         tools: buildTools(fitted.messages),

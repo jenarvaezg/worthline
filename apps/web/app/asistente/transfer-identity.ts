@@ -40,6 +40,7 @@ import {
   type SecurityId,
 } from "@worthline/domain";
 
+import type { ValidatedAttachment } from "./attachment-chat";
 import { modelRefusal, type ProposalRefusal, userRefusal } from "./proposal-refusal";
 import {
   contradictingSecurityId,
@@ -47,6 +48,12 @@ import {
   sameSecurityId,
   securityIdLabel,
 } from "./security-identity";
+import {
+  EMPTY_TRANSFER_BOOK,
+  securityIdKey,
+  type TransferBook,
+  transferPaperIds,
+} from "./transfer-book";
 
 /** One side of the traspaso as the paper prints it. */
 export interface PrintedFund {
@@ -216,6 +223,47 @@ function refusalFor(
     ),
     candidateHoldings,
   };
+}
+
+/**
+ * Holdings as the model may name them: the public id worthline minted, and the name.
+ * Filled ONLY from rows the store returned — never from an id the model passed — which
+ * is why these may count as read (#1263, `CANDIDATE_HOLDINGS_FIELD`).
+ */
+function candidatesOf(
+  carriers: readonly InvestmentAssetMeta[],
+  publicIds: Map<string, string>,
+): CandidateHolding[] {
+  return carriers.map((carrier) => ({
+    id: requirePublicId(publicIds, carrier.id),
+    label: carrier.name,
+  }));
+}
+
+/**
+ * Who carries each identifier a traspaso paper prints, BEFORE the model picks (#1793,
+ * decided with Jose): the same search as the refusals above — every live investment of
+ * the workspace, managed-portfolio members included — answered for the paper's own
+ * identifiers, so the model reads what worthline found next to the paper instead of
+ * searching by a printed name (see {@link ./transfer-book}).
+ *
+ * Paid only when a traspaso paper is in the window: with no identifier to look for, the
+ * store is not even opened.
+ */
+export async function readTransferBook(
+  store: IdentityStore,
+  attachments: readonly ValidatedAttachment[],
+): Promise<TransferBook> {
+  const ids = transferPaperIds(attachments);
+  if (ids.length === 0) return EMPTY_TRANSFER_BOOK;
+  const investments = await store.assets.readInvestmentAssetsWithMeta();
+  const publicIds = publicIdMap(await store.agentView.readPublicIds(), "holding");
+  return new Map(
+    ids.map((id) => [
+      securityIdKey(id),
+      candidatesOf(holdingsRegistering(id, investments), publicIds),
+    ]),
+  );
 }
 
 /**

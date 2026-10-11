@@ -13,6 +13,7 @@
  */
 
 import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
+import { foundByWorthline, type TransferBook } from "@web/asistente/transfer-book";
 
 export const DETAIL_OMITTED_NOTICE =
   "RESUMEN: el detalle no cabe en este modelo; está en get_extracted_document.";
@@ -84,6 +85,11 @@ export function typedDocumentCard(
   fileName: string,
   document: ExtractedDocument,
   detailOmitted: boolean,
+  /**
+   * What worthline found in the book for a traspaso paper's two funds (#1793). Absent
+   * for a caller that did not look — the card then claims nothing about the book.
+   */
+  book?: TransferBook,
 ): Record<string, unknown> {
   const base = { documentType: document.documentType, fileName };
   const notice = detailOmitted ? { detailOmitted: DETAIL_OMITTED_NOTICE } : {};
@@ -151,9 +157,16 @@ export function typedDocumentCard(
     case "holding_event":
       return { ...base, event: document.event };
     // The traspaso travels whole, like the dated fact: it is ONE row, and its two
-    // identifiers are what the model searches the book with (#1793, #1795).
-    case "transfer":
-      return { ...base, transfer: document.transfer };
+    // identifiers are what the book is searched with (#1793, #1795) — by worthline
+    // itself, which says next to it what it found (see ./transfer-book).
+    case "transfer": {
+      const found = book === undefined ? null : foundByWorthline(document.transfer, book);
+      return {
+        ...base,
+        transfer: document.transfer,
+        ...(found === null ? {} : { foundByWorthline: found }),
+      };
+    }
   }
 }
 
@@ -290,6 +303,7 @@ export function typedPromptDocuments(
   items: readonly TypedPromptItem[],
   payloadBudgetChars: number,
   packDetails: boolean,
+  book?: TransferBook,
 ): unknown[] {
   const packed = new Set<number>();
 
@@ -300,7 +314,7 @@ export function typedPromptDocuments(
         !includeDetail &&
         (isPackableDocument(item.document) || omitsDetailByPolicy(item.document));
       return {
-        ...typedDocumentCard(item.fileName, item.document, omitNotice),
+        ...typedDocumentCard(item.fileName, item.document, omitNotice, book),
         ...(includeDetail ? { detail: promptDetail(item.document) } : {}),
       };
     });

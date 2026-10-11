@@ -12,6 +12,7 @@ import {
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
+import type { TransferBook } from "@web/asistente/transfer-book";
 import { typedPromptDocuments } from "@web/asistente/typed-attachment-prompt";
 import type { UIMessage } from "ai";
 import { z } from "zod";
@@ -574,12 +575,16 @@ export function messageWithUnstructuredEvidence(
  * notebook (#1419, #1492). One ceiling for every attachment block of the turn
  * (typed + unstructured + verdict). Callers that do not know the provider
  * (unit tests) get the wide render ({@link DEFAULT_ATTACHMENT_CHARS}).
+ *
+ * `transferBook` is what worthline found in the book for a traspaso paper's funds
+ * (#1793): read by the route before this runs, because this composition is pure.
  */
 export function prepareAttachmentMessagesForModel(
   messages: UIMessage[],
   currentPreview?: AttachmentPreviewData | null,
   unstructured?: UnstructuredPromptInput | null,
   attachmentChars: number = DEFAULT_ATTACHMENT_CHARS,
+  transferBook?: TransferBook,
 ): UIMessage[] {
   const stripped = messages
     .map((message) => ({
@@ -603,7 +608,12 @@ export function prepareAttachmentMessagesForModel(
   const emptyPayloadChars = JSON.stringify([]).length;
   const fenceOverhead = contextBlock([]).length - emptyPayloadChars;
   const payloadBudget = Math.max(0, budget - unread.length - fenceOverhead);
-  const documents = typedPromptDocuments(items, payloadBudget, unstructured == null);
+  const documents = typedPromptDocuments(
+    items,
+    payloadBudget,
+    unstructured == null,
+    transferBook,
+  );
   const typed = items.length > 0 ? contextBlock(documents) : "";
 
   let renderedUnstructured: UnstructuredAttachment | null = null;
