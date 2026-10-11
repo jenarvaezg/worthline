@@ -326,6 +326,26 @@ operación por su carril» and the destination; `attachment-imports-the-broker-s
 del extracto y devuelve tarjeta». `attachment-asks-which-holding` and
 `attachment-asks-which-figure` went unrun: the provider's quota ran out first.
 
+**On `gemini-3.5-flash-lite`, over the integration with `main` and before the review's
+fixes, it scored 7/8:** the model reached `propose_transfer` and got its card, with ids that
+came from a read — and `transfersBetween` failed as «traspaso: ? → ?». That red was the
+harness's, not the model's: `holdingLabelsById` learnt a holding's name only from rows
+tagged `object: "holding"`, and the chat's compact context trims its rows to `id` + `label`.
+It now names a holding from every source `groundedIds` counts as a read — an untagged row
+wearing a holding's id, a refusal's `candidateHoldings`, the «Nombre» (id) lines of a
+traspaso paper read in full, and what worthline printed in the prompt itself.
+
+The review of #1793 changed this question's turn, so the mark above is stale by the
+re-run rule and **no run was taken with it** (Jose took the 3.5 run as enough). What
+changed: the paper's card now carries `foundByWorthline` — which holding of the book
+carries each printed ISIN (ADR 0083's amendment) — composed here through the route's own
+lookup, and its ids are seeded as read, exactly as the route seeds them; the runner also
+forwards `typedTransfer` now, which it never did, so a future question that DICTATES a
+traspaso is not refused by the harness. The lane test adds the shortest honest turn — no
+read at all, straight from the paper's lines to the lane — and it scores whole. The
+narrow question for whoever takes the next run: does the model still search by name when
+the block already says «en tu patrimonio» on both sides?
+
 ### Why a third dimension
 
 Behaviour over a document does not follow from behaviour over a typed question, and
