@@ -22,11 +22,10 @@
  */
 
 import { incomeProvenanceLine } from "@web/_income/income-view";
-import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
+import { STANDALONE_INCOME_WITHHOLDING_COPY } from "@web/income-exclusion-copy";
 import type {
   FireConditionBrokenIncome,
   FireRetirementProfile,
-  FireStandaloneIncomeWithholding,
   FireSustainableIncome,
   FireSustainableSpending,
   FireSustainableSpendingPart,
@@ -347,19 +346,6 @@ function exclusionNoteOf(input: {
   return parts.length === 0 ? null : parts.join(" ");
 }
 
-/**
- * Por qué una renta sin activo no suma (#1674), por nombre y no por razón agregada como
- * los alquileres: son pocas, no tienen ficha de activo donde verse, y «una pensión no
- * suma» sin decir cuál obliga a buscarla. Las razones de la declaración son la MISMA
- * frase que la lista de Rentas pone junto a la renta (ADR 0108); la del dueño es de
- * esta tarjeta, porque solo existe mirando un ámbito.
- */
-function withheldReasonOf(reason: FireStandaloneIncomeWithholding): string {
-  return reason === "ownerless_in_partial_scope"
-    ? "Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno."
-    : INCOME_EXCLUSION_COPY[reason];
-}
-
 function withheldIncomesClause(
   withheld: readonly FireWithheldStandaloneIncome[],
 ): string | null {
@@ -367,7 +353,12 @@ function withheldIncomesClause(
     return null;
   }
   const clauses = withheld.map(
-    (income) => `«${income.label}» — ${withheldReasonOf(income.reason)}`,
+    // Por nombre y no por razón agregada como los alquileres (#1674): son pocas, no
+    // tienen ficha donde verse, y «una pensión no suma» sin decir cuál obliga a
+    // buscarla. Rentas pone la MISMA razón junto a la renta, y añade dónde se
+    // cambia (#1811).
+    (income) =>
+      `«${income.label}» — ${STANDALONE_INCOME_WITHHOLDING_COPY[income.reason]}`,
   );
   return `Rentas sin activo que no suman aquí. ${clauses.join(" ")}`;
 }

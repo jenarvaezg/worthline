@@ -1,4 +1,7 @@
-import type { IncomeExclusionReason } from "@worthline/domain";
+import type {
+  FireStandaloneIncomeWithholding,
+  IncomeExclusionReason,
+} from "@worthline/domain";
 
 /** The same reason beside a declaration and every figure that withholds it. */
 export const INCOME_EXCLUSION_COPY: Record<IncomeExclusionReason, string> = {
@@ -10,4 +13,18 @@ export const INCOME_EXCLUSION_COPY: Record<IncomeExclusionReason, string> = {
   // dirección peligrosa (#1674). No se le inventa una tasa de decaimiento.
   nominal_amount:
     "Importe nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará, así que no cuenta en las cifras.",
+};
+
+/**
+ * Why the sustainable-spending card withholds an income without an asset: the
+ * declaration's reasons, plus the one that only exists looking at a scope (#1674). The
+ * same sentence on the card and beside the income on Rentas (#1811).
+ */
+export const STANDALONE_INCOME_WITHHOLDING_COPY: Record<
+  FireStandaloneIncomeWithholding,
+  string
+> = {
+  ...INCOME_EXCLUSION_COPY,
+  ownerless_in_partial_scope:
+    "Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno.",
 };

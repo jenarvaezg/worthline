@@ -4,7 +4,7 @@
  * holding's ficha. Pure.
  */
 
-import type { Income } from "@worthline/domain";
+import type { Income, StandaloneIncomeCardContext } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -17,6 +17,12 @@ import {
 } from "./income-view";
 
 const TODAY = "2026-10-11";
+
+/** The scope the card reads them in: the plan declared ordinary, every member covered. */
+const CARD_READS: StandaloneIncomeCardContext = {
+  cardShown: true,
+  coversEveryMember: true,
+};
 
 function income(over: Partial<Income> = {}): Income {
   return {
@@ -101,10 +107,10 @@ describe("incomeCountingStatus", () => {
   });
 
   test("work income and a nominal amount each name their own reason", () => {
-    expect(incomeCountingStatus(income({ nature: "work" }), TODAY).text).toBe(
+    expect(incomeCountingStatus(income({ nature: "work" }), TODAY)?.text).toBe(
       "Renta del trabajo: no cuenta como renta pasiva.",
     );
-    expect(incomeCountingStatus(income({ amountBasis: "nominal" }), TODAY).text).toBe(
+    expect(incomeCountingStatus(income({ amountBasis: "nominal" }), TODAY)?.text).toBe(
       "Importe nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará, así que no cuenta en las cifras.",
     );
   });
@@ -112,7 +118,11 @@ describe("incomeCountingStatus", () => {
   // #1674: el gasto sostenible lee las rentas sin activo. Hasta S3 esta frase decía
   // que ninguna cifra las leía, y era verdad; ahora diría lo contrario de la tarjeta.
   test("an income without an asset in force today counts in the sustainable spending", () => {
-    expect(incomeCountingStatus(income({ holdingId: null }), TODAY)).toEqual({
+    expect(
+      incomeCountingStatus(income({ holdingId: null }), TODAY, {
+        cardContext: CARD_READS,
+      }),
+    ).toEqual({
       counts: true,
       mark: "Cuenta",
       text: "Cuenta en el gasto sostenible de tu plan de jubilación, en Objetivos: suma a lo que ya te llega cada mes.",
@@ -128,6 +138,7 @@ describe("incomeCountingStatus", () => {
           startISO: "2030-11-01",
         }),
         TODAY,
+        { cardContext: CARD_READS },
       ),
     ).toEqual({
       counts: true,
@@ -138,7 +149,9 @@ describe("incomeCountingStatus", () => {
 
   test("one without an asset that has ended adds nothing any more", () => {
     expect(
-      incomeCountingStatus(income({ endISO: "2025-12-31", holdingId: null }), TODAY),
+      incomeCountingStatus(income({ endISO: "2025-12-31", holdingId: null }), TODAY, {
+        cardContext: CARD_READS,
+      }),
     ).toEqual({
       counts: false,
       mark: "No cuenta",
@@ -148,10 +161,49 @@ describe("incomeCountingStatus", () => {
 
   test("a missing declaration is named before the missing asset — it is the fixable one", () => {
     expect(
-      incomeCountingStatus(income({ holdingId: null, amountBasis: null }), TODAY).text,
+      incomeCountingStatus(income({ holdingId: null, amountBasis: null }), TODAY, {
+        cardContext: CARD_READS,
+      })?.text,
     ).toBe(
       "Importe sin declarar como real o nominal: esta renta no cuenta en las cifras.",
     );
+  });
+
+  // #1811: la tarjeta solo se pinta con el plan declarado como jubilación ordinaria, y
+  // Rentas decía «Cuenta» igual — de una cifra que en Objetivos no aparecía.
+  test.each([
+    ["in force", "2024-01-01"],
+    ["starting later", "2030-11-01"],
+  ])("one without an asset, %s, does not count while the plan is not declared ordinary — and says where that changes", (_, startISO) => {
+    expect(
+      incomeCountingStatus(income({ holdingId: null, startISO }), TODAY, {
+        cardContext: { cardShown: false, coversEveryMember: true },
+      }),
+    ).toEqual({
+      counts: false,
+      fix: {
+        href: "/objetivos#supuestos",
+        label: "Declara tu plan como jubilación ordinaria en tus supuestos",
+      },
+      mark: "No cuenta",
+      text: "Solo la lee el gasto sostenible de tu plan de jubilación, y esa tarjeta solo aparece con el plan declarado como jubilación ordinaria: ahora no suma en ninguna cifra.",
+    });
+  });
+
+  test("one without an asset, looked at from one member's scope, is not attributed to anyone", () => {
+    expect(
+      incomeCountingStatus(income({ holdingId: null }), TODAY, {
+        cardContext: { cardShown: true, coversEveryMember: false },
+      }),
+    ).toEqual({
+      counts: false,
+      mark: "No cuenta",
+      text: "Sin dueño declarado: este ámbito no incluye a todos los miembros, así que no se le atribuye a ninguno. Solo puede contar mirando un ámbito que los incluya a todos.",
+    });
+  });
+
+  test("a surface that cannot say which scope it looks at promises nothing for one without an asset", () => {
+    expect(incomeCountingStatus(income({ holdingId: null }), TODAY)).toBeNull();
   });
 });
 

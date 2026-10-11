@@ -4,7 +4,7 @@
  * declarar» a visible, checked choice and the provenance left for the person to pick.
  */
 
-import type { Income } from "@worthline/domain";
+import type { Income, StandaloneIncomeCardContext } from "@worthline/domain";
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -12,6 +12,16 @@ import { describe, expect, test } from "vitest";
 import { IncomesLedger } from "./incomes-ledger";
 
 const noop = async () => {};
+
+/** The scope the card reads incomes without an asset in: plan ordinary, everyone in. */
+const CARD_READS: StandaloneIncomeCardContext = {
+  cardShown: true,
+  coversEveryMember: true,
+};
+
+/** What the «Naturaleza» note says on each door (#1811). */
+const LINKED_NATURE_NOTE = "entra en tu renta pasiva y en tu FIRE";
+const STANDALONE_NATURE_NOTE = "No entra en tu renta pasiva ni en tu cifra FIRE";
 
 function income(over: Partial<Income> = {}): Income {
   return {
@@ -46,6 +56,7 @@ function render(overrides: Partial<ComponentProps<typeof IncomesLedger>> = {}) {
       initialValues={{}}
       privacyMode={false}
       readOnly={false}
+      cardContext={CARD_READS}
       today="2026-10-11"
       updateAction={noop}
       {...overrides}
@@ -84,6 +95,33 @@ describe("the list", () => {
     );
     expect(html).toContain("Simulación oficial, con datos a 18 ago 2026");
     expect(html).toContain("Supone seguir cotizando hasta el 31 oct 2030");
+  });
+
+  // #1811: con el plan en FIRE la tarjeta no se pinta, y Rentas decía «Contará» igual.
+  test("an income with no asset says it does not count while the plan is not declared ordinary, and links to where that changes", () => {
+    const html = render({
+      incomes: [income()],
+      cardContext: { cardShown: false, coversEveryMember: true },
+    });
+
+    expect(html).toContain(">No cuenta<");
+    expect(html).not.toContain(">Contará<");
+    expect(html).toContain(
+      "esa tarjeta solo aparece con el plan declarado como jubilación ordinaria",
+    );
+    expect(html).toContain(
+      'href="/objetivos#supuestos">Declara tu plan como jubilación ordinaria en tus supuestos</a>',
+    );
+  });
+
+  test("an income with no asset, looked at from one member's scope, is not attributed to anyone", () => {
+    const html = render({
+      incomes: [income()],
+      cardContext: { cardShown: true, coversEveryMember: false },
+    });
+
+    expect(html).toContain(">No cuenta<");
+    expect(html).toContain("Sin dueño declarado");
   });
 
   test("an undeclared nature names that as the reason", () => {
@@ -170,6 +208,27 @@ describe("the declaration door", () => {
 
   test("no native `required`: the refusal is a sentence, never a silent blocked submit", () => {
     expect(render()).not.toMatch(/\srequired(=|\s|\/|>)/);
+  });
+
+  // #1811: la nota decía que una renta pasiva entra en tu renta pasiva y en tu FIRE,
+  // y sin activo no entra en ninguna de las dos.
+  test("the nature note on this door says what an income with no asset actually moves", () => {
+    const html = render();
+
+    expect(html).toContain(STANDALONE_NATURE_NOTE);
+    expect(html).toContain("el gasto sostenible de tu plan de jubilación, en Objetivos");
+    expect(html).not.toContain(LINKED_NATURE_NOTE);
+  });
+
+  test("correcting a linked income keeps the note of a holding's door", () => {
+    const html = render({
+      holdingById: { asset_flat: { href: null, name: "Piso" } },
+      incomes: [income({ holdingId: "asset_flat", label: "Alquiler" })],
+    });
+
+    // Once in the row's correction form, once (the other note) in the door.
+    expect(html.split(LINKED_NATURE_NOTE)).toHaveLength(2);
+    expect(html.split(STANDALONE_NATURE_NOTE)).toHaveLength(2);
   });
 
   test("an income with no asset is not offered the costs of a holding", () => {

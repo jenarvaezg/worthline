@@ -37,6 +37,7 @@ import type {
   SpendingDebtServiceCoherence,
 } from "@worthline/domain";
 import {
+  declaresOrdinaryRetirement,
   describeSavingsDivergence,
   formatMoneyMinorPrivacy,
   isManualFireReturn,
@@ -235,8 +236,9 @@ export function FirePanel({
     : null;
 
   // La capa de #1428: el mismo panel con otra pregunta al frente. Se llega aquí solo
-  // porque el usuario lo declaró — la señal como mucho ofrece.
-  const declaredOrdinary = retirementProfile?.state === "ordinary";
+  // porque el usuario lo declaró — la señal como mucho ofrece. El mismo predicado con
+  // el que Rentas dice si esta tarjeta lee una renta sin activo (#1811).
+  const declaredOrdinary = declaresOrdinaryRetirement(retirementProfile?.declared);
   // El ofrecimiento calla mientras hay supuestos sin guardar: sus botones ESCRIBEN, y
   // pulsarlos a media edición se llevaría el borrador por delante.
   const offerLine =

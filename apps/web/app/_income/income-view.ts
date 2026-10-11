@@ -9,13 +9,17 @@
  * for a working figure.
  */
 
-import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
+import {
+  INCOME_EXCLUSION_COPY,
+  STANDALONE_INCOME_WITHHOLDING_COPY,
+} from "@web/income-exclusion-copy";
 import { formatDay } from "@web/objetivos/format-day";
-import type { Income } from "@worthline/domain";
+import type { Income, StandaloneIncomeCardContext } from "@worthline/domain";
 import {
   deriveScheduleOccurrences,
   incomeExclusionReason,
   passiveIncomeTrailing,
+  standaloneIncomeReach,
 } from "@worthline/domain";
 import {
   INCOME_AMOUNT_BASIS_CHOICES,
@@ -30,6 +34,8 @@ export interface IncomeCountingStatus {
   /** The word mark beside it — colour is never the only signal (design-system §8). */
   mark: "Cuenta" | "Contará" | "No cuenta";
   text: string;
+  /** Where what keeps it out is changed, when that is a place and not this row. */
+  fix?: { href: string; label: string };
 }
 
 /** The window the passive-income figures read: the trailing 12 months (#658). */
@@ -45,9 +51,14 @@ const PASSIVE_WINDOW_MONTHS = 12;
  * (#1674, ADR 0111) — in its income half while in force, as its dated line before it
  * starts. The passive-income figures sum a holding's payouts and never see it, so
  * its sentence names that card — the retirement plan's, on Objetivos — and nothing
- * else. A future one's condition is checked against the declared retirement there,
- * on the card that knows it; here it is named as the rule, so the list never
- * promises what the card withholds.
+ * else. Whether that card reads it depends on the scope being looked at, not on the
+ * income (#1811): the card is only drawn with the plan declared ordinary, and a scope
+ * that leaves a member out withholds an income nobody owns. So its status asks the
+ * domain's `standaloneIncomeReach` — the same answer the card is drawn from — and a
+ * surface that cannot say which scope it looks at gets `null`, never a guess. A
+ * future one's condition is checked against the declared retirement there, on the
+ * card that knows it; here it is named as the rule, so the list never promises what
+ * the card withholds.
  *
  * The calendar is read the way the figure reads it (#1673 review): the renta
  * pasiva sums the payouts of the trailing 12 months (`passiveIncomeTrailing`), so
@@ -59,18 +70,23 @@ export function incomeCountingStatus(
   income: Income,
   todayISO: string,
   {
+    cardContext,
     holdingInTrash = false,
   }: {
     /** The linked holding sits in the Papelera: no figure reads a trashed holding. */
     holdingInTrash?: boolean;
+    /** The scope on screen, as the card sees it — required to speak of an income without an asset. */
+    cardContext?: StandaloneIncomeCardContext;
   } = {},
-): IncomeCountingStatus {
+): IncomeCountingStatus | null {
+  if (income.holdingId === null) {
+    return cardContext === undefined
+      ? null
+      : standaloneCountingStatus(income, todayISO, cardContext);
+  }
   const reason = incomeExclusionReason(income);
   if (reason !== null) {
     return { counts: false, mark: "No cuenta", text: INCOME_EXCLUSION_COPY[reason] };
-  }
-  if (income.holdingId === null) {
-    return standaloneCountingStatus(income, todayISO);
   }
   if (holdingInTrash) {
     return {
@@ -122,16 +138,44 @@ export function incomeCountingStatus(
       };
 }
 
-/** An income no asset generates: the sustainable spending is the figure that reads it. */
+/**
+ * An income no asset generates: the sustainable spending is the figure that reads it.
+ * An ended one first — the card drops it whatever the scope, and nothing revives it —
+ * then whatever keeps the card from reading it, in the domain's order.
+ */
 function standaloneCountingStatus(
   income: Income,
   todayISO: string,
+  cardContext: StandaloneIncomeCardContext,
 ): IncomeCountingStatus {
   if (income.endISO !== null && income.endISO < todayISO) {
     return {
       counts: false,
       mark: "No cuenta",
       text: `Terminó el ${formatDay(income.endISO)}: ya no suma en el gasto sostenible.`,
+    };
+  }
+  const reach = standaloneIncomeReach(income, cardContext);
+  if (reach.state === "withheld") {
+    const copy = STANDALONE_INCOME_WITHHOLDING_COPY[reach.reason];
+    return {
+      counts: false,
+      mark: "No cuenta",
+      text:
+        reach.reason === "ownerless_in_partial_scope"
+          ? `${copy} Solo puede contar mirando un ámbito que los incluya a todos.`
+          : copy,
+    };
+  }
+  if (reach.state === "card_hidden") {
+    return {
+      counts: false,
+      fix: {
+        href: "/objetivos#supuestos",
+        label: "Declara tu plan como jubilación ordinaria en tus supuestos",
+      },
+      mark: "No cuenta",
+      text: "Solo la lee el gasto sostenible de tu plan de jubilación, y esa tarjeta solo aparece con el plan declarado como jubilación ordinaria: ahora no suma en ninguna cifra.",
     };
   }
   if (income.startISO <= todayISO) {

@@ -37,6 +37,8 @@
 import type { BirthDate } from "./fire-current-age";
 import { parseCalendarMonth, scopeAgeSource } from "./fire-current-age";
 import { annualizedMinor } from "./fire-rent-return";
+import type { FireRetirementPlan } from "./fire-retirement-profile";
+import { declaresOrdinaryRetirement } from "./fire-retirement-profile";
 import type { Income, IncomeExclusionReason, IncomeProvenance } from "./payouts";
 import { incomeExclusionReason } from "./payouts";
 import { findScopeMemberIds } from "./scope";
@@ -123,12 +125,7 @@ export function deriveStandaloneIncomes(
     // lista de Rentas dice cuándo terminó, y la tarjeta no tiene nada que añadir.
     if (income.endISO !== null && income.endISO < todayISO) continue;
 
-    // El dueño va antes que la declaración a propósito: en un ámbito parcial,
-    // declarar la naturaleza no la haría contar, y pedirlo sería prometer algo que
-    // la tarjeta no va a cumplir.
-    const reason: FireStandaloneIncomeWithholding | null = coversEveryMember
-      ? incomeExclusionReason(income)
-      : "ownerless_in_partial_scope";
+    const reason = standaloneIncomeWithholding(income, coversEveryMember);
     if (reason !== null) {
       withheld.push({ incomeId: income.id, label: income.label, reason });
       continue;
@@ -168,6 +165,78 @@ export function deriveStandaloneIncomes(
           },
     withheld,
   };
+}
+
+/**
+ * Por qué la tarjeta retiene una renta sin activo, o null si la lee. El dueño va antes
+ * que la declaración a propósito: en un ámbito parcial, declarar la naturaleza no la
+ * haría contar, y pedirlo sería prometer algo que la tarjeta no va a cumplir.
+ */
+function standaloneIncomeWithholding(
+  income: Pick<Income, "nature" | "amountBasis">,
+  coversEveryMember: boolean,
+): FireStandaloneIncomeWithholding | null {
+  return coversEveryMember ? incomeExclusionReason(income) : "ownerless_in_partial_scope";
+}
+
+// ── ¿la tarjeta lee esta renta? (#1811) ──────────────────────────────────────────
+
+/**
+ * Lo que un ámbito decide sobre todas sus rentas sin activo antes de mirar ninguna: si
+ * la tarjeta del gasto sostenible se pinta y si se les puede atribuir un dueño. Dos
+ * booleanos, para que una isla de cliente decida igual que el servidor sobre una renta
+ * que acaba de declararse.
+ */
+export interface StandaloneIncomeCardContext {
+  /** El plan del ámbito está declarado como jubilación ordinaria (ADR 0081). */
+  cardShown: boolean;
+  /** El ámbito incluye a todos los miembros activos: la regla 3 de arriba. */
+  coversEveryMember: boolean;
+}
+
+export function standaloneIncomeCardContext(input: {
+  /** Lo declarado en la configuración FIRE del ámbito; sin configuración, nada. */
+  retirementPlan: FireRetirementPlan | null | undefined;
+  scopeId: string;
+  workspace: Workspace;
+}): StandaloneIncomeCardContext {
+  return {
+    cardShown: declaresOrdinaryRetirement(input.retirementPlan),
+    coversEveryMember: scopeCoversEveryMember(input.workspace, input.scopeId),
+  };
+}
+
+/**
+ * Si la tarjeta del gasto sostenible lee una renta sin activo mirando un ámbito: la
+ * única cifra que la lee, así que es la respuesta a «¿cuenta?». Objetivos pinta la
+ * tarjeta con el mismo predicado y el mismo informe; Rentas anuncia con esta función.
+ *
+ * - `withheld` — el informe la retiene, con la misma razón que imprime la tarjeta.
+ * - `card_hidden` — la tarjeta no se pinta en este ámbito: el plan no está declarado
+ *   como jubilación ordinaria, y ninguna otra cifra la lee.
+ * - `read` — la lee: en lo de hoy si ya llega, como su línea con fecha si no. Una
+ *   futura con condición puede acabar aun así fuera, si choca con la jubilación
+ *   declarada: eso lo decide la tarjeta con la edad que haya en pantalla
+ *   (`incomeContributionCondition`), no esta función.
+ *
+ * La retención va antes que el plan por la misma razón que el dueño va antes que la
+ * declaración: nombrar primero lo que seguiría bloqueando después de arreglar lo otro.
+ * No mira el calendario: una renta terminada la dice quien la lista.
+ */
+export type StandaloneIncomeReach =
+  | { state: "read" }
+  | { state: "withheld"; reason: FireStandaloneIncomeWithholding }
+  | { state: "card_hidden" };
+
+export function standaloneIncomeReach(
+  income: Pick<Income, "nature" | "amountBasis">,
+  context: StandaloneIncomeCardContext,
+): StandaloneIncomeReach {
+  const reason = standaloneIncomeWithholding(income, context.coversEveryMember);
+  if (reason !== null) {
+    return { reason, state: "withheld" };
+  }
+  return context.cardShown ? { state: "read" } : { state: "card_hidden" };
 }
 
 /** Si el ámbito incluye a cada miembro activo del espacio: el único sitio seguro. */

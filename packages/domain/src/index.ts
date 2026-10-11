@@ -622,6 +622,7 @@ export type {
   FireRetirementSignal,
 } from "./fire-retirement-profile";
 export {
+  declaresOrdinaryRetirement,
   fireRetirementProfile,
   ORDINARY_RETIREMENT_AGE_DEFAULT,
   ordinaryRetirementAgeForFire,
@@ -649,6 +650,12 @@ export type {
   FireStandaloneIncome,
   FireStandaloneIncomeWithholding,
   FireWithheldStandaloneIncome,
+  StandaloneIncomeCardContext,
+  StandaloneIncomeReach,
+} from "./fire-standalone-income";
+export {
+  standaloneIncomeCardContext,
+  standaloneIncomeReach,
 } from "./fire-standalone-income";
 export type {
   FireConditionBrokenIncome,

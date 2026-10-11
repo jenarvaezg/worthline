@@ -4,7 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { deriveStandaloneIncomes } from "./fire-standalone-income";
+import {
+  deriveStandaloneIncomes,
+  standaloneIncomeCardContext,
+  standaloneIncomeReach,
+} from "./fire-standalone-income";
 import type { Income } from "./payouts";
 import type { Member } from "./workspace-types";
 import { createWorkspace } from "./workspace-types";
@@ -159,5 +163,97 @@ describe("deriveStandaloneIncomes — la fecha de nacimiento contra la que se mi
     ]);
 
     expect(report.readable.map((income) => income.incomeId)).toEqual(["soon", "late"]);
+  });
+});
+
+// #1811: Rentas decía «Cuenta» de una pensión que la tarjeta no iba a pintar — con el
+// plan en FIRE la tarjeta no existe, y en el ámbito de un miembro la renta se retiene.
+// Una sola respuesta para las dos superficies.
+describe("standaloneIncomeReach — ¿la tarjeta del gasto sostenible lee esta renta en este ámbito?", () => {
+  function reach(
+    income: Income,
+    { retirementPlan = "ordinary", scopeId = "household", workspace = SOLO } = {} as {
+      retirementPlan?: "ordinary" | "early" | null;
+      scopeId?: string;
+      workspace?: typeof SOLO;
+    },
+  ) {
+    return standaloneIncomeReach(
+      income,
+      standaloneIncomeCardContext({ retirementPlan, scopeId, workspace }),
+    );
+  }
+
+  it("con el plan declarado como jubilación ordinaria y el ámbito de todos, la lee", () => {
+    expect(reach(pension())).toEqual({ state: "read" });
+    expect(reach(pension(), { scopeId: "g-both", workspace: COUPLE })).toEqual({
+      state: "read",
+    });
+  });
+
+  it("con el plan en FIRE, o sin declarar, la tarjeta no se pinta y no la lee nadie", () => {
+    expect(reach(pension(), { retirementPlan: "early" })).toEqual({
+      state: "card_hidden",
+    });
+    expect(reach(pension(), { retirementPlan: null })).toEqual({
+      state: "card_hidden",
+    });
+  });
+
+  it("en el ámbito de un solo miembro la retiene por falta de dueño, aunque el plan sea ordinario", () => {
+    expect(reach(pension(), { scopeId: "m-ana", workspace: COUPLE })).toEqual({
+      reason: "ownerless_in_partial_scope",
+      state: "withheld",
+    });
+  });
+
+  it("la falta de dueño va antes que el plan: declararlo no la haría contar en ese ámbito", () => {
+    expect(
+      reach(pension(), { retirementPlan: "early", scopeId: "m-ana", workspace: COUPLE }),
+    ).toEqual({ reason: "ownerless_in_partial_scope", state: "withheld" });
+  });
+
+  it("una declaración que la excluye se dice con su razón, antes que el plan", () => {
+    expect(reach(pension({ nature: "work" }), { retirementPlan: "early" })).toEqual({
+      reason: "work_income",
+      state: "withheld",
+    });
+  });
+
+  it.each([
+    [
+      "household",
+      [
+        { state: "read" },
+        { reason: "missing_nature", state: "withheld" },
+        { reason: "nominal_amount", state: "withheld" },
+      ],
+    ],
+    [
+      "m-ana",
+      [
+        { reason: "ownerless_in_partial_scope", state: "withheld" },
+        { reason: "ownerless_in_partial_scope", state: "withheld" },
+        { reason: "ownerless_in_partial_scope", state: "withheld" },
+      ],
+    ],
+  ])("en %s retiene lo mismo, y por lo mismo, que el informe de la tarjeta", (scopeId, expected) => {
+    const incomes = [
+      pension({ id: "ok" }),
+      pension({ id: "undeclared", nature: null }),
+      pension({ amountBasis: "nominal", id: "nominal" }),
+    ];
+    const context = standaloneIncomeCardContext({
+      retirementPlan: "ordinary",
+      scopeId,
+      workspace: COUPLE,
+    });
+
+    expect(incomes.map((income) => standaloneIncomeReach(income, context))).toEqual(
+      expected,
+    );
+    expect(derive(incomes, COUPLE, scopeId).withheld.map(({ reason }) => reason)).toEqual(
+      expected.flatMap((entry) => ("reason" in entry ? [entry.reason] : [])),
+    );
   });
 });

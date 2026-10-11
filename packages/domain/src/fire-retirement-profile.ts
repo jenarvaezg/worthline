@@ -85,6 +85,20 @@ export function ordinaryRetirementAgeForFire(
   return config.ordinaryRetirementAge ?? ORDINARY_RETIREMENT_AGE_DEFAULT;
 }
 
+/**
+ * ¿Lidera la pantalla el gasto sostenible —y se pinta su tarjeta—? Solo cuando el usuario
+ * declaró el plan como jubilación ordinaria: la señal propone, la declaración decide.
+ *
+ * Una sola respuesta para el estado del perfil, la tarjeta de Objetivos y la marca que
+ * Rentas pone junto a una renta sin activo (#1811): esa renta solo la lee esta tarjeta,
+ * así que anunciar «Cuenta» sin ella era prometer una cifra que no existe.
+ */
+export function declaresOrdinaryRetirement(
+  plan: FireRetirementPlan | null | undefined,
+): boolean {
+  return plan === "ordinary";
+}
+
 export interface FireRetirementProfileInput {
   /** El contexto resuelto: de aquí sale la config (edades y declaración). */
   context: FireContext;
@@ -139,13 +153,12 @@ export function fireRetirementProfile(
     // La declaración manda en los dos sentidos: «ordinaria» no necesita señal
     // (nadie tiene que encajar en el patrón para pedirlo) y «FIRE» calla el
     // ofrecimiento aunque las señales sigan ahí — un «no» no se vuelve a preguntar.
-    state:
-      declared === "ordinary"
-        ? "ordinary"
-        : declared === "early"
-          ? "fire"
-          : signals.length > 0
-            ? "offer"
-            : "fire",
+    state: declaresOrdinaryRetirement(declared)
+      ? "ordinary"
+      : declared === "early"
+        ? "fire"
+        : signals.length > 0
+          ? "offer"
+          : "fire",
   };
 }
