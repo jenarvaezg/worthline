@@ -247,6 +247,7 @@ export async function buildFinancialContext(
       holdingSummaries,
     ),
     dataQuality: await buildDataQualitySummary(scoped, {
+      incomes: schedules,
       operationsByAssetId: operationsByHoldingId,
     }),
     exposure: buildExposure(holdingSummaries, summary.grossAssets, lookthrough),

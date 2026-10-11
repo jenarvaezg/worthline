@@ -323,9 +323,11 @@ export {
   DATA_QUALITY_CATEGORY_ORDER,
   DEBT_MISSING_FROM_HISTORY_CODE,
   dataQualitySignalSortKey,
+  INCOME_DOUBLE_COUNT_CODE,
   isOverrideableSignalCode,
   MISSING_INVESTMENT_ISIN_CODE,
   OVERRIDEABLE_SIGNAL_CODES,
+  overriddenSignalKeys,
   PERSISTENT_SYNC_FAILURE_CODE,
   PERSISTENT_SYNC_FAILURE_THRESHOLD,
   SPARSE_SNAPSHOT_THRESHOLD,
@@ -796,6 +798,8 @@ export type {
   ValueHousingAtDateInput,
 } from "./housing-valuation";
 export { valueHousingAtDate } from "./housing-valuation";
+export type { IncomeDoubleCount } from "./income-double-count";
+export { describeIncomeDoubleCount, incomeDoubleCount } from "./income-double-count";
 export type {
   Instrument,
   InstrumentDefaults,

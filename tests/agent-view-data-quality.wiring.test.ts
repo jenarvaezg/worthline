@@ -957,6 +957,7 @@ describe("main financial context data-quality summary (#341)", () => {
     expect(Object.keys(summary.countsByCategory).sort()).toEqual(
       [
         "history_coverage",
+        "income_coherence",
         "manual_value_freshness",
         "missing_configuration",
         "portfolio_reconciliation",
@@ -1363,5 +1364,98 @@ describe("data-quality — el saldo declarado de una cartera gestionada (#1550)"
       state: "aligned",
       thresholdBps: 200,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INCOME_DOUBLE_COUNT (#1675)
+// ---------------------------------------------------------------------------
+
+describe("data-quality — un holding con valor y una renta ligada (#1675)", () => {
+  /**
+   * The shape Jorge's public pension had after #1512: an `other` container of 1,00 €
+   * carrying the pension, beside a rented flat whose rent replaces its rung's return.
+   */
+  async function seedPensionContainerAndFlat(): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-double-count-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
+
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 1_00,
+      id: "asset_contenedor",
+      instrument: "other",
+      liquidityTier: "term-locked",
+      name: "Pensión Pública",
+      ownership: owner,
+      type: "manual",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountBasis: "real",
+      amountMinor: 3_383_56,
+      cadence: "monthly",
+      holdingId: "asset_contenedor",
+      label: "Pensión",
+      nature: "passive",
+      startISO: "2030-12-10",
+    });
+
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 120_000_00,
+      id: "asset_piso",
+      liquidityTier: "illiquid",
+      name: "Piso alquilado",
+      ownership: owner,
+      type: "real_estate",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountBasis: "real",
+      amountMinor: 700_00,
+      cadence: "monthly",
+      expensesMinor: 150_00,
+      holdingId: "asset_piso",
+      label: "Alquiler",
+      nature: "passive",
+      startISO: "2024-01-01",
+    });
+    store.close();
+  }
+
+  // The engine can only cross what the endpoint hands it: this is the guard on the
+  // agent view actually reading the incomes, on both of its paths.
+  test("avisa del contenedor y calla el piso", async () => {
+    await seedPensionContainerAndFlat();
+    const scopeId = await householdScopeId();
+
+    const found = await signals(scopeId, "?limit=500&category=income_coherence");
+
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      category: "income_coherence",
+      code: "INCOME_DOUBLE_COUNT",
+      fixable: true,
+      severity: "medium",
+    });
+    expect(found[0]!.affected?.id).toMatch(/^wl_hld_/);
+    expect(found[0]!.affected?.label).toBe("Pensión Pública");
+    expect(found[0]!.label).toContain("(«Pensión»)");
+  });
+
+  test("el contexto financiero lo cuenta con las rentas que ya leyó", async () => {
+    await seedPensionContainerAndFlat();
+    const scopeId = await householdScopeId();
+
+    const { body } = await financialContext(scopeId);
+
+    expect(body.data.dataQuality.countsByCategory.income_coherence).toBe(1);
   });
 });

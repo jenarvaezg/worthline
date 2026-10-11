@@ -15,6 +15,11 @@ import type { AgentViewObjectReference, AgentViewPaginationMeta } from "./shared
  *    that has failed on consecutive attempts rather than merely lapsed (#1226).
  *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
  *    config, an amortized liability's debt model, …).
+ *  - `income_coherence`: a holding with value that also carries a declared income
+ *    linked to it (#1675) — the same money may count twice, as capital and as
+ *    income, when the income is paid out of that capital. A property is never one:
+ *    its rent replaces its rung's return (ADR 0076). Overrideable: interest or a
+ *    coupon is what the capital yields, and the user says so once.
  *  - `history_coverage`: sparse snapshots or a snapshot with no frozen holding rows.
  *  - `transfer_integrity`: traspasos already in the ledger that no longer read as
  *    a whole pair (#1519) — an outgoing half with no destination row, or an
@@ -35,6 +40,7 @@ export type AgentViewDataQualityCategory =
   | "missing_configuration"
   | "savings_coherence"
   | "spending_coherence"
+  | "income_coherence"
   | "portfolio_reconciliation"
   | "transfer_integrity"
   | "history_coverage"

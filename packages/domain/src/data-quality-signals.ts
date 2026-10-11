@@ -31,6 +31,11 @@ import {
   type DataQualityHistoryCoverageInput,
 } from "./data-quality-history-coverage";
 import {
+  collectIncomeDoubleCountSignals,
+  type DataQualityIncomeDoubleCountInput,
+  INCOME_DOUBLE_COUNT_CODE,
+} from "./data-quality-income-double-count";
+import {
   collectInstrumentIdentitySignals,
   type DataQualityInstrumentIdentityInput,
   MISSING_INVESTMENT_ISIN_CODE,
@@ -97,6 +102,7 @@ export {
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
   dataQualitySignalSortKey,
+  overriddenSignalKeys,
 } from "./data-quality-collector";
 export type {
   DataQualityConnectedSource,
@@ -109,6 +115,7 @@ export {
   DEBT_MISSING_FROM_HISTORY_CODE,
   SPARSE_SNAPSHOT_THRESHOLD,
 } from "./data-quality-history-coverage";
+export { INCOME_DOUBLE_COUNT_CODE } from "./data-quality-income-double-count";
 export {
   MISSING_INVESTMENT_ISIN_CODE,
   UNCLASSIFIED_SECURITY_ID_CODE,
@@ -164,6 +171,7 @@ export interface CollectDataQualitySignalsInput
     DataQualityCostBasisInput,
     DataQualitySavingsCoherenceInput,
     DataQualitySpendingDebtServiceInput,
+    DataQualityIncomeDoubleCountInput,
     DataQualityPortfolioReconciliationInput,
     DataQualityTransferIntegrityInput,
     DataQualityHistoryCoverageInput,
@@ -188,6 +196,7 @@ const DATA_QUALITY_COLLECTORS: readonly DataQualityCollector<CollectDataQualityS
     collectCostBasisSignals,
     collectSavingsCoherenceSignals,
     collectSpendingDebtServiceSignals,
+    collectIncomeDoubleCountSignals,
     collectPortfolioReconciliationSignals,
     collectTransferIntegritySignals,
     collectHistoryCoverageSignals,
@@ -208,6 +217,9 @@ export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
   // «No sé lo que costó» is a permanent answer for a plan opened in 2014 (#1505):
   // the user says so once instead of being asked on every pass.
   COST_BASIS_VALUE_ONLY_CODE,
+  // A deposit's declared interest or a bond's coupon is what its capital YIELDS, not
+  // money paid out of it (#1675): the user says so once.
+  INCOME_DOUBLE_COUNT_CODE,
 ]);
 
 export function isOverrideableSignalCode(code: string): boolean {

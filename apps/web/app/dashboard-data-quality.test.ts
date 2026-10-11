@@ -15,6 +15,7 @@ import type { AgentViewReadStore, AgentViewTrashedHolding } from "@worthline/db"
 import {
   createManualAsset,
   createWorkspace,
+  type Income,
   type InvestmentOperation,
   listScopeOptions,
   type ManualAsset,
@@ -69,6 +70,7 @@ async function heroSignals(
   operations: readonly InvestmentOperation[],
   trashedHoldings: AgentViewTrashedHolding[] = [],
   assets: ManualAsset[] = [symbollessFund()],
+  incomes: Income[] = [],
 ) {
   return collectDashboardDataQualitySignals({
     agentView: emptyStore(trashedHoldings),
@@ -76,6 +78,7 @@ async function heroSignals(
     assets,
     fireConfigByScopeId: { [scope.id]: undefined },
     holdingRows: [],
+    incomes,
     liabilities: [],
     operationsByAsset: new Map([["asset_fund", operations]]),
     overrides: [],
@@ -101,6 +104,7 @@ describe("collectDashboardDataQualitySignals — closed positions (#1348)", () =
       assets: [symbollessFund()],
       fireConfigByScopeId: { [scope.id]: undefined },
       holdingRows: [],
+      incomes: [],
       liabilities: [],
       operationsByAsset: new Map(),
       overrides: [],
@@ -179,5 +183,46 @@ describe("collectDashboardDataQualitySignals — trashed with balance (#1365)", 
 
   test("a trashed holding with no ledger at all stays silent", async () => {
     expect(await trashedCodes([])).toEqual([]);
+  });
+});
+
+/**
+ * The hero half of the double-count cross (#1675). The home already read every
+ * declared income for its returns engine; this pins that the gather hands those same
+ * rows to the engine, so the human and the agent cross the same declarations.
+ */
+describe("collectDashboardDataQualitySignals — el doble conteo de una renta ligada (#1675)", () => {
+  test("un plan con valor y una renta ligada llega al héroe", async () => {
+    const plan = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 52_300_00,
+      id: "asset_plan",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Plan Indexa",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+    const vitalicia: Income = {
+      amountBasis: "real",
+      amountMinor: 300_00,
+      assumedContributionThrough: null,
+      cadence: "monthly",
+      endISO: null,
+      exclusions: [],
+      holdingId: "asset_plan",
+      id: "inc_vitalicia",
+      label: "Renta vitalicia",
+      nature: "passive",
+      provenance: null,
+      provenanceAsOf: null,
+      startISO: "2026-01-01",
+    };
+
+    const codes = (await heroSignals([], [], [plan], [vitalicia])).map(
+      (signal) => signal.code,
+    );
+
+    expect(codes).toContain("INCOME_DOUBLE_COUNT");
   });
 });

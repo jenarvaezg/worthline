@@ -19,6 +19,7 @@ export type DataQualityCategory =
   | "missing_configuration"
   | "savings_coherence"
   | "spending_coherence"
+  | "income_coherence"
   | "portfolio_reconciliation"
   | "transfer_integrity"
   | "history_coverage"
@@ -107,6 +108,7 @@ export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "missing_configuration",
   "savings_coherence",
   "spending_coherence",
+  "income_coherence",
   "portfolio_reconciliation",
   "transfer_integrity",
   "history_coverage",

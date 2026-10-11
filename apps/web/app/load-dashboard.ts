@@ -536,6 +536,7 @@ export async function loadDashboard(
         assets,
         fireConfigByScopeId: fireConfig,
         holdingRows,
+        incomes: payoutSchedules,
         liabilities,
         operationsByAsset: projectionContext.operationsByAsset,
         overrides,

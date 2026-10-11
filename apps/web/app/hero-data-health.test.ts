@@ -335,3 +335,38 @@ describe("selectHeroHealth", () => {
     expect(view.alerts).toHaveLength(0);
   });
 });
+
+describe("selectHeroHealth — el doble conteo de una renta ligada (#1675)", () => {
+  const doubleCount = signal({
+    affected: { id: "h3", label: "Plan Indexa", object: "holding" },
+    category: "income_coherence",
+    code: "INCOME_DOUBLE_COUNT",
+    label: "«Plan Indexa» tiene valor y además una renta declarada ligada a él",
+    severity: "medium",
+  });
+
+  it("encabeza el héroe: uno de los dos lados es el valor, que es la cifra de hoy", () => {
+    const view = selectHeroHealth([doubleCount], [], publicIds, portfolioPublicIds);
+
+    expect(view.impact).toBe("warning");
+    expect(view.alerts).toHaveLength(1);
+  });
+
+  it("enlaza a los Cobros de su ficha, desplegados: ahí están la renta y la salida", () => {
+    const view = selectHeroHealth([doubleCount], [], publicIds, portfolioPublicIds);
+
+    expect(view.alerts[0]?.href).toBe("/patrimonio/wl_hld_h3/editar?abrir=cobros#cobros");
+    expect(view.alerts[0]?.fixLabel).toBe("Ver cobros");
+  });
+
+  it("reconocido como intencional, deja de preguntar", () => {
+    const view = selectHeroHealth(
+      [doubleCount],
+      [{ code: "INCOME_DOUBLE_COUNT", entityId: "h3" }],
+      publicIds,
+      portfolioPublicIds,
+    );
+
+    expect(view.impact).toBe("clean");
+  });
+});

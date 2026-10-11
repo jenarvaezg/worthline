@@ -326,6 +326,14 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * `propose_holding` and `propose_correction` remain the ranking's head, untouched. Ninth
  * PR in a row to say so.
+ *
+ * **NOT raised by #1675**, and it is not the trim #1753 warned against: no instruction
+ * moved. A new data-quality category (`income_coherence`, the double-count cross)
+ * costs 19 characters in `get_data_quality`'s schema enum. That pushed the floor 11 over,
+ * and the same tool paid it back by dropping «Filtra por categoría o severidad.» from
+ * its description. That sentence restated the two enums its own schema already carries,
+ * the #1342 rule: a fact said in two places is paid twice. The onboarding floor moved
+ * 46.392 → 46.377, 23 under the ceiling.
  */
 
 describe("measureTurnFloor", () => {

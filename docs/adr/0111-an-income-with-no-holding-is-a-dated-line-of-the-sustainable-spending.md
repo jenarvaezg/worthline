@@ -74,3 +74,54 @@ needed, outside the engine. #1674 (S3 of #1522) is that route.
   for the younger member's pension, and the price of not inventing an owner.
 - ADR 0081's refusal stands: the pension is still not an engine input. This amends
   ADR 0108's last open item (the dated card).
+
+## Amendment (#1675) — the double-count cross
+
+Point 1 left one case to S4: an income linked to a holding that is not a property.
+The holding's value is capital, and the capital already yields its rung's rate; the
+income linked to it is either that yield or money paid out of that capital — a life
+annuity, a pension plan drawn as an income. In the second case, declaring both
+counts the same money twice: as capital and as income. It is the risk ADR 0081
+refused to take inside the engine, and it is how a public pension once stood in the
+patrimonio as an invented asset.
+
+1. **A signal, never a veto.** `INCOME_DOUBLE_COUNT` (category `income_coherence`,
+   `medium`) is raised once per holding (#1356), naming every income linked to it.
+   Nothing is deleted and no figure moves. Whether the income comes out of the
+   capital or is what it yields is something only the user knows, so the decision
+   stays with the user.
+2. **What crosses.** A holding the scope owns, with value above zero, that is not a
+   property, and that has at least one linked income that has not ended. The
+   declaration is what duplicates, not the figure that reads it today. So an income
+   that starts later crosses, and so does one the door saved with no nature or
+   basis, or in nominal euros. A contracted life annuity is a nominal amount, and
+   staying silent there would miss the very case this signal exists for. A holding
+   at zero stays silent: that is the honest shape of an annuity that has absorbed
+   its capital. An ended income stays silent too, because that money no longer
+   arrives.
+3. **A property stays silent by construction** (ADR 0076). Its rent replaces the
+   housing rung's rate and the brick never enters the sellable capital, so the rent
+   never adds to the value. Whatever is left to say about a lease (no expenses,
+   nominal, ended) its own notices already say. A pension mistyped as a property is
+   an instrument error. The ficha corrects it (#1512), and the rent notices already
+   flag it: a start years away, no expenses.
+4. **It can be acknowledged** (ADR 0004). Interest on a deposit or a bond's coupon
+   is what the capital yields. The legitimate case is acknowledged once with
+   «Es intencional», beside the incomes in the holding's Cobros, and it stays in the
+   agent's inventory labelled as intentional. The instrument is deliberately not
+   used to guess which case it is. Every interest or coupon schedule that already
+   exists on a non-property holding will therefore ask once. That is the accepted
+   cost: a rule that exempted deposits, funds and bonds would miss an annuity typed
+   as one of them.
+5. **It headlines the home, unlike its coherence siblings.** Savings and spending
+   coherence (ADR 0075, ADR 0099) question only the figures on /objetivos. This
+   cross has the holding's value on one side, and the value is part of today's
+   patrimonio: a pension capitalized as a holding inflates it by exactly what it is
+   worth. The hero's link opens the holding's Cobros.
+
+The rule (`incomeDoubleCount`) and its sentence (`describeIncomeDoubleCount`) live
+in one domain module, read by both the engine's collector and the ficha. The home
+crosses the incomes it already read for the returns engine, and the agent's
+financial context hands over the ones it already read. Only the standalone
+data-quality endpoint reads them for itself, once.
+
