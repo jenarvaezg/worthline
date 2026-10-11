@@ -2,6 +2,8 @@ import {
   type ExposureLookthroughHolding,
   type ExposureProfile,
   lookThroughExposure,
+  type PortfolioCost,
+  portfolioCost,
 } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -85,9 +87,13 @@ const equity = lookThroughExposure({
   profiles,
 });
 
+// The portfolio-cost lens reads the look-through's very input (#1717).
+const cost = portfolioCost({ grossAssets, holdings, profiles });
+
 function render(initialLens: "all" | "equity"): string {
   return renderToStaticMarkup(
     <ExposureSection
+      cost={cost}
       currentUrl="/patrimonio"
       equity={equity}
       full={full}
@@ -141,6 +147,7 @@ describe("ExposureSection", () => {
     expect(unknownFull.geography.coverage.unknown.amountMinor).toBe(100_000);
     const html = renderToStaticMarkup(
       <ExposureSection
+        cost={portfolioCost({ grossAssets, holdings: lone, profiles: new Map() })}
         currentUrl="/patrimonio"
         equity={unknownFull}
         full={unknownFull}
@@ -222,6 +229,11 @@ describe("ExposureSection", () => {
     expect(usdFull.currencyRisk.map((s) => s.key)).toEqual(["USD"]);
     const html = renderToStaticMarkup(
       <ExposureSection
+        cost={portfolioCost({
+          grossAssets: { amountMinor: 50_000, currency: EUR },
+          holdings: usd,
+          profiles: new Map(),
+        })}
         currentUrl="/patrimonio"
         equity={usdFull}
         full={usdFull}
@@ -231,5 +243,109 @@ describe("ExposureSection", () => {
     );
     expect(html).toContain("Riesgo divisa no cubierto");
     expect(html).toContain("USD");
+  });
+});
+
+describe("ExposureSection — coste de la cartera (#1717)", () => {
+  // 60.000 € of a world ETF at 0,20 % and 30.000 € of a bond fund at 0,10 %
+  // declare a TER; 10.000 € of another fund declares none. 120 € + 30 € = 150 €
+  // a year, a mean of 150 € / 90.000 € = 0,1667 % over 90 % of gross.
+  const costHoldings: ExposureLookthroughHolding[] = [
+    {
+      currency: EUR,
+      id: "w",
+      instrument: "etf",
+      providerSymbol: "WORLD",
+      valueMinor: 60_000_00,
+    },
+    {
+      currency: EUR,
+      id: "b",
+      instrument: "fund",
+      providerSymbol: "BONDS",
+      valueMinor: 30_000_00,
+    },
+    {
+      currency: EUR,
+      id: "x",
+      instrument: "fund",
+      providerSymbol: "BLANK",
+      valueMinor: 10_000_00,
+    },
+  ];
+  const terProfile = (key: string, ter: string): [string, ExposureProfile] => [
+    key,
+    { breakdowns: {}, declaredAt: null, key, source: "user", ter },
+  ];
+  const costProfiles = new Map<string, ExposureProfile>([
+    terProfile("WORLD", "0.002"),
+    terProfile("BONDS", "0.001"),
+  ]);
+  const costGross = { amountMinor: 100_000_00, currency: EUR };
+  const priced = portfolioCost({
+    grossAssets: costGross,
+    holdings: costHoldings,
+    profiles: costProfiles,
+  });
+  const costLook = lookThroughExposure({
+    baseCurrency: EUR,
+    grossAssets: costGross,
+    holdings: costHoldings,
+    profiles: costProfiles,
+  });
+
+  function renderCost(sectionCost: PortfolioCost, privacyMode = false): string {
+    return renderToStaticMarkup(
+      <ExposureSection
+        cost={sectionCost}
+        currentUrl="/patrimonio"
+        equity={costLook}
+        full={costLook}
+        initialLens="all"
+        privacyMode={privacyMode}
+      />,
+    );
+  }
+
+  test("reads the yearly cost, the mean TER and the share of gross it rests on", () => {
+    expect(priced.annualCost.amountMinor).toBe(150_00);
+    const html = renderCost(priced);
+    expect(html).toContain("Coste de la cartera");
+    expect(html).toMatch(/Tu cartera cuesta <b>~150[\s\u00a0]€\/año<\/b>/);
+    expect(html).toContain("TER medio 0,17 %");
+    expect(html).toContain("sobre el 90 % del bruto con dato");
+  });
+
+  test("shows the three-way TER coverage with the undeclared remainder visible", () => {
+    const html = renderCost(priced);
+    const block = html.slice(html.indexOf("Coste de la cartera"));
+    expect(block).toContain("Con TER");
+    expect(block).toContain("No aplica");
+    expect(block).toContain("Sin declarar");
+    // The 10.000 € fund with no TER is the gap, shown — never folded into 0.
+    expect(block.slice(block.indexOf("Sin declarar"))).toMatch(/10[.\s]?000/);
+  });
+
+  test("says the TER is already inside the NAV, so returns never subtract it", () => {
+    expect(renderCost(priced)).toContain("no se resta otra vez de la rentabilidad");
+  });
+
+  test("privacy mode masks the euros but keeps the percentages", () => {
+    const html = renderCost(priced, true);
+    expect(html).not.toMatch(/~150/);
+    expect(html).toContain("TER medio 0,17 %");
+  });
+
+  test("with no TER declared it names the gap instead of pricing the portfolio at 0", () => {
+    const html = renderCost(
+      portfolioCost({
+        grossAssets: costGross,
+        holdings: costHoldings,
+        profiles: new Map(),
+      }),
+    );
+    expect(html).toContain("Coste de la cartera");
+    expect(html).not.toContain("Tu cartera cuesta");
+    expect(html).toContain("Ningún fondo de la cartera tiene TER declarado");
   });
 });

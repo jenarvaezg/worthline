@@ -167,10 +167,30 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "Sentry",
       "Google (Gemini API)",
       "Cerebras",
-      // Sentry es un slice posterior del PRD #1171: declarado, pero sin recibir
-      // aún ni un dato.
-      "aún no activo",
-      "no reciben ningún dato",
+    ]);
+  });
+
+  test("marks no processor as pending once every declared one receives data", () => {
+    // Resend (#1174) and Sentry (#1175) both receive data now. The «aún no activo»
+    // note only renders while some processor is still pending, so it cannot
+    // announce a pending one that does not exist.
+    expect(LEGAL_PROCESSORS.every((processor) => processor.active !== false)).toBe(true);
+    expect(html("privacidad")).not.toContain("aún no activo");
+  });
+
+  test("declares Sentry as active, and says what an error report does and does not carry (#1175)", () => {
+    const page = html("privacidad");
+    // Sentry recibe errores desde #1175: marcarlo «aún no activo» callaría una
+    // cesión que sí ocurre.
+    expect(page).not.toMatch(/Sentry\s*<span class="legalPending">/);
+    expectAll("privacidad", [
+      "Registro de errores del servidor",
+      // No free text leaves (ADR 0110): the promise is about the code, literally.
+      "sin el texto del error ni datos personales",
+      "No lleva el texto del error",
+      "ni tu dirección IP",
+      "ni el contenido de tu workspace",
+      "Solo errores",
     ]);
   });
 
@@ -179,10 +199,10 @@ describe("política de privacidad · RGPD (#1172)", () => {
     const sentry = LEGAL_PROCESSORS.find((processor) => processor.name === "Sentry");
 
     // Resend recibe datos desde el primer feedback: callarlo sería callar una cesión
-    // que ya ocurre. Sentry sigue sin instalar.
+    // que ya ocurre. Sentry también es activo desde #1175.
     expect(resend?.active).not.toBe(false);
     expect(resend?.purpose).toMatch(/feedback/i);
-    expect(sentry?.active).toBe(false);
+    expect(sentry?.active).not.toBe(false);
     expect(html("privacidad")).not.toMatch(/Resend[^<]*<span class="legalPending"/);
   });
 

@@ -53,6 +53,11 @@ It never gets the implementation plan, the commit-by-commit story, or the
 implementer's reasoning. A reviewer who is told *why* an approach was chosen tends
 to ratify it; the point of the second context is that it has not already agreed.
 
+**Exception: agents that run something instead of reviewing.** `gate-runner` has
+nothing to judge, so it gets neither claim nor evidence. It gets the tree to act on
+(an absolute path) and, when known, whether `build` applies. It still never gets the
+reasoning.
+
 Everything else the agent needs it reads itself, from the paths the diff names. Point
 it at the canon rather than pasting the canon: [`CONTEXT.md`](../../CONTEXT.md),
 the relevant `docs/adr/`, [`design-system.md`](../design-system.md),
@@ -67,7 +72,8 @@ in exactly the place nobody looks.
   *warning* fails it.
 - `bun run build` as well when the change touches types Next generates — routes,
   page props, `searchParams`. A green test run is not a green build; `tsc --noEmit`
-  cannot see those types.
+  cannot see those types. The full list is in
+  [`verification-gate.md` § When `build` applies](verification-gate.md#when-build-applies).
 - **In a worktree, `bun install` first.** Otherwise `@worthline/*` resolves to the
   parent checkout's `node_modules` and the agent gates a different tree than the one
   it edited.
@@ -94,6 +100,11 @@ another report to reconcile.
 
 ## Agents defined in this repo
 
-None yet. Each of the first tranche registers itself here as it lands:
-`gate-runner` (#1623), `calc-reviewer` (#1624), and `wl-db-reviewer` plus
-`front-reviewer` (#1625).
+Each agent registers itself here as it lands. The first tranche is tracked in #1621.
+
+- [`gate-runner`](../../.claude/agents/gate-runner.md) (#1623) runs `bun run verify`,
+  plus `bun run build` when the change needs it, and returns only the verdict: two
+  lines when green, or the failing step, package and red lines when red. Brief it with
+  the tree path. Tools: `Bash`, `Read`, `Grep`, plus a `PreToolUse` hook that blocks
+  Bash commands that change state. It never edits.
+- [`calc-reviewer`](../../.claude/agents/calc-reviewer.md) (#1624): read-only review of a calc, db or figure-preview diff against the financial-domain invariants; brief it with the issue and the diff.

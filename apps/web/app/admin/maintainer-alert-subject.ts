@@ -4,12 +4,16 @@ import {
   dailyCapturePassLabel,
   missedCapturePassFromHoldingId,
 } from "./missed-capture-alert";
+import {
+  provisioningCapDayFromHoldingId,
+  provisioningCapDayLabel,
+} from "./provisioning-cap-alert";
 import { sourceSyncWorkspaceFromHoldingId } from "./source-sync-alert";
 
 /**
  * What a maintainer alert is ABOUT, in words a maintainer reads (ADR 0064).
  *
- * The holding slot of the dedup key does not always hold a holding: four raisers
+ * The holding slot of the dedup key does not always hold a holding: five raisers
  * put a sentinel there to name the alert's subject, and those must never reach a
  * maintainer's eyes raw. The `kind` says which shape the subject has, so the two
  * surfaces that print it — the `/admin` index (two cells) and the detail header
@@ -19,7 +23,8 @@ import { sourceSyncWorkspaceFromHoldingId } from "./source-sync-alert";
  *   - `workspace`: about a workspace, not one of its holdings — the cron's sync
  *     phase (#1755), a user's feedback message (#1174);
  *   - `global`: about no tenant at all — a missed cron pass (#1339), a catalog
- *     identity collision (#1744).
+ *     identity collision (#1744), a day whose provisioning cap refused sign-ups
+ *     (#1175).
  */
 export interface MaintainerAlertSubject {
   kind: "holding" | "workspace" | "global";
@@ -54,6 +59,19 @@ export function maintainerAlertSubject(alert: {
         return {
           kind: "global",
           subject: dailyCapturePassLabel(pass),
+          workspace: "flota",
+        };
+      }
+      break;
+    }
+    case "provisioning_cap": {
+      // A refused sign-up belongs to no tenant: its subject is the day whose cap
+      // turned it away, and it never carries who was refused.
+      const day = provisioningCapDayFromHoldingId(alert.holdingId);
+      if (day !== null) {
+        return {
+          kind: "global",
+          subject: `altas del ${provisioningCapDayLabel(day)}`,
           workspace: "flota",
         };
       }

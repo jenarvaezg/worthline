@@ -13,6 +13,7 @@ import { describe, expect, test } from "vitest";
 
 import { MaintainerAlertDetail } from "./maintainer-alert-detail";
 import { buildMissedCaptureAlerts } from "./missed-capture-alert";
+import { buildProvisioningCapAlert } from "./provisioning-cap-alert";
 import { buildUserFeedbackAlert } from "./user-feedback-alert";
 
 const PAYLOAD: MaintainerAlertPayload = {
@@ -378,6 +379,41 @@ describe("MaintainerAlertDetail", () => {
     );
 
     expect(html).toContain("Feedback ilegible");
+    expect(html).not.toContain("Sin traza de cálculo");
+  });
+
+  test("renders a refused sign-up as the day's cap, never as a holding (#1175)", () => {
+    // Illustrative cap only — the real figure lives in the deployment's env.
+    const refused = buildProvisioningCapAlert({
+      detectedAt: "2026-03-14T10:00:00.000Z",
+      refusal: {
+        dayKey: "2026-03-14",
+        policy: { kind: "limited", limit: 2 },
+        provisionedToday: 2,
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "provisioning_cap",
+          workspaceId: refused.workspaceId,
+          holdingId: refused.holdingId,
+          occurrences: [
+            {
+              id: "occ-1",
+              payload: refused.payload,
+              occurredAt: "2026-03-14T10:00:00.000Z",
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Cupo diario de altas");
+    expect(html).toContain("flota · altas del 14-03-2026");
+    expect(html).toContain("Cupo <strong>2</strong>");
+    expect(html).not.toContain("holding provisioning-cap");
     expect(html).not.toContain("Sin traza de cálculo");
   });
 

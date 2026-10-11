@@ -127,6 +127,9 @@ const KEY_EXPORTS = [
   "resolveAssetClassBreakdown",
   "isGeoCurrencyNotApplicableAssetClass",
   "validateImportedExposureProfile",
+  "resolveExposureProfile",
+  // portfolio cost lens (#1717)
+  "portfolioCost",
   // portfolio-grouping (#154, #1548)
   "groupPortfolio",
   "signedMinor",

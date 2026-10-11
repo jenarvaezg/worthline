@@ -39,13 +39,23 @@ export interface RawGlobalExposureProfileIdentityInput {
 /**
  * The instruments that carry a look-through exposure profile — the equity/fund
  * family keyed by security id or provider symbol. The single source of truth for "is
- * this a market holding with a catalog identity": both `resolveProfile`
+ * this a market holding with a catalog identity": both `resolveExposureProfile`
  * (look-through) and {@link deriveExposureCatalogIdentity} (#1097) read it, so
  * the set that gets a profile lookup and the set that registers a catalog stub
  * never drift.
  */
 export const INVESTMENT_PROFILE_INSTRUMENTS: ReadonlySet<Instrument> =
   new Set<Instrument>(["fund", "etf", "stock", "index", "pension_plan"]);
+
+/**
+ * The catalog instruments that wrap a portfolio and charge for running it — every
+ * {@link INVESTMENT_PROFILE_INSTRUMENTS} member but the directly held share, which
+ * has no ongoing charge (#1717, ADR 0109). Derived, not listed, so a new market
+ * instrument lands here by default and someone has to decide to take it out.
+ */
+export const FUND_WRAPPER_INSTRUMENTS: ReadonlySet<Instrument> = new Set<Instrument>(
+  [...INVESTMENT_PROFILE_INSTRUMENTS].filter((instrument) => instrument !== "stock"),
+);
 
 /** The provider vocabulary as a set, derived from the single list in `./prices`. */
 const PROVIDER_SET: ReadonlySet<InvestmentPriceProvider> = new Set(

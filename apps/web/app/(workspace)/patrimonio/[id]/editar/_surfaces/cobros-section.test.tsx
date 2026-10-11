@@ -54,11 +54,12 @@ function renderSection(
   return renderToStaticMarkup(
     <CobrosSection
       createPayoutAction={noop}
-      createPayoutScheduleAction={noop}
+      createIncomeAction={noop}
       currency="EUR"
       currentUrl="/patrimonio/h1/editar"
       deletePayoutAction={noop}
       deletePayoutScheduleAction={noop}
+      holdingId="h1"
       monthlySpendingMinor={over.monthlySpendingMinor ?? null}
       payouts={[DIVIDEND]}
       privacyMode={false}
@@ -131,6 +132,48 @@ describe("CobrosSection wiring", () => {
   test("shows the coverage percentage when spending is declared", () => {
     const markup = renderSection({ monthlySpendingMinor: 220000 });
     expect(markup).toContain("de tu gasto declarado");
+  });
+});
+
+// ── the declaration door (#1673) ──────────────────────────────────────────────
+
+describe("CobrosSection — the same declaration door as Rentas (#1673)", () => {
+  test("declaring here asks for the nature, basis and provenance, nothing preselected for the person", () => {
+    const markup = renderSection();
+    const checked = (name: string, value: string) =>
+      new RegExp(`name="${name}" checked="" value="${value}"`).test(markup);
+
+    expect(checked("nature", "")).toBe(true);
+    expect(checked("nature", "passive")).toBe(false);
+    expect(checked("amountBasis", "")).toBe(true);
+    expect(markup).toContain("De dónde sale la cifra");
+    expect(markup).toMatch(/name="provenance" value="official_simulation"/);
+    expect(markup).toMatch(/name="provenance" value="user_estimate"/);
+    expect(markup).toContain('name="provenanceAsOf" value=""');
+  });
+
+  test("every declared income says whether it counts — and a migrated one that it has no provenance", () => {
+    const markup = renderSection();
+
+    expect(markup).toContain(">Cuenta<");
+    expect(markup).toContain("Cuenta como renta pasiva");
+    expect(markup).toContain("Procedencia sin declarar");
+    expect(markup).toContain('href="/objetivos/rentas"');
+  });
+
+  test("one that does not count says which declaration keeps it out", () => {
+    const markup = renderSection({ schedules: [{ ...RENT, nature: null }] });
+
+    expect(markup).toContain(">No cuenta<");
+    expect(markup).toContain(
+      "Naturaleza sin declarar: esta renta no cuenta en las cifras.",
+    );
+  });
+
+  test("one that has not started yet counts from its first payment", () => {
+    const markup = renderSection({ schedules: [{ ...RENT, startISO: "2027-01-01" }] });
+
+    expect(markup).toContain("Contará como renta pasiva desde el 1 ene 2027");
   });
 });
 

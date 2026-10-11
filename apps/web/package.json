@@ -13,6 +13,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@paddle/paddle-js": "^1.6.5",
     "@paddle/paddle-node-sdk": "^3.8.0",
+    "@sentry/nextjs": "^11.6.0",
     "@tursodatabase/api": "^2.0.4",
     "@worthline/db": "workspace:*",
     "@worthline/domain": "workspace:*",
