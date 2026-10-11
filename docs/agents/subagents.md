@@ -94,14 +94,7 @@ another report to reconcile.
 
 ## Agents defined in this repo
 
-Each of the first tranche registers itself here as it lands:
-`gate-runner` (#1623), `calc-reviewer` (#1624), and `wl-db-reviewer` plus
-`front-reviewer` (#1625).
+Each of the first tranche registers itself here as it lands; still to come:
+`gate-runner` (#1623), and `wl-db-reviewer` plus `front-reviewer` (#1625).
 
-- [`calc-reviewer`](../../.claude/agents/calc-reviewer.md) (#1624) reviews a diff that
-  touches `packages/domain` or `packages/db` against the four financial-domain
-  invariants: average cost and not FIFO, preview and write from one engine, a
-  traspaso pair cancelled by `transferId` and never by date, and a bounded ripple
-  that freezes the right rung. Brief it with the issue and the diff; it returns a
-  verdict and each finding with a counterexample. Tools: `Read`, `Grep`, `Glob`,
-  `Bash`. It never edits.
+- [`calc-reviewer`](../../.claude/agents/calc-reviewer.md) (#1624): read-only review of a calc, db or figure-preview diff against the financial-domain invariants; brief it with the issue and the diff.
