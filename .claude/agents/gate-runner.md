@@ -137,8 +137,10 @@ GATE GREEN: verify ✓ · build ✓ | build not applicable (<why>)
 ```
 
 `build not applicable` always carries its reason, for example
-`(diff touches only docs)`. Each closing line is Turbo's `Tasks:` line, copied
-verbatim from its own log. verify's is always there; add build's when build ran.
+`(diff touches only docs)`. A closing line is the **last** `Tasks:` line in that
+gate's own log, copied verbatim. verify runs Turbo twice, so its log has two; take
+the last one, from the test step, and nothing else. verify's closing line is always
+there; add build's when build ran.
 
 **Red: at most 15 lines.**
 
