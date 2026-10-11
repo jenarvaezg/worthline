@@ -81,7 +81,9 @@ export interface ChatToolsInput {
    */
   typedBalanceSeries?: TypedBalanceSeriesReading;
   /**
-   * The traspaso this turn's own message states, read by worthline itself (#1482).
+   * The traspaso this turn's own message states, read by worthline itself (#1482) — or,
+   * when that message states nothing about one («sí, procede»), the last one the user
+   * wrote that no traspaso card has spent yet (#1798).
    *
    * The whole `propose_transfer` lane builds from THIS and never from the model's
    * arguments: a traspaso writes two rows plus an inherited cost, so an importe the

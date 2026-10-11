@@ -76,6 +76,33 @@ export function transferDictatedLine(dictated: {
   return `${formatIsoDayEs(dictated.executedAt)} · ${portion}${arrived}`;
 }
 
+/** The caption under {@link transferDictatedLine} when the figures are the turn's own. */
+export const TRANSFER_DICTATED_CAPTION = "Lo que he leído en tu mensaje";
+
+/** How much of an earlier message the caption quotes: enough to recognise it by. */
+const QUOTED_OPENING_CHARS = 40;
+
+/**
+ * The caption when the figures come from an EARLIER message (#1798) — «sí, procede»
+ * reached back to them — quoting its opening so the person knows which one to check
+ * the echo against. Whitespace is flattened first: a pasted block is all tabs and
+ * line breaks, and a caption is one line.
+ */
+export function transferEarlierMessageCaption(message: string): string {
+  return `Lo que he leído en un mensaje anterior tuyo: «${openingOf(message)}»`;
+}
+
+/** The first words of a message, cut at a word boundary and marked when cut. */
+function openingOf(message: string): string {
+  const chars = Array.from(message.replace(/\s+/gu, " ").trim());
+  if (chars.length <= QUOTED_OPENING_CHARS) return chars.join("");
+  const head = chars.slice(0, QUOTED_OPENING_CHARS + 1).join("");
+  const space = head.lastIndexOf(" ");
+  const cut =
+    space > 0 ? head.slice(0, space) : chars.slice(0, QUOTED_OPENING_CHARS).join("");
+  return `${cut.trimEnd()}…`;
+}
+
 /**
  * One half of the pair, term by term as it will be written:
  * `37,203 part. × 19,87091 € · 739,22 €`.

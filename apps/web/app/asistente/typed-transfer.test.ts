@@ -6,6 +6,7 @@ import {
   PASTED_SUSCRIPCION,
   pastedTransferReceipt,
 } from "./pasted-transfer-receipt-fixture";
+import { transferOutput } from "./proposal-parsers/fixtures";
 import {
   parseTypedTransfer,
   typedTransferGapMessage,
@@ -79,14 +80,13 @@ describe("parseTypedTransfer (#1482)", () => {
     expect(reading).toEqual({ missing: ["amount"], status: "incomplete" });
   });
 
-  it("names both gaps when neither the importe nor the date was written", () => {
-    const reading = parseTypedTransfer("He traspasado del World al EM", TODAY);
-
-    expect(reading.status).toBe("incomplete");
-    expect(reading.status === "incomplete" && reading.missing).toEqual([
-      "amount",
-      "date",
-    ]);
+  it("reads a message with no figure, no date and no «todo» as stating nothing (#1798)", () => {
+    // Not «incomplete»: the word «traspaso» is not one of the things a traspaso is made
+    // of — «Sí, procede con la creación y el traspaso» says it too — and only a message
+    // that states nothing lets the walk reach the figures written before it.
+    expect(parseTypedTransfer("He traspasado del World al EM", TODAY)).toEqual({
+      status: "absent",
+    });
   });
 
   it("refuses two money figures instead of guessing which one left", () => {
@@ -326,21 +326,142 @@ describe("typedTransferInTurn (#1482)", () => {
       transfer: { executedAt: TODAY, portion: { amountMinor: 101867, kind: "amount" } },
     });
   });
+});
 
-  it("never reaches back into an earlier user turn for the figure", () => {
+describe("typedTransferInTurn: the figures last until a card spends them (#1798)", () => {
+  const WRITTEN = "Hoy he traspasado 1.018,67 € del World al EM";
+
+  function assistantText(text: string): UIMessage {
+    return { id: "a1", parts: [{ text, type: "text" }], role: "assistant" };
+  }
+
+  it("«sí, procede» after a legible message reads THAT message, and says it was an earlier one", () => {
     const reading = typedTransferInTurn(
       [
-        userMessage("Hoy traspasé 1.018,67 € del World al EM"),
-        {
-          id: "a1",
-          parts: [{ text: "¿de qué fondo?", type: "text" }],
-          role: "assistant",
-        },
-        userMessage("del World al EM"),
+        userMessage(WRITTEN),
+        assistantText("¿Creo antes el fondo de destino?"),
+        userMessage("Sí, procede con la creación y el traspaso"),
       ],
       TODAY,
     );
 
-    expect(reading.status).toBe("incomplete");
+    expect(reading).toEqual({
+      earlierMessage: WRITTEN,
+      status: "read",
+      transfer: { executedAt: TODAY, portion: { amountMinor: 101867, kind: "amount" } },
+    });
+  });
+
+  it("a message of chat in between changes nothing", () => {
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        assistantText("No encuentro el fondo de destino."),
+        userMessage("¿Lo ves?"),
+        assistantText("Sí, ya lo veo."),
+        userMessage("Vale, procede"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({
+      earlierMessage: WRITTEN,
+      status: "read",
+      transfer: { portion: { amountMinor: 101867 } },
+    });
+  });
+
+  it("stops at a traspaso card already drawn, so «hazlo otra vez» does not repeat it", () => {
+    // Confirmed or not, the card was born of that reading and spent it.
+    const card = {
+      input: {},
+      output: transferOutput(),
+      state: "output-available",
+      toolCallId: "call-1",
+      type: "tool-propose_transfer",
+    } as unknown as UIMessage["parts"][number];
+
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        {
+          id: "a1",
+          parts: [{ text: "Aquí tienes:", type: "text" }, card],
+          role: "assistant",
+        },
+        userMessage("Hazlo otra vez"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toEqual({ status: "absent" });
+  });
+
+  it("a refused call is no card, and spends nothing", () => {
+    const refusal = {
+      input: {},
+      output: { error: "transfer_not_in_message", message: "…" },
+      state: "output-available",
+      toolCallId: "call-1",
+      type: "tool-propose_transfer",
+    } as unknown as UIMessage["parts"][number];
+
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        { id: "a1", parts: [refusal], role: "assistant" },
+        userMessage("Sí, procede"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({ earlierMessage: WRITTEN, status: "read" });
+  });
+
+  it("an incomplete last message is told what IT lacks, never filled from an earlier one", () => {
+    const reading = typedTransferInTurn(
+      [
+        userMessage("El 12/08/2026 traspasé todo el World al EM"),
+        assistantText("¿Cuánto fue?"),
+        userMessage("Fueron 739,22 €"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["date"], status: "incomplete" });
+  });
+
+  it("resolves «ayer» in an earlier message against the clock of THIS turn, as before", () => {
+    const reading = typedTransferInTurn(
+      [userMessage("Ayer traspasé 500 € del World al EM"), userMessage("Sí, procede")],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({
+      status: "read",
+      transfer: { executedAt: "2026-08-20" },
+    });
+  });
+
+  it("an identifier written in between is not a figure: the ISIN and the plan code are transparent", () => {
+    // The incident's own detour: the person typed the destination's ISIN because the
+    // assistant could not find it. Its digits are not an importe.
+    const reading = typedTransferInTurn(
+      [
+        userMessage(WRITTEN),
+        assistantText("No encuentro el fondo de destino."),
+        userMessage("El ISIN es IE00B4L5Y983, y el del plan N5394"),
+        userMessage("Sí, procede"),
+      ],
+      TODAY,
+    );
+
+    expect(reading).toMatchObject({ earlierMessage: WRITTEN, status: "read" });
+  });
+
+  it("with nothing written at all, the reading is absent", () => {
+    expect(typedTransferInTurn([userMessage("Sí, procede")], TODAY)).toEqual({
+      status: "absent",
+    });
   });
 });

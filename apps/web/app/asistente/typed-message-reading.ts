@@ -90,6 +90,26 @@ export function dateInMessage(text: string, today: string): DateToken | null {
   return null;
 }
 
+/**
+ * An ISIN-SHAPED token. Cut out of the text before any figure is counted, and that is
+ * not cosmetic: `IE00B43VDT70` holds `00`, `43` and `70`, so a message naming its fund
+ * properly would otherwise read as a message full of numbers.
+ */
+export const ISIN_TOKEN =
+  /(?<![A-Za-z0-9])[A-Za-z]{2}[A-Za-z0-9]{9}[0-9](?![A-Za-z0-9])/gu;
+
+/** A plan de pensiones' DGS code as people write it: «N5394», «n-5394» (#1454). */
+const DGS_CODE_TOKEN = /(?<![A-Za-z0-9])N-?\d{4}(?![A-Za-z0-9])/giu;
+
+/**
+ * The text with every security identifier cut out — ISIN-shaped or a plan's DGS code —
+ * whether or not its check digit holds: either way it names an instrument, and its
+ * digits are not a figure of anything.
+ */
+export function withoutSecurityIds(text: string): string {
+  return text.replace(ISIN_TOKEN, " ").replace(DGS_CODE_TOKEN, " ");
+}
+
 /** Cut one match out of the text it was found in. */
 export function cutMatch(text: string, match: RegExpExecArray): string {
   return text.slice(0, match.index) + text.slice(match.index + match[0].length);

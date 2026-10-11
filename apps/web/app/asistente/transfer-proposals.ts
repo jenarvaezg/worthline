@@ -68,10 +68,12 @@ import type {
   TransferProposalSide,
 } from "./transfer-proposal-contract";
 import {
+  TRANSFER_DICTATED_CAPTION,
   TRANSFER_FOLIO,
   TRANSFER_IMPACT_CAPTION,
   TRANSFER_NEUTRALITY_NOTE,
   transferDictatedLine,
+  transferEarlierMessageCaption,
   transferHalfLine,
   transferInheritedCostLine,
   transferPriceProvenanceNote,
@@ -97,6 +99,11 @@ export interface TransferArgs {
   destinationHolding: string;
   /** The traspaso worthline read in the user's own message. Never the model's args. */
   transfer: TypedTransfer;
+  /**
+   * The earlier user message those figures were read from, when it was not the turn's
+   * own (#1798): «sí, procede» reaches back to them, and the card says so.
+   */
+  earlierMessage?: string;
   summary?: string;
 }
 
@@ -470,6 +477,10 @@ export async function buildTransferProposal(
         portion,
         ...(destinationUnits === undefined ? {} : { destinationUnits }),
       }),
+      sourceCaption:
+        args.earlierMessage === undefined
+          ? TRANSFER_DICTATED_CAPTION
+          : transferEarlierMessageCaption(args.earlierMessage),
       draft: { proposalId: proposal.id },
       folio: TRANSFER_FOLIO,
       impact: {

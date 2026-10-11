@@ -51,10 +51,12 @@ import type { TransferPortion } from "@worthline/domain";
 import type { UIMessage } from "ai";
 
 import { normalizeExtractedNumber } from "./attachment-extraction-contract";
+import { proposalCardInPart } from "./proposal-card-presence";
 import {
   dateInMessage,
   joinRefusalGaps,
   MAX_SCANNED_CHARS,
+  withoutSecurityIds,
 } from "./typed-message-reading";
 import {
   type OperationReceiptFigures,
@@ -100,9 +102,26 @@ export type TypedTransferGap =
   | "fee";
 
 export type TypedTransferReading =
-  | { status: "read"; transfer: TypedTransfer }
-  /** Nothing was written, or what was written is ambiguous. Never a silent guess. */
-  | { status: "incomplete"; missing: TypedTransferGap[] };
+  | {
+      status: "read";
+      transfer: TypedTransfer;
+      /**
+       * The text of the EARLIER user message the figures were read from (#1798), when
+       * the turn's own message stated nothing about a traspaso — «sí, procede». Absent
+       * when they come from the turn's own message: the card says where they came from
+       * only when it is not the obvious place.
+       */
+      earlierMessage?: string;
+    }
+  /** Something was written, but not enough — or not unambiguously. Never a silent guess. */
+  | { status: "incomplete"; missing: TypedTransferGap[] }
+  /**
+   * The message states nothing about a traspaso: no figure, no date, no «todo», no
+   * legible pasted block (#1798). Kept apart from `incomplete` because it is the one
+   * reading that lets the walk over the conversation go on to an earlier message — a
+   * half-written traspaso is told what it is missing, «vale, gracias» is not.
+   */
+  | { status: "absent" };
 
 /**
  * What each gap says back to the person, in the words that let them fix it.
@@ -219,10 +238,18 @@ export function parseTypedTransfer(text: string, today: string): TypedTransferRe
   // untouched.
   const receipt = operationReceiptFigures(scanned);
   if (receipt !== null) return receiptReading(receipt, scanned, today);
-  const dated = dateInMessage(scanned, today);
+  // The identifiers go first (#1798): a person who types the destination's ISIN so the
+  // assistant can find it has written no figure, and a message of «todo» naming its
+  // fund by ISIN is not «todo» plus an importe.
+  const prose = withoutSecurityIds(scanned);
+  const dated = dateInMessage(prose, today);
   // The date is cut out before the figures are counted: `12/08/2026` is three numbers
   // to a scanner and would make every dated message ambiguous.
-  const portion = portionIn(dated === null ? scanned : dated.rest);
+  const portion = portionIn(dated === null ? prose : dated.rest);
+  // Not a single thing a traspaso is made of: this message is about something else
+  // («sí, procede», «vale», «¿lo ves?»), and saying it lacks an importe and a date would
+  // be answering a question nobody asked in it (#1798).
+  if (dated === null && !portion.ok && portion.statesNothing) return { status: "absent" };
 
   const missing: TypedTransferGap[] = [];
   if (!portion.ok) missing.push(portion.gap);
@@ -320,34 +347,63 @@ function confirmsArrival(figures: OperationReceiptFigures, scanned: string): boo
 }
 
 /**
- * The traspaso dictated in THIS turn — the last user message and nothing else.
+ * The traspaso the user has written and no card has spent yet (#1798).
  *
- * Scoped to the turn, and to the user's own role, for the same two reasons as the
- * balance series: prose written by the ASSISTANT is the model quoting itself, and an
- * earlier user turn is a figure from another conversation about another traspaso. «Hoy»
- * only means something in the turn being answered.
+ * Only the user's own messages are read: prose written by the ASSISTANT is the model
+ * quoting itself, which is #1418's whole doctrine. Within those, the figures last until
+ * they are spent, which is the rule decided with Jose after «Sí, procede con la creación
+ * y el traspaso» was refused for lacking an importe two messages below the importe:
+ *
+ * - The walk goes from the most recent message back. A message that states nothing
+ *   about a traspaso is transparent, so «vale» or «¿lo ves?» breaks nothing.
+ * - The FIRST message that states something decides, read or incomplete. Two messages
+ *   are never stitched together — the importe of one and the date of another is a
+ *   traspaso nobody wrote — and a half-written one is told what IT lacks.
+ * - The walk stops at any assistant answer that carries a traspaso card, confirmed or
+ *   not: a card born of a reading spends it, so «hazlo otra vez» cannot write the same
+ *   traspaso twice.
+ *
+ * «Hoy» and «ayer» are still resolved against `today`, the clock of the turn being
+ * answered, whichever message they were written in — exactly as before.
  */
 export function typedTransferInTurn(
   messages: readonly UIMessage[],
   today: string,
 ): TypedTransferReading {
+  let turnsOwnMessage = true;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
+    if (message.role === "assistant" && message.parts.some(drewTransferCard)) break;
     if (message.role !== "user") continue;
-    return parseTypedTransfer(
-      message.parts
-        .filter((part) => part.type === "text")
-        .map((part) => (part as { text: string }).text)
-        .join("\n"),
-      today,
-    );
+    const text = message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => (part as { text: string }).text)
+      .join("\n");
+    const reading = parseTypedTransfer(text, today);
+    if (reading.status === "absent") {
+      turnsOwnMessage = false;
+      continue;
+    }
+    if (reading.status === "read" && !turnsOwnMessage) {
+      return { ...reading, earlierMessage: text };
+    }
+    return reading;
   }
-  return { missing: ["amount", "date"], status: "incomplete" };
+  return { status: "absent" };
+}
+
+/**
+ * Did this part put a traspaso card on the screen? Asked through the same table the
+ * render reads (#1468), so a refused call — which paints nothing — spends nothing.
+ */
+function drewTransferCard(part: UIMessage["parts"][number]): boolean {
+  return proposalCardInPart(part)?.kind === "transfer";
 }
 
 type PortionReading =
   | { ok: true; portion: TransferPortion }
-  | { ok: false; gap: TypedTransferGap };
+  /** `statesNothing`: no figure and no «todo» at all — the gap is a silence. */
+  | { ok: false; gap: TypedTransferGap; statesNothing?: true };
 
 /**
  * How much of the origin left, or the gap that stops us knowing.
@@ -377,7 +433,11 @@ function portionIn(text: string): PortionReading {
   if (amounts.length > 1) return { gap: "ambiguous_amount", ok: false };
 
   const [amount] = amounts;
-  if (amount === undefined) return { gap: "amount", ok: false };
+  if (amount === undefined) {
+    return stated.units.length === 0
+      ? { gap: "amount", ok: false, statesNothing: true }
+      : { gap: "amount", ok: false };
+  }
 
   const amountMinor = Math.round(amount * 100);
   if (!(amountMinor > 0) || !Number.isSafeInteger(amountMinor)) {

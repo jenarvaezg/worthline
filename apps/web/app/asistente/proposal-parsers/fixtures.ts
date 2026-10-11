@@ -235,6 +235,7 @@ export function transferOutput(overrides: Payload = {}): Payload {
         positionLine: "Entran en «B»: 0 → 37,203 participaciones",
       },
       dictated: "Traspaso del 5 % el 14/08/2026",
+      sourceCaption: "Lo que he leído en tu mensaje",
       draft: { proposalId: "wl_prp_1" },
       folio: "1 propuesta · 2 holdings · 1 traspaso",
       impact: { afterMinor: 140_000_00, beforeMinor: 140_000_00, deltaMinor: 0 },
