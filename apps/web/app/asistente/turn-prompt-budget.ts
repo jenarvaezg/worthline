@@ -154,13 +154,13 @@ export const MODEL_PROMPT_CAPACITY: Readonly<Record<string, ModelPromptCapacity>
    * tokens is ~3 000 000 characters at {@link CHARS_PER_TOKEN}, which is why the
    * prose budget lands on its product ceiling rather than on its capacity.
    */
-  "google/gemini-3.1-flash-lite": {
+  "google/gemini-3.5-flash-lite": {
     inputTokens: 1_048_576,
     // Google publishes rate limits per account in AI Studio rather than per model,
     // so there is no per-minute figure to charge here.
     tokensPerMinute: null,
     source:
-      "ai.google.dev model listing (inputTokenLimit 1 048 576, output 65 536), read 2026-07-10",
+      "ai.google.dev models.get gemini-3.5-flash-lite (inputTokenLimit 1 048 576, outputTokenLimit 65 536), read 2026-10-11",
   },
   /**
    * The fallback, and its window is not what binds it: 30 000 tokens per minute

@@ -35,7 +35,7 @@ export const PROVIDER_ORDER_ENV_KEY = "WORTHLINE_CHAT_PROVIDER_ORDER";
 export const DEFAULT_PROVIDER_ALLOWLIST = [
   {
     provider: "google",
-    modelId: "gemini-3.1-flash-lite",
+    modelId: "gemini-3.5-flash-lite",
     envKey: "GOOGLE_GENERATIVE_AI_API_KEY",
     validation: ADMISSION_EVIDENCE[0],
   },

@@ -78,7 +78,7 @@ export type AdmissionEvidence = AdmittedEvidence;
  * zero, so its reading number is a floor rather than a measurement of how well it
  * reads. It says nothing about `attachments` either: that dimension did not exist.
  *
- * **Gemini, 2026-08-16 (#1376) — the mark below.** The set grew to 23 questions and 91
+ * **Gemini 3.1 Flash-Lite, 2026-08-16 (#1376) — the mark the one below replaced.** The set grew to 23 questions and 91
  * checks, which is this ADR's revalidation trigger, so Gemini was re-run: 70/91,
  * complete, admitted, with `attachments` at 20/26. Its predecessor read 62/83.
  *
@@ -106,23 +106,42 @@ export type AdmissionEvidence = AdmittedEvidence;
  * **Cerebras's mark is stale on this count too.** Its total describes the set it was
  * measured on and is left exactly as measured: a mark is a run, and editing one in
  * place would turn a record into a claim.
+ *
+ * **Gemini 3.5 Flash-Lite, 2026-10-11 — the mark below.** The primary changed model,
+ * not prompt: `gemini-3.1-flash-lite` gives way to the successor Google's deprecations
+ * page names for it (3.1's earliest shutdown is 2027-05-07). Both are free of charge on
+ * the free tier and `models.get` reports the same window for both (1 048 576 input,
+ * 65 536 output). 3.5 ran the current 28-question set complete: 111/129, every
+ * dimension over the bar, and not one provider error.
+ *
+ * The same-day baseline is `gemini-3.1-flash-lite` an hour later on the same tree:
+ * 90/129, but five of its 28 questions died on Google's 503 «high demand», so that run
+ * is a floor and could never be a mark. On the 23 questions both answered (104 checks)
+ * it reads 3.1 = 90, 3.5 = 93 — inside the ±5 this file documents. Check by check, 3.5
+ * gains `reading` (+3) and `attachments` (+3, among them the broker statement now
+ * reaching its card) and loses `tool-discipline` (−3), and that loss is rule-shaped
+ * rather than `responde en español`: it proposed without resolving which holding
+ * `write-asks-which-holding` meant, did not ask for the real amount in
+ * `write-asks-for-the-figure`, and did not offer the document route over an
+ * unvalidated series. A proposal still needs the person's confirmation (ADR 0067), so
+ * what that costs is a card on a guessed holding, not a write. Single samples both.
  */
 export const ADMISSION_EVIDENCE = [
   {
     status: "admitted",
     provider: "google",
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.5-flash-lite",
     run: {
-      evaluatedAt: "2026-08-16",
+      evaluatedAt: "2026-10-11",
       complete: true,
-      passed: 70,
-      total: 91,
-      executedQuestions: 23,
-      totalQuestions: 23,
+      passed: 111,
+      total: 129,
+      executedQuestions: 28,
+      totalQuestions: 28,
       dimensions: [
-        { dimension: "reading", passed: 31, total: 42 },
-        { dimension: "tool-discipline", passed: 19, total: 23 },
-        { dimension: "attachments", passed: 20, total: 26 },
+        { dimension: "reading", passed: 42, total: 47 },
+        { dimension: "tool-discipline", passed: 30, total: 40 },
+        { dimension: "attachments", passed: 39, total: 42 },
       ],
     },
   },

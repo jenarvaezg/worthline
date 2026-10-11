@@ -9,7 +9,7 @@ import { readSpreadsheetGrids, type SpreadsheetGridInput } from "@web/spreadshee
  * twelve thousand characters. They were written when the WHOLE conversation lived or
  * died inside 16 000 characters, so 12 000 for one workbook was nearly the entire
  * budget and cutting was not a choice. #1408 removed that ceiling — prose is per model
- * now, and `gemini-3.1-flash-lite`, which answers virtually every turn, accepts
+ * now, and `gemini-3.5-flash-lite`, which answers virtually every turn, accepts
  * ~3 000 000 characters. The constants outlived their reason, and a real workbook
  * showed what they cost: 13 sheets of which 5 never arrived, a 425-row amortisation
  * plan cut at row 60, and the model reaching for a hypothetical figure it found in one
