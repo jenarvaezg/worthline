@@ -13,14 +13,10 @@
  * monthly-spending figure; otherwise it is omitted rather than invented.
  */
 
-import { IncomeDeclarationForm } from "@web/objetivos/rentas/income-declaration-form";
-import {
-  incomeConditionLine,
-  incomeCountingStatus,
-  incomeDeclarationLine,
-  incomeProvenanceLine,
-} from "@web/objetivos/rentas/income-view";
-import type { IncomeActionResult } from "@web/objetivos/rentas/optimistic-incomes";
+import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
+import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
+import { PAYOUT_CADENCE_LABELS } from "@web/_income/income-recurrence";
+import type { IncomeAction } from "@web/_income/optimistic-incomes";
 import { PendingSubmit } from "@web/pending-submit";
 import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
 import {
@@ -29,7 +25,6 @@ import {
   passiveIncomeTrailing,
 } from "@worthline/domain";
 import Link from "next/link";
-import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
 import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
 import { LeaseTermsRow } from "./lease-terms-row";
@@ -47,34 +42,6 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
   timeZone: "UTC",
 });
 const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
-
-/**
- * Whether this income is counting — and why not when it is not — plus what it
- * declares and where its figure comes from (#1673). The same sentences the Rentas
- * list prints, from the same pure view; correcting the declaration happens there.
- */
-function IncomeDeclarationNotice({
-  schedule,
-  today,
-}: {
-  schedule: PayoutSchedule;
-  today: string;
-}) {
-  const status = incomeCountingStatus(schedule, today);
-  const condition = incomeConditionLine(schedule);
-  return (
-    <>
-      <p className={status.counts ? "incomeStatus" : "incomeStatus incomeStatusOff"}>
-        <span className="incomeStatusMark">{status.mark}</span> {status.text}
-      </p>
-      <p className="cobrosCap">
-        {incomeDeclarationLine(schedule)} · {incomeProvenanceLine(schedule)}
-        {condition ? ` · ${condition}` : ""} ·{" "}
-        <Link href="/objetivos/rentas">Corregir su declaración en Rentas</Link>
-      </p>
-    </>
-  );
-}
 
 /** A one-line human spec for a schedule row (amount · cadence · window · costs). */
 function scheduleSpec(
@@ -96,8 +63,8 @@ function scheduleSpec(
 }
 
 export function CobrosSection({
+  createIncomeAction,
   createPayoutAction,
-  createPayoutScheduleAction,
   currency,
   currentUrl,
   deletePayoutAction,
@@ -114,15 +81,13 @@ export function CobrosSection({
   today,
   updatePayoutScheduleAction,
 }: {
-  createPayoutAction: FormAction;
   /**
    * The income declaration door with this holding bound (#1673): the same action,
    * parser and required provenance as the Rentas surface. Redirects on success and
    * hands a refusal back as state (#1311).
    */
-  createPayoutScheduleAction: (
-    formData: FormData,
-  ) => IncomeActionResult | Promise<IncomeActionResult>;
+  createIncomeAction: IncomeAction;
+  createPayoutAction: FormAction;
   currency: CurrencyCode;
   currentUrl: string;
   deletePayoutAction: FormAction;
@@ -267,13 +232,11 @@ export function CobrosSection({
       <div className="cobrosForm">
         <IncomeDeclarationForm
           accessibleSuffix=" del cobro recurrente"
-          action={createPayoutScheduleAction}
-          currency={currency}
+          action={createIncomeAction}
           currentUrl={currentUrl}
           holdingId={holdingId}
           initialError={null}
           initialValues={errorValues}
-          privacyMode={privacyMode}
           readOnly={readOnly}
           showLeaseTerms={showLeaseTerms}
           submitLabel="Añadir recurrente"
@@ -349,7 +312,13 @@ export function CobrosSection({
                   </form>
                 </div>
               </div>
-              <IncomeDeclarationNotice schedule={schedule} today={today} />
+              {/* Whether it counts and why not, what it declares and where its figure
+                  comes from — the same summary the Rentas list prints (#1673). The
+                  declaration is corrected there. */}
+              <IncomeDeclarationSummary income={schedule} today={today}>
+                {" · "}
+                <Link href="/objetivos/rentas">Corregir su declaración en Rentas</Link>
+              </IncomeDeclarationSummary>
               {/* What the end date MEANS, and what happens after it (#1521). Below
                   the row rather than inside it: the sentence it prints is about the
                   rent's future, not another button. */}

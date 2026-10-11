@@ -18,16 +18,16 @@
  * month, declare its costs and lease terms, delete it.
  */
 
+import { parseScheduleExpenses } from "@web/_income/income-recurrence";
+import { parseLeaseTerms } from "@web/_income/lease-terms-form";
 import { formAction } from "@web/form-action";
 import { errorRedirectUrl, successRedirectUrl } from "@web/intake";
 import { currentUrlOf } from "@web/inversiones/return-url";
 import {
   buildPayoutResult,
   type PayoutFields,
-  parseScheduleExpenses,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
-import { parseLeaseTerms } from "@web/patrimonio/[id]/editar/_surfaces/lease-terms-form";
 
 /** Lift the one-off payout inputs off the FormData into the pure field map. */
 function parsePayoutFieldsFromForm(formData: FormData): PayoutFields {

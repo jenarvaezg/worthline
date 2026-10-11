@@ -12,7 +12,6 @@
 import { holdingCobrosHref, holdingPublicIdIndex } from "@web/holding-route";
 import type { WorthlineStore } from "@web/store";
 import type { Income } from "@worthline/domain";
-import { sortIncomesForDisplay } from "./income-view";
 
 /** What a linked income's row says about its holding. */
 export interface IncomeHolding {
@@ -22,7 +21,10 @@ export interface IncomeHolding {
 }
 
 export interface RentasReadModel {
-  /** Every income, in display order (see `sortIncomesForDisplay`). */
+  /**
+   * Every income, in store order. The display order is the ledger's, applied once
+   * after its optimistic fold (`sortIncomesForDisplay`).
+   */
   incomes: Income[];
   /** The live holdings incomes are linked to, by internal id. */
   holdingById: Record<string, IncomeHolding>;
@@ -38,7 +40,7 @@ export async function loadRentas({
     incomes.flatMap((income) => (income.holdingId === null ? [] : [income.holdingId])),
   );
   if (linkedIds.size === 0) {
-    return { holdingById: {}, incomes: sortIncomesForDisplay(incomes) };
+    return { holdingById: {}, incomes };
   }
 
   const [assets, publicIdRows] = await Promise.all([
@@ -55,5 +57,5 @@ export async function loadRentas({
       href: publicId === undefined ? null : holdingCobrosHref(publicId),
     };
   }
-  return { holdingById, incomes: sortIncomesForDisplay(incomes) };
+  return { holdingById, incomes };
 }

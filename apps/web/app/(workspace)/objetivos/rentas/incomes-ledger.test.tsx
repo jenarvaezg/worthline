@@ -109,6 +109,29 @@ describe("the list", () => {
     expect(html).toContain(">Cuenta<");
   });
 
+  test("a linked income whose holding is in the Papelera says it does not count", () => {
+    const html = render({
+      holdingById: {},
+      incomes: [
+        income({ holdingId: "asset_gone", label: "Alquiler", startISO: "2024-01-01" }),
+      ],
+    });
+
+    expect(html).toContain("Generada por un activo que está en la Papelera");
+    expect(html).toContain(">No cuenta<");
+    expect(html).toContain("Su activo está en la Papelera");
+  });
+
+  test("the basis note says plainly that a nominal or undeclared amount does not count", () => {
+    const html = render();
+
+    expect(html).toContain("solo cuenta un importe en");
+    expect(html).toMatch(
+      /En euros de cada cobro \(nominal\) o[\s\S]*?no cuenta en ninguna cifra\./,
+    );
+    expect(html).not.toContain("no se cuenta como si lo fuera");
+  });
+
   test("every stored row can be corrected and deleted", () => {
     const html = render({ incomes: [income()] });
 

@@ -43,7 +43,44 @@ describe("incomeCountingStatus", () => {
     expect(incomeCountingStatus(income(), TODAY)).toEqual({
       counts: true,
       mark: "Cuenta",
-      text: "Cuenta como renta pasiva: sus cobros hasta hoy suman en la renta pasiva de su activo.",
+      text: "Cuenta como renta pasiva: sus cobros de los últimos 12 meses suman en la renta pasiva de su activo.",
+    });
+  });
+
+  test("one that ended inside the 12-month window still counts what it paid", () => {
+    expect(incomeCountingStatus(income({ endISO: "2026-06-01" }), TODAY)).toEqual({
+      counts: true,
+      mark: "Cuenta",
+      text: "Terminó el 1 jun 2026: sus cobros hasta esa fecha aún suman en la renta pasiva de los últimos 12 meses.",
+    });
+  });
+
+  test("one that ended years ago says it no longer adds anything", () => {
+    expect(incomeCountingStatus(income({ endISO: "2022-03-01" }), TODAY)).toEqual({
+      counts: false,
+      mark: "No cuenta",
+      text: "Terminó el 1 mar 2022: ya no le queda ningún cobro en la renta pasiva de los últimos 12 meses.",
+    });
+  });
+
+  test("one whose every recent payment was excluded says it adds nothing now", () => {
+    const status = incomeCountingStatus(
+      income({ cadence: "annual", startISO: "2024-01-01", exclusions: ["2026-01-01"] }),
+      TODAY,
+    );
+
+    expect(status).toEqual({
+      counts: false,
+      mark: "No cuenta",
+      text: "Ningún cobro suyo cae en los últimos 12 meses: ahora mismo no suma en la renta pasiva.",
+    });
+  });
+
+  test("one whose holding is in the Papelera does not count while it stays there", () => {
+    expect(incomeCountingStatus(income(), TODAY, { holdingInTrash: true })).toEqual({
+      counts: false,
+      mark: "No cuenta",
+      text: "Su activo está en la Papelera: mientras siga allí, sus cobros no suman en ninguna cifra.",
     });
   });
 

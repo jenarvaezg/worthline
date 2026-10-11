@@ -4573,6 +4573,13 @@ code {
   color: var(--paper-strong);
 }
 
+/* The radio of a segmented control is hidden, so its focus is drawn on the
+   segment — inset, because the control clips its overflow (canon §5). */
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: -3px;
+}
+
 /* Debt current-state entry — mini "unmodelled past" timeline (ADR 0056, #677).
    Two facts, not prose under each field: what stays unmodelled, what's derived. */
 .debtBaselineTimeline {
@@ -11433,11 +11440,4 @@ td.rowActions > * {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-/* The radio of a segmented control is hidden, so its focus is drawn on the
-   segment — inset, because the control clips its overflow (canon §5). */
-.segmented label:has(input:focus-visible) {
-  outline: 2px solid var(--blue);
-  outline-offset: -3px;
 }

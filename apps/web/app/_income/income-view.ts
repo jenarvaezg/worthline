@@ -11,14 +11,18 @@
 
 import { INCOME_EXCLUSION_COPY } from "@web/income-exclusion-copy";
 import { formatDay } from "@web/objetivos/format-day";
-import { PAYOUT_CADENCE_LABELS } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
 import type { Income } from "@worthline/domain";
-import { incomeExclusionReason } from "@worthline/domain";
+import {
+  deriveScheduleOccurrences,
+  incomeExclusionReason,
+  passiveIncomeTrailing,
+} from "@worthline/domain";
 import {
   INCOME_AMOUNT_BASIS_CHOICES,
   INCOME_NATURE_CHOICES,
   INCOME_PROVENANCE_CHOICES,
 } from "./income-form";
+import { PAYOUT_CADENCE_LABELS } from "./income-recurrence";
 
 /** Whether an income is counting, and the sentence that says so (or why not). */
 export interface IncomeCountingStatus {
@@ -28,19 +32,35 @@ export interface IncomeCountingStatus {
   text: string;
 }
 
+/** The window the passive-income figures read: the trailing 12 months (#658). */
+const PASSIVE_WINDOW_MONTHS = 12;
+
 /**
  * The counting status, in the order a person can fix things: a missing or
  * excluding declaration first (ADR 0108's reasons, the same copy every figure
- * prints when it withholds the income), and only then the missing asset.
+ * prints when it withholds the income), then the asset — missing, or in the
+ * Papelera — and only then the calendar.
  *
  * An income without an asset is the honest odd one out: no figure reads it yet —
  * the passive-income figures sum a holding's payouts, and the dated card that will
  * consume standalone income is S3 of #1522. Saying «cuenta» there would be the
  * very lie this declaration exists to stop.
+ *
+ * The calendar is read the way the figure reads it (#1673 review): the renta
+ * pasiva sums the payouts of the trailing 12 months (`passiveIncomeTrailing`), so
+ * an income that ended years ago, or whose every recent occurrence was excluded,
+ * contributes nothing there and says so — the occurrences come from the same
+ * `deriveScheduleOccurrences` the figure uses, never a re-derivation.
  */
 export function incomeCountingStatus(
-  income: Pick<Income, "nature" | "amountBasis" | "holdingId" | "startISO">,
+  income: Income,
   todayISO: string,
+  {
+    holdingInTrash = false,
+  }: {
+    /** The linked holding sits in the Papelera: no figure reads a trashed holding. */
+    holdingInTrash?: boolean;
+  } = {},
 ): IncomeCountingStatus {
   const reason = incomeExclusionReason(income);
   if (reason !== null) {
@@ -53,6 +73,13 @@ export function incomeCountingStatus(
       text: "Sin activo enlazado: todavía ninguna cifra lee las rentas sin activo, así que de momento no cuenta.",
     };
   }
+  if (holdingInTrash) {
+    return {
+      counts: false,
+      mark: "No cuenta",
+      text: "Su activo está en la Papelera: mientras siga allí, sus cobros no suman en ninguna cifra.",
+    };
+  }
   // A future start is preserved verbatim and derives nothing until it arrives
   // (ADR 0054 point 4) — counting, but not yet.
   if (income.startISO > todayISO) {
@@ -62,11 +89,38 @@ export function incomeCountingStatus(
       text: `Contará como renta pasiva desde el ${formatDay(income.startISO)}; hasta entonces no suma ningún cobro.`,
     };
   }
-  return {
-    counts: true,
-    mark: "Cuenta",
-    text: "Cuenta como renta pasiva: sus cobros hasta hoy suman en la renta pasiva de su activo.",
-  };
+  const inWindow =
+    passiveIncomeTrailing(
+      deriveScheduleOccurrences(income, todayISO),
+      todayISO,
+      PASSIVE_WINDOW_MONTHS,
+    ).count > 0;
+  const ended = income.endISO !== null && income.endISO < todayISO;
+  if (ended) {
+    const end = formatDay(income.endISO!);
+    return inWindow
+      ? {
+          counts: true,
+          mark: "Cuenta",
+          text: `Terminó el ${end}: sus cobros hasta esa fecha aún suman en la renta pasiva de los últimos 12 meses.`,
+        }
+      : {
+          counts: false,
+          mark: "No cuenta",
+          text: `Terminó el ${end}: ya no le queda ningún cobro en la renta pasiva de los últimos 12 meses.`,
+        };
+  }
+  return inWindow
+    ? {
+        counts: true,
+        mark: "Cuenta",
+        text: "Cuenta como renta pasiva: sus cobros de los últimos 12 meses suman en la renta pasiva de su activo.",
+      }
+    : {
+        counts: false,
+        mark: "No cuenta",
+        text: "Ningún cobro suyo cae en los últimos 12 meses: ahora mismo no suma en la renta pasiva.",
+      };
 }
 
 const NATURE_LABEL = new Map<string, string>(

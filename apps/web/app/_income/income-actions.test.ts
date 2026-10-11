@@ -297,6 +297,35 @@ describe("updateIncomeDeclarationAction — correcting an existing declaration",
     });
   });
 
+  test("a field the form did not carry is left as declared, never wiped to undeclared", async () => {
+    const { id, store } = await withIncome();
+    await store.payouts.updatePayoutSchedule(id, {
+      amountBasis: "real",
+      assumedContributionThrough: "2030-10-31",
+      nature: "passive",
+    });
+
+    // A partial form: only the provenance travels.
+    await redirectOf(() =>
+      updateDeclaration(
+        form({
+          incomeId: id,
+          provenance: "official_simulation",
+          provenanceAsOf: "2026-08-18",
+        }),
+        store,
+      ),
+    );
+
+    expect((await store.payouts.readPayoutSchedules())[0]).toMatchObject({
+      nature: "passive",
+      amountBasis: "real",
+      assumedContributionThrough: "2030-10-31",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-08-18",
+    });
+  });
+
   test("a correction without provenance is refused inline, nothing written", async () => {
     const { id, store } = await withIncome();
 
@@ -343,5 +372,17 @@ describe("deleteIncomeAction", () => {
 
     expect(digest).toContain("ok=income_deleted");
     expect(await store.payouts.readPayoutSchedules()).toHaveLength(0);
+  });
+
+  test("an id the workspace no longer holds is «no encontrada», never «eliminada»", async () => {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
+
+    const digest = decodeURIComponent(
+      await redirectOf(() => deleteIncomeAction(form({ incomeId: "gone" }), store)),
+    );
+
+    expect(digest).toMatch(/error=Renta.no.encontrada/);
+    expect(digest).not.toContain("ok=income_deleted");
   });
 });

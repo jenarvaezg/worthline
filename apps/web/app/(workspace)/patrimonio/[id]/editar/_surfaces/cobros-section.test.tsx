@@ -54,7 +54,7 @@ function renderSection(
   return renderToStaticMarkup(
     <CobrosSection
       createPayoutAction={noop}
-      createPayoutScheduleAction={noop}
+      createIncomeAction={noop}
       currency="EUR"
       currentUrl="/patrimonio/h1/editar"
       deletePayoutAction={noop}

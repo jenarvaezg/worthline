@@ -7,7 +7,7 @@
  * Prior art: inversiones/exposure-profile-action.test.ts.
  */
 
-import { createIncomeAction } from "@web/objetivos/rentas/income-actions";
+import { createIncomeAction } from "@web/_income/income-actions";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";

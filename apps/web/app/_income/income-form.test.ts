@@ -11,8 +11,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildIncomeResult,
+  declarationValuesOf,
   type IncomeFields,
+  incomeDeclarationFieldsFromForm,
   incomeFieldsFromForm,
+  parseIncomeDeclaration,
 } from "./income-form";
 
 const TODAY = "2026-10-11";
@@ -196,5 +199,64 @@ describe("incomeFieldsFromForm", () => {
         startISO: "",
       }),
     );
+  });
+});
+
+describe("a correction never mistakes «not sent» for «sin declarar»", () => {
+  test("only the fields the form carried are lifted", () => {
+    const formData = new FormData();
+    formData.set("provenance", "user_estimate");
+    formData.set("provenanceAsOf", "2026-10-01");
+    formData.set("nature", "");
+
+    expect(incomeDeclarationFieldsFromForm(formData)).toEqual({
+      nature: "",
+      provenance: "user_estimate",
+      provenanceAsOf: "2026-10-01",
+    });
+  });
+
+  test("a chosen «Sin declarar» withdraws the declaration; an absent field is left out", () => {
+    expect(
+      parseIncomeDeclaration(
+        { nature: "", provenance: "user_estimate", provenanceAsOf: "2026-10-01" },
+        TODAY,
+      ),
+    ).toEqual({
+      ok: true,
+      declaration: {
+        nature: null,
+        provenance: "user_estimate",
+        provenanceAsOf: "2026-10-01",
+      },
+    });
+  });
+
+  test("the provenance is still required when the form did not send it", () => {
+    expect(parseIncomeDeclaration({ nature: "passive" }, TODAY)).toEqual({
+      ok: false,
+      error:
+        "Indica de dónde sale la cifra: una simulación oficial o una estimación tuya.",
+    });
+  });
+});
+
+describe("declarationValuesOf", () => {
+  test("prefills a stored declaration, an undeclared one as «Sin declarar»", () => {
+    expect(
+      declarationValuesOf({
+        nature: "passive",
+        amountBasis: null,
+        provenance: "official_simulation",
+        provenanceAsOf: "2026-08-18",
+        assumedContributionThrough: null,
+      }),
+    ).toEqual({
+      nature: "passive",
+      amountBasis: "",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-08-18",
+      assumedContributionThrough: "",
+    });
   });
 });

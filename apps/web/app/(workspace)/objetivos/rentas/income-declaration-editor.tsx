@@ -5,35 +5,36 @@
  * cut-off, condition — never the recurrence, whose amendments belong to the ficha's
  * affordances (end, exclusions) because they re-derive past payouts.
  *
- * Optimistic like the door: the row's declaration and counting status change the
- * moment the correction leaves, and revert with the reason beside the form if the
- * server refuses it (#1311 split terminal). Saving requires the provenance exactly
- * as declaring does, so an income from before the door gains one the first time it
- * is corrected.
+ * Optimistic like the door, through the same pure `submitIncomeMutation`: the
+ * row's declaration and counting status change the moment the correction leaves,
+ * and revert with the reason beside the form if the server refuses it (#1311 split
+ * terminal). Saving requires the provenance exactly as declaring does, so an
+ * income from before the door gains one the first time it is corrected.
  */
 
-import type { Income } from "@worthline/domain";
-import { type FormEvent, useRef, useState, useTransition } from "react";
-import { IncomeDeclarationFields } from "./income-declaration-fields";
+import { IncomeDeclarationInputs } from "@web/_income/income-declaration-inputs";
+import { declarationValuesOf } from "@web/_income/income-form";
 import {
-  type IncomeActionResult,
+  type IncomeAction,
   type IncomeMutation,
   planDeclarationUpdate,
-  rejectionOf,
-} from "./optimistic-incomes";
+  submitIncomeMutation,
+} from "@web/_income/optimistic-incomes";
+import type { Income } from "@worthline/domain";
+import { type FormEvent, useRef, useState, useTransition } from "react";
 
 export function IncomeDeclarationEditor({
   action,
+  applyOptimistic,
   currentUrl,
   income,
-  onOptimistic,
   readOnly,
   today,
 }: {
-  action: (formData: FormData) => IncomeActionResult | Promise<IncomeActionResult>;
+  action: IncomeAction;
+  applyOptimistic: (mutation: IncomeMutation) => void;
   currentUrl: string;
   income: Income;
-  onOptimistic: (mutation: IncomeMutation) => void;
   readOnly: boolean;
   today: string;
 }) {
@@ -45,23 +46,15 @@ export function IncomeDeclarationEditor({
     ? undefined
     : (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        if (inFlight.current) return;
         const formData = new FormData(event.currentTarget);
-        const plan = planDeclarationUpdate({ formData, today });
-        if (plan.kind === "reject") {
-          setRejection(plan.error);
-          return;
-        }
-        formData.set("inlineError", "1");
-        setRejection(null);
-        inFlight.current = true;
-        startTransition(async () => {
-          onOptimistic({ kind: "update", id: plan.id, declaration: plan.declaration });
-          try {
-            setRejection(rejectionOf(await action(formData)));
-          } finally {
-            inFlight.current = false;
-          }
+        submitIncomeMutation({
+          action,
+          formData,
+          inFlight,
+          onRejection: setRejection,
+          plan: () => planDeclarationUpdate({ formData, today }),
+          showOptimistic: applyOptimistic,
+          startTransition,
         });
       };
 
@@ -78,15 +71,7 @@ export function IncomeDeclarationEditor({
           {rejection}
         </p>
       ) : null}
-      <IncomeDeclarationFields
-        values={{
-          nature: income.nature ?? "",
-          amountBasis: income.amountBasis ?? "",
-          provenance: income.provenance ?? "",
-          provenanceAsOf: income.provenanceAsOf ?? "",
-          assumedContributionThrough: income.assumedContributionThrough ?? "",
-        }}
-      />
+      <IncomeDeclarationInputs values={declarationValuesOf(income)} />
       <div className="formActions">
         <button
           aria-busy={isPending}
@@ -97,6 +82,10 @@ export function IncomeDeclarationEditor({
           {isPending ? "Guardando…" : "Guardar declaración"}
         </button>
       </div>
+      {/* The saving state, announced (§8), like the door and the delete. */}
+      <p aria-live="polite" className="srOnly">
+        {isPending ? "Guardando…" : ""}
+      </p>
     </form>
   );
 }

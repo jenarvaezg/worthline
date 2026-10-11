@@ -11,32 +11,28 @@
  * would use, whether it is counting and why not. Nothing here is a server-computed
  * figure: the rows are declarations, so the optimistic one is the stored one. In
  * demo the forms post plainly and nothing is faked (§10).
+ *
+ * Why the whole list is client (§11): every row is a target of the fold — a
+ * correction re-words its status, a delete removes it, a declaration inserts one in
+ * sorted place — so a server list with client patches would need the same row
+ * markup twice. The rows carry only pure formatting (the shared summary, the window
+ * line, the money formatter); no figure is computed here.
  */
 
+import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
+import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
+import { incomeWindowLine, sortIncomesForDisplay } from "@web/_income/income-view";
+import {
+  applyIncomeMutations,
+  type IncomeAction,
+  type IncomeMutation,
+} from "@web/_income/optimistic-incomes";
 import type { CurrencyCode, Income } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { type FormEvent, useOptimistic, useTransition } from "react";
 import { IncomeDeclarationEditor } from "./income-declaration-editor";
-import { IncomeDeclarationForm } from "./income-declaration-form";
-import {
-  incomeConditionLine,
-  incomeCountingStatus,
-  incomeDeclarationLine,
-  incomeProvenanceLine,
-  incomeWindowLine,
-  sortIncomesForDisplay,
-} from "./income-view";
 import type { IncomeHolding } from "./load-rentas";
-import {
-  applyIncomeMutations,
-  type IncomeActionResult,
-  type IncomeMutation,
-} from "./optimistic-incomes";
-
-type IncomeAction = (
-  formData: FormData,
-) => IncomeActionResult | Promise<IncomeActionResult>;
 
 /** An optimistic row's key: it has no stored id yet, so it offers no actions. */
 const isPendingRow = (income: Income) => income.id.startsWith("pending:");
@@ -59,6 +55,7 @@ export function IncomesLedger({
   currency: CurrencyCode;
   currentUrl: string;
   deleteAction: (formData: FormData) => void | Promise<void>;
+  /** The LIVE holdings incomes link to; a linked id missing here is in the Papelera. */
   holdingById: Readonly<Record<string, IncomeHolding>>;
   incomes: readonly Income[];
   /** A refused no-JS declaration, brought back on the URL with what it typed. */
@@ -69,15 +66,16 @@ export function IncomesLedger({
   today: string;
   updateAction: IncomeAction;
 }) {
-  const [optimistic, addPending] = useOptimistic(
+  // Declarations, corrections and deletions all fold here before the server answers.
+  const [optimistic, applyOptimistic] = useOptimistic(
     incomes,
     (current: readonly Income[], mutation: IncomeMutation) =>
       applyIncomeMutations(current, [mutation]),
   );
   const [isDeleting, startDeleting] = useTransition();
+  // Sorted once, here, after the fold — so an optimistic row lands where the
+  // stored one will be.
   const rows = sortIncomesForDisplay(optimistic);
-  const fmt = (amountMinor: number) =>
-    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 
   const onDelete = (id: string) =>
     readOnly
@@ -86,7 +84,7 @@ export function IncomesLedger({
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
           startDeleting(async () => {
-            addPending({ kind: "delete", id });
+            applyOptimistic({ kind: "delete", id });
             await deleteAction(formData);
           });
         };
@@ -113,11 +111,11 @@ export function IncomesLedger({
         ) : (
           <ul className="incomeList">
             {rows.map((income) => {
-              const status = incomeCountingStatus(income, today);
-              const condition = incomeConditionLine(income);
               const holding =
-                income.holdingId === null ? null : holdingById[income.holdingId];
-              const pending = isPendingRow(income);
+                income.holdingId === null
+                  ? null
+                  : (holdingById[income.holdingId] ?? null);
+              const holdingInTrash = income.holdingId !== null && holding === null;
               return (
                 <li className="incomeRow" key={income.id}>
                   <div className="incomeRowTop">
@@ -132,24 +130,23 @@ export function IncomesLedger({
                             Generada por <Link href={holding.href}>{holding.name}</Link>
                           </>
                         ) : (
-                          `Generada por ${holding?.name ?? "un activo que está en la papelera"}`
+                          `Generada por ${holding?.name ?? "un activo que está en la Papelera"}`
                         )}
                       </span>
                     </div>
-                    <span className="incomeRowAmount">{fmt(income.amountMinor)}</span>
+                    <span className="incomeRowAmount">
+                      {formatMoneyMinorPrivacy(
+                        { amountMinor: income.amountMinor, currency },
+                        privacyMode,
+                      )}
+                    </span>
                   </div>
-                  <p
-                    className={
-                      status.counts ? "incomeStatus" : "incomeStatus incomeStatusOff"
-                    }
-                  >
-                    <span className="incomeStatusMark">{status.mark}</span> {status.text}
-                  </p>
-                  <p className="cobrosCap">
-                    {incomeDeclarationLine(income)} · {incomeProvenanceLine(income)}
-                    {condition ? ` · ${condition}` : ""}
-                  </p>
-                  {pending ? (
+                  <IncomeDeclarationSummary
+                    holdingInTrash={holdingInTrash}
+                    income={income}
+                    today={today}
+                  />
+                  {isPendingRow(income) ? (
                     <p className="cobrosCap">Guardando…</p>
                   ) : (
                     <div className="incomeRowActions">
@@ -157,9 +154,9 @@ export function IncomesLedger({
                         <summary>Corregir la declaración</summary>
                         <IncomeDeclarationEditor
                           action={updateAction}
+                          applyOptimistic={applyOptimistic}
                           currentUrl={currentUrl}
                           income={income}
-                          onOptimistic={addPending}
                           readOnly={readOnly}
                           today={today}
                         />
@@ -187,13 +184,11 @@ export function IncomesLedger({
       <section aria-label="Declarar una renta" className="section">
         <IncomeDeclarationForm
           action={createAction}
-          currency={currency}
+          applyOptimistic={applyOptimistic}
           currentUrl={currentUrl}
           holdingId={null}
           initialError={initialError}
           initialValues={initialValues}
-          onOptimisticAdd={(draft) => addPending({ kind: "add", income: draft })}
-          privacyMode={privacyMode}
           readOnly={readOnly}
           showLeaseTerms={false}
           submitLabel="Guardar renta"

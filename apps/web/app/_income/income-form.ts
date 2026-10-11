@@ -22,17 +22,18 @@
  *   contributing) is optional: absent means «no condition declared».
  */
 
+import type {
+  Income,
+  IncomeAmountBasis,
+  IncomeNature,
+  IncomeProvenance,
+} from "@worthline/domain";
 import {
   buildPayoutScheduleResult,
   isValidISODate,
   type ParsedPayoutSchedule,
   type PayoutScheduleFields,
-} from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
-import type {
-  IncomeAmountBasis,
-  IncomeNature,
-  IncomeProvenance,
-} from "@worthline/domain";
+} from "./income-recurrence";
 
 /** The three states of a declaration nobody has to make: «sin declarar» is `""`. */
 type Undeclared = "";
@@ -75,6 +76,14 @@ export interface IncomeDeclarationFields {
   assumedContributionThrough: string;
 }
 
+const DECLARATION_FIELDS = [
+  "nature",
+  "amountBasis",
+  "provenance",
+  "provenanceAsOf",
+  "assumedContributionThrough",
+] as const satisfies ReadonlyArray<keyof IncomeDeclarationFields>;
+
 /** Every field the declaration form posts, lifted straight off it. `""` = empty. */
 export interface IncomeFields extends PayoutScheduleFields, IncomeDeclarationFields {}
 
@@ -87,11 +96,25 @@ export interface ParsedIncomeDeclaration {
   assumedContributionThrough: string | null;
 }
 
+/**
+ * A validated correction. The provenance and its cut-off are always there — the
+ * door does not save without them — while a choice the form did not carry is
+ * ABSENT and left untouched: «not sent» is not «sin declarar» (#1673 review; the
+ * partial-form trap of `form-parcial-degrada-flag-booleano`).
+ */
+export type IncomeDeclarationPatch = Pick<
+  ParsedIncomeDeclaration,
+  "provenance" | "provenanceAsOf"
+> &
+  Partial<
+    Pick<ParsedIncomeDeclaration, "nature" | "amountBasis" | "assumedContributionThrough">
+  >;
+
 /** A validated income write — `holdingId` is added by the action that knows it. */
 export type ParsedIncome = ParsedPayoutSchedule & ParsedIncomeDeclaration;
 
 export type IncomeDeclarationResult =
-  | { ok: true; declaration: ParsedIncomeDeclaration }
+  | { ok: true; declaration: IncomeDeclarationPatch }
   | { ok: false; error: string };
 
 export type IncomeResult =
@@ -110,20 +133,46 @@ export const INCOME_FORM_FIELDS = [
   "rentRevision",
   "rentRevisionReference",
   "postMandatoryTermPolicy",
-  "nature",
-  "amountBasis",
-  "provenance",
-  "provenanceAsOf",
-  "assumedContributionThrough",
+  ...DECLARATION_FIELDS,
 ] as const satisfies ReadonlyArray<keyof IncomeFields>;
 
-/** Lift the declaration form off its FormData; an absent field is `""`. */
+/**
+ * Lift a NEW declaration off its FormData; an absent field is `""`. A new income
+ * has nothing to preserve, so a field the form did not carry is simply undeclared.
+ */
 export function incomeFieldsFromForm(formData: FormData): IncomeFields {
   const entries = INCOME_FORM_FIELDS.map((name) => {
     const raw = formData.get(name);
     return [name, typeof raw === "string" ? raw : ""] as const;
   });
   return Object.fromEntries(entries) as unknown as IncomeFields;
+}
+
+/**
+ * Lift a CORRECTION off its FormData: only the fields the form carried. Absent
+ * means «not sent, leave it as it is»; `""` means «Sin declarar» was chosen.
+ */
+export function incomeDeclarationFieldsFromForm(
+  formData: FormData,
+): Partial<IncomeDeclarationFields> {
+  const present = DECLARATION_FIELDS.flatMap((name) => {
+    const raw = formData.get(name);
+    return typeof raw === "string" ? [[name, raw] as const] : [];
+  });
+  return Object.fromEntries(present);
+}
+
+/** An income's stored declaration as the form's field values — the prefill. */
+export function declarationValuesOf(
+  income: Pick<Income, keyof IncomeDeclarationFields>,
+): IncomeDeclarationFields {
+  return {
+    nature: income.nature ?? "",
+    amountBasis: income.amountBasis ?? "",
+    provenance: income.provenance ?? "",
+    provenanceAsOf: income.provenanceAsOf ?? "",
+    assumedContributionThrough: income.assumedContributionThrough ?? "",
+  };
 }
 
 function choiceOf<T extends string>(
@@ -142,28 +191,36 @@ const PROVENANCE_REQUIRED =
 /**
  * Parse the declaration proper: nature, basis, provenance + cut-off, condition.
  * `todayISO` bounds the cut-off — the data a figure comes from cannot be dated
- * after the day it is declared.
+ * after the day it is declared. A choice ABSENT from `fields` stays absent from
+ * the result (see {@link IncomeDeclarationPatch}); the provenance and its cut-off
+ * are required whether sent or not.
  */
 export function parseIncomeDeclaration(
-  fields: IncomeDeclarationFields,
+  fields: Partial<IncomeDeclarationFields>,
   todayISO: string,
 ): IncomeDeclarationResult {
-  const nature = choiceOf(fields.nature, INCOME_NATURE_CHOICES);
-  if (!nature.ok) {
+  const nature =
+    fields.nature === undefined
+      ? undefined
+      : choiceOf(fields.nature, INCOME_NATURE_CHOICES);
+  if (nature && !nature.ok) {
     return { ok: false, error: "Elige una naturaleza válida para la renta." };
   }
-  const amountBasis = choiceOf(fields.amountBasis, INCOME_AMOUNT_BASIS_CHOICES);
-  if (!amountBasis.ok) {
+  const amountBasis =
+    fields.amountBasis === undefined
+      ? undefined
+      : choiceOf(fields.amountBasis, INCOME_AMOUNT_BASIS_CHOICES);
+  if (amountBasis && !amountBasis.ok) {
     return {
       ok: false,
       error: "Elige si el importe está en euros de hoy o en euros de cada cobro.",
     };
   }
-  const provenance = choiceOf(fields.provenance, INCOME_PROVENANCE_CHOICES);
+  const provenance = choiceOf(fields.provenance ?? "", INCOME_PROVENANCE_CHOICES);
   if (!provenance.ok || provenance.value === null) {
     return { ok: false, error: PROVENANCE_REQUIRED };
   }
-  const provenanceAsOf = fields.provenanceAsOf.trim();
+  const provenanceAsOf = (fields.provenanceAsOf ?? "").trim();
   if (provenanceAsOf === "") {
     return {
       ok: false,
@@ -177,8 +234,8 @@ export function parseIncomeDeclaration(
   if (provenanceAsOf > todayISO) {
     return { ok: false, error: "La fecha de corte no puede ser posterior a hoy." };
   }
-  const assumedContributionThrough = fields.assumedContributionThrough.trim();
-  if (assumedContributionThrough !== "" && !isValidISODate(assumedContributionThrough)) {
+  const condition = fields.assumedContributionThrough?.trim();
+  if (condition && !isValidISODate(condition)) {
     return {
       ok: false,
       error: "Introduce una fecha válida para la cotización que supone la cifra.",
@@ -187,11 +244,13 @@ export function parseIncomeDeclaration(
   return {
     ok: true,
     declaration: {
-      nature: nature.value,
-      amountBasis: amountBasis.value,
       provenance: provenance.value,
       provenanceAsOf,
-      assumedContributionThrough: assumedContributionThrough || null,
+      ...(nature?.ok ? { nature: nature.value } : {}),
+      ...(amountBasis?.ok ? { amountBasis: amountBasis.value } : {}),
+      ...(condition === undefined
+        ? {}
+        : { assumedContributionThrough: condition || null }),
     },
   };
 }
@@ -205,7 +264,18 @@ export function parseIncomeDeclaration(
 export function buildIncomeResult(fields: IncomeFields, todayISO: string): IncomeResult {
   const recurrence = buildPayoutScheduleResult(fields);
   if (!recurrence.ok) return recurrence;
-  const declaration = parseIncomeDeclaration(fields, todayISO);
-  if (!declaration.ok) return declaration;
-  return { ok: true, income: { ...recurrence.schedule, ...declaration.declaration } };
+  const parsed = parseIncomeDeclaration(fields, todayISO);
+  if (!parsed.ok) return parsed;
+  const { declaration } = parsed;
+  return {
+    ok: true,
+    income: {
+      ...recurrence.schedule,
+      nature: declaration.nature ?? null,
+      amountBasis: declaration.amountBasis ?? null,
+      provenance: declaration.provenance,
+      provenanceAsOf: declaration.provenanceAsOf,
+      assumedContributionThrough: declaration.assumedContributionThrough ?? null,
+    },
+  };
 }

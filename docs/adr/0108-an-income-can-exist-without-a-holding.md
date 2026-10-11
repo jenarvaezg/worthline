@@ -57,7 +57,10 @@ S2 opens the door, and it is ONE door with two entrances: `/objetivos/rentas`
 declares an income with no holding, and a holding's Cobros section binds its own id
 into the same action. Same parser, same refusal, same write — so a requirement of the
 door cannot be skipped by declaring from the other side, and "no two paths for one
-concept" holds at the form as it holds in the table.
+concept" holds at the form as it holds in the table. The door's code — recurrence
+and declaration parsers, lease-term vocabulary, the form, the summary every row
+prints, the actions — lives in one neutral place, `apps/web/app/_income/`, that both
+route trees import; neither imports from the other.
 
 - **Provenance and its cut-off date are required at the door**, on both entrances.
   The cut-off is the date of the data, so it has no default and cannot be later than
@@ -71,7 +74,10 @@ concept" holds at the form as it holds in the table.
 - **Every income is listed on Rentas**, linked or not, and every row — there and on
   the ficha — says whether it counts and why not, from one pure view. A standalone
   income that is passive and real still says it does not count: no figure reads it
-  until S3, and saying otherwise would be the lie this ADR exists to stop.
+  until S3, and saying otherwise would be the lie this ADR exists to stop. The
+  calendar is read the way the figure reads it: an income with no occurrence in the
+  trailing 12 months (ended long ago, or every recent one excluded) and one whose
+  holding sits in the Papelera say they add nothing.
 - **Correcting** an income edits only the declaration proper (nature, basis,
   provenance, cut-off, condition). The recurrence keeps its ficha affordances,
   because amending it re-derives past payouts.

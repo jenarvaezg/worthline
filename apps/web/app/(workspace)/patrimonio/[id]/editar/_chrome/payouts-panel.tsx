@@ -12,13 +12,13 @@
  * reads below never happen on a debt ficha.
  */
 
+import { createIncomeAction } from "@web/_income/income-actions";
 import {
   createPayoutAction,
   deletePayoutAction,
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/cobros-actions";
-import { createIncomeAction } from "@web/objetivos/rentas/income-actions";
 import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
 import type { ManualAsset } from "@worthline/domain";
@@ -62,7 +62,7 @@ export async function loadPayoutsPanel(
   // The income declaration door with this holding bound (#1673): the same action as
   // the Rentas surface. It RETURNS a refusal (#1311 split terminal), so the binding
   // hands it back instead of swallowing it.
-  async function boundCreatePayoutScheduleAction(formData: FormData) {
+  async function boundCreateIncomeAction(formData: FormData) {
     "use server";
     return createIncomeAction(id, formData);
   }
@@ -80,7 +80,7 @@ export async function loadPayoutsPanel(
   return (
     <CobrosSection
       createPayoutAction={boundCreatePayoutAction}
-      createPayoutScheduleAction={boundCreatePayoutScheduleAction}
+      createIncomeAction={boundCreateIncomeAction}
       currency={asset.currency}
       currentUrl={currentUrl}
       deletePayoutAction={boundDeletePayoutAction}

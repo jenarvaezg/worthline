@@ -1,14 +1,14 @@
+import {
+  createStandaloneIncomeAction,
+  deleteIncomeAction,
+  updateIncomeDeclarationAction,
+} from "@web/_income/income-actions";
 import { isDemoMode } from "@web/demo/write-guard";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import {
-  createStandaloneIncomeAction,
-  deleteIncomeAction,
-  updateIncomeDeclarationAction,
-} from "./income-actions";
 import { IncomesLedger } from "./incomes-ledger";
 import { loadRentas } from "./load-rentas";
 

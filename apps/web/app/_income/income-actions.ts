@@ -23,11 +23,22 @@ import { currentUrlOf } from "@web/inversiones/return-url";
 import {
   buildIncomeResult,
   INCOME_FORM_FIELDS,
+  incomeDeclarationFieldsFromForm,
   incomeFieldsFromForm,
   parseIncomeDeclaration,
 } from "./income-form";
 
 const INCOME_NOT_FOUND = "Renta no encontrada.";
+
+/** Whether the workspace still holds this income — a stale form may name a gone one. */
+async function incomeExists(
+  store: { payouts: { readPayoutSchedules: () => Promise<Array<{ id: string }>> } },
+  incomeId: string,
+): Promise<boolean> {
+  return (await store.payouts.readPayoutSchedules()).some(
+    (income) => income.id === incomeId,
+  );
+}
 
 /**
  * Declare an income. `holdingId` is the asset that generates it — bound by the
@@ -84,10 +95,12 @@ export async function createStandaloneIncomeAction(
 
 /**
  * Correct the declaration proper of an existing income — nature, basis, provenance
- * and its cut-off, condition — leaving the recurrence untouched. An emptied choice
- * withdraws that declaration back to «sin declarar»; the provenance is required here
- * exactly as it is at the door, so correcting an income declared before the door
- * existed is also when it gains one.
+ * and its cut-off, condition — leaving the recurrence untouched. A chosen «Sin
+ * declarar» withdraws that declaration back to NULL, while a field the form did not
+ * carry is left as it is: absent is not «sin declarar», so a partial form can never
+ * wipe a declared `passive`. The provenance is required here exactly as it is at the
+ * door, so correcting an income declared before the door existed is also when it
+ * gains one.
  */
 export async function updateIncomeDeclarationAction(
   formData: FormData,
@@ -108,7 +121,10 @@ export async function updateIncomeDeclarationAction(
       errorRedirectUrl(returnUrl, { formId: "incomeDeclaration", message: error }),
     onSuccess: () => successRedirectUrl(returnUrl, "income_updated"),
     parse: ({ today }) => {
-      const result = parseIncomeDeclaration(incomeFieldsFromForm(formData), today);
+      const result = parseIncomeDeclaration(
+        incomeDeclarationFieldsFromForm(formData),
+        today,
+      );
       return result.ok
         ? { ok: true, value: result.declaration }
         : { ok: false, error: result.error };
@@ -116,17 +132,20 @@ export async function updateIncomeDeclarationAction(
     requireId: false,
     run: async (store, { extra, parsed }) => {
       const incomeId = extra.incomeId!;
-      const exists = (await store.payouts.readPayoutSchedules()).some(
-        (income) => income.id === incomeId,
-      );
-      if (!exists) return { ok: false, error: INCOME_NOT_FOUND };
+      if (!(await incomeExists(store, incomeId))) {
+        return { ok: false, error: INCOME_NOT_FOUND };
+      }
       await store.payouts.updatePayoutSchedule(incomeId, parsed);
       return { ok: true };
     },
   })(formData, ..._testArgs);
 }
 
-/** Delete a declared income from the Rentas list. */
+/**
+ * Delete a declared income from the Rentas list. An id the workspace no longer
+ * holds is refused as «no encontrada», like a correction — never confirmed as a
+ * deletion that did not happen.
+ */
 export async function deleteIncomeAction(formData: FormData, ..._testArgs: unknown[]) {
   const returnUrl = currentUrlOf(formData);
 
@@ -140,7 +159,11 @@ export async function deleteIncomeAction(formData: FormData, ..._testArgs: unkno
     onSuccess: () => successRedirectUrl(returnUrl, "income_deleted"),
     requireId: false,
     run: async (store, { extra }) => {
-      await store.payouts.deletePayoutSchedule(extra.incomeId!);
+      const incomeId = extra.incomeId!;
+      if (!(await incomeExists(store, incomeId))) {
+        return { ok: false, error: INCOME_NOT_FOUND };
+      }
+      await store.payouts.deletePayoutSchedule(incomeId);
       return { ok: true };
     },
   })(formData, ..._testArgs);

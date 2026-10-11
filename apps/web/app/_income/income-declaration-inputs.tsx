@@ -61,11 +61,11 @@ function ChoiceFieldset({
   );
 }
 
-export function IncomeDeclarationFields({
+export function IncomeDeclarationInputs({
   values,
 }: {
   /** What to prefill: an existing declaration, or the fields a refused post typed. */
-  values: Partial<IncomeDeclarationFields>;
+  values: Readonly<Partial<Record<keyof IncomeDeclarationFields, string>>>;
 }) {
   return (
     <>
@@ -88,8 +88,9 @@ export function IncomeDeclarationFields({
         name="amountBasis"
         note={
           <>
-            Tus cifras razonan en euros de hoy. Un importe en euros de cada cobro
-            (nominal) o sin declarar no se cuenta como si lo fuera.
+            Tus cifras razonan en euros de hoy, así que solo cuenta un importe en{" "}
+            <strong>euros de hoy</strong>. En euros de cada cobro (nominal) o{" "}
+            <strong>sin declarar</strong>, no cuenta en ninguna cifra.
           </>
         }
         selected={values.amountBasis ?? ""}

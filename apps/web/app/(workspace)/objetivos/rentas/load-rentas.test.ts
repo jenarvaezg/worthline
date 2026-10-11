@@ -17,7 +17,7 @@ async function seed(store: WorthlineStore): Promise<void> {
 }
 
 describe("loadRentas", () => {
-  test("lists every income, the ones with no asset first, naming the linked holding", async () => {
+  test("lists every income, with or without an asset, naming the linked holding", async () => {
     const store = await createInMemoryStore();
     await seed(store);
     await store.assets.createManualAsset({
@@ -45,9 +45,10 @@ describe("loadRentas", () => {
 
     const model = await loadRentas({ store });
 
-    expect(model.incomes.map((income) => income.label)).toEqual([
-      "Pensión pública",
+    // The display order is the ledger's (after its optimistic fold), not the loader's.
+    expect(model.incomes.map((income) => income.label).sort()).toEqual([
       "Alquiler",
+      "Pensión pública",
     ]);
     expect(model.holdingById["asset_flat"]).toEqual({
       name: "Piso alquilado",
