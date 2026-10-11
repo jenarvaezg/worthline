@@ -1,5 +1,14 @@
 # Inventario de superficies — migración «Libro mayor»
 
+> **Documento histórico (nota del 2026-10-11).** Esta matriz fue el mapa de aceptación de una migración que ya terminó: la ejecución ([PRD #915](https://github.com/jenarvaezg/worthline/issues/915)) se cerró el 2026-07-15. Describe la interfaz de julio de 2026 y no se mantiene; no la uses como mapa de rutas ni de ficheros. Lo que ha dejado de ser cierto desde entonces:
+>
+> - **`shell.tsx` ya no existe.** El `Shell` por página se disolvió en [#1190](https://github.com/jenarvaezg/worthline/issues/1190): topbar, navegación, barra de ámbito y footer viven en el layout compartido del route group, [`(workspace)/layout.tsx`](../../apps/web/app/(workspace)/layout.tsx). Las rutas del workspace sí comparten hoy un layout anidado.
+> - **`view-transition-link.tsx` ya no existe.** La capa de View Transitions se retiró en [#1379](https://github.com/jenarvaezg/worthline/issues/1379) (ADR 0036 §5).
+> - **El Resumen está en `/app`**, no en `/`: `/` es la landing pública. Donde abajo `/` o [`page.tsx`](../../apps/web/app/page.tsx) designan el Resumen, léase `/app` · [`(workspace)/app/page.tsx`](../../apps/web/app/(workspace)/app/page.tsx). El selector `?variant=` ya no existe.
+> - **Hay superficies posteriores que la matriz no recoge**, p. ej. `/bienvenida`, `/patrimonio/carteras`, `/ajustes/conexiones`, `/premium`, `/legal` y `/admin/alertas`.
+>
+> Las fuentes vivas son el árbol de rutas de [`apps/web/app/`](../../apps/web/app/), [`docs/design-system.md`](../design-system.md) (cómo se ve) y [`docs/interaction-patterns.md`](../interaction-patterns.md) (cómo se toca).
+
 > Matriz de aceptación de la migración «Libro mayor» ([#827](https://github.com/jenarvaezg/worthline/issues/827)): qué estados debe cubrir cada superficie y en qué viewports se verifica. No define la solución visual de ninguna — eso lo hace [`docs/design-system.md`](../design-system.md).
 
 ## Alcance

@@ -5,7 +5,7 @@ production LLM agent that can propose changes to the ledger, and an eval harness
 that decides which models are allowed to.
 
 Live: [worthline-web.vercel.app](https://worthline-web.vercel.app) ·
-Domain model: [`CONTEXT.md`](CONTEXT.md) · Decisions: [86 ADRs](docs/adr/)
+Domain model: [`CONTEXT.md`](CONTEXT.md) · Decisions: [ADRs](docs/adr/)
 
 ## The agent
 
@@ -15,16 +15,16 @@ about a household's finances and prepares changes to them, which means every
 mistake it makes is a mistake about someone's money. The architecture is shaped
 around that.
 
-**39 tools, and none of them writes.**
-[`chat-tools/`](apps/web/app/asistente/chat-tools) declares 23 read tools
+**Dozens of tools, and none of them writes.**
+[`chat-tools/`](apps/web/app/asistente/chat-tools) declares the read tools
 (`get_financial_context`, `get_calculation_trace`, `get_snapshot_history`…),
-14 `propose_*` tools, and 2 others — one module per family, assembled by the
+the `propose_*` tools, and a few others — one module per family, assembled by the
 registry in [`chat-tools.ts`](apps/web/app/asistente/chat-tools.ts) (ADR 0086). No tool the model can call mutates a holding,
 an operation or a snapshot. A `propose_*` call persists a **proposal**; applying it
 is a separate Server Action a human confirms in the UI, which goes through the
 command frontier (ADR 0062). The model drafts; the person commits.
 
-**Twelve proposal cards, one module each.** What a person confirms is a card, and
+**One module per proposal card.** What a person confirms is a card, and
 each kind paints itself in its own module under
 [`proposal-cards/`](apps/web/app/asistente/proposal-cards), assembled by the registry
 in [`proposal-cards.tsx`](apps/web/app/asistente/proposal-cards.tsx) (ADR 0088). A card
@@ -107,7 +107,7 @@ bun run verify
 `verify` runs `typecheck` + `typecheck:e2e` + `biome ci` + `test` without invoking
 a full `next build`. Typecheck and test are orchestrated by Turborepo, so unchanged
 packages are skipped across runs ("FULL TURBO" cache hit). Biome (lint + format)
-runs at the repo root. The suite is ~6,900 unit tests across 651 files.
+runs at the repo root. The suite runs to thousands of unit tests.
 
 Run the full production/deploy gate (pre-push / before deploy):
 
