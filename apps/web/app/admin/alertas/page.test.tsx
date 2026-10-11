@@ -83,6 +83,20 @@ describe("AdminAlertsPage", () => {
     expect(html).not.toContain("<th>Holding</th>");
   });
 
+  test("lists a user's feedback by workspace, never by its sentinel id (#1174)", async () => {
+    vi.mocked(listAdminMaintainerAlerts).mockResolvedValue({
+      alerts: [{ ...OPEN_ALERT, category: "user_feedback", holdingId: "feedback:fb-1" }],
+      openCount: 1,
+    });
+
+    const html = renderToStaticMarkup(await AdminAlertsPage());
+
+    expect(html).toContain("Feedback de usuario");
+    expect(html).toContain("ws-ana");
+    expect(html).toContain("mensaje del usuario");
+    expect(html).not.toContain("feedback:fb-1");
+  });
+
   test("shows an empty state and no badge when there are no alerts", async () => {
     vi.mocked(listAdminMaintainerAlerts).mockResolvedValue({ alerts: [], openCount: 0 });
 

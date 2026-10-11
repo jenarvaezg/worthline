@@ -17,6 +17,7 @@ import {
   type MissedCapturePayload,
   maintainerAlertSubject,
 } from "./missed-capture-alert";
+import { isUserFeedbackPayload, type UserFeedbackPayload } from "./user-feedback-alert";
 
 /**
  * The forensic detail of one maintainer alert (#1050, ADR 0064): the trace
@@ -237,6 +238,43 @@ function CatalogCollisionView({ payload }: { payload: unknown }) {
   );
 }
 
+/**
+ * A user's feedback (#1174): the forensic material IS the message, so it renders
+ * as the text they typed — as text, line breaks kept by CSS — plus who to answer
+ * and which screen they were on. The reply link opens the maintainer's own mail
+ * client; worthline sends nothing back on its own.
+ */
+function UserFeedbackView({ payload }: { payload: unknown }) {
+  if (!isUserFeedbackPayload(payload)) {
+    return (
+      <>
+        <p className="alertMeta">Feedback ilegible.</p>
+        <details suppressHydrationWarning className="alertExtracted">
+          <summary>Datos del feedback (formato no reconocido)</summary>
+          <pre>{JSON.stringify(payload, null, 2)}</pre>
+        </details>
+      </>
+    );
+  }
+  return <UserFeedbackMessage payload={payload} />;
+}
+
+function UserFeedbackMessage({ payload }: { payload: UserFeedbackPayload }) {
+  const reply = payload.email
+    ? `mailto:${encodeURIComponent(payload.email)}?subject=${encodeURIComponent("Re: tu feedback en worthline")}`
+    : null;
+  return (
+    <>
+      <p className="alertFeedbackMessage">{payload.message}</p>
+      <p className="alertMeta">
+        De {reply ? <a href={reply}>{payload.email}</a> : "correo no disponible"} ·
+        pantalla {payload.page ? <code>{payload.page}</code> : "desconocida"} · enviado{" "}
+        {payload.submittedAt}
+      </p>
+    </>
+  );
+}
+
 function OccurrenceView({
   category,
   payload,
@@ -255,6 +293,8 @@ function OccurrenceView({
       </h3>
       {category === "catalog_identity_collision" ? (
         <CatalogCollisionView payload={payload} />
+      ) : category === "user_feedback" ? (
+        <UserFeedbackView payload={payload} />
       ) : isMissedCapturePayload(payload) ? (
         <MissedCaptureView payload={payload} />
       ) : payload === null ? (
@@ -344,7 +384,10 @@ export function MaintainerAlertDetail({
           {subject.isFleet || subject.isCatalog
             ? // Global incidents name their catalog identity or capture pass.
               `${subject.workspace} · ${subject.subject}`
-            : `workspace ${subject.workspace} · holding ${subject.subject}`}
+            : subject.isFeedback
+              ? // A message belongs to a workspace and to no holding (#1174).
+                `workspace ${subject.workspace} · ${subject.subject}`
+              : `workspace ${subject.workspace} · holding ${subject.subject}`}
         </p>
         <p className="alertMeta">
           <a href="/admin/alertas">← Todas las alertas</a>

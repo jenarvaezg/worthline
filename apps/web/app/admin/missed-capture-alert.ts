@@ -61,7 +61,23 @@ export function maintainerAlertSubject(alert: {
   category: MaintainerAlertCategory;
   workspaceId: string;
   holdingId: string;
-}): { isFleet: boolean; isCatalog?: boolean; subject: string; workspace: string } {
+}): {
+  isFleet: boolean;
+  isCatalog?: boolean;
+  isFeedback?: boolean;
+  subject: string;
+  workspace: string;
+} {
+  // A user's feedback (#1174) carries a per-message sentinel in the holding slot;
+  // the workspace stays named because who wrote is half the answer.
+  if (alert.category === "user_feedback") {
+    return {
+      isFleet: false,
+      isFeedback: true,
+      subject: "mensaje del usuario",
+      workspace: alert.workspaceId,
+    };
+  }
   if (alert.category === "catalog_identity_collision") {
     return {
       isFleet: false,

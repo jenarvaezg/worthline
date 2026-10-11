@@ -69,7 +69,8 @@ export const LEGAL_DOCUMENTS: readonly LegalDocument[] = [
     summary:
       "Qué datos se tratan, con qué base jurídica, quién los procesa y cómo ejercer tus derechos.",
     title: "Política de privacidad",
-    updatedAt: FIRST_PUBLICATION,
+    // #1174: Resend pasa a encargado activo y se declara el feedback.
+    updatedAt: "2026-10-11",
   },
   {
     shortTitle: "Reembolsos",

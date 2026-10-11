@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { FEEDBACK_BUTTON_LABEL } from "@web/feedback/feedback-message";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,6 +9,7 @@ import {
   renderCapabilityDestinations,
   renderCapabilityDestinationsForPrompt,
 } from "./capability-destinations";
+import { FABRICATED_ALERT_NOTE } from "./fabricated-maintainer-alert";
 import { MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE } from "./maintainer-alert-evidence";
 import { buildChatSystemPrompt } from "./system-prompt";
 
@@ -117,6 +119,46 @@ describe("capability destinations (#1524)", () => {
         );
       }
     }
+  });
+
+  it("sends a user who wants to report something to the feedback button (#1174)", () => {
+    // 2026-08-21: «levanta una incidencia sobre esto … ¿hay un número de ticket?». The
+    // assistant invented one, then had to confess there was nowhere to send it. Now there
+    // is, and the honest answer has three halves: the button, by its own words; that the
+    // USER sends it (the assistant cannot, and #1525 accuses it if it says it did); and
+    // that no ticket number comes back, which is what he asked for twice.
+    const feedback = CAPABILITY_DESTINATIONS.find(
+      (entry) => entry.id === "user-feedback",
+    );
+
+    expect(feedback).toBeDefined();
+    expect(feedback?.where).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
+    expect(feedback?.where).toMatch(/barra superior/i);
+    expect(feedback?.where).toMatch(/propio usuario/i);
+    expect(feedback?.where).toMatch(/no puedes enviarla/i);
+    expect(feedback?.where).toMatch(/sin número de ticket/i);
+  });
+
+  it("points the faked-incident note at the same button", () => {
+    // The note painted under a turn that claimed an incident it never filed used to end
+    // in «hoy worthline no puede tramitar un aviso por ti». That was the truth until
+    // #1174; left as is, it would now send the user away from the channel that exists.
+    expect(FABRICATED_ALERT_NOTE).toContain(`«${FEEDBACK_BUTTON_LABEL}»`);
+    expect(FABRICATED_ALERT_NOTE).toContain("no hay ticket");
+    expect(FABRICATED_ALERT_NOTE).not.toMatch(/no puede tramitar un aviso por ti\.$/);
+  });
+
+  it("names a button the workspace topbar actually mounts", () => {
+    // Same drift guard as the accordion below, pointed at the feedback button: the
+    // launcher prints the shared label, and the workspace layout mounts it in the topbar.
+    const launcher = source("feedback/feedback-launcher.tsx");
+    const layout = source("(workspace)/layout.tsx");
+
+    expect(launcher).toContain("{FEEDBACK_BUTTON_LABEL}");
+    expect(layout).toContain("<FeedbackMount />");
+    expect(layout.indexOf("<FeedbackMount />")).toBeGreaterThan(
+      layout.indexOf('className="topbarEnd"'),
+    );
   });
 
   it("names the accordion the UI actually renders", () => {

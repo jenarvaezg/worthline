@@ -47,6 +47,8 @@ export function maintainerAlertCategoryLabel(category: MaintainerAlertCategory):
       return "Captura diaria perdida (cron)";
     case "catalog_identity_collision":
       return "Colisión de identidad del catálogo";
+    case "user_feedback":
+      return "Feedback de usuario";
   }
 }
 

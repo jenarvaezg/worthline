@@ -1,3 +1,4 @@
+import FeedbackMount from "@web/feedback/feedback-mount";
 import SectionNav from "@web/section-nav";
 import SectionNavFallback from "@web/section-nav-fallback";
 import SignOutButton from "@web/sign-out-button";
@@ -17,9 +18,9 @@ import { Suspense } from "react";
  * The frame (masthead, structure, footer shell) resolves synchronously and does
  * NOT read session/workspace data — that keeps this shell reusable per route
  * (the prerequisite for per-tab streaming #1195 and Instant Navigations #1229).
- * The pieces that DO read the request — the scope bar, the sign-out control, and
- * the footer's persistence values — each live in their own `<Suspense>` so they
- * stream in without blocking the frame.
+ * The pieces that DO read the request — the scope bar, the feedback button, the
+ * sign-out control, and the footer's persistence values — each live in their own
+ * `<Suspense>` so they stream in without blocking the frame.
  */
 export default function WorkspaceLayout({
   children,
@@ -43,6 +44,11 @@ export default function WorkspaceLayout({
               active-tab marker (#1229). */}
           <Suspense fallback={<SectionNavFallback />}>
             <SectionNav />
+          </Suspense>
+          {/* «Enviar feedback» (#1174) reads the session to decide whether to
+              show, so it streams in like the sign-out control. */}
+          <Suspense fallback={null}>
+            <FeedbackMount />
           </Suspense>
           <Suspense fallback={null}>
             <SignOutButton />

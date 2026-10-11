@@ -11,6 +11,7 @@ import ReembolsosDocument from "./_documents/reembolsos";
 import TerminosDocument from "./_documents/terminos";
 import { LEGAL_DOCUMENTS, type LegalDocumentSlug } from "./legal-documents";
 import { type LegalIdentity, resolveLegalIdentity } from "./legal-identity";
+import { LEGAL_PROCESSORS } from "./legal-processors";
 
 /**
  * Los cinco textos legales (#1172) llevan cláusulas que no son estilo: las exige
@@ -166,10 +167,30 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "Sentry",
       "Google (Gemini API)",
       "Cerebras",
-      // Sentry y Resend son slices posteriores del PRD #1171: declarados, pero
-      // sin recibir aún ni un dato.
+      // Sentry es un slice posterior del PRD #1171: declarado, pero sin recibir
+      // aún ni un dato.
       "aún no activo",
       "no reciben ningún dato",
+    ]);
+  });
+
+  test("declares Resend as active once the feedback channel sends through it (#1174)", () => {
+    const resend = LEGAL_PROCESSORS.find((processor) => processor.name === "Resend");
+    const sentry = LEGAL_PROCESSORS.find((processor) => processor.name === "Sentry");
+
+    // Resend recibe datos desde el primer feedback: callarlo sería callar una cesión
+    // que ya ocurre. Sentry sigue sin instalar.
+    expect(resend?.active).not.toBe(false);
+    expect(resend?.purpose).toMatch(/feedback/i);
+    expect(sentry?.active).toBe(false);
+    expect(html("privacidad")).not.toMatch(/Resend[^<]*<span class="legalPending"/);
+  });
+
+  test("says what happens to the feedback a user sends, and where it lives (#1174)", () => {
+    expectAll("privacidad", [
+      "Enviar feedback",
+      "fuera de tu workspace",
+      "el feedback que decidas enviar",
     ]);
   });
 

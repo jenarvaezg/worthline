@@ -32,6 +32,7 @@
  * `maintainer_alert_unavailable`) means no incident exists and no number can be given.
  */
 
+import { FEEDBACK_BUTTON_LABEL } from "@web/feedback/feedback-message";
 import type { UIMessage } from "ai";
 
 import { assertedInAnySentence } from "./claim-sentences";
@@ -51,13 +52,15 @@ import { toolPartName } from "./tool-parts";
  *
  * The last sentence is the one the incident actually needs. Jorge did not want a
  * ticket, he wanted the developer to know — and telling him only that the ticket does
- * not exist would leave him where the lie left him. Until worthline has a channel of
- * its own (#1174) the honest answer is that there is none.
+ * not exist would leave him where the lie left him. Until #1174 the honest answer was
+ * that there was no channel at all; now there is one, and the user is the one who
+ * uses it, so the note names the button by the label the UI prints.
  */
 export const FABRICATED_ALERT_NOTE =
   "En este mensaje no se ha registrado ninguna incidencia: no hay ticket, ni número, " +
-  "ni nadie a quien le haya llegado. El asistente no tiene detrás ningún canal de " +
-  "soporte, así que hoy worthline no puede tramitar un aviso por ti.";
+  "ni nadie a quien le haya llegado. El asistente no puede tramitar un aviso por ti: " +
+  "si quieres que le llegue al desarrollador, escríbeselo tú en " +
+  `«${FEEDBACK_BUTTON_LABEL}», en la barra superior.`;
 
 /**
  * What the model is told about its own previous turn, in the history it gets back.

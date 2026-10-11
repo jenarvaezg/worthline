@@ -52,13 +52,18 @@ CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
  * pass that never finalized (Vercel Cron is best-effort and skips invocations).
  * It is fleet-wide, so it carries sentinel workspace/holding ids rather than a
  * tenant's — see the raiser for the contract.
+ *
+ * `user_feedback` (#1174) is the first category a PERSON raises: the in-app
+ * «Enviar feedback» button. It belongs to the user's workspace, and its holding
+ * slot is a per-message sentinel so every message is its own alert.
  */
 export type MaintainerAlertCategory =
   | "catalog_identity_collision"
   | "infidelity"
   | "missed_capture"
   | "residual"
-  | "sync_source";
+  | "sync_source"
+  | "user_feedback";
 
 /** An alert's lifecycle state (#1050): `open` accumulates occurrences; `resolved`/`dismissed` close it. */
 export type MaintainerAlertStatus = "open" | "resolved" | "dismissed";

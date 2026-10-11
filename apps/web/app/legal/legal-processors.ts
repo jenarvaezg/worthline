@@ -8,9 +8,11 @@
  *
  * Dos precisiones que el research (#1136) traía mal y el código desmiente:
  * quien autentica la web es **Google** vía next-auth (`auth.config.ts`), no
- * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034); y **Sentry y
- * Resend** todavía no están instalados (son slices posteriores del PRD #1171),
- * así que van marcados `active: false` hasta que traten su primer dato.
+ * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034); y **Sentry**
+ * todavía no está instalado (es un slice posterior del PRD #1171), así que va
+ * marcado `active: false` hasta que trate su primer dato. **Resend** entró con el
+ * feedback de un toque (#1174): desde el primer mensaje recibe su texto y la
+ * dirección de quien lo envía, así que ya es un encargado activo.
  *
  * Fuentes de cada DPA y de la postura de entrenamiento de los LLM: el research
  * `docs/research/2026-07-18-minimo-legal-salida.md` (#1136).
@@ -54,10 +56,10 @@ export const LEGAL_PROCESSORS: readonly LegalProcessor[] = [
     purpose: "OAuth del servidor MCP: solo si conectas un cliente de agente a tus datos.",
   },
   {
-    active: false,
     mechanism: "DPA publicado",
     name: "Resend",
-    purpose: "Correo transaccional: tu dirección y el contenido del propio aviso.",
+    purpose:
+      "Correo: entrega al desarrollador el feedback que envías desde la aplicación, con su texto y tu dirección.",
   },
   {
     active: false,

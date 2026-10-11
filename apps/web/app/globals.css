@@ -888,6 +888,80 @@ textarea {
   color: var(--ink);
 }
 
+/* «Enviar feedback» (#1174). Durante la beta es visible a propósito: un
+   secundario de verdad en la fila del registro (canon §5), no texto discreto como
+   «Cerrar sesión». Compacto para no alzar la fila de pestañas. */
+.feedbackLauncher {
+  font-size: 0.8rem;
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+/* En móvil el topbar apila la marca sobre la tira de pestañas, y esa tira se
+   desplaza en horizontal: el botón quedaría escondido al final, detrás de
+   «Ajustes». Se clava a la fila de la marca, que a esa anchura tiene sitio a la
+   derecha. Su bloque contenedor pasa a ser `.topbar`, no la tira, así que el
+   overflow de la tira no lo recorta; el relleno de la marca evita que su texto
+   se meta debajo en pantallas muy estrechas. */
+@media (max-width: 640px) {
+  .topbar:has(.feedbackLauncher) {
+    position: relative;
+  }
+
+  .topbar:has(.feedbackLauncher) .brand {
+    padding-right: 136px;
+  }
+
+  .feedbackLauncher {
+    position: absolute;
+    right: 0;
+    top: 11px;
+  }
+}
+
+/* La hoja del feedback: papel encartado sobre la página, abierta por regla gruesa
+   como el panel del asistente; sin sombra de elevación (canon §4). Es un
+   `<dialog>` modal: vive en la capa superior, así que la tira desplazable del
+   topbar no la recorta. */
+.feedbackSheet {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-top: var(--rule-heavy);
+  border-radius: var(--radius);
+  box-shadow: none;
+  color: var(--ink);
+  max-width: calc(100vw - 32px);
+  padding: 20px;
+  width: 34rem;
+}
+
+/* La cubierta (#102420) velando la página: `::backdrop` no hereda los tokens
+   en todos los navegadores, así que el color va escrito. */
+.feedbackSheet::backdrop {
+  background: rgba(16, 36, 32, 0.5);
+}
+
+.feedbackForm {
+  margin-top: 0;
+}
+
+.feedbackLede {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.feedbackStatus {
+  font-size: 0.85rem;
+}
+
+.feedbackActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Demote the brand name h1 inside the topbar — smaller than the hero h1. */
 .topbar .brandName {
   font-family: var(--font-body);
@@ -5320,6 +5394,16 @@ p.muted {
 .alertSummary {
   font-size: 0.95rem;
   margin: 4px 0 8px;
+}
+
+/* El feedback de un usuario (#1174) se lee tal cual lo escribió: sus saltos de
+   línea son parte del mensaje. */
+.alertFeedbackMessage {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 4px 0 8px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .alertTrace h3,

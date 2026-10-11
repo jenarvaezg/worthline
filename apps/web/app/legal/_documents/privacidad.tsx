@@ -79,6 +79,12 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           hay dentro.
         </li>
         <li>
+          <strong>El feedback que envías</strong>: si usas «Enviar feedback», el texto que
+          escribes, la pantalla desde la que lo envías y tu correo, para que el
+          desarrollador pueda leerlo y, si hace falta, contestarte. Se guarda fuera de tu
+          workspace y le llega por correo.
+        </li>
+        <li>
           <strong>Errores técnicos</strong>: cuando el registro de errores esté activo
           (ver la tabla del apartado 4), el informe del fallo, con los datos personales
           filtrados antes de enviarse.
@@ -89,7 +95,7 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         worthline funciona <strong>sin telemetría de uso ni analytics de terceros</strong>
         : no se miden páginas vistas, ni clics, ni el contenido de tu patrimonio. Solo se
         registra lo mínimo para operar el servicio: cuenta, plan y pago, las marcas de
-        tiempo de arriba y los errores técnicos.
+        tiempo de arriba, los errores técnicos y el feedback que decidas enviar.
       </p>
 
       <h3>3. Con qué base jurídica y para qué</h3>
@@ -155,9 +161,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
 
       <p>
         Los marcados <strong>«aún no activo»</strong> están declarados porque entrarán con
-        la función que los usa (el correo transaccional y el registro de errores);
-        mientras tanto <strong>no reciben ningún dato</strong>. Esta página se actualizará
-        el día que empiecen a recibirlo.
+        la función que los usa (el registro de errores); mientras tanto{" "}
+        <strong>no reciben ningún dato</strong>. Esta página se actualizará el día que
+        empiecen a recibirlo.
       </p>
 
       <p>
@@ -207,7 +213,9 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
         El contenido de tu workspace se conserva mientras la cuenta exista; cuando lo
         eliminas, se borra. Los registros de facturación se conservan el tiempo que exigen
         las obligaciones contables y fiscales. Los informes de error se conservan un plazo
-        corto, el necesario para diagnosticar el fallo.
+        corto, el necesario para diagnosticar el fallo. El feedback que envías se conserva
+        el tiempo necesario para atenderlo y, como no vive en tu workspace, no se borra
+        con él: si quieres que se elimine, pídelo en la dirección de contacto.
       </p>
 
       <h3>8. Tus derechos</h3>

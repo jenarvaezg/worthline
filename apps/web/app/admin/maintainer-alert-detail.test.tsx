@@ -13,6 +13,7 @@ import { describe, expect, test } from "vitest";
 
 import { MaintainerAlertDetail } from "./maintainer-alert-detail";
 import { buildMissedCaptureAlerts } from "./missed-capture-alert";
+import { buildUserFeedbackAlert } from "./user-feedback-alert";
 
 const PAYLOAD: MaintainerAlertPayload = {
   category: "infidelity",
@@ -300,6 +301,68 @@ describe("MaintainerAlertDetail", () => {
     expect(html).not.toContain("Sin traza de cálculo");
     // The cap is stated, never silent.
     expect(html).toContain("2");
+  });
+
+  test("renders a user's feedback as the message itself, answerable by mail (#1174)", () => {
+    const feedback = buildUserFeedbackAlert({
+      email: "usuario@example.com",
+      feedbackId: "fb-1",
+      message: "No hay campo de gastos en la ficha.\n<b>Urgente</b>",
+      page: "/patrimonio/wl_hld_casa/editar",
+      submittedAt: "2026-10-11T10:00:00.000Z",
+      workspaceId: "ws-ana",
+    });
+
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "user_feedback",
+          workspaceId: feedback.workspaceId,
+          holdingId: feedback.holdingId,
+          occurrences: [
+            {
+              id: "occ-1",
+              occurredAt: feedback.payload.submittedAt,
+              payload: feedback.payload,
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Feedback de usuario");
+    expect(html).toContain("workspace ws-ana · mensaje del usuario");
+    expect(html).not.toContain("holding feedback:");
+    // What the user typed arrives as TEXT, line breaks kept by CSS, never as HTML.
+    expect(html).toContain("No hay campo de gastos en la ficha.");
+    expect(html).toContain("&lt;b&gt;Urgente&lt;/b&gt;");
+    expect(html).toContain("alertFeedbackMessage");
+    expect(html).toContain('href="mailto:usuario%40example.com');
+    expect(html).toContain("/patrimonio/wl_hld_casa/editar");
+    // Neither a trace nor a holding exists for a message.
+    expect(html).not.toContain("Sin traza de cálculo");
+  });
+
+  test("keeps a malformed feedback payload readable instead of crashing", () => {
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "user_feedback",
+          workspaceId: "ws-ana",
+          holdingId: "feedback:fb-1",
+          occurrences: [
+            {
+              id: "occ-1",
+              occurredAt: "2026-10-11T10:00:00.000Z",
+              payload: { message: 7 },
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Feedback ilegible");
+    expect(html).not.toContain("Sin traza de cálculo");
   });
 
   test("renders extractedData as escaped TEXT, never as raw HTML (#1180)", () => {

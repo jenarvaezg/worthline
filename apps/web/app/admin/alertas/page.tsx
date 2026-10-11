@@ -54,8 +54,9 @@ export default async function AdminAlertsPage() {
           ) : null}
         </h1>
         <p className="demoLede">
-          Sospechas de bug del asistente, solo-mantenedor. La reparación nunca espera a la
-          alerta. <a href="/admin">← Usuarios</a>
+          Sospechas de bug, fallos de los procesos nocturnos y feedback de usuarios;
+          solo-mantenedor. La reparación nunca espera a la alerta.{" "}
+          <a href="/admin">← Usuarios</a>
         </p>
       </header>
 
