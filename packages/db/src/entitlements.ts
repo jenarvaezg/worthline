@@ -45,6 +45,12 @@ export interface WorkspaceEntitlement {
   updatedAt: string;
 }
 
+/** The part of the row {@link deriveEffectivePlan} reads — all a caller needs to carry. */
+export type EffectivePlanInput = Pick<
+  WorkspaceEntitlement,
+  "plan" | "premiumUntil" | "trialEndsAt"
+>;
+
 /** Trial length (#1128, plan de salida comercial): 3 días, automático, sin tarjeta. */
 export const TRIAL_DURATION_DAYS = 3;
 
@@ -67,7 +73,7 @@ export function trialEndsAtFrom(nowIso: string): string {
  *  3. `free` — everything else, including the missing row.
  */
 export function deriveEffectivePlan(
-  entitlement: Pick<WorkspaceEntitlement, "plan" | "premiumUntil" | "trialEndsAt"> | null,
+  entitlement: EffectivePlanInput | null,
   nowIso: string,
 ): EntitlementPlan {
   if (!entitlement) return "free";

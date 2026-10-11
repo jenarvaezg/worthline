@@ -7,7 +7,10 @@ import {
   type DeclineRemindersState,
   declineTrialReminders,
 } from "@web/trial-emails/decline-trial-reminders";
-import { REMINDER_OPT_OUT_PARAM } from "@web/trial-emails/reminder-opt-out-token";
+import {
+  REMINDER_OPT_OUT_PARAM,
+  reminderOptOutSecret,
+} from "@web/trial-emails/reminder-opt-out-token";
 import type { TrialEmailLedger } from "@worthline/db";
 
 /**
@@ -36,6 +39,6 @@ export async function declineTrialRemindersAction(
         await ledger.optOutOfTrialReminders({ at, userId });
         return true as const;
       })) ?? false,
-    secret: process.env.AUTH_SECRET?.trim() || null,
+    secret: reminderOptOutSecret(),
   });
 }

@@ -10,25 +10,51 @@
  *
  * Two limits, both about the provider and the function, never about the user:
  *  - the sends are **spaced** under Resend's default rate limit (2 req/s);
- *  - the pass stops **starting** sends once its time budget is spent, well
- *    inside the cron's `maxDuration`, so a slow provider never gets a send cut
- *    in half (which would leave a claim nobody releases). What is left over is
- *    still unclaimed, and the next pass picks it up.
+ *  - the pass stops **starting** sends once its time budget is spent, so a slow
+ *    provider never gets a send cut in half by the platform (which would leave
+ *    a claim nobody releases). What is left over is still unclaimed, and the
+ *    next pass picks it up.
  */
 
-import type { TrialEmailLedger } from "@worthline/db";
+import { SEND_TIMEOUT_MS } from "@web/email/send-email";
 
 import { deliverTrialEmail, type TrialEmailDeliveryDeps } from "./deliver-trial-email";
+import {
+  listTrialEmailCandidates,
+  type TrialEmailCandidatePorts,
+} from "./trial-email-candidates";
 import { dueTrialEmail, TRIAL_EMAIL_CUTOFF_MS } from "./trial-email-schedule";
 
 /** Resend's default limit is 2 requests per second; stay under it. */
 const SEND_SPACING_MS = 600;
 
-/** Stop starting sends after this long — the cron route's `maxDuration` is 60 s. */
-const SWEEP_BUDGET_MS = 40_000;
+/** Headroom for the control-plane round trips around the last send (claim, confirm). */
+const CONTROL_PLANE_HEADROOM_MS = 5_000;
 
-export interface TrialEmailSweepDeps extends TrialEmailDeliveryDeps {
-  ledger: TrialEmailLedger;
+/**
+ * How long a pass may keep STARTING sends inside a function that lives
+ * `maxDurationSeconds`: the last one can still pause, wait out a slow provider
+ * up to the send timeout, and write its mark before the platform kills it.
+ * Derived here, from the numbers it depends on, so changing any of them moves
+ * the budget with it.
+ */
+export function trialEmailSweepBudgetMs(maxDurationSeconds: number): number {
+  return (
+    maxDurationSeconds * 1000 -
+    SEND_TIMEOUT_MS -
+    SEND_SPACING_MS -
+    CONTROL_PLANE_HEADROOM_MS
+  );
+}
+
+/** What the pass reads (who is in a window) plus what each send writes (the marks). */
+export type TrialEmailSweepControlPlane = TrialEmailCandidatePorts &
+  TrialEmailDeliveryDeps["ledger"];
+
+export interface TrialEmailSweepDeps extends Omit<TrialEmailDeliveryDeps, "ledger"> {
+  controlPlane: TrialEmailSweepControlPlane;
+  /** Stop starting sends after this many ms — see {@link trialEmailSweepBudgetMs}. */
+  budgetMs: number;
   /** Wait between two sends. Injectable so tests do not sleep. */
   pause?: (ms: number) => Promise<void>;
   /** Monotonic-enough milliseconds for the time budget. */
@@ -55,7 +81,7 @@ export async function runTrialEmailSweep(
 ): Promise<TrialEmailSweepSummary> {
   const { pause = sleep, clock = Date.now } = deps;
   const startedAt = clock();
-  const candidates = await deps.ledger.listTrialEmailCandidates({
+  const candidates = await listTrialEmailCandidates(deps.controlPlane, {
     trialEndsAfter: new Date(Date.parse(deps.now) - TRIAL_EMAIL_CUTOFF_MS).toISOString(),
   });
 
@@ -74,14 +100,17 @@ export async function runTrialEmailSweep(
     if (!kind) continue;
     summary.due += 1;
 
-    if (clock() - startedAt >= SWEEP_BUDGET_MS) {
+    if (clock() - startedAt >= deps.budgetMs) {
       summary.deferred += 1;
       continue;
     }
     if (attempted > 0) await pause(SEND_SPACING_MS);
     attempted += 1;
 
-    const outcome = await deliverTrialEmail(kind, candidate, deps);
+    const outcome = await deliverTrialEmail(kind, candidate, {
+      ...deps,
+      ledger: deps.controlPlane,
+    });
     if (outcome === "sent") summary.sent += 1;
     else if (outcome === "failed") summary.failed += 1;
     else summary.alreadyClaimed += 1;

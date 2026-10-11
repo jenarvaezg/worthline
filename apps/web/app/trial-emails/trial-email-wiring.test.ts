@@ -68,10 +68,13 @@ function resendFake() {
 
 const quietLog = () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() });
 
+const BUDGET_MS = 40_000;
+
 describe("trial email wiring (#1173)", () => {
   test("without a verified sender the pass is skipped and names what to set — the control plane is never opened", async () => {
     const log = quietLog();
     const result = await runTrialEmailPass({
+      budgetMs: BUDGET_MS,
       env: {
         AUTH_SECRET: "x",
         RESEND_API_KEY: "re_test",
@@ -92,7 +95,9 @@ describe("trial email wiring (#1173)", () => {
   });
 
   test("without a control plane there is no trial to talk about", async () => {
-    expect(await runTrialEmailPass({ env: MAIL_ENV, log: quietLog() })).toEqual({
+    expect(
+      await runTrialEmailPass({ budgetMs: BUDGET_MS, env: MAIL_ENV, log: quietLog() }),
+    ).toEqual({
       reason: "no_control_plane",
       status: "skipped",
     });
@@ -102,6 +107,7 @@ describe("trial email wiring (#1173)", () => {
     const { url } = await controlPlaneWithTrial("2026-10-01T10:00:00.000Z");
     const { bodies, fetch } = resendFake();
     const options = {
+      budgetMs: BUDGET_MS,
       env: { ...MAIL_ENV, WORTHLINE_CONTROL_PLANE_DB_URL: url },
       fetch,
       log: quietLog(),
@@ -127,6 +133,7 @@ describe("trial email wiring (#1173)", () => {
   test("an unreachable control plane is a failed pass, never a throw into the cron", async () => {
     const log = quietLog();
     const result = await runTrialEmailPass({
+      budgetMs: BUDGET_MS,
       env: {
         ...MAIL_ENV,
         WORTHLINE_CONTROL_PLANE_DB_URL: "file:/nonexistent/dir/cp.sqlite",
@@ -141,6 +148,7 @@ describe("trial email wiring (#1173)", () => {
     const { url, trial } = await controlPlaneWithTrial("2026-10-01T10:00:00.000Z");
     const { bodies, fetch } = resendFake();
     const options = {
+      budgetMs: BUDGET_MS,
       env: { ...MAIL_ENV, WORTHLINE_CONTROL_PLANE_DB_URL: url },
       fetch,
       log: quietLog(),
@@ -157,7 +165,7 @@ describe("trial email wiring (#1173)", () => {
     expect(bodies[0]).toMatchObject({ subject: "Te damos la bienvenida a worthline" });
   });
 
-  test("the welcome is deferred past the sign-in response, and without a request scope it is left to the cron", async () => {
+  test("the welcome is deferred past the sign-in response; when it cannot be, the reason is logged and the cron retries", async () => {
     const trial: StartedTrial = {
       email: "ana@example.com",
       trialEndsAt: "2026-10-04T10:00:00.000Z",
@@ -178,6 +186,9 @@ describe("trial email wiring (#1173)", () => {
         log,
       }),
     ).not.toThrow();
-    expect(log.info).toHaveBeenCalledOnce();
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not defer the welcome"),
+      { error: "`after` was called outside a request scope", userId: "user-1" },
+    );
   });
 });

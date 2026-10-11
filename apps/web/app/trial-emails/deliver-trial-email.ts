@@ -21,6 +21,7 @@
  */
 
 import type { EmailMessage, SendEmailResult } from "@web/email/send-email";
+import { errorMessage } from "@web/error-message";
 import type { TrialEmailKind, TrialEmailLedger } from "@worthline/db";
 
 import { reminderOptOutUrl } from "./reminder-opt-out-token";
@@ -47,10 +48,6 @@ export interface TrialEmailRecipient {
 
 export type TrialEmailOutcome = "sent" | "already_claimed" | "failed";
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export async function deliverTrialEmail(
   kind: TrialEmailKind,
   recipient: TrialEmailRecipient,
@@ -65,7 +62,7 @@ export async function deliverTrialEmail(
   } catch (error) {
     deps.log.error("[trial-email] could not claim the mark; not sent", {
       ...claim,
-      error: describe(error),
+      error: errorMessage(error),
     });
     return "failed";
   }
@@ -98,7 +95,7 @@ export async function deliverTrialEmail(
       // confirmation stamp is missing.
       deps.log.warn("[trial-email] sent, but the confirmation was not recorded", {
         ...claim,
-        error: describe(error),
+        error: errorMessage(error),
       });
     }
     return "sent";
@@ -116,7 +113,7 @@ export async function deliverTrialEmail(
       "[trial-email] could not release the claim; this email will not be retried",
       {
         ...claim,
-        error: describe(error),
+        error: errorMessage(error),
       },
     );
   }

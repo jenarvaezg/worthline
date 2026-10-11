@@ -1,4 +1,3 @@
-import type { EntitlementPlan } from "@db/entitlements";
 import type { Client } from "@libsql/client";
 
 /**
@@ -8,6 +7,10 @@ import type { Client } from "@libsql/client";
  * Keyed by USER, not workspace, because the trial is per identity (#1128): one
  * identity gets at most one welcome, one reminder and one expiry notice, ever —
  * a re-provisioned workspace inherits neither a second trial nor a second email.
+ *
+ * The port reads and writes ONLY these two tables (ADR 0087): who is in a trial
+ * window comes from the entitlement port, and whose address it is from tenancy;
+ * the web side composes the three.
  */
 export const TRIAL_EMAIL_SCHEMA = `
 -- One row per (identity, email kind). The row's existence IS the claim: an
@@ -36,21 +39,8 @@ CREATE TABLE IF NOT EXISTS email_preferences (
 export const TRIAL_EMAIL_KINDS = ["welcome", "trial_reminder", "trial_expired"] as const;
 export type TrialEmailKind = (typeof TRIAL_EMAIL_KINDS)[number];
 
-/**
- * One trialing identity and everything the emails need to decide and to write:
- * where to send, the window, what the workspace is entitled to now (so the
- * caller derives the effective plan with `deriveEffectivePlan`), which kinds are
- * already claimed and whether the reminders were declined.
- */
-export interface TrialEmailCandidate {
-  userId: string;
-  email: string;
-  workspaceId: string;
-  /** When the identity consumed its trial (`user_trials.used_at`). */
-  trialStartedAt: string;
-  trialEndsAt: string;
-  plan: EntitlementPlan;
-  premiumUntil: string | null;
+/** What this port knows about one identity: its marks and its preference. */
+export interface TrialEmailMarks {
   /** Kinds with a claim row — sent, or taken by a pass that never confirmed. */
   claimedKinds: TrialEmailKind[];
   /** When the identity declined the trial reminders, or null. */
@@ -63,19 +53,13 @@ export interface TrialEmailClaim {
 }
 
 /**
- * The trial-email ledger (#1173): who is in a trial window, and the marks that
- * guarantee no email of the cycle goes out twice. The send itself lives in the
- * web app; this port only answers «is it still mine to send?».
+ * The trial-email ledger (#1173): the marks that guarantee no email of the cycle
+ * goes out twice, and the identity's «no recibir recordatorios». The send itself
+ * lives in the web app; this port only answers «is it still mine to send?».
  */
 export interface TrialEmailLedger {
-  /**
-   * Every owner whose trial closes after `trialEndsAfter` (ISO), oldest window
-   * first. The cutoff is what keeps a first deploy, or a long outage, from
-   * mailing trials that ended weeks ago.
-   */
-  listTrialEmailCandidates(input: {
-    trialEndsAfter: string;
-  }): Promise<TrialEmailCandidate[]>;
+  /** The identity's marks and preference — empty marks and null when it has none. */
+  readTrialEmailMarks(userId: string): Promise<TrialEmailMarks>;
   /**
    * Take the right to send `kind` to this identity. True when this call won;
    * false when the mark already exists (sent, or claimed by another pass).
@@ -103,44 +87,24 @@ function isTrialEmailKind(value: string): value is TrialEmailKind {
   return (TRIAL_EMAIL_KINDS as readonly string[]).includes(value);
 }
 
-function toCandidate(row: Record<string, unknown>): TrialEmailCandidate {
-  const claimed = row["claimed_kinds"] == null ? "" : String(row["claimed_kinds"]);
-  return {
-    claimedKinds: claimed.split(",").filter(isTrialEmailKind),
-    email: String(row["email"]),
-    plan: String(row["plan"]) as EntitlementPlan,
-    premiumUntil: row["premium_until"] == null ? null : String(row["premium_until"]),
-    remindersOptedOutAt:
-      row["trial_reminders_opted_out_at"] == null
-        ? null
-        : String(row["trial_reminders_opted_out_at"]),
-    trialEndsAt: String(row["trial_ends_at"]),
-    trialStartedAt: String(row["used_at"]),
-    userId: String(row["user_id"]),
-    workspaceId: String(row["workspace_id"]),
-  };
-}
-
 export function createTrialEmailLedger(client: Client): TrialEmailLedger {
   return {
-    async listTrialEmailCandidates({ trialEndsAfter }) {
-      // ISO-8601 UTC strings from `toISOString()` compare correctly as text.
-      const result = await client.execute({
-        sql: `SELECT we.workspace_id, we.plan, we.trial_ends_at, we.premium_until,
-                     u.id AS user_id, u.email, ut.used_at,
-                     ep.trial_reminders_opted_out_at,
-                     (SELECT group_concat(s.kind, ',') FROM trial_email_sends s
-                       WHERE s.user_id = u.id) AS claimed_kinds
-              FROM workspace_entitlements we
-              JOIN grants g ON g.workspace_id = we.workspace_id AND g.role = 'owner'
-              JOIN users u ON u.id = g.user_id
-              JOIN user_trials ut ON ut.user_id = u.id
-              LEFT JOIN email_preferences ep ON ep.user_id = u.id
-              WHERE we.trial_ends_at IS NOT NULL AND we.trial_ends_at > ?
-              ORDER BY we.trial_ends_at, u.id`,
-        args: [trialEndsAfter],
+    async readTrialEmailMarks(userId) {
+      const sends = await client.execute({
+        sql: "SELECT kind FROM trial_email_sends WHERE user_id = ?",
+        args: [userId],
       });
-      return result.rows.map((row) => toCandidate(row));
+      const preference = await client.execute({
+        sql: "SELECT trial_reminders_opted_out_at FROM email_preferences WHERE user_id = ?",
+        args: [userId],
+      });
+      const optedOut = preference.rows[0]?.["trial_reminders_opted_out_at"];
+      return {
+        claimedKinds: sends.rows
+          .map((row) => String(row["kind"]))
+          .filter(isTrialEmailKind),
+        remindersOptedOutAt: optedOut == null ? null : String(optedOut),
+      };
     },
     async claimTrialEmail({ userId, kind, at }) {
       const result = await client.execute({

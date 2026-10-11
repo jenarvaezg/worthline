@@ -17,6 +17,7 @@
  */
 
 import type { EmailMessage } from "@web/email/send-email";
+import { PREMIUM_INCLUDES } from "@web/entitlements/paywall-copy";
 import type { TrialEmailKind } from "@worthline/db";
 
 /** Where the product speaks: a day in Spain, not a UTC instant. */
@@ -54,6 +55,11 @@ function formatTrialDay(iso: string): string {
 
 const SIGNATURE = "— worthline";
 
+/** A plain-text list: «- uno;», «- dos.» */
+function bulletList(lines: readonly string[]): string[] {
+  return lines.map((line, index) => `- ${line}${index === lines.length - 1 ? "." : ";"}`);
+}
+
 function welcome(input: TrialEmailInput): Pick<EmailMessage, "subject" | "text"> {
   return {
     subject: "Te damos la bienvenida a worthline",
@@ -84,12 +90,13 @@ function reminder(input: TrialEmailInput): Pick<EmailMessage, "subject" | "text"
     text: [
       "Hola:",
       "",
-      `Como te contamos al darte la bienvenida, te avisamos antes de que acabe tu prueba de premium en worthline: termina el ${formatTrialDate(input.trialEndsAt)}.`,
+      // No «como te contamos»: the welcome may never have reached this person
+      // (its retry window passed, or the trial predates these emails).
+      `Te avisamos antes de que acabe tu prueba de premium en worthline: termina el ${formatTrialDate(input.trialEndsAt)}.`,
       "",
+      // The same list the paywall gates, so «what stops» never drifts from it.
       "Lo que deja de estar incluido ese día:",
-      "- que el asistente lea tus extractos y documentos por ti;",
-      "- que tus fuentes conectadas sigan sincronizando solas;",
-      "- el uso del asistente más allá del cupo mensual de cortesía del plan gratuito.",
+      ...bulletList(PREMIUM_INCLUDES),
       "",
       "Lo que no cambia:",
       "- todo lo que has registrado o importado se queda; no se borra nada;",

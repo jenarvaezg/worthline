@@ -83,6 +83,13 @@ de que la acción resuelva:
   muestra un **pending honesto e inline** en esa fila y se confirma con el dato
   real. Optimismo falso > sin feedback, pero un número inventado que luego salta
   al real es peor que un pending breve.
+- **Excepción: una baja no es optimista aunque su resultado sea predecible**
+  (#1173). «No quiero recibir estos avisos», en la página a la que lleva el
+  enlace de los correos de la prueba, dice «hecho» solo cuando la preferencia
+  está guardada: quien la pulsa cierra la pestaña y no vuelve, así que un «hecho»
+  adelantado que luego se revierte sería una promesa rota que nadie ve, cumplida
+  en su bandeja de entrada con el siguiente correo. Pending honesto e inline en
+  el propio botón (_Guardando…_), y el resultado anunciado con el foco en él.
 - **Sospecha de un terminal que aterriza en la URL que ya se está viendo**
   (#1250). `appendParam` usa `URLSearchParams.set`, así que dos mutaciones
   seguidas con el mismo token `ok` producen la URL byte-idéntica a la actual (en
@@ -139,7 +146,10 @@ redirigiendo; migrarlos es trabajo pendiente, y el patrón ya está probado.
 **Excepción: un éxito que no cambia nada de la página también vuelve como
 estado.** «Enviar feedback» (#1174) escribe en el control plane y en el correo,
 nunca en el workspace, así que no hay nada que revalidar; un redirect solo
-cerraría su diálogo y tiraría el borrador justo cuando toca confirmarlo.
+cerraría su diálogo y tiraría el borrador justo cuando toca confirmarlo. La baja
+de los avisos de la prueba (#1173) es el mismo caso: guarda una preferencia en el
+control plane y la página no muestra nada que cambie con ella, así que un
+redirect a la misma URL solo repintaría el botón que acaba de pulsarse.
 
 ## 5. Navegación sin flash: shell prefetchado + scroll estable
 

@@ -17,8 +17,9 @@ import {
   withOptionalControlPlaneStore,
 } from "@web/control-plane-store";
 import { sendEmail } from "@web/email/send-email";
+import { errorMessage } from "@web/error-message";
 import { SITE_URL } from "@web/site-url";
-import type { StartedTrial, TrialEmailLedger } from "@worthline/db";
+import type { StartedTrial } from "@worthline/db";
 import { after } from "next/server";
 
 import {
@@ -27,7 +28,11 @@ import {
   type TrialEmailOutcome,
 } from "./deliver-trial-email";
 import { trialEmailSettingsFromEnv } from "./trial-email-settings";
-import { runTrialEmailSweep, type TrialEmailSweepSummary } from "./trial-email-sweep";
+import {
+  runTrialEmailSweep,
+  type TrialEmailSweepControlPlane,
+  type TrialEmailSweepSummary,
+} from "./trial-email-sweep";
 
 export interface TrialEmailWiringOptions {
   env?: ControlPlaneEnv;
@@ -49,13 +54,15 @@ export type TrialEmailPassResult =
 
 export type WelcomeEmailResult = Skipped | { status: TrialEmailOutcome };
 
+type WiredDeps = Omit<TrialEmailDeliveryDeps, "ledger"> & {
+  controlPlane: TrialEmailSweepControlPlane;
+};
+
 /** Resolve settings + control plane and hand `run` the delivery deps, or say why not. */
 async function withTrialEmails<T>(
   purpose: string,
   options: TrialEmailWiringOptions,
-  run: (
-    deps: Omit<TrialEmailDeliveryDeps, "ledger"> & { ledger: TrialEmailLedger },
-  ) => Promise<T>,
+  run: (deps: WiredDeps) => Promise<T>,
 ): Promise<T | Skipped> {
   const env = options.env ?? process.env;
   const log = options.log ?? console;
@@ -71,10 +78,13 @@ async function withTrialEmails<T>(
     };
   }
   const { settings } = resolution;
-  const ran = await withOptionalControlPlaneStore<{ value: T }, TrialEmailLedger>(
-    async (ledger) => ({
+  const ran = await withOptionalControlPlaneStore<
+    { value: T },
+    TrialEmailSweepControlPlane
+  >(
+    async (controlPlane) => ({
       value: await run({
-        ledger,
+        controlPlane,
         log,
         now: options.now ?? new Date().toISOString(),
         send: (message) =>
@@ -90,22 +100,24 @@ async function withTrialEmails<T>(
   return ran ? ran.value : { reason: "no_control_plane", status: "skipped" };
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** The cron's pass over every trial in flight. Never throws. */
+/**
+ * The cron's pass over every trial in flight. Never throws. `budgetMs` comes
+ * from the caller's own deadline — `trialEmailSweepBudgetMs(maxDuration)`.
+ */
 export async function runTrialEmailPass(
-  options: TrialEmailWiringOptions = {},
+  options: TrialEmailWiringOptions & { budgetMs: number },
 ): Promise<TrialEmailPassResult> {
+  const { budgetMs, ...wiring } = options;
   try {
-    const result = await withTrialEmails("pass", options, runTrialEmailSweep);
+    const result = await withTrialEmails("pass", wiring, (deps) =>
+      runTrialEmailSweep({ ...deps, budgetMs }),
+    );
     return "status" in result ? result : { status: "ran", summary: result };
   } catch (error) {
-    (options.log ?? console).error("[trial-email] pass failed", {
-      error: describe(error),
+    (wiring.log ?? console).error("[trial-email] pass failed", {
+      error: errorMessage(error),
     });
-    return { error: describe(error), status: "failed" };
+    return { error: errorMessage(error), status: "failed" };
   }
 }
 
@@ -115,13 +127,15 @@ export async function sendWelcomeEmail(
   options: TrialEmailWiringOptions = {},
 ): Promise<WelcomeEmailResult> {
   try {
-    const result = await withTrialEmails("welcome", options, async (deps) => ({
-      status: await deliverTrialEmail("welcome", trial, deps),
+    return await withTrialEmails("welcome", options, async (deps) => ({
+      status: await deliverTrialEmail("welcome", trial, {
+        ...deps,
+        ledger: deps.controlPlane,
+      }),
     }));
-    return result;
   } catch (error) {
     (options.log ?? console).error("[trial-email] welcome failed", {
-      error: describe(error),
+      error: errorMessage(error),
       userId: trial.userId,
     });
     return { status: "failed" };
@@ -130,8 +144,9 @@ export async function sendWelcomeEmail(
 
 /**
  * Send the welcome AFTER the sign-in response, so a slow provider never holds
- * the login. With no request scope to defer to (a script, a unit test) it does
- * nothing: the cron's pass retries the welcome during the trial's first day.
+ * the login. When it cannot be deferred (no request scope: a script, a unit
+ * test) nothing is sent now — the reason is logged, and the cron's pass retries
+ * the welcome during the trial's first day.
  */
 export function scheduleWelcomeEmail(
   trial: StartedTrial,
@@ -142,10 +157,10 @@ export function scheduleWelcomeEmail(
   const { defer = after, ...wiring } = options;
   try {
     defer(() => sendWelcomeEmail(trial, wiring));
-  } catch {
-    (wiring.log ?? console).info(
-      "[trial-email] no request scope to defer the welcome to; the next cron pass sends it",
-      { userId: trial.userId },
+  } catch (error) {
+    (wiring.log ?? console).warn(
+      "[trial-email] could not defer the welcome; the next cron pass retries it",
+      { error: errorMessage(error), userId: trial.userId },
     );
   }
 }

@@ -22,6 +22,7 @@ vi.mock("@web/sync-queue", () => ({
 // `app/trial-emails/`. Here only the route's part: run the pass, report it.
 vi.mock("@web/trial-emails/trial-email-wiring", () => ({ runTrialEmailPass }));
 
+import { trialEmailSweepBudgetMs } from "@web/trial-emails/trial-email-sweep";
 import { dailyCaptureDescriptor } from "@worthline/db";
 import { GET, POST } from "./route";
 
@@ -105,7 +106,11 @@ describe("/api/cron/snapshot", () => {
 
     expect(runTrialEmailPass).toHaveBeenCalledTimes(1);
     const capturedAt = enqueue.mock.calls[0]![0].descriptor.payload.now;
-    expect(runTrialEmailPass.mock.calls[0]![0]).toEqual({ now: capturedAt });
+    // The pass is budgeted from this route's own `maxDuration` (60 s).
+    expect(runTrialEmailPass.mock.calls[0]![0]).toEqual({
+      budgetMs: trialEmailSweepBudgetMs(60),
+      now: capturedAt,
+    });
     expect((await res.json()).trialEmails).toEqual({
       status: "ran",
       summary: { sent: 2 },

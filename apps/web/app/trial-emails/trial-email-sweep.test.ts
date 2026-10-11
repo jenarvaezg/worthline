@@ -2,7 +2,11 @@ import type { EmailMessage, SendEmailResult } from "@web/email/send-email";
 import { type ControlPlaneStore, createInMemoryControlPlaneStore } from "@worthline/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { runTrialEmailSweep, type TrialEmailSweepDeps } from "./trial-email-sweep";
+import {
+  runTrialEmailSweep,
+  type TrialEmailSweepDeps,
+  trialEmailSweepBudgetMs,
+} from "./trial-email-sweep";
 
 const SETTINGS = {
   email: { apiKey: "re_test", from: "worthline <avisos@example.com>" },
@@ -35,7 +39,8 @@ async function trialFor(email: string, startedAt: string): Promise<string> {
 function sweepDeps(now: string, overrides: Partial<TrialEmailSweepDeps> = {}) {
   const sent: EmailMessage[] = [];
   const deps: TrialEmailSweepDeps = {
-    ledger: store,
+    budgetMs: 40_000,
+    controlPlane: store,
     log: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
     now,
     pause: async () => {},
@@ -51,6 +56,13 @@ function sweepDeps(now: string, overrides: Partial<TrialEmailSweepDeps> = {}) {
 
 const sentKinds = (sent: EmailMessage[]) =>
   sent.map((message) => `${message.to}:${message.tags?.[0]?.value}`).sort();
+
+describe("trialEmailSweepBudgetMs (#1173)", () => {
+  test("leaves room inside the function's life for one last slow send and its mark", () => {
+    // 60 s function − 10 s send timeout − 0.6 s spacing − 5 s control-plane headroom.
+    expect(trialEmailSweepBudgetMs(60)).toBe(44_400);
+  });
+});
 
 describe("runTrialEmailSweep (#1173)", () => {
   test("mails each identity what its trial owes now, and nothing to the rest", async () => {

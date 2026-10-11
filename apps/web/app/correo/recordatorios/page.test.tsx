@@ -7,7 +7,7 @@ vi.mock("next/server", async (importOriginal) => ({
   connection: async () => {},
 }));
 
-import TrialRemindersPage from "./page";
+import TrialRemindersPage, { metadata } from "./page";
 
 const SECRET = "test-secret";
 const saved = {
@@ -54,8 +54,7 @@ describe("/correo/recordatorios (#1173)", () => {
     }
   });
 
-  test("never shown to search engines", async () => {
-    const { metadata } = await import("./page");
+  test("never shown to search engines", () => {
     expect(metadata.robots).toEqual({ follow: false, index: false });
   });
 });

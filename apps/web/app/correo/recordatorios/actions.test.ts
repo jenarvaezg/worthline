@@ -57,11 +57,9 @@ describe("declineTrialRemindersAction (#1173)", () => {
     expect(state).toEqual({ status: "done" });
 
     const check = await createControlPlaneStore({ url });
-    const [candidate] = await check.listTrialEmailCandidates({
-      trialEndsAfter: "2000-01-01",
-    });
+    const marks = await check.readTrialEmailMarks(user.id);
     check.close();
-    expect(candidate?.remindersOptedOutAt).not.toBeNull();
+    expect(marks.remindersOptedOutAt).not.toBeNull();
   });
 
   test("a read-only session (demo, impersonation) writes nothing, even with a valid link (#1180)", async () => {

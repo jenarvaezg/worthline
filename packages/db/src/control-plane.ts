@@ -108,10 +108,10 @@ export type {
 } from "./control-plane/tenancy-directory";
 export {
   TRIAL_EMAIL_KINDS,
-  type TrialEmailCandidate,
   type TrialEmailClaim,
   type TrialEmailKind,
   type TrialEmailLedger,
+  type TrialEmailMarks,
 } from "./control-plane/trial-email-ledger";
 export type {
   AiDailyTokenUsage,

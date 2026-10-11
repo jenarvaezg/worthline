@@ -1,5 +1,6 @@
 import { cronBearerAuthorized } from "@web/cron-auth";
 import { productionSyncQueue } from "@web/sync-queue";
+import { trialEmailSweepBudgetMs } from "@web/trial-emails/trial-email-sweep";
 import { runTrialEmailPass } from "@web/trial-emails/trial-email-wiring";
 import { dailyCaptureDescriptor } from "@worthline/db";
 
@@ -40,7 +41,8 @@ async function handler(req: Request): Promise<Response> {
       descriptor: dailyCaptureDescriptor(now),
       workspaceId: null,
     }),
-    runTrialEmailPass({ now }),
+    // Its budget is derived from THIS function's life, so the two cannot drift.
+    runTrialEmailPass({ budgetMs: trialEmailSweepBudgetMs(maxDuration), now }),
   ]);
   if (capture.status === "rejected") {
     throw capture.reason;

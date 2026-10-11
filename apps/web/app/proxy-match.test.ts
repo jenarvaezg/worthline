@@ -42,7 +42,16 @@ const SKIP = [
   "/brand.svg",
 ] as const;
 
-const RUN = ["/patrimonio", "/ajustes", "/historico", "/api/chat"] as const;
+const RUN = [
+  "/patrimonio",
+  "/ajustes",
+  "/historico",
+  "/api/chat",
+  // Only the opt-out page of the trial emails is public, not its neighbours (#1173).
+  "/correo",
+  "/correo/otra",
+  "/correo/recordatorios/extra",
+] as const;
 
 describe("shouldInvokeProxy (#1536)", () => {
   test("skips statics, well-known, cron, and public routes", () => {

@@ -47,6 +47,23 @@ describe("trial email settings (#1173)", () => {
     ).toEqual({ missing: ["WORTHLINE_EMAIL_FROM"], status: "not_configured" });
   });
 
+  test("the sandbox is recognized by its domain whatever the display name, and a sender with no domain is no sender", () => {
+    for (const from of ["Otro nombre <ONBOARDING@Resend.dev>", "worthline"]) {
+      expect(
+        trialEmailSettingsFromEnv({ ...READY, WORTHLINE_EMAIL_FROM: from }, SITE),
+      ).toEqual({
+        missing: ["WORTHLINE_EMAIL_FROM"],
+        status: "not_configured",
+      });
+    }
+    expect(
+      trialEmailSettingsFromEnv(
+        { ...READY, WORTHLINE_EMAIL_FROM: "avisos@example.com" },
+        SITE,
+      ).status,
+    ).toBe("ready");
+  });
+
   test("names everything missing at once, so one log line says what to set", () => {
     expect(trialEmailSettingsFromEnv({}, SITE)).toEqual({
       missing: ["RESEND_API_KEY", "WORTHLINE_EMAIL_FROM", "AUTH_SECRET"],

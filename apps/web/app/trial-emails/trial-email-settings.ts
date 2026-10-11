@@ -1,5 +1,11 @@
-import type { EmailConfig, EmailEnv } from "@web/email/send-email";
+import {
+  type EmailConfig,
+  type EmailEnv,
+  RESEND_SANDBOX_FROM,
+} from "@web/email/send-email";
 import { LEGAL_IDENTITY_ENV } from "@web/legal/legal-identity";
+
+import { reminderOptOutSecret } from "./reminder-opt-out-token";
 
 /**
  * What the trial emails (#1173) need from the environment, and whether they
@@ -29,7 +35,13 @@ export type TrialEmailSettingsResolution =
   | { status: "ready"; settings: TrialEmailSettings }
   | { status: "not_configured"; missing: string[] };
 
-const SANDBOX_DOMAIN = /@resend\.dev>?\s*$/i;
+/** The domain of a `Name <address>` (or bare address) sender, lower-cased. */
+function senderDomain(sender: string): string | null {
+  return /@([^\s@>]+)>?\s*$/.exec(sender)?.[1]?.toLowerCase() ?? null;
+}
+
+/** Resend's shared testing domain, read off the sandbox sender itself. */
+const SANDBOX_DOMAIN = senderDomain(RESEND_SANDBOX_FROM);
 
 function read(env: EmailEnv, name: string): string | null {
   const value = env[name]?.trim();
@@ -42,8 +54,10 @@ export function trialEmailSettingsFromEnv(
 ): TrialEmailSettingsResolution {
   const apiKey = read(env, "RESEND_API_KEY");
   const declaredFrom = read(env, "WORTHLINE_EMAIL_FROM");
-  const from = declaredFrom && !SANDBOX_DOMAIN.test(declaredFrom) ? declaredFrom : null;
-  const optOutSecret = read(env, "AUTH_SECRET");
+  // A sender with no domain is not a verified one either.
+  const fromDomain = declaredFrom ? senderDomain(declaredFrom) : null;
+  const from = fromDomain && fromDomain !== SANDBOX_DOMAIN ? declaredFrom : null;
+  const optOutSecret = reminderOptOutSecret(env);
 
   if (!apiKey || !from || !optOutSecret) {
     return {

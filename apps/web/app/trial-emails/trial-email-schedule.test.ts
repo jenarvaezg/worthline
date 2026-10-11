@@ -1,6 +1,6 @@
-import type { TrialEmailCandidate } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
+import type { TrialEmailCandidate } from "./trial-email-candidates";
 import { dueTrialEmail, TRIAL_EMAIL_CUTOFF_MS } from "./trial-email-schedule";
 
 // A 3-day trial that started on the 1st at 10:00 UTC and closes on the 4th.
@@ -13,7 +13,6 @@ const candidate = (
   premiumUntil: null,
   remindersOptedOutAt: null,
   trialEndsAt: "2026-10-04T10:00:00.000Z",
-  trialStartedAt: "2026-10-01T10:00:00.000Z",
   userId: "user-1",
   workspaceId: "ws-1",
   ...overrides,
@@ -41,6 +40,12 @@ describe("dueTrialEmail (#1173)", () => {
         "2026-10-03T21:00:00.000Z",
       ),
     ).toBeNull();
+  });
+
+  test("the reminder window closes 12 h before the end: no «termina el X» on day X itself", () => {
+    expect(dueTrialEmail(candidate(), "2026-10-03T21:59:59.000Z")).toBe("trial_reminder");
+    expect(dueTrialEmail(candidate(), "2026-10-03T22:00:00.000Z")).toBeNull();
+    expect(dueTrialEmail(candidate(), "2026-10-04T09:00:00.000Z")).toBeNull();
   });
 
   test("once the trial closes the expiry notice is due, even if the reminder was missed", () => {

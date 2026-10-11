@@ -1,6 +1,7 @@
 import { readLegalIdentity } from "@web/legal/legal-identity";
 import {
   REMINDER_OPT_OUT_PARAM,
+  reminderOptOutSecret,
   verifyReminderOptOutToken,
 } from "@web/trial-emails/reminder-opt-out-token";
 import type { Metadata } from "next";
@@ -44,11 +45,7 @@ export default async function TrialRemindersPage({
   await connection();
   const raw = params[REMINDER_OPT_OUT_PARAM];
   const token = (Array.isArray(raw) ? raw[0] : raw) ?? null;
-  const secret = process.env.AUTH_SECRET?.trim() || null;
-  const valid =
-    token !== null &&
-    secret !== null &&
-    verifyReminderOptOutToken(token, secret) !== null;
+  const valid = verifyReminderOptOutToken(token, reminderOptOutSecret()) !== null;
   const contactEmail = readLegalIdentity().contactEmail;
 
   return (

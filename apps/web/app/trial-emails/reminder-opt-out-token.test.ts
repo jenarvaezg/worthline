@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  reminderOptOutSecret,
   signReminderOptOutToken,
   verifyReminderOptOutToken,
 } from "./reminder-opt-out-token";
@@ -22,6 +23,18 @@ describe("the «no recibir recordatorios» link token (#1173)", () => {
     const [, signature] = signReminderOptOutToken("user-1", SECRET).split(".");
     const forged = `${Buffer.from("user-2").toString("base64url")}.${signature}`;
     expect(verifyReminderOptOutToken(forged, SECRET)).toBeNull();
+  });
+
+  test("with no secret no token is valid: there is nothing to check it against", () => {
+    expect(
+      verifyReminderOptOutToken(signReminderOptOutToken("user-1", SECRET), null),
+    ).toBeNull();
+  });
+
+  test("the key is AUTH_SECRET, read in one place; blank counts as absent", () => {
+    expect(reminderOptOutSecret({ AUTH_SECRET: " s3cr3t " })).toBe("s3cr3t");
+    expect(reminderOptOutSecret({ AUTH_SECRET: "  " })).toBeNull();
+    expect(reminderOptOutSecret({})).toBeNull();
   });
 
   test("rejects a token signed with another secret", () => {

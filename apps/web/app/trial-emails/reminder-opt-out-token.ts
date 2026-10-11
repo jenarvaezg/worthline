@@ -23,6 +23,16 @@ export const REMINDER_OPT_OUT_PATH = "/correo/recordatorios";
 /** The query parameter that carries the token. */
 export const REMINDER_OPT_OUT_PARAM = "t";
 
+/**
+ * The signing key, or null when the deployment has none — the ONE place the
+ * secret is read. Blank counts as absent, like every other env read here.
+ */
+export function reminderOptOutSecret(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  return env["AUTH_SECRET"]?.trim() || null;
+}
+
 /** The absolute «no recibir recordatorios» link for one identity. */
 export function reminderOptOutUrl(
   siteUrl: string,
@@ -41,11 +51,16 @@ export function signReminderOptOutToken(userId: string, secret: string): string 
   return `${identity}.${signature(userId, secret).toString("base64url")}`;
 }
 
-/** The identity the token was signed for, or null when it is not a valid token. */
+/**
+ * The identity the token was signed for, or null when it is not a valid token —
+ * including when there is no secret to check it against: with no key, no link
+ * can be trusted.
+ */
 export function verifyReminderOptOutToken(
   token: string | null | undefined,
-  secret: string,
+  secret: string | null,
 ): string | null {
+  if (!secret) return null;
   const parts = token?.split(".") ?? [];
   if (parts.length !== 2) return null;
   const [identity, supplied] = parts as [string, string];

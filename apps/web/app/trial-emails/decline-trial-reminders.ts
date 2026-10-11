@@ -8,6 +8,8 @@
  * preference was not saved is exactly the dishonesty the feature exists to avoid.
  */
 
+import { errorMessage } from "@web/error-message";
+
 import { verifyReminderOptOutToken } from "./reminder-opt-out-token";
 
 export type DeclineRemindersState =
@@ -40,7 +42,7 @@ export async function declineTrialReminders(
   token: string | null | undefined,
   deps: DeclineRemindersDeps,
 ): Promise<DeclineRemindersState> {
-  const userId = deps.secret ? verifyReminderOptOutToken(token, deps.secret) : null;
+  const userId = verifyReminderOptOutToken(token, deps.secret);
   if (!userId) return { error: DECLINE_INVALID_LINK, status: "error" };
 
   try {
@@ -49,7 +51,7 @@ export async function declineTrialReminders(
       : { error: DECLINE_UNAVAILABLE, status: "error" };
   } catch (error) {
     deps.log.error("[trial-email] could not record the reminder opt-out", {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       userId,
     });
     return { error: DECLINE_UNAVAILABLE, status: "error" };

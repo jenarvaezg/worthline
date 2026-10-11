@@ -1,3 +1,4 @@
+import { PREMIUM_INCLUDES } from "@web/entitlements/paywall-copy";
 import { TRIAL_EMAIL_KINDS, type TrialEmailKind } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
@@ -49,6 +50,23 @@ describe("trial email copy (#1173)", () => {
     expect(email.text).toContain("No tienes que hacer nada");
     expect(email.text).toContain(`${SITE}/premium`);
     expect(email.text).toContain(OPT_OUT);
+  });
+
+  test("day-2 reminder never claims a welcome it cannot know was received", () => {
+    // The welcome's retry window can pass, its claim can stick unsent, or the
+    // trial can predate these emails: «como te contamos» would be false then.
+    expect(build("trial_reminder").text).not.toMatch(/como te contamos|bienvenida/i);
+  });
+
+  test("day-2 reminder lists every premium gate as what stops, from the paywall's own list", () => {
+    const { text } = build("trial_reminder");
+    // Named independently of the list, as the paywall gates them (paywall-copy.ts).
+    expect(text).toContain("importar extractos de broker");
+    expect(text).toContain("conectar fuentes de datos nuevas");
+    expect(text).toContain("sincronizando solas");
+    expect(text).toContain("justificantes");
+    expect(text).toContain("cupo mensual de mensajes de cortesía");
+    for (const line of PREMIUM_INCLUDES) expect(text).toContain(`- ${line}`);
   });
 
   test("expiry: the fall to free without loss, how to come back, and that it is the last one", () => {

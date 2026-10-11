@@ -9,7 +9,18 @@
 // wall; otherwise PWA install/SW registration receives the login HTML.
 // The public landing now lives at `/` (estreno, #954) — see the `pathname === "/"`
 // branch below — so it no longer needs a dedicated `/landing` entry here.
-const PUBLIC_PATHS = new Set(["/login", "/manifest.json", "/mcp-icon.svg", "/sw.js"]);
+//
+// `/correo/recordatorios` is the «no recibir recordatorios» link of the trial
+// emails (#1173): it has to work from the inbox with no sign-in in between, and
+// the page acts only on the identity its signed token names, never on a session.
+// That one path, exactly — nothing else under `/correo` is public.
+const PUBLIC_PATHS = new Set([
+  "/login",
+  "/manifest.json",
+  "/mcp-icon.svg",
+  "/sw.js",
+  "/correo/recordatorios",
+]);
 
 /**
  * The machine endpoints: routes a MACHINE calls with no session and its own
@@ -63,17 +74,11 @@ export function isPublicPath(pathname: string): boolean {
   }
   // The public landing (`/`, estreno #954), sign-in route, public demo entry,
   // and Auth.js endpoints must stay reachable for a logged-out visitor.
-  //
-  // So must the links inside the trial emails (#1173): «no recibir
-  // recordatorios» has to work from the inbox, with no sign-in in between. The
-  // page acts only on the identity its signed token names, never on a session.
   return (
     pathname === "/" ||
     pathname.startsWith("/api/auth") ||
     pathname === "/demo" ||
     pathname.startsWith("/demo/") ||
-    pathname === "/correo" ||
-    pathname.startsWith("/correo/") ||
     PUBLIC_PATHS.has(pathname)
   );
 }

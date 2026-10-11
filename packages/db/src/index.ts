@@ -143,10 +143,10 @@ export {
   type StartTrialInput,
   type TenancyDirectory,
   TRIAL_EMAIL_KINDS,
-  type TrialEmailCandidate,
   type TrialEmailClaim,
   type TrialEmailKind,
   type TrialEmailLedger,
+  type TrialEmailMarks,
   type UpdateMaintainerAlertStatusInput,
   type UpdateWorkspaceBillingInput,
   type UsageLimits,
@@ -183,6 +183,7 @@ export {
 export type { EarlyRepaymentPlan } from "./early-repayment-plan";
 export {
   deriveEffectivePlan,
+  type EffectivePlanInput,
   type EntitlementPlan,
   TRIAL_DURATION_DAYS,
   trialEndsAtFrom,
