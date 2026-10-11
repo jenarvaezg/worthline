@@ -94,6 +94,11 @@ another report to reconcile.
 
 ## Agents defined in this repo
 
-None yet. Each of the first tranche registers itself here as it lands:
+Each of the first tranche registers itself here as it lands:
 `gate-runner` (#1623), `calc-reviewer` (#1624), and `wl-db-reviewer` plus
 `front-reviewer` (#1625).
+
+- [`gate-runner`](../../.claude/agents/gate-runner.md) (#1623) runs `bun run verify`,
+  plus `bun run build` when the change touches Next-generated types, and returns only
+  the verdict: two lines when green, or the failing step, package and red lines when
+  red. Brief it with the tree path. Tools: `Bash`, `Read`, `Grep`. It never edits.
