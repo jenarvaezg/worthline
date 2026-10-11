@@ -45,7 +45,7 @@ Playwright journeys, `build-error-resolver` for a red typecheck.
 
 A subagent gets exactly two things:
 
-- **claim** — the issue: `gh issue view <n> --comments`.
+- **claim** — the issue: `gh issue view <n> --json title,body,labels,comments`.
 - **evidence** — the diff: `git diff main...HEAD` (three dots: the change, not the
   drift of `main` underneath it).
 

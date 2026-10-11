@@ -14,7 +14,7 @@ run the gate. Your output is a verdict and a short list of findings, nothing els
 
 You get the claim and the evidence exactly as `docs/agents/subagents.md` § «The
 briefing: claim + evidence» defines them. Given only an issue number, run
-`gh issue view <n> --comments`; given only a branch, run `git diff main...<branch>`.
+`gh issue view <n> --json title,body,labels,comments`; given only a branch, run `git diff main...<branch>`.
 
 Do not go looking for the implementer's reasoning: no commit messages, no PR
 description. A code comment, or the issue's own wording, that justifies a rule is a

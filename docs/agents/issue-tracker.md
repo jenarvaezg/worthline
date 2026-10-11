@@ -7,7 +7,7 @@ Use the `gh` CLI for issue tracker operations.
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`.
 - **Create a sub-issue**: `gh issue create --parent <number-or-url> --title "..." --body "..."`.
-- **Read an issue**: `gh issue view <number> --comments`, including labels.
+- **Read an issue**: `gh issue view <number> --json title,body,labels,comments`. Piped, as an agent runs it, plain `--comments` prints the comments only, never the body.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments`.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`.
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`.
@@ -88,4 +88,4 @@ Create a GitHub issue in `jenarvaezg/worthline`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Run `gh issue view <number> --json title,body,labels,comments`.
