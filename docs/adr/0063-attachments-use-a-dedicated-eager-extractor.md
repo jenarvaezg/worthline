@@ -714,10 +714,21 @@ What it carries is observed and nothing else (ADR 0048):
   can drift. A printed minus is the half's direction, not the figure, so magnitudes are
   kept — the reading the ledger makes of a signed row.
 
-This slice does NOT connect the document to `propose_transfer`; that is the traspaso
-lane's ticket. What changes already is that a validated `transfer` lifts the
-unvalidated-evidence gate like any validated document, and that the structured block
-carries both identifiers to the model.
+A validated `transfer` lifts the unvalidated-evidence gate like any validated document,
+and the structured block carries both identifiers to the model. This slice left the lane
+to its own ticket, and #1799 then connected it: the paper is now the second source of
+`propose_transfer`, ahead of anything the user typed, and #1800 checks the two holdings
+against its identifiers. How the lane reads it is the traspaso's doctrine and lives in
+ADR 0083 (amendment of #1799, #1800 and the review of PRD #1793).
+
+One thing changes on THIS side of the seam, and it is the review's (#1793, decided with
+Jose): the card of a `transfer` document — in the DATOS ESTRUCTURADOS block and in
+`get_extracted_document` — carries `foundByWorthline`, one line per side saying which
+holding of the book carries the identifier the paper prints: one, none (with the route),
+or several (and the app does not pick). It is the only card whose rendering reads the
+store, so the route reads that lookup once per turn before composing any provider's
+prompt (`readTransferBookForTurn`), and it is paid only when such a paper is in the
+window. The ids in those lines are worthline's own lookup and count as read (#1263).
 
 ## Consequences
 

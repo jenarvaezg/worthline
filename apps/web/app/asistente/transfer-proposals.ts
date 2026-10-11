@@ -513,7 +513,7 @@ export async function buildTransferProposal(
   const currency = origin.currency;
   const source: TransferSource = args.source ?? { from: "message" };
   // A paper's importe is in the paper's currency, and the pair is written in the
-  // holdings': no rate is ever invented (ADR 0065), so a confirmation in another one is
+  // holdings': no rate is ever invented (ADR 0072), so a confirmation in another one is
   // refused rather than read as if it were the same money.
   if (
     source.from === "document" &&

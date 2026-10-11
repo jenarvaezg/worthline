@@ -435,3 +435,63 @@ re-typing pass. `op_n5396` (4.979,55 €, 05-12-2025) was still a `buy` and is r
 by a one-shot in the same deploy. Neither moves a cent of patrimonio — units and cost
 are conserved. What changes is the **ahorro medido de diciembre-2025, which loses
 4.979,55 € nobody earned**.
+
+## Amendment (#1799, #1800 and the review of PRD #1793, 12-oct-2026) — the paper is the second source, and its identifiers decide the funds
+
+PRD #1793 was one user, one bank notice of a traspaso, and a lane that could not take
+it: the paper was read as the wrong document, the model searched the book by the
+printed names, declared a fund the user held missing and offered an alta. The door is
+unchanged — the confirm still calls `recordInvestmentTransfer`. What changed is where
+`propose_transfer` reads, and what decides the two holdings.
+
+- **The validated confirmation is the second source, and it wins** (#1799). With a
+  `transfer` document (ADR 0063) in the window the lane builds from it, never from the
+  message beside it — the operation's rule (#1374, #1466). A reembolso states the
+  participaciones that LEFT: the origin's leg is `units`, its VL derived (#1544). A
+  suscripción states the ones that ARRIVED: `destinationUnits`, and the origin is
+  divided at its own price, with the card's note. A printed commission other than zero
+  is refused to «Traspasar», where each figure has a field; a paper in another currency
+  than the holdings' is refused, because no rate is invented (ADR 0072). The draft
+  records provenance `agent` and the file's name, and the card says «lo que he leído en
+  el documento «…»». The typed message stays the source with no paper, and since #1794
+  it reads a PASTED block by its labels (the operation's reader, #1751), settling a
+  three-decimal figure («37.203») by the block's own decimal mark and refusing it, by
+  name, when the block does not settle it.
+- **The paper's identifiers decide which funds** (#1800). Each side whose paper prints
+  an ISIN or a DGS code is checked against the holding the model chose, as the TYPED
+  pair, through the operation lane's own piece (`security-identity.ts`): the same
+  identifier passes; another one is refused naming both; none registered contradicts
+  nothing — unless another holding carries the paper's, and then the pick was by name and
+  the refusal names that holding. A destination nobody carries is a fund the book does
+  not have yet: the route is an alta without opening carrying that identifier, then the
+  traspaso. An origin gets no such route.
+- **The holdings a refusal looks up count as read** (#1263). They travel in
+  `candidateHoldings`, the one field of a write's answer that grounds an id — filled from
+  the store's own rows, never from the call's input, so an invented id cannot launder
+  itself through a refusal. With several, the app does not pick: the person is asked.
+- **The paper's identifiers are frozen in the plan and re-checked at confirm.**
+  `InvestmentTransferPlan` keeps `originSecurityId` / `destinationSecurityId`; a ficha
+  edit between the card and the confirm that makes either holding another instrument is
+  refused, writing nothing.
+- **worthline matches the funds BEFORE the model picks** (review of #1793, decided with
+  Jose). The live run of #1801 reproduced the incident: the identity check above only
+  acts once the model reaches the lane, and the model never did. So the paper's card
+  carries what the same lookup finds per side — «en tu patrimonio: «Nombre» (id)», «no
+  está en tu patrimonio» with the route, or every holding by name and id when several
+  carry it — across every live investment, managed-portfolio members included. Those ids
+  count as read like `candidateHoldings`, for the same reason. It is paid only when such
+  a paper is in the window, so the turn's floor (#1342) does not move.
+- **Who hears a refusal** (story 31, #1752's mechanism). The lane's terminal refusals —
+  figures missing or incomplete, a commission, a traspaso already noted, another
+  currency, a fund the book does not have, a figure the origin does not hold — are
+  written for the person, so the screen can quote them if the model narrates something
+  else. The ones the model fixes alone by passing another id — an identity that does not
+  match a holding that does carry it, several candidates — stay the model's.
+- **The other lane refuses to split it** (story 32). With a traspaso paper in the
+  window, `propose_operation` refuses a compra or a venta of either of its funds,
+  matched by identifier, and points at `propose_transfer`: booked as a venta plus a
+  compra it would realize a plusvalía that never happened.
+- **A «sí, procede» reaches back** (#1798). The typed figures last until a traspaso card
+  spends them: a message that states nothing about a traspaso is transparent, and in
+  this lane — not in the shared reader — «ahora» is not a day and «todo claro», «todo
+  bien» or «todo correcto» are assent, not the whole position.
