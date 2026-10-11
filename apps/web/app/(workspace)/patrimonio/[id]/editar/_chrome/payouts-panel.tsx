@@ -23,13 +23,9 @@ import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import type { ManualAsset, WarningOverride } from "@worthline/domain";
-import {
-  describeIncomeDoubleCount,
-  INCOME_DOUBLE_COUNT_CODE,
-  incomeDoubleCount,
-  isHousingAsset,
-} from "@worthline/domain";
+import { isHousingAsset } from "@worthline/domain";
 import type { ReactNode } from "react";
+import { doubleCountNotice } from "./double-count-notice";
 
 export async function loadPayoutsPanel(
   ficha: FichaContext,
@@ -57,15 +53,14 @@ export async function loadPayoutsPanel(
     scopeId ? store.readFireConfig(today) : Promise.resolve(null),
   ]);
 
-  // The double-count cross (#1675), by the same rule the health engine runs: the
-  // ficha's holding and the incomes linked to it, read above. Acknowledged, it stays
-  // in the inventory (ADR 0004) and stops asking here, exactly as a warning does.
-  const cross = incomeDoubleCount(asset, schedules, today);
-  const acknowledged = overrides.some(
-    (override) => override.code === INCOME_DOUBLE_COUNT_CODE && override.entityId === id,
-  );
-  const doubleCount =
-    cross === null || acknowledged ? null : describeIncomeDoubleCount(cross);
+  // The double-count cross (#1675), by the same rule the health engine runs, over
+  // the incomes read above.
+  const doubleCount = doubleCountNotice({
+    asset,
+    incomes: schedules,
+    overrides,
+    todayISO: today,
+  });
 
   async function boundCreatePayoutAction(formData: FormData) {
     "use server";

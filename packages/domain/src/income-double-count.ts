@@ -11,12 +11,11 @@
  */
 
 import { isHousingAsset } from "./classification";
-import { type Income, incomeExclusionReason } from "./payouts";
+import type { Income } from "./payouts";
 import type { ManualAsset } from "./workspace-types";
 
 /** Lo que el cruce encontró en un holding: él y las rentas ligadas que lo duplican. */
 export interface IncomeDoubleCount {
-  holdingId: string;
   holdingName: string;
   incomes: readonly Income[];
 }
@@ -32,29 +31,31 @@ export function incomeDoubleCount(
   // Un inmueble nunca suma su renta a su valor: la renta SUSTITUYE la tasa del tramo
   // (ADR 0076), y el ladrillo no entra en el capital vendible (ADR 0081). Lo que
   // queda por decir de un alquiler —sin gastos, nominal, terminado— lo dicen ya los
-  // avisos de su propia ruta.
+  // avisos de su propia ruta. Una pensión mal tipada como inmueble es un error de
+  // instrumento, y se corrige en la ficha (#1512), no aquí.
   if (isHousingAsset(asset)) {
     return null;
   }
   // Sin valor no hay capital que contar dos veces: es la forma honesta de una renta
-  // que ya se comió el capital que la genera (una renta vitalicia contratada).
+  // que ya se comió el capital que la genera (una renta vitalicia contratada). El
+  // valor guardado es el de la cifra: fuera de la vivienda —que ya salió arriba— y
+  // de las deudas, ningún holding se valora por curva.
   if (asset.currentValue.amountMinor <= 0) {
     return null;
   }
   const linked = incomes.filter(
     (income) =>
       income.holdingId === asset.id &&
-      // Solo la que alguna cifra lee (pasiva y real, ADR 0108): la excluida no cuenta
-      // ni una vez, y su fila ya dice por qué.
-      incomeExclusionReason(income) === null &&
-      // La terminada ya no llega; la que empieza más adelante sí cruza, porque lo que
-      // duplica es la declaración y no el calendario.
+      // Lo que duplica es la DECLARACIÓN, no la cifra que hoy la lee: cruza la que
+      // empieza más adelante, y la que la puerta guardó sin naturaleza o en nominal
+      // (una renta vitalicia contratada lo es). Solo calla la terminada: ese dinero
+      // ya no llega.
       (income.endISO === null || income.endISO >= todayISO),
   );
   if (linked.length === 0) {
     return null;
   }
-  return { holdingId: asset.id, holdingName: asset.name, incomes: linked };
+  return { holdingName: asset.name, incomes: linked };
 }
 
 /**

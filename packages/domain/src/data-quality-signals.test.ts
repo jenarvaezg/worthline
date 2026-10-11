@@ -1954,20 +1954,32 @@ describe("collectDataQualitySignals — INCOME_DOUBLE_COUNT (#1675)", () => {
     };
   }
 
-  test("un plan de pensiones con valor y una renta ligada avisa de que el mismo dinero puede contar dos veces", () => {
+  /** The plan at `currentValueMinor`, with the given incomes linked to it. */
+  function crossSignals(options: {
+    currentValueMinor?: number;
+    incomes?: Income[];
+    overrides?: Partial<CollectDataQualitySignalsInput>;
+  }): DataQualitySignal[] {
     const { asset, input } = fixture();
     const plan = asset({
-      currentValueMinor: 52_300_00,
+      currentValueMinor: options.currentValueMinor ?? 52_300_00,
       id: "asset_plan",
       instrument: "pension_plan",
       liquidityTier: "term-locked",
       name: "Plan Indexa",
       type: "investment",
     });
-
-    const signals = collectDataQualitySignals(
-      input({ assets: [plan], incomes: [income({ id: "inc_vitalicia" })] }),
+    return collectDataQualitySignals(
+      input({
+        assets: [plan],
+        incomes: options.incomes ?? [income({ id: "inc_vitalicia" })],
+        ...options.overrides,
+      }),
     ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
+  }
+
+  test("un plan de pensiones con valor y una renta ligada avisa de que el mismo dinero puede contar dos veces", () => {
+    const signals = crossSignals({});
 
     expect(signals).toHaveLength(1);
     expect(signals[0]).toMatchObject({
@@ -2008,42 +2020,23 @@ describe("collectDataQualitySignals — INCOME_DOUBLE_COUNT (#1675)", () => {
     expect(signals).toEqual([]);
   });
 
-  /** The plan at `currentValueMinor`, with the given incomes linked to it. */
-  function crossSignals(options: {
-    currentValueMinor?: number;
-    incomes?: Income[];
-    overrides?: Partial<CollectDataQualitySignalsInput>;
-  }): DataQualitySignal[] {
-    const { asset, input } = fixture();
-    const plan = asset({
-      currentValueMinor: options.currentValueMinor ?? 52_300_00,
-      id: "asset_plan",
-      instrument: "pension_plan",
-      liquidityTier: "term-locked",
-      name: "Plan Indexa",
-      type: "investment",
-    });
-    return collectDataQualitySignals(
-      input({
-        assets: [plan],
-        incomes: options.incomes ?? [income({ id: "inc_vitalicia" })],
-        ...options.overrides,
-      }),
-    ).filter((signal) => signal.code === "INCOME_DOUBLE_COUNT");
-  }
-
   test("un holding sin valor calla: el capital ya se convirtió en la renta", () => {
     expect(crossSignals({ currentValueMinor: 0 })).toEqual([]);
   });
 
-  test("una renta que ninguna cifra lee no cuenta ni una vez, así que tampoco dos", () => {
-    expect(crossSignals({ incomes: [income({ id: "inc", nature: null })] })).toEqual([]);
-    expect(crossSignals({ incomes: [income({ id: "inc", nature: "work" })] })).toEqual(
-      [],
+  test("lo que duplica es la declaración: una renta sin naturaleza, de trabajo o nominal también cruza", () => {
+    // La puerta guarda naturaleza y base sin declarar por defecto (ADR 0108), y una
+    // renta vitalicia contratada es un importe nominal: callar aquí dejaría fuera
+    // justo el caso para el que existe la señal.
+    expect(crossSignals({ incomes: [income({ id: "inc", nature: null })] })).toHaveLength(
+      1,
     );
     expect(
+      crossSignals({ incomes: [income({ id: "inc", nature: "work" })] }),
+    ).toHaveLength(1);
+    expect(
       crossSignals({ incomes: [income({ amountBasis: "nominal", id: "inc" })] }),
-    ).toEqual([]);
+    ).toHaveLength(1);
   });
 
   test("una renta ya terminada calla: ese dinero dejó de llegar", () => {

@@ -91,20 +91,28 @@ patrimonio as an invented asset.
    capital or is what it yields is something only the user knows, so the decision
    stays with the user.
 2. **What crosses.** A holding the scope owns, with value above zero, that is not a
-   property, and that has at least one linked income that a passive figure can read
-   (passive and real, ADR 0108) and that has not ended. One that starts later still
-   crosses: the declaration itself is what duplicates, not the calendar. A holding
-   at zero is the honest shape of an annuity that has absorbed its capital, so it
-   stays silent. So does an excluded income: it counts zero times, so it cannot
-   count twice, and its row already says why.
+   property, and that has at least one linked income that has not ended. The
+   declaration is what duplicates, not the figure that reads it today. So an income
+   that starts later crosses, and so does one the door saved with no nature or
+   basis, or in nominal euros. A contracted life annuity is a nominal amount, and
+   staying silent there would miss the very case this signal exists for. A holding
+   at zero stays silent: that is the honest shape of an annuity that has absorbed
+   its capital. An ended income stays silent too, because that money no longer
+   arrives.
 3. **A property stays silent by construction** (ADR 0076). Its rent replaces the
    housing rung's rate and the brick never enters the sellable capital, so the rent
    never adds to the value. Whatever is left to say about a lease (no expenses,
-   nominal, ended) its own notices already say.
+   nominal, ended) its own notices already say. A pension mistyped as a property is
+   an instrument error. The ficha corrects it (#1512), and the rent notices already
+   flag it: a start years away, no expenses.
 4. **It can be acknowledged** (ADR 0004). Interest on a deposit or a bond's coupon
    is what the capital yields. The legitimate case is acknowledged once with
    «Es intencional», beside the incomes in the holding's Cobros, and it stays in the
-   agent's inventory labelled as intentional.
+   agent's inventory labelled as intentional. The instrument is deliberately not
+   used to guess which case it is. Every interest or coupon schedule that already
+   exists on a non-property holding will therefore ask once. That is the accepted
+   cost: a rule that exempted deposits, funds and bonds would miss an annuity typed
+   as one of them.
 5. **It headlines the home, unlike its coherence siblings.** Savings and spending
    coherence (ADR 0075, ADR 0099) question only the figures on /objetivos. This
    cross has the holding's value on one side, and the value is part of today's

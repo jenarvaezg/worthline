@@ -102,6 +102,7 @@ export {
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
   dataQualitySignalSortKey,
+  overriddenSignalKeys,
 } from "./data-quality-collector";
 export type {
   DataQualityConnectedSource,

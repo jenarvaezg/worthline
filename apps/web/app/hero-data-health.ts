@@ -210,9 +210,11 @@ function fixSurface(
   // A signal names its holding by the internal storage id; the link must name it
   // by the public `wl_hld_…` one (#1318). No public id → no link, never a link
   // to an id the router no longer accepts.
-  const fichaHref = (): string | null => {
+  const fichaHref = (
+    toFicha: (publicId: string) => string = holdingDetailHref,
+  ): string | null => {
     const publicId = affected ? publicIds.publicByInternal.get(affected.id) : undefined;
-    return publicId ? holdingDetailHref(publicId) : null;
+    return publicId ? toFicha(publicId) : null;
   };
   switch (signal.category) {
     case "warning": {
@@ -271,8 +273,8 @@ function fixSurface(
       // Va al héroe a propósito, al contrario que sus hermanas de coherencia: uno de
       // los dos lados es el VALOR, y una pensión capitalizada como holding infla el
       // patrimonio de hoy exactamente en lo que vale.
-      const publicId = affected ? publicIds.publicByInternal.get(affected.id) : undefined;
-      return publicId ? { href: holdingCobrosHref(publicId), label: "Ver cobros" } : null;
+      const href = fichaHref(holdingCobrosHref);
+      return href ? { href, label: "Ver cobros" } : null;
     }
     case "history_coverage":
     case "transfer_integrity":
