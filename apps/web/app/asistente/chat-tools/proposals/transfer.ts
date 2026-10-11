@@ -2,7 +2,11 @@ import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 import type { ChatToolsInput } from "@web/asistente/chat-tools/input";
 import { TRANSFER_PROPOSAL_SCHEMA } from "@web/asistente/chat-tools/schemas/operations";
 import type { ChatToolTurn } from "@web/asistente/chat-tools/turn";
-import type { ProposalRefusal } from "@web/asistente/proposal-refusal";
+import {
+  modelRefusal,
+  type ProposalRefusal,
+  userRefusal,
+} from "@web/asistente/proposal-refusal";
 import {
   transferDocumentInContext,
   transferFromDocument,
@@ -54,12 +58,14 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
         const originHoldingId = args.originHoldingId?.trim();
         const destinationHoldingId = args.destinationHoldingId?.trim();
         if (!originHoldingId || !destinationHoldingId) {
-          return Promise.resolve({
-            error: "transfer_holdings_required",
-            message:
+          // The caller's to fix, by reading: nothing the person could act on (#1752).
+          return Promise.resolve(
+            modelRefusal(
+              "transfer_holdings_required",
               "Un traspaso tiene dos posiciones: de dónde sale y a dónde entra. Lee la " +
-              "cartera y pasa los dos identificadores que te devuelva.",
-          });
+                "cartera y pasa los dos identificadores que te devuelva.",
+            ),
+          );
         }
         // The evidence frontier (#1482, #1418's doctrine, #1799): the importe and the
         // date come from what worthline read, never from the arguments — so a turn
@@ -93,7 +99,13 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
             input.asOf,
           );
           if (built.ok) return built.proposal;
-          return built.refusal ?? { error: built.error };
+          // Story 31: every other refusal of the builder is for good — a traspaso
+          // already noted, another currency, a figure the origin does not hold, a fund
+          // the book does not have — and its sentence routes the PERSON, so the screen
+          // may quote it if the model narrates something else (#1752). The identity
+          // refusals carry their own audience: one the model fixes by passing another
+          // id stays the model's.
+          return built.refusal ?? userRefusal("transfer_not_written", built.error);
         });
       },
     }),
@@ -112,7 +124,7 @@ function transferSource(
   input: ChatToolsInput,
 ):
   | { ok: true; transfer: TypedTransfer; source: TransferSource }
-  | { ok: false; refusal: ProposalRefusal | { error: string; message: string } } {
+  | { ok: false; refusal: ProposalRefusal } {
   const document = transferDocumentInContext(input.validatedAttachments ?? []);
   if (document !== null) {
     const fromDocument = transferFromDocument(document);
@@ -130,15 +142,16 @@ function transferSource(
   }
   const typed = input.typedTransfer;
   if (typed === undefined || typed.status !== "read") {
+    // The person's to write — what is missing, said in a sentence that tells them how
+    // (story 31): no pick of holdings would ever supply a figure.
     return {
       ok: false,
-      refusal: {
-        error: "transfer_not_in_message",
-        message:
-          typed?.status === "incomplete"
-            ? typedTransferGapMessage(typed.missing, typed.unsettledFigure)
-            : typedTransferGapMessage(["amount", "date"]),
-      },
+      refusal: userRefusal(
+        "transfer_not_in_message",
+        typed?.status === "incomplete"
+          ? typedTransferGapMessage(typed.missing, typed.unsettledFigure)
+          : typedTransferGapMessage(["amount", "date"]),
+      ),
     };
   }
   return {

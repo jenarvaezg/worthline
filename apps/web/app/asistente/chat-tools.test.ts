@@ -23,8 +23,10 @@ import {
 import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
 import { PASTED_REEMBOLSO } from "@web/asistente/pasted-transfer-receipt-fixture";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
+import { userFacingRefusal } from "@web/asistente/proposal-refusal";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
+import { confirmTransferProposalAction } from "@web/asistente/transfer-proposal-action";
 import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
 import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
@@ -1491,6 +1493,61 @@ describe("createChatTools · propose_transfer (#1482)", () => {
     store.close();
   });
 
+  describe("a refusal for good is said to the person, in worthline's words (story 31)", () => {
+    it("figures that are missing are the person's to write", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, undefined);
+
+      const result = await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        audience: "user",
+        error: "transfer_not_in_message",
+      });
+      expect(userFacingRefusal(result)).toContain("no he visto la fecha");
+      store.close();
+    });
+
+    it("a traspaso already noted is said to the person, naming it", async () => {
+      const store = await transferStore();
+      const { destination, origin, tools } = await transferTools(store, DICTATED);
+      const first = (await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      )) as { draft: { proposalId: string } };
+      await confirmTransferProposalAction(first.draft, store, {
+        now: () => "2026-08-21T10:00:00.000Z",
+        today: () => "2026-08-21",
+      });
+
+      const again = await tools["propose_transfer"]?.execute?.(
+        { destinationHoldingId: destination, originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(again).toMatchObject({ audience: "user" });
+      expect(userFacingRefusal(again)).toContain("ya está anotado");
+      store.close();
+    });
+
+    it("a call missing one of the two holdings is the model's to fix, and stays off the screen", async () => {
+      const store = await transferStore();
+      const { origin, tools } = await transferTools(store, DICTATED);
+
+      const result = await tools["propose_transfer"]?.execute?.(
+        { originHoldingId: origin },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({ audience: "model" });
+      expect(userFacingRefusal(result)).toBeNull();
+      store.close();
+    });
+  });
+
   it("routes away from the two lanes a traspaso is NOT", async () => {
     const store = await transferStore();
     const { tools } = await transferTools(store, DICTATED);
@@ -1680,13 +1737,15 @@ describe("createChatTools · propose_transfer (#1482)", () => {
         },
       ]);
 
-      const result = (await tools["propose_transfer"]?.execute?.(
+      const result = await tools["propose_transfer"]?.execute?.(
         { destinationHoldingId: destination, originHoldingId: origin },
         toolCallContext(),
-      )) as { error?: string };
+      );
 
-      expect(result.error).toContain("USD");
-      expect(result.error).toContain("no convierto divisas");
+      // Said to the person (story 31): no other pick of holdings changes the currency.
+      expect(result).toMatchObject({ audience: "user" });
+      expect(userFacingRefusal(result)).toContain("USD");
+      expect(userFacingRefusal(result)).toContain("no convierto divisas");
       store.close();
     });
 
@@ -1830,7 +1889,10 @@ describe("createChatTools · propose_transfer (#1482)", () => {
         )) as { audience?: string; error?: string; message?: string };
 
         expect(result.error).toBe("transfer_identity_mismatch");
-        expect(result.audience).toBe("user");
+        // The model fixes this one alone, by passing the holding that carries the ISIN:
+        // nothing for the person to read (story 31).
+        expect(result.audience).toBe("model");
+        expect(userFacingRefusal(result)).toBeNull();
         expect(result.message).toContain(EMERGENTES);
         expect(result.message).toContain(EUROPA);
         expect(result.message).toContain("«Fondo Europa»");
@@ -1912,10 +1974,29 @@ describe("createChatTools · propose_transfer (#1482)", () => {
         )) as { candidateHoldings?: unknown; error?: string; message?: string };
 
         expect(result.error).toBe("transfer_destination_not_held");
+        // No other id fixes it, so the person hears why (story 31).
+        expect(userFacingRefusal(result)).toContain(`ISIN ${EMERGENTES}`);
         expect(result.message).toContain(`ISIN ${EMERGENTES}`);
         expect(result.message).toContain("no está");
         expect(result.message).toContain("sin valoración de apertura");
         expect(result.candidateHoldings).toBeUndefined();
+        store.close();
+      });
+
+      it("an origin whose ISIN no holding has is said to the person: no other id fixes it (story 31)", async () => {
+        const store = await fundsStore([
+          { id: "europa", isin: EUROPA, name: "Fondo Europa" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        const result = await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["emergentes"], originHoldingId: ids["europa"] },
+          toolCallContext(),
+        );
+
+        expect(result).toMatchObject({ error: "transfer_identity_mismatch" });
+        expect(userFacingRefusal(result)).toContain(`ISIN ${MUNDO}`);
         store.close();
       });
 
@@ -1957,6 +2038,7 @@ describe("createChatTools · propose_transfer (#1482)", () => {
 
         // The app never picks between them: it says both, and asks.
         expect(refused.error).toBe("transfer_identity_ambiguous");
+        expect(userFacingRefusal(refused)).toBeNull();
         expect(refused.message).toContain("«Emergentes en MyInvestor»");
         expect(refused.message).toContain("«Emergentes en la cartera»");
         expect(refused.candidateHoldings).toEqual([

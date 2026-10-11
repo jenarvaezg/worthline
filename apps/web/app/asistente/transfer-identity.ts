@@ -40,7 +40,7 @@ import {
   type SecurityId,
 } from "@worthline/domain";
 
-import { type ProposalRefusal, userRefusal } from "./proposal-refusal";
+import { modelRefusal, type ProposalRefusal, userRefusal } from "./proposal-refusal";
 import {
   contradictingSecurityId,
   holdingsRegistering,
@@ -194,9 +194,13 @@ function refusalFor(
     id: requirePublicId(publicIds, carrier.id),
     label: carrier.name,
   }));
+  // From here on worthline FOUND the holding the paper means, so the model fixes the
+  // call by passing it — or by asking which one, with several. That is the model's to
+  // do, and the screen has nothing to quote (story 31). Above, nobody carries the
+  // identifier: no other id fixes it, and the person is told why.
   if (carriers.length === 1) {
     return {
-      ...userRefusal(
+      ...modelRefusal(
         "transfer_identity_mismatch",
         `${opening} El ${securityIdLabel(id)} lo tiene registrado «${carriers[0]!.name}».`,
       ),
@@ -204,7 +208,7 @@ function refusalFor(
     };
   }
   return {
-    ...userRefusal(
+    ...modelRefusal(
       "transfer_identity_ambiguous",
       `${opening} El ${securityIdLabel(id)} lo tienen registrado varias posiciones: ` +
         `${carriers.map((carrier) => `«${carrier.name}»`).join(", ")}. Dime cuál es la ` +
