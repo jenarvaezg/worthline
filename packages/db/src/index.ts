@@ -137,6 +137,8 @@ export {
   type MaintainerAlertStatus,
   type MaintainerAlertWithOccurrences,
   type ProviderCooldown,
+  type ProvisioningQuota,
+  type ProvisionSlotClaim,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
   type RenewJobLeaseInput,
@@ -245,6 +247,7 @@ export {
   type ProvisionDeps,
   provisionWorkspaceForUser,
   type TursoPort,
+  WorkspaceProvisioningClosedError,
 } from "./provisioner";
 export type {
   DailyCaptureBenchmarkFailure,

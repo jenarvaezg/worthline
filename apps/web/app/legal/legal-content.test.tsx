@@ -166,10 +166,24 @@ describe("política de privacidad · RGPD (#1172)", () => {
       "Sentry",
       "Google (Gemini API)",
       "Cerebras",
-      // Sentry y Resend son slices posteriores del PRD #1171: declarados, pero
-      // sin recibir aún ni un dato.
+      // Resend es un slice posterior del PRD #1171: declarado, pero sin recibir
+      // aún ni un dato.
       "aún no activo",
       "no reciben ningún dato",
+    ]);
+  });
+
+  test("declares Sentry as active, and says what an error report does and does not carry (#1175)", () => {
+    const page = html("privacidad");
+    // Sentry recibe errores desde #1175: marcarlo «aún no activo» callaría una
+    // cesión que sí ocurre.
+    expect(page).not.toMatch(/Sentry\s*<span class="legalPending">/);
+    expectAll("privacidad", [
+      "Registro de errores del servidor",
+      "datos personales filtrados antes de enviarse",
+      "ni tu dirección IP",
+      "ni el contenido de tu workspace",
+      "Solo errores",
     ]);
   });
 

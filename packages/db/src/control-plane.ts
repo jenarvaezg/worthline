@@ -30,6 +30,11 @@ import {
 } from "./control-plane/maintainer-alert-log";
 import { migrateControlPlane } from "./control-plane/migrate";
 import {
+  createProvisioningQuota,
+  PROVISIONING_QUOTA_SCHEMA,
+  type ProvisioningQuota,
+} from "./control-plane/provisioning-quota";
+import {
   createTenancyDirectory,
   TENANCY_SCHEMA,
   type TenancyDirectory,
@@ -95,6 +100,10 @@ export type {
   UpdateMaintainerAlertStatusInput,
 } from "./control-plane/maintainer-alert-log";
 export type {
+  ProvisioningQuota,
+  ProvisionSlotClaim,
+} from "./control-plane/provisioning-quota";
+export type {
   ControlPlaneGrant,
   ControlPlaneUser,
   ControlPlaneWorkspace,
@@ -124,6 +133,7 @@ export interface ControlPlaneStore
     DailyCaptureLog,
     BenchmarkPriceCache,
     UsageLimits,
+    ProvisioningQuota,
     ExposureProfileCatalog,
     MaintainerAlertLog,
     JobStore {
@@ -160,6 +170,7 @@ const SCHEMA = [
   ENTITLEMENT_SCHEMA,
   DAILY_CAPTURE_SCHEMA,
   USAGE_SCHEMA,
+  PROVISIONING_QUOTA_SCHEMA,
   BENCHMARK_PRICE_SCHEMA,
   EXPOSURE_PROFILE_SCHEMA,
   MAINTAINER_ALERT_SCHEMA,
@@ -180,6 +191,7 @@ async function buildControlPlaneStore(
     ...createDailyCaptureLog(client),
     ...createBenchmarkPriceCache(client),
     ...createUsageLimits(client),
+    ...createProvisioningQuota(client),
     ...createExposureProfileCatalog(client),
     ...createMaintainerAlertLog(client, newId),
     ...createJobStore(client, newId),

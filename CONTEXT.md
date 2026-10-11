@@ -67,7 +67,10 @@ The one small libSQL database that maps **users** → **workspaces** → **grant
 records each workspace's database name/URL. It is the only place that knows which
 workspace a signed-in user owns; each per-workspace database holds exactly one
 `id = 'default'` row and knows nothing of users. On first login a user with no grant
-is _provisioned_ a fresh workspace database here (ADR 0030).
+is _provisioned_ a fresh workspace database here (ADR 0030). Provisioning is the one
+step a **daily provisioning cap** (UI: «cupo diario de altas», #1175) can refuse: it
+meters new workspaces per UTC day, never a returning user's sign-in, and is off
+unless the deployment sets it.
 _Avoid_: admin database, master DB.
 
 **Scope**:

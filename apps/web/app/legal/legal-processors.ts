@@ -8,9 +8,15 @@
  *
  * Dos precisiones que el research (#1136) traía mal y el código desmiente:
  * quien autentica la web es **Google** vía next-auth (`auth.config.ts`), no
- * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034); y **Sentry y
- * Resend** todavía no están instalados (son slices posteriores del PRD #1171),
- * así que van marcados `active: false` hasta que traten su primer dato.
+ * WorkOS — WorkOS solo emite el OAuth del servidor MCP (ADR 0034); y **Resend**
+ * todavía no está instalado (es un slice posterior del PRD #1171), así que va
+ * marcado `active: false` hasta que trate su primer dato.
+ *
+ * **Sentry** entró con #1175: recibe los errores del servidor, filtrados por
+ * `error-monitoring.ts` (sin correo, IP, cookies, cabeceras ni contenido del
+ * workspace) y solo si el despliegue configura `SENTRY_DSN`. Se declara activo
+ * sin condicionarlo a esa variable: declarar un encargado que algún día no
+ * recibe nada es la imprecisión menor; callar uno que sí recibe, la grave.
  *
  * Fuentes de cada DPA y de la postura de entrenamiento de los LLM: el research
  * `docs/research/2026-07-18-minimo-legal-salida.md` (#1136).
@@ -60,10 +66,10 @@ export const LEGAL_PROCESSORS: readonly LegalProcessor[] = [
     purpose: "Correo transaccional: tu dirección y el contenido del propio aviso.",
   },
   {
-    active: false,
     mechanism: "DPA con Data Privacy Framework y cláusulas contractuales tipo",
     name: "Sentry",
-    purpose: "Errores técnicos, con los datos personales filtrados antes de enviarse.",
+    purpose:
+      "Registro de errores del servidor: qué falló y dónde en el código, con los datos personales filtrados antes de enviarse.",
   },
   {
     mechanism: "Condiciones de la API de pago: no entrenan con los datos enviados",

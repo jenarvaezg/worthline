@@ -137,6 +137,26 @@ diagnosis with links to both profiles in `/admin/catalogo`. A maintainer can rev
 the preserved evidence and close the alert through the existing lifecycle. No
 calculation trace, user-facing signal, or notification channel is introduced.
 
+## Amendment (#1175): sign-in raises about the provisioning cap
+
+A sixth category, `provisioning_cap`, is raised by **sign-in** when a new
+identity is turned away because the day's provisioning cap is reached — or
+because `WORTHLINE_DAILY_PROVISIONING_CAP` is set to something that is not a
+non-negative integer, in which case the cap fails closed for new workspaces.
+Like `missed_capture`, it is absent from the chat tool's enum and belongs to no
+tenant: workspace `fleet`, holding `provisioning-cap:<UTC day>`. The dedup key is
+therefore «this day's cap»: the first refusal mints the alert, every later one
+accumulates an occurrence — so the count reads as how many sign-ups were turned
+away that day — and the next day is a new incident.
+
+The payload carries the day, the cap, how many workspaces that day had already
+handed out, and the reason (`cap_reached` | `misconfigured`, with the
+unparseable value). It never carries **who** was refused: the builder is not
+given the identity, and the refused identity leaves no row in the control plane
+either. Raising is best-effort — the refusal and its honest «hoy estamos llenos,
+vuelve mañana» never wait on the alert. An existing user's sign-in is resolved
+before the cap is consulted, so it can neither be refused nor raise.
+
 ## Considered options
 
 - **Store alerts in the workspace database** — rejected. Any export/transfer would

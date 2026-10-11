@@ -52,11 +52,16 @@ CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
  * pass that never finalized (Vercel Cron is best-effort and skips invocations).
  * It is fleet-wide, so it carries sentinel workspace/holding ids rather than a
  * tenant's — see the raiser for the contract.
+ *
+ * `provisioning_cap` (#1175) is raised by sign-in itself when a new identity is
+ * turned away because the day's provisioning cap is reached (or misconfigured).
+ * Fleet-wide too, one alert per UTC day; it never carries who was refused.
  */
 export type MaintainerAlertCategory =
   | "catalog_identity_collision"
   | "infidelity"
   | "missed_capture"
+  | "provisioning_cap"
   | "residual"
   | "sync_source";
 
