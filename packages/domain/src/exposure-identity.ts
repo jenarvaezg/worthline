@@ -39,7 +39,7 @@ export interface RawGlobalExposureProfileIdentityInput {
 /**
  * The instruments that carry a look-through exposure profile — the equity/fund
  * family keyed by security id or provider symbol. The single source of truth for "is
- * this a market holding with a catalog identity": both `resolveProfile`
+ * this a market holding with a catalog identity": both `resolveExposureProfile`
  * (look-through) and {@link deriveExposureCatalogIdentity} (#1097) read it, so
  * the set that gets a profile lookup and the set that registers a catalog stub
  * never drift.

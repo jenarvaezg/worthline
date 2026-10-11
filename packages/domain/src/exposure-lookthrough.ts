@@ -244,7 +244,7 @@ export function lookThroughExposure(
   const currency = input.grossAssets.currency;
   const projectedHoldings = input.holdings
     .map((holding) => {
-      const profile = resolveProfile(holding, input.profiles);
+      const profile = resolveExposureProfile(holding, input.profiles);
       return {
         holding,
         profile,
@@ -354,8 +354,17 @@ export function lookThroughExposure(
   };
 }
 
-function resolveProfile(
-  holding: ExposureLookthroughHolding,
+/**
+ * The catalog profile a holding resolves to: only the market family carries one,
+ * found under {@link exposureLookthroughKey}. Exported so every lens over the
+ * catalog (the portfolio cost, #1717) reaches a holding's profile by this one key
+ * rule instead of a second spelling of it.
+ */
+export function resolveExposureProfile(
+  holding: Pick<
+    ExposureLookthroughHolding,
+    "instrument" | "securityId" | "providerSymbol"
+  >,
   profiles: ReadonlyMap<string, ExposureProfile>,
 ): ExposureProfile | null {
   if (!INVESTMENT_PROFILE_INSTRUMENTS.has(holding.instrument)) {

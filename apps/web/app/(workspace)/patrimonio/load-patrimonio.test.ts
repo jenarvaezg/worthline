@@ -314,3 +314,71 @@ describe("loadPatrimonio — exposure look-through", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Portfolio cost (#1717) — the TER lens rides the same rows and catalog.
+// ---------------------------------------------------------------------------
+
+describe("loadPatrimonio — portfolio cost", () => {
+  test("prices the year from the catalog TER over the projection's own rows", async () => {
+    const store = await createInMemoryStore();
+    const workspace = await makeWorkspace(store);
+    await makeCashAsset(store);
+    await makeFundWithOperation(store);
+
+    const profiles: ExposureProfile[] = [
+      {
+        breakdowns: { assetClass: { equity: "1" } },
+        declaredAt: null,
+        hedged: false,
+        key: "IE00SP500002",
+        source: "user",
+        ter: "0.002",
+      },
+    ];
+
+    const result = await loadPatrimonio({
+      store,
+      workspace,
+      selectedScope: householdScope(workspace),
+      today: TODAY,
+      selectedGroup: "direction",
+    });
+    const { portfolioCost } = deriveExposureAndReturns(result.exposureContext, profiles);
+
+    // The ETF is 10 units × 110 € = 1.100 €; at 0,2 % it costs 2,20 € a year.
+    // The 100.000 € of cash has no fund wrapper: not applicable, never a gap.
+    expect(portfolioCost.annualCost).toEqual({ amountMinor: 220, currency: "EUR" });
+    expect(portfolioCost.weightedTer).toBe("0.002");
+    expect(portfolioCost.coverage).toEqual({
+      classified: { amountMinor: 110_000, currency: "EUR" },
+      notApplicable: { amountMinor: 100_000_00, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+
+    store.close();
+  });
+
+  test("a fund the catalog gives no TER is the gap, not a free fund", async () => {
+    const store = await createInMemoryStore();
+    const workspace = await makeWorkspace(store);
+    await makeFundWithOperation(store);
+
+    const result = await loadPatrimonio({
+      store,
+      workspace,
+      selectedScope: householdScope(workspace),
+      today: TODAY,
+      selectedGroup: "direction",
+    });
+    const { portfolioCost } = deriveExposureAndReturns(result.exposureContext, []);
+
+    expect(portfolioCost.weightedTer).toBeNull();
+    expect(portfolioCost.coverage.unknown).toEqual({
+      amountMinor: 110_000,
+      currency: "EUR",
+    });
+
+    store.close();
+  });
+});

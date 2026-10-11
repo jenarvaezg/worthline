@@ -38,6 +38,7 @@ import type {
   Instrument,
   ManualAsset,
   MonthlyCloseValue,
+  PortfolioCost,
   PortfolioGroup,
   PortfolioGroupKey,
   PortfolioProjection,
@@ -56,6 +57,7 @@ import {
   lookThroughExposure,
   monthlyCloseValuesByHolding,
   netUnitsByAsset,
+  portfolioCost,
   projectPortfolio,
   resolveAssetClassBreakdown,
   returnsByAssetClassView,
@@ -323,11 +325,12 @@ export async function loadPatrimonio(
 
 /**
  * Derive the two streamed /patrimonio analytics sub-sections (#1195): the
- * present-time exposure look-through (PRD #539 S3, ADR 0039) and the per-
- * asset-class decomposition of the portfolio returns (#552, ADR 0040 fast-
- * follow). Pure given `ctx` (from {@link loadPatrimonio}) and the exposure-
- * profile catalog — reproduces exactly the derivation that used to run inline
- * in `loadPatrimonio` before the board/analytics split.
+ * present-time exposure look-through (PRD #539 S3, ADR 0039) — with its
+ * portfolio-cost lens (#1717) — and the per-asset-class decomposition of the
+ * portfolio returns (#552, ADR 0040 fast-follow). Pure given `ctx` (from
+ * {@link loadPatrimonio}) and the exposure-profile catalog — reproduces exactly
+ * the derivation that used to run inline in `loadPatrimonio` before the
+ * board/analytics split.
  */
 export function deriveExposureAndReturns(
   ctx: PatrimonioExposureContext,
@@ -335,6 +338,7 @@ export function deriveExposureAndReturns(
 ): {
   exposureFull: ExposureLookthrough;
   exposureEquity: ExposureLookthrough;
+  portfolioCost: PortfolioCost;
   returnsByClass: AssetClassReturnsViewResult | null;
 } {
   const {
@@ -418,5 +422,23 @@ export function deriveExposureAndReturns(
     assetClassFilter: "equity",
   });
 
-  return { exposureEquity, exposureFull, returnsByClass };
+  // What the portfolio costs a year (#1717): the same rows and the same catalog
+  // the look-through reads, so the coverage it declares is over the same gross.
+  // The rows are already in the base currency — the projection converted them
+  // through the FX layer (#1065) and excluded what it could not convert — so
+  // nothing reaches the lens 1:1. A lens, never a figure: the returns above
+  // never see a TER (the NAV is already net of it).
+  const cost = portfolioCost({
+    grossAssets: exposureInput.grossAssets,
+    holdings: exposureHoldings.map((holding) => ({
+      id: holding.id,
+      instrument: holding.instrument,
+      providerSymbol: holding.providerSymbol ?? null,
+      securityId: holding.securityId ?? null,
+      value: { amountMinor: holding.valueMinor, currency: baseCurrency },
+    })),
+    profiles: exposureProfileByKey,
+  });
+
+  return { exposureEquity, exposureFull, portfolioCost: cost, returnsByClass };
 }
