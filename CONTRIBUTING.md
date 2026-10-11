@@ -41,7 +41,7 @@ bun run verify
 
 `verify` runs `typecheck` → `typecheck:e2e` → `lint` → `test` (Turborepo-cached
 for typecheck/test; the e2e typecheck is bare `tsc`, since `e2e/` is not a workspace).
-Biome covers lint and format in one step. Run `bun run format` to auto-fix formatting locally.
+Biome covers lint and format in one step. Run `bun run format` to auto-fix formatting, import order and safe lint fixes locally.
 
 `bun run lint` is `biome ci --error-on-warnings`: **a warning fails the gate**. This is
 deliberate (#1275). Warnings that do not break CI are not read, and 22 of them piled up

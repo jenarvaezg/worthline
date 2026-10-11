@@ -43,7 +43,7 @@
     "subset:fonts": "scripts/subset-web-fonts.sh",
     "typecheck": "turbo run typecheck",
     "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
-    "format": "biome format --write .",
+    "format": "biome check --write .",
     "prepare": "husky || true"
   },
   "lint-staged": {
