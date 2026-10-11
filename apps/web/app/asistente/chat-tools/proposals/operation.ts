@@ -14,6 +14,7 @@ import {
   type OperationFactSource,
 } from "@web/asistente/operation-proposals";
 import { userRefusal } from "@web/asistente/proposal-refusal";
+import { operationOnTransferFundRefusal } from "@web/asistente/transfer-document-source";
 import { resolveTypedOperationEvent } from "@web/asistente/typed-operation-frontier";
 import {
   PAYWALL_OPERATION_MESSAGE,
@@ -49,7 +50,7 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
         // cupo de aportación — the exact failure PRD #1393 exists to end.
         "NO es ésta: un traspaso entre dos inversiones → propose_transfer (no es una venta más una compra); la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction.",
       inputSchema: OPERATION_PROPOSAL_SCHEMA,
-      execute: (args) => {
+      execute: async (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
         // `required` in a `jsonSchema()` is not validated at runtime, so the direction
         // is checked HERE — and never defaulted. It is the one judgement the document
@@ -80,6 +81,27 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
               "Falta la posición en la que anotar la operación. Lee la cartera y pasa el " +
               "identificador que te devuelva.",
           });
+        }
+        // A traspaso paper in the window (story 32 of #1793): a compra or a venta of one
+        // of its funds is the venta-plus-compra a traspaso is not. Judged BEFORE the
+        // figures, so the person is never asked for an importe the lane would then
+        // refuse to write; and paid only when such a paper is there.
+        const papers = (input.validatedAttachments ?? []).filter(
+          (attachment) => attachment.document.documentType === "transfer",
+        );
+        if (papers.length > 0) {
+          const refusal = await input.runWithStore(async (store) => {
+            if (!store.assets) return null;
+            const assetId = await resolveInternalHoldingId(
+              store.agentView,
+              publicHoldingId,
+            );
+            const holding = await store.assets.readInvestmentAssetById(assetId);
+            return holding === null
+              ? null
+              : operationOnTransferFundRefusal(papers, holding);
+          });
+          if (refusal !== null) return refusal;
         }
         // The evidence frontier (#1374, #1466): the fact comes from the extraction or
         // from the user's own message, and the model only points at it and says which

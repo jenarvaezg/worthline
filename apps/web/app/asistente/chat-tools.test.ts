@@ -1250,6 +1250,139 @@ describe("createChatTools · propose_operation dictada (#1466)", () => {
   });
 });
 
+describe("createChatTools · propose_operation with a traspaso paper in the window (story 32)", () => {
+  /**
+   * A traspaso booked as a venta plus a compra realizes a plusvalía that never happened
+   * (PRD #1393). With the bank's traspaso notice validated in the window, the operation
+   * lane refuses a compra or a venta of either of its two funds — matched by identifier
+   * — and points at the traspaso lane.
+   */
+  const MUNDO = "IE00B4L5Y983";
+  const EMERGENTES = "IE00B5BMR087";
+  const PLATA = "IE00B43VDT70";
+
+  const PAPER = extractedDocumentSchema.parse({
+    documentType: "transfer",
+    transfer: {
+      amount: 739.22,
+      confirms: "redemption",
+      currency: "EUR",
+      date: "2026-08-14",
+      destination: { isin: EMERGENTES, name: "FONDO EMERGENTES EJEMPLO" },
+      label: "REEMB.POR TRASPASO I",
+      origin: { isin: MUNDO, name: "FONDO MUNDO EJEMPLO" },
+      units: 61.6,
+    },
+    warnings: [],
+  });
+
+  async function storeAndTools(message: string | null) {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jorge" }],
+      mode: "individual",
+    });
+    for (const [id, name, isin] of [
+      ["mundo", "Fondo Mundo", MUNDO],
+      ["emergentes", "Fondo Emergentes", EMERGENTES],
+      ["plata", "Plata ETC", PLATA],
+    ] as const) {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id,
+        instrument: "fund",
+        manualPricePerUnit: "12",
+        name,
+        ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+        securityId: { kind: "isin", value: isin },
+      });
+      await store.command.recordInvestmentOperation(
+        {
+          assetId: id,
+          currency: "EUR",
+          executedAt: "2025-09-15",
+          id: `op-${id}`,
+          kind: "buy",
+          pricePerUnit: "10",
+          units: "100",
+        },
+        { today: "2026-08-21" },
+      );
+    }
+    const ids = Object.fromEntries(
+      (await store.agentView.readPublicIds()).map((row) => [row.entityId, row.publicId]),
+    ) as Record<string, string>;
+    const tools = createChatTools({
+      asOf: "2026-08-21",
+      groundedHoldingIds: Object.values(ids),
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          operations: store.operations,
+        }),
+      ...(message === null
+        ? {}
+        : {
+            typedHoldingEvent: typedHoldingEventInTurn(
+              [{ id: "m1", parts: [{ text: message, type: "text" }], role: "user" }],
+              "2026-08-21",
+            ),
+          }),
+      validatedAttachments: [{ document: PAPER, fileName: "aviso-traspaso.pdf" }],
+      validatedDocuments: [PAPER],
+    });
+    return { ids, store, tools };
+  }
+
+  it("refuses a venta of the paper's origin fund and points at the traspaso lane", async () => {
+    const { ids, store, tools } = await storeAndTools(
+      "Hoy he vendido 61,6 participaciones por 739,22 €",
+    );
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: ids["mundo"], kind: "sell" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      audience: "model",
+      error: "operation_is_a_transfer",
+    });
+    expect((result as { message: string }).message).toContain("propose_transfer");
+    expect((result as { message: string }).message).toContain("«Fondo Mundo»");
+    store.close();
+  });
+
+  it("refuses a compra of the paper's destination fund, before asking for any figure", async () => {
+    // No figures at all: the refusal that matters is the traspaso, not «dime el importe».
+    const { ids, store, tools } = await storeAndTools(null);
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: ids["emergentes"], kind: "buy" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ error: "operation_is_a_transfer" });
+    store.close();
+  });
+
+  it("leaves a compra of a fund the paper does not name alone", async () => {
+    const { ids, store, tools } = await storeAndTools(
+      "Hoy he comprado 10 participaciones por 120 €",
+    );
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: ids["plata"], kind: "buy" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ proposalType: "investment_operation" });
+    store.close();
+  });
+});
+
 describe("createChatTools · propose_transfer (#1482)", () => {
   /**
    * The lane «he traspasado 1.018,67 € del fondo A al fondo B» had none (#1482). What

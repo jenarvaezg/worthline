@@ -24,14 +24,20 @@
  * that routes the person — out.
  */
 
-import { multiplyToMinor, normalizeDecimal } from "@worthline/domain";
+import {
+  declaredSecurityId,
+  multiplyToMinor,
+  normalizeDecimal,
+  type StoredSecurityId,
+} from "@worthline/domain";
 import type { ValidatedAttachment } from "./attachment-chat";
 import {
   type ExtractedTransfer,
   extractedSecurityId,
 } from "./attachment-extraction-contract";
 import { formatDocumentMoney } from "./document-figures";
-import { type ProposalRefusal, userRefusal } from "./proposal-refusal";
+import { modelRefusal, type ProposalRefusal, userRefusal } from "./proposal-refusal";
+import { sameSecurityId, securityIdLabel } from "./security-identity";
 import type { PrintedFund } from "./transfer-identity";
 import type { TypedTransfer } from "./typed-transfer";
 
@@ -115,6 +121,41 @@ export function transferFromDocument(
     });
   }
   return read({ executedAt, portion: { amountMinor, kind: "units", units } });
+}
+
+/**
+ * A compra or a venta of a fund a validated traspaso paper names, refused (story 32 of
+ * PRD #1793): with the bank's notice in the window, booking either half as an ordinary
+ * operation is the venta-plus-compra a traspaso is NOT — it realizes a plusvalía that
+ * never happened and spends cupo. Matched by identifier only, the paper's against the
+ * one the holding registers: a holding with none registered cannot be told apart, and
+ * the operation's own rules still apply to it.
+ *
+ * Written at the model, which fixes it by calling the right lane (#1752).
+ */
+export function operationOnTransferFundRefusal(
+  attachments: readonly ValidatedAttachment[],
+  holding: { name: string; securityId?: StoredSecurityId },
+): ProposalRefusal | null {
+  const registered = declaredSecurityId(holding.securityId);
+  if (registered === null) return null;
+  const named = attachments.some(
+    ({ document }) =>
+      document.documentType === "transfer" &&
+      [document.transfer.origin, document.transfer.destination].some((fund) => {
+        const printed = extractedSecurityId(fund);
+        return printed !== null && sameSecurityId(printed, registered);
+      }),
+  );
+  if (!named) return null;
+  return modelRefusal(
+    "operation_is_a_transfer",
+    `El justificante de traspaso que tienes delante nombra «${holding.name}» ` +
+      `(${securityIdLabel(registered)}), y un traspaso no es una venta más una compra: ` +
+      "partido en dos, inventaría una plusvalía que no ha ocurrido. Ese movimiento va por " +
+      "propose_transfer, con sus dos posiciones. Si de verdad es otra operación distinta " +
+      "del traspaso, que el usuario la registre desde la ficha de la posición.",
+  );
 }
 
 /** One side as the paper prints it: the name, and the identifier when it has one. */
