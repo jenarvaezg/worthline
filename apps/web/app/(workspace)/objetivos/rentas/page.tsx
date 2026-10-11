@@ -48,12 +48,19 @@ async function RentasContent({
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const [{ privacyMode, store, workspace }, isDemo] = await Promise.all([
+  const [{ privacyMode, selectedScope, store, workspace }, isDemo] = await Promise.all([
     resolvePageShell({ searchParams: resolvedSearchParams }),
     isDemoMode(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
-  const { holdingById, incomes } = await loadRentas({ store });
+  // The scope on screen decides whether the card reads an income without an asset
+  // (#1811) — the same scope Objetivos draws that card for.
+  const { cardContext, holdingById, incomes } = await loadRentas({
+    scopeId: selectedScope?.id ?? "household",
+    store,
+    today,
+    workspace,
+  });
 
   // A refused declaration posted without JavaScript comes back on the URL; with
   // JavaScript the refusal never leaves the island.
@@ -101,6 +108,7 @@ async function RentasContent({
         initialValues={declarationError?.values ?? {}}
         privacyMode={privacyMode}
         readOnly={isDemo}
+        cardContext={cardContext}
         today={today}
         updateAction={updateIncomeDeclarationAction}
       />

@@ -125,3 +125,26 @@ crosses the incomes it already read for the returns engine, and the agent's
 financial context hands over the ones it already read. Only the standalone
 data-quality endpoint reads them for itself, once.
 
+
+## Amendment (#1811) — Rentas asks the scope, not the income
+
+The consequence above ("Rentas says an income with no holding counts…") was true only
+of one scope with one plan. The card is drawn only when the plan is declared ordinary
+(ADR 0081), and a scope that leaves a member out withholds an income nobody owns
+(point 5). Rentas said «Cuenta» anyway, about a figure Objetivos never showed.
+
+1. **One answer, two surfaces.** `standaloneIncomeReach(income, scope)` says whether
+   the card reads an income with no holding: `withheld` with the card's own reason,
+   `card_hidden` when the plan is not declared ordinary, or `read`. What it needs from
+   the scope (`standaloneIncomeCardContext`) is two booleans, so the Rentas island answers a row
+   declared a second ago the way the server would. Objetivos draws the card with the
+   same predicate (`declaresOrdinaryRetirement`) and the same withholding rule.
+2. **The withholding goes before the plan**, for the reason the owner goes before the
+   declaration: name first what would still block after fixing the other.
+   A future income's condition (point 6) stays out of it: the card checks it against
+   the retirement age on screen, and Rentas still names it as the rule.
+3. **No scope, no sentence.** A surface that cannot say which scope it looks at prints
+   no counting status for an income with no holding, rather than a guess.
+4. **The nature note depends on the door.** With a holding, a passive income enters
+   the passive income and the FIRE figures; without one, only the sustainable
+   spending.

@@ -4,6 +4,10 @@
  * generates, which also live on its ficha — plus the name and ficha link of each
  * holding an income hangs from.
  *
+ * And how the scope on screen lets the sustainable-spending card read an income
+ * without an asset (#1811) — the only figure that reads one. Read even for an empty
+ * list: an income declared a second ago is told, optimistically, the same answer.
+ *
  * Cache-only GET: it reads the store and nothing else. The holdings are read only
  * when some income is linked to one — an empty list, or a list of pensions and
  * salaries, never pays for the ledger.
@@ -11,7 +15,8 @@
 
 import { holdingCobrosHref, holdingPublicIdIndex } from "@web/holding-route";
 import type { WorthlineStore } from "@web/store";
-import type { Income } from "@worthline/domain";
+import type { Income, StandaloneIncomeCardContext, Workspace } from "@worthline/domain";
+import { standaloneIncomeCardContext } from "@worthline/domain";
 
 /** What a linked income's row says about its holding. */
 export interface IncomeHolding {
@@ -28,19 +33,36 @@ export interface RentasReadModel {
   incomes: Income[];
   /** The live holdings incomes are linked to, by internal id. */
   holdingById: Record<string, IncomeHolding>;
+  /** The scope on screen, as the sustainable-spending card sees it. */
+  cardContext: StandaloneIncomeCardContext;
 }
 
 export async function loadRentas({
+  scopeId,
   store,
+  today,
+  workspace,
 }: {
-  store: Pick<WorthlineStore, "agentView" | "assets" | "payouts">;
+  /** The scope on screen — the one Objetivos would draw the card for. */
+  scopeId: string;
+  store: Pick<WorthlineStore, "agentView" | "assets" | "payouts" | "readFireConfig">;
+  today: string;
+  workspace: Workspace;
 }): Promise<RentasReadModel> {
-  const incomes = await store.payouts.readPayoutSchedules();
+  const [incomes, fireConfig] = await Promise.all([
+    store.payouts.readPayoutSchedules(),
+    store.readFireConfig(today),
+  ]);
+  const cardContext = standaloneIncomeCardContext({
+    retirementPlan: fireConfig[scopeId]?.retirementPlan,
+    scopeId,
+    workspace,
+  });
   const linkedIds = new Set(
     incomes.flatMap((income) => (income.holdingId === null ? [] : [income.holdingId])),
   );
   if (linkedIds.size === 0) {
-    return { holdingById: {}, incomes };
+    return { cardContext, holdingById: {}, incomes };
   }
 
   const [assets, publicIdRows] = await Promise.all([
@@ -57,5 +79,5 @@ export async function loadRentas({
       href: publicId === undefined ? null : holdingCobrosHref(publicId),
     };
   }
-  return { holdingById, incomes };
+  return { cardContext, holdingById, incomes };
 }

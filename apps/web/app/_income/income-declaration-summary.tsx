@@ -6,9 +6,14 @@
  * One component for the Rentas list and the holding's Cobros section, so the two
  * can never print the same income two different ways. No hooks: it renders in a
  * server section and in a client island alike.
+ *
+ * An income without an asset only gets its counting line from a surface that says
+ * which scope it is looking at (#1811): whether the card reads it is that scope's
+ * answer, and without one this prints nothing rather than a guess.
  */
 
-import type { Income } from "@worthline/domain";
+import type { Income, StandaloneIncomeCardContext } from "@worthline/domain";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   incomeConditionLine,
@@ -18,6 +23,7 @@ import {
 } from "./income-view";
 
 export function IncomeDeclarationSummary({
+  cardContext,
   children,
   holdingInTrash = false,
   income,
@@ -27,15 +33,28 @@ export function IncomeDeclarationSummary({
   children?: ReactNode;
   holdingInTrash?: boolean;
   income: Income;
+  /** The scope on screen, as the sustainable-spending card sees it. */
+  cardContext?: StandaloneIncomeCardContext;
   today: string;
 }) {
-  const status = incomeCountingStatus(income, today, { holdingInTrash });
+  const status = incomeCountingStatus(income, today, {
+    holdingInTrash,
+    ...(cardContext === undefined ? {} : { cardContext }),
+  });
   const condition = incomeConditionLine(income);
   return (
     <>
-      <p className={status.counts ? "incomeStatus" : "incomeStatus incomeStatusOff"}>
-        <span className="incomeStatusMark">{status.mark}</span> {status.text}
-      </p>
+      {status ? (
+        <p className={status.counts ? "incomeStatus" : "incomeStatus incomeStatusOff"}>
+          <span className="incomeStatusMark">{status.mark}</span> {status.text}
+          {status.fix ? (
+            <>
+              {" "}
+              <Link href={status.fix.href}>{status.fix.label}</Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       <p className="cobrosCap">
         {incomeDeclarationLine(income)} · {incomeProvenanceLine(income)}
         {condition ? ` · ${condition}` : ""}

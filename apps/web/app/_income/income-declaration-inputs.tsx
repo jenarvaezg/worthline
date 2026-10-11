@@ -62,8 +62,16 @@ function ChoiceFieldset({
 }
 
 export function IncomeDeclarationInputs({
+  linked,
   values,
 }: {
+  /**
+   * Whether a holding generates this income. The nature note says what a passive one
+   * moves, and that depends on the door (#1811): a holding's payouts sum in the
+   * passive income and the FIRE figures; an income with no asset is read by the
+   * sustainable spending alone.
+   */
+  linked: boolean;
   /** What to prefill: an existing declaration, or the fields a refused post typed. */
   values: Readonly<Partial<Record<keyof IncomeDeclarationFields, string>>>;
 }) {
@@ -74,11 +82,20 @@ export function IncomeDeclarationInputs({
         legend="Naturaleza"
         name="nature"
         note={
-          <>
-            Solo una renta <strong>pasiva</strong> entra en tu renta pasiva y en tu FIRE.
-            Del trabajo no cuenta como renta pasiva, y <strong>sin declarar</strong> no
-            cuenta en ninguna cifra.
-          </>
+          linked ? (
+            <>
+              Solo una renta <strong>pasiva</strong> entra en tu renta pasiva y en tu
+              FIRE. Del trabajo no cuenta como renta pasiva, y{" "}
+              <strong>sin declarar</strong> no cuenta en ninguna cifra.
+            </>
+          ) : (
+            <>
+              Sin activo, solo una renta <strong>pasiva</strong> cuenta, y en una sola
+              cifra: el gasto sostenible de tu plan de jubilación, en Objetivos. No entra
+              en tu renta pasiva ni en tu cifra FIRE. Del trabajo o{" "}
+              <strong>sin declarar</strong>, no cuenta en ninguna cifra.
+            </>
+          )
         }
         selected={values.nature ?? ""}
       />

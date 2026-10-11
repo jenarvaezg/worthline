@@ -203,7 +203,7 @@ export function IncomeDeclarationForm({
           cobras: se guarda tal cual, sin inventar cobros hasta que llegue.
         </p>
       )}
-      <IncomeDeclarationInputs values={initialValues} />
+      <IncomeDeclarationInputs linked={linked} values={initialValues} />
       <div className="formActions">
         <button aria-busy={isPending} disabled={isPending} type="submit">
           {isPending ? "Guardando…" : submitLabel}

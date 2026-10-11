@@ -27,7 +27,11 @@ import {
   type IncomeAction,
   type IncomeMutation,
 } from "@web/_income/optimistic-incomes";
-import type { CurrencyCode, Income } from "@worthline/domain";
+import type {
+  CurrencyCode,
+  Income,
+  StandaloneIncomeCardContext,
+} from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { type FormEvent, useOptimistic, useTransition } from "react";
@@ -47,6 +51,7 @@ export function IncomesLedger({
   initialError,
   initialValues,
   privacyMode,
+  cardContext,
   readOnly,
   today,
   updateAction,
@@ -63,6 +68,12 @@ export function IncomesLedger({
   initialValues: Readonly<Record<string, string>>;
   privacyMode: boolean;
   readOnly: boolean;
+  /**
+   * The scope on screen, as the sustainable-spending card sees it (#1811): whether
+   * the card reads an income without an asset is its answer, and a row declared a
+   * second ago has to be told the same answer the server would give.
+   */
+  cardContext: StandaloneIncomeCardContext;
   today: string;
   updateAction: IncomeAction;
 }) {
@@ -144,6 +155,7 @@ export function IncomesLedger({
                   <IncomeDeclarationSummary
                     holdingInTrash={holdingInTrash}
                     income={income}
+                    cardContext={cardContext}
                     today={today}
                   />
                   {isPendingRow(income) ? (

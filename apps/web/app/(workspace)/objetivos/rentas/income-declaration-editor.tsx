@@ -71,7 +71,10 @@ export function IncomeDeclarationEditor({
           {rejection}
         </p>
       ) : null}
-      <IncomeDeclarationInputs values={declarationValuesOf(income)} />
+      <IncomeDeclarationInputs
+        linked={income.holdingId !== null}
+        values={declarationValuesOf(income)}
+      />
       <div className="formActions">
         <button
           aria-busy={isPending}
