@@ -17,9 +17,13 @@ import {
   visionCoreEventFields,
 } from "./attachment-vision-identification";
 import {
+  type PrintedMoney,
   printedNumber,
+  twoCallReadingWarnings,
   unidentifiedDocument,
+  usableMoney,
   validateExtractedDocument,
+  visionMoneySchema,
   visionOutputSpec,
   visionPrintedNumberSchema,
   visionWarningsSchema,
@@ -37,22 +41,6 @@ import {
 
 export const EMPTY_HOLDING_EVENT_MESSAGE =
   "Reconozco un apunte fechado sobre un producto, pero no he podido leer ninguno.";
-
-/**
- * A printed figure and its currency as the PROVIDER may send them (#1316). Both
- * halves are optional here and required by the contract on purpose: the JSON schema
- * reaching the model cannot say «an amount needs its currency», so requiring the pair
- * at this seam would turn the ordinary reading — a price column whose currency sits
- * in a header the model did not carry down — into a definitive failure. The pair is
- * completed or dropped in {@link usableEvent}, where dropping it costs a warning
- * instead of the whole capture.
- */
-const visionMoneySchema = z
-  .object({
-    amount: visionPrintedNumberSchema.optional(),
-    currency: currencySchema.optional(),
-  })
-  .strict();
 
 /**
  * The reading of the SECOND call (#1345): one identified dated fact, with everything
@@ -188,12 +176,6 @@ export const DROPPED_UNITS_WARNING =
   "El número de títulos del documento no se lee como una cifra; no se recoge.";
 
 type VisionHoldingEvent = NonNullable<VisionEventDetail["events"]>[number];
-type VisionMoney = z.infer<typeof visionMoneySchema>;
-/** A printed pair the contract will take: the figure parsed, its currency intact. */
-interface PrintedMoney {
-  amount: number;
-  currency: string;
-}
 /** The event as the CONTRACT wants it, once the printed figures read as numbers. */
 type ContractHoldingEvent = Omit<
   VisionHoldingEvent,
@@ -203,36 +185,6 @@ type ContractHoldingEvent = Omit<
   pricePerUnit?: PrintedMoney;
   fees?: PrintedMoney;
 };
-
-/**
- * The printed pair the contract will take, or nothing.
- *
- * ONE message serves BOTH directions of an incomplete pair — an amount with no
- * currency and a currency with no amount — because it reports that the figure could
- * not be recovered without asserting which half the paper carried. An entirely empty
- * pair is silent: nothing was read, so nothing was lost, which is the same
- * distinction {@link usableEvent} draws for a declared effect's stray currency.
- *
- * An amount that does not read as a number takes the same exit as a missing currency,
- * and for the same reason: the figure could not be recovered. Which half failed is
- * not something the card can honestly assert.
- */
-function usableMoney(money: VisionMoney | undefined): {
-  money: PrintedMoney | undefined;
-  dropped: boolean;
-} {
-  const { amount: printed, currency } = money ?? {};
-  if (printed === undefined || currency === undefined) {
-    return {
-      dropped: printed !== undefined || currency !== undefined,
-      money: undefined,
-    };
-  }
-  const amount = printedNumber(printed);
-  return amount === undefined
-    ? { dropped: true, money: undefined }
-    : { dropped: false, money: { amount, currency } };
-}
 
 function usableEvent(event: VisionHoldingEvent): {
   event: ContractHoldingEvent;
@@ -383,27 +335,14 @@ function holdingEventFrom(
   if (first.nextInstalment?.date === first.date) return unidentifiedDocument();
 
   const { event, warnings } = usableEvent(first);
-  // The DETAIL call's notes come first, and the identification's yield to them: this is
-  // the reading that becomes the document, so its caveat about the figure a proposal
-  // will carry outranks a generic remark from the call that only typed the screen. Both
-  // are kept because both looked at the same pixels, and the same note volunteered
-  // twice is said once.
-  const modelWarnings = [...new Set([...detail.warnings, ...identification.warnings])];
   const result = validateExtractedDocument({
     documentType: "holding_event",
     event,
-    // The disclosures take the LAST slots and the model's own list yields, which is
-    // the same call `warningsWithUncertaintyMark` makes for the same reason. Slicing
-    // the merged list from the front instead would evict exactly these two on the
-    // noisiest readings — the ones where a dropped instalment most needs saying —
-    // and turn the honesty guarantee into silence precisely when it matters.
-    warnings: [
-      ...modelWarnings.slice(
-        0,
-        ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings - warnings.length,
-      ),
-      ...warnings,
-    ],
+    warnings: twoCallReadingWarnings({
+      detail: detail.warnings,
+      disclosures: warnings,
+      identification: identification.warnings,
+    }),
     // Either call doubting the reading marks the document (#1345). Both looked at the
     // same pixels, so a caveat the identification volunteered is about this document
     // too, and the safe direction for an honesty flag is the one that keeps it.

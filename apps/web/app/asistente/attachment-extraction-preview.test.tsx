@@ -315,6 +315,101 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
   });
 
+  test("shows a traspaso: the date, both funds with their ISIN and the confirmed half's figures (#1795)", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "traspaso.pdf",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "transfer",
+              transfer: {
+                date: "2026-09-14",
+                confirms: "redemption",
+                label: "REEMB.POR TRASPASO I",
+                origin: { name: "MONETARIO EJEMPLO FI", isin: "IE00B5BMR087" },
+                destination: { name: "GLOBAL INDICE EJEMPLO FI", isin: "IE00B03HCZ61" },
+                units: 84.21573,
+                pricePerUnit: { amount: 12.095123, currency: "EUR" },
+                amount: 1018.6,
+                currency: "EUR",
+                fees: { amount: 0, currency: "EUR" },
+              },
+              warnings: [],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Lectura de traspaso.pdf");
+    expect(html).toContain("Traspaso · confirma el reembolso");
+    expect(html).toContain("14/09/2026");
+    expect(html).toContain("REEMB.POR TRASPASO I");
+    expect(html).toContain(
+      '<th scope="row">Sale de</th><td>MONETARIO EJEMPLO FI (ISIN IE00B5BMR087)</td>',
+    );
+    expect(html).toContain(
+      '<th scope="row">Entra en</th><td>GLOBAL INDICE EJEMPLO FI (ISIN IE00B03HCZ61)</td>',
+    );
+    // The participaciones are named by the half the paper confirms: on a redemption
+    // they are the ones that LEFT the origin, never the ones that arrived (#1544).
+    expect(html).toContain('<th scope="row">Participaciones que salen</th>');
+    expect(html).toContain("84,21573");
+    // The VL keeps every decimal the paper printed; rounded, it is a figure the bank
+    // never stated.
+    expect(html).toContain("12,095123");
+    expect(html).toContain("1018,60");
+    // A printed zero fee is a reading, and it is shown as one.
+    expect(html).toContain('<th scope="row">Comisión</th><td>0,00');
+    expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
+  });
+
+  test("names a subscription's half and a plan by its DGS code, painting no row the paper lacked", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "suscripcion.png",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "transfer",
+              transfer: {
+                date: "2026-09-16",
+                confirms: "subscription",
+                label: "SUSCRIPCION POR TRASPASO",
+                origin: { name: "PLAN EJEMPLO UNO PP", dgsCode: "N5394" },
+                destination: { name: "PLAN EJEMPLO DOS PP" },
+                units: 40.5,
+                amount: 2500,
+                currency: "EUR",
+                uncertain: true,
+              },
+              uncertain: true,
+              warnings: ["El nombre del plan de destino se lee con dificultad."],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Traspaso · confirma la suscripción");
+    expect(html).toContain("PLAN EJEMPLO UNO PP (código DGS N5394)");
+    expect(html).toContain('<th scope="row">Entra en</th><td>PLAN EJEMPLO DOS PP</td>');
+    expect(html).toContain('<th scope="row">Participaciones que entran</th>');
+    expect(html).toContain("Revisar lectura");
+    expect(html).toContain("Lectura completa marcada como dudosa.");
+    expect(html).toContain("El nombre del plan de destino se lee con dificultad.");
+    // Nothing the paper did not print gets a row: an empty VL or fee would read as
+    // «no consta», which is a claim this reading never made.
+    expect(html).not.toContain("Valor liquidativo");
+    expect(html).not.toContain("Comisión");
+    expect(html).not.toContain("Participaciones que salen");
+  });
+
   test("renders typed nonfatal failures honestly", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview

@@ -15,6 +15,7 @@ import {
   runExtractorFixture,
   selectedBalanceSeriesFixtures,
   selectedFixtures,
+  selectedTransferFixtures,
 } from "./run";
 
 describe("parseExtractorEvalArgs", () => {
@@ -60,6 +61,21 @@ describe("selectedFixtures", () => {
         (fixture) => fixture.id,
       ),
     ).toEqual(["synthetic-amortization-schedule"]);
+  });
+
+  it("reaches the traspaso capture through its own track, never the positions one (#1795)", () => {
+    expect(selectedFixtures().map((fixture) => fixture.id)).not.toContain(
+      "synthetic-transfer-confirmation",
+    );
+    expect(selectedTransferFixtures().map((fixture) => fixture.id)).toEqual([
+      "synthetic-transfer-confirmation",
+    ]);
+    expect(
+      selectedTransferFixtures(["synthetic-baseline"]).map((fixture) => fixture.id),
+    ).toEqual([]);
+    expect(() =>
+      assertKnownFixtureIds(["synthetic-transfer-confirmation"]),
+    ).not.toThrow();
   });
 
   it("narrows to the requested ids", () => {

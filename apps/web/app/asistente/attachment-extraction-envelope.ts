@@ -16,6 +16,7 @@ import {
   type UnrecognizedReason,
 } from "./attachment-extraction-primitives";
 import { brokerTransactionsDocumentSchema } from "./attachment-extraction-transactions";
+import { transferDocumentSchema } from "./attachment-extraction-transfer";
 import { MAX_ATTACHMENT_FILE_NAME_CHARS } from "./attachment-types";
 
 /**
@@ -58,6 +59,7 @@ export const extractedDocumentSchema = z
     positionsMovementsDocumentSchema,
     brokerTransactionsDocumentSchema,
     holdingEventDocumentSchema,
+    transferDocumentSchema,
   ])
   .brand<"ValidatedExtractedDocument">();
 

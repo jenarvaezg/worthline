@@ -85,3 +85,10 @@ export {
   TRANSACTION_KINDS,
   type TransactionKind,
 } from "./attachment-extraction-transactions";
+export {
+  type ExtractedTransfer,
+  type ExtractedTransferDocument,
+  TRANSFER_CONFIRMED_HALVES,
+  type TransferConfirmedHalf,
+  transferDocumentSchema,
+} from "./attachment-extraction-transfer";

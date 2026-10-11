@@ -1,0 +1,14 @@
+{
+  "transfer": {
+    "date": "2026-09-14",
+    "confirms": "redemption",
+    "origin": { "name": "MONETARIO EJEMPLO FI", "isin": "IE00B5BMR087" },
+    "destination": { "name": "GLOBAL INDICE EJEMPLO FI", "isin": "IE00B03HCZ61" },
+    "units": 84.21573,
+    "pricePerUnit": { "amount": 12.0951, "currency": "EUR" },
+    "amount": 1018.6,
+    "currency": "EUR",
+    "fees": { "amount": 1.02, "currency": "EUR" }
+  },
+  "labelIncludes": ["traspaso"]
+}

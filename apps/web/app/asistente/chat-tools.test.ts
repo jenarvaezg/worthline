@@ -3131,6 +3131,56 @@ describe("createChatTools · get_extracted_document (#1492)", () => {
     expect(result.detail.rows[0]).toContain("DEG-ROW-XYZ");
   });
 
+  it("returns a traspaso with both funds and their identifiers (#1795)", async () => {
+    const transfer = extractedDocumentSchema.parse({
+      documentType: "transfer",
+      transfer: {
+        amount: 1018.6,
+        confirms: "redemption",
+        currency: "EUR",
+        date: "2026-09-14",
+        destination: { isin: "IE00B03HCZ61", name: "GLOBAL INDICE EJEMPLO FI" },
+        fees: { amount: 0, currency: "EUR" },
+        label: "REEMB.POR TRASPASO I",
+        origin: { isin: "IE00B5BMR087", name: "MONETARIO EJEMPLO FI" },
+        pricePerUnit: { amount: 12.0951, currency: "EUR" },
+        units: 84.21573,
+      },
+      warnings: [],
+    });
+
+    const result = (await toolsFor([{ document: transfer, fileName: "traspaso.pdf" }])[
+      "get_extracted_document"
+    ]?.execute?.({ fileName: "traspaso.pdf" }, toolCallContext())) as {
+      card: { documentType: string };
+      detail: { columns: string[]; rows: unknown[][] };
+    };
+
+    // The model sees BOTH identifiers — the wall #1793 hit was a description that
+    // named the two funds and neither ISIN, so the search went by name and failed.
+    expect(result.card.documentType).toBe("transfer");
+    expect(JSON.stringify(result.card)).toContain("IE00B5BMR087");
+    expect(JSON.stringify(result.card)).toContain("IE00B03HCZ61");
+    const row = Object.fromEntries(
+      result.detail.columns.map((column, index) => [
+        column,
+        result.detail.rows[0]?.[index],
+      ]),
+    );
+    expect(row).toEqual({
+      amount: 1018.6,
+      confirms: "redemption",
+      currency: "EUR",
+      date: "2026-09-14",
+      destination: { isin: "IE00B03HCZ61", name: "GLOBAL INDICE EJEMPLO FI" },
+      fees: { amount: 0, currency: "EUR" },
+      label: "REEMB.POR TRASPASO I",
+      origin: { isin: "IE00B5BMR087", name: "MONETARIO EJEMPLO FI" },
+      pricePerUnit: { amount: 12.0951, currency: "EUR" },
+      units: 84.21573,
+    });
+  });
+
   it("refuses a fileName that is not among the documents in context", async () => {
     const result = (await toolsFor()["get_extracted_document"]?.execute?.(
       { fileName: "otro.xlsx" },

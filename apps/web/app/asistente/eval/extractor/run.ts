@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
+import type { AttachmentExtractionResult } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsAndMovementsFromSpreadsheet } from "@web/asistente/attachment-positions-movements-extractor";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
 import {
@@ -16,9 +17,11 @@ import {
 } from "@web/asistente/eval/admission";
 import { parseExtractorEvalArgs } from "./args";
 import {
+  type ExtractorCheck,
   gradeBalanceSeriesAgainstExpected,
   gradeExtractionAgainstExpected,
   gradePositionsMovementsAgainstExpected,
+  gradeTransferAgainstExpected,
 } from "./graders";
 import {
   BALANCE_SERIES_GOLDEN_FIXTURES,
@@ -30,6 +33,9 @@ import {
   parseBalanceSeriesGoldenExpected,
   parseGoldenExpected,
   parsePositionsMovementsGoldenExpected,
+  parseTransferGoldenExpected,
+  TRANSFER_GOLDEN_FIXTURES,
+  type TransferGoldenFixture,
 } from "./manifest";
 import {
   resolveBalanceSeriesExpectedPath,
@@ -38,6 +44,8 @@ import {
   resolveFixtureImagePath,
   resolvePositionsMovementsExpectedPath,
   resolvePositionsMovementsSourcePath,
+  resolveTransferExpectedPath,
+  resolveTransferSourcePath,
 } from "./paths";
 
 const DELAY_BETWEEN_FIXTURES_MS = 20_000;
@@ -74,6 +82,7 @@ export function assertKnownFixtureIds(only: readonly string[]): void {
   const known = new Set([
     ...EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.id),
     ...BALANCE_SERIES_GOLDEN_FIXTURES.map((fixture) => fixture.id),
+    ...TRANSFER_GOLDEN_FIXTURES.map((fixture) => fixture.id),
     ...POSITIONS_MOVEMENTS_GOLDEN_FIXTURES.map((fixture) => fixture.id),
   ]);
   const unknown = only.filter((id) => !known.has(id));
@@ -94,6 +103,14 @@ export function selectedBalanceSeriesFixtures(
   if (!only || only.length === 0) return BALANCE_SERIES_GOLDEN_FIXTURES;
   const allowed = new Set(only);
   return BALANCE_SERIES_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
+}
+
+export function selectedTransferFixtures(
+  only?: readonly string[],
+): TransferGoldenFixture[] {
+  if (!only || only.length === 0) return TRANSFER_GOLDEN_FIXTURES;
+  const allowed = new Set(only);
+  return TRANSFER_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
 }
 
 function selectedPositionsMovementsFixtures(
@@ -177,12 +194,22 @@ export async function runExtractorFixture(
   }
 }
 
-export async function runBalanceSeriesFixture(
-  fixture: BalanceSeriesGoldenFixture,
-  env: Record<string, string | undefined>,
-): Promise<FixtureRunResult> {
-  const sourcePath = resolveBalanceSeriesSourcePath(fixture);
-  const expectedPath = resolveBalanceSeriesExpectedPath(fixture);
+/**
+ * One fixture of a vision track whose source may be an image OR a PDF — the
+ * balance-series track since #1243 and the traspaso track (#1795). The transport
+ * follows the fixture's own file name, and each track brings its expected parser and
+ * its grader; everything else (the skip on absent files, the error that weighs on the
+ * verdict, the progress line) is the same and lives here once.
+ */
+async function runVisionTrackFixture<Expected>(input: {
+  fixture: { id: string; scenario: string; sourceFile: string; storage: string };
+  sourcePath: string;
+  expectedPath: string;
+  parseExpected: (raw: unknown) => Expected;
+  grade: (result: AttachmentExtractionResult, expected: Expected) => ExtractorCheck[];
+  env: Record<string, string | undefined>;
+}): Promise<FixtureRunResult> {
+  const { env, expectedPath, fixture, sourcePath } = input;
   const rowLabel = `${fixture.scenario}/${fixture.id}`.padEnd(36);
 
   const hasSource = await fileExists(sourcePath);
@@ -207,9 +234,7 @@ export async function runBalanceSeriesFixture(
       readFile(sourcePath),
       readFile(expectedPath, "utf8"),
     ]);
-    const expected = parseBalanceSeriesGoldenExpected(JSON.parse(expectedRaw));
-    // The balance-series track is no longer PDF-only (#1243): a committed screenshot
-    // grades the same document, so the transport follows the fixture's own file name.
+    const expected = input.parseExpected(JSON.parse(expectedRaw));
     const isPdf = fixture.sourceFile.toLowerCase().endsWith(".pdf");
     const { result } = await extractDocumentFromVisionAttachment(
       {
@@ -222,7 +247,7 @@ export async function runBalanceSeriesFixture(
       },
       { env },
     );
-    const checks = gradeBalanceSeriesAgainstExpected(result, expected);
+    const checks = input.grade(result, expected);
     const passed = checks.filter((check) => check.pass).length;
     const green = passed === checks.length;
     console.error(`${green ? "PASS" : "FAIL"}  ${rowLabel} ${passed}/${checks.length}`);
@@ -248,6 +273,34 @@ export async function runBalanceSeriesFixture(
       status: "error",
     };
   }
+}
+
+export function runBalanceSeriesFixture(
+  fixture: BalanceSeriesGoldenFixture,
+  env: Record<string, string | undefined>,
+): Promise<FixtureRunResult> {
+  return runVisionTrackFixture({
+    env,
+    expectedPath: resolveBalanceSeriesExpectedPath(fixture),
+    fixture,
+    grade: gradeBalanceSeriesAgainstExpected,
+    parseExpected: parseBalanceSeriesGoldenExpected,
+    sourcePath: resolveBalanceSeriesSourcePath(fixture),
+  });
+}
+
+export function runTransferFixture(
+  fixture: TransferGoldenFixture,
+  env: Record<string, string | undefined>,
+): Promise<FixtureRunResult> {
+  return runVisionTrackFixture({
+    env,
+    expectedPath: resolveTransferExpectedPath(fixture),
+    fixture,
+    grade: gradeTransferAgainstExpected,
+    parseExpected: parseTransferGoldenExpected,
+    sourcePath: resolveTransferSourcePath(fixture),
+  });
 }
 
 export async function runPositionsMovementsFixture(
@@ -321,6 +374,7 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
   if (args.only) assertKnownFixtureIds(args.only);
   const fixtures = selectedFixtures(args.only);
   const balanceSeriesFixtures = selectedBalanceSeriesFixtures(args.only);
+  const transferFixtures = selectedTransferFixtures(args.only);
   const positionsMovementsFixtures = selectedPositionsMovementsFixtures(args.only);
   const env = {
     ...process.env,
@@ -342,6 +396,10 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     if (fixtureResults.length > 0) await sleep(DELAY_BETWEEN_FIXTURES_MS);
     fixtureResults.push(await runBalanceSeriesFixture(fixture, env));
   }
+  for (const fixture of transferFixtures) {
+    if (fixtureResults.length > 0) await sleep(DELAY_BETWEEN_FIXTURES_MS);
+    fixtureResults.push(await runTransferFixture(fixture, env));
+  }
   // Deterministic spreadsheet track: no model, no rate limit, so no inter-run delay.
   for (const fixture of positionsMovementsFixtures) {
     fixtureResults.push(await runPositionsMovementsFixture(fixture));
@@ -352,6 +410,7 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     expectedQuestionIds: [
       ...fixtures.map((fixture) => fixture.id),
       ...balanceSeriesFixtures.map((fixture) => fixture.id),
+      ...transferFixtures.map((fixture) => fixture.id),
       ...positionsMovementsFixtures.map((fixture) => fixture.id),
     ],
     finishedAt: new Date().toISOString(),
@@ -404,7 +463,10 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
   );
 
   const totalFixtures =
-    fixtures.length + balanceSeriesFixtures.length + positionsMovementsFixtures.length;
+    fixtures.length +
+    balanceSeriesFixtures.length +
+    transferFixtures.length +
+    positionsMovementsFixtures.length;
   const incompleteBecauseSkipped =
     fixtureResults.some((result) => result.status === "skipped") &&
     attempted.length < totalFixtures;

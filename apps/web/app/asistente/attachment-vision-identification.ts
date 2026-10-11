@@ -28,6 +28,7 @@ export const VISION_DOCUMENT_TYPES = [
   "balance_series",
   "holding_event",
   "broker_transactions",
+  "transfer",
   "none",
 ] as const;
 
@@ -211,7 +212,8 @@ export const VISION_EXTRACTION_INSTRUCTIONS = [
   'documentType "balance_series": saldos de una deuda con su fecha (extracto o cuadro de amortización). Rellena balances con solo los saldos ya observados por fila; nunca infieras cuota, tipo de interés ni otros parámetros.',
   'documentType "broker_transactions": un extracto de TRANSACCIONES de un bróker, es decir una LISTA de operaciones ejecutadas, cada una con su fecha y sus títulos (y normalmente su ISIN, su precio y su importe). Deja las tres listas vacías: sus filas se leen en una segunda pregunta.',
   'documentType "none": cualquier otra cosa. Deja las tres listas vacías.',
-  'documentType "holding_event": un hecho fechado sobre un producto (confirmación de pago, confirmación de compra o venta de valores, recibo, movimiento, liquidación). Rellena events con TODOS los hechos fechados que veas —no solo uno—: fecha ISO, importe, divisa, label con el texto literal de la pantalla y kind del enum.',
+  'documentType "holding_event": un hecho fechado sobre un producto (confirmación de pago, confirmación de compra o venta de valores, recibo, movimiento, liquidación). Rellena events con TODOS los hechos fechados que veas —no solo uno—: fecha ISO, importe, divisa, label con el texto literal de la pantalla y kind del enum. Un traspaso entre dos fondos NO es holding_event: es "transfer".',
+  'documentType "transfer": la confirmación de un TRASPASO entre dos fondos de inversión o dos planes de pensiones (reembolso por traspaso o suscripción por traspaso), que nombra el de origen y el de destino. Deja las tres listas vacías: el traspaso se lee en una segunda pregunta.',
   'Cada evento necesita SU PROPIA fecha, leída de la pantalla junto a ese importe. Si el hecho no lleva fecha, NO uses la de la próxima cuota ni ninguna otra ni la de hoy: entonces no es este documento y respondes "none".',
   'Un saldo pendiente es "balance_series"; un importe que se paga, se cobra o se mueve es "holding_event".',
   'UN justificante de UNA compra o venta es "holding_event"; una TABLA con varias compras y ventas de un bróker es "broker_transactions".',

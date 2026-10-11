@@ -15,6 +15,7 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   type AttachmentExtractionResult,
+  currencySchema,
   extractedDocumentSchema,
   INVALID_OUTPUT_FAILURE,
 } from "./attachment-extraction-contract";
@@ -64,6 +65,60 @@ export const visionWarningsSchema = z
  * any other unusable decoration.
  */
 export const visionPrintedNumberSchema = z.string().trim().min(1).max(32);
+
+/**
+ * A printed figure and its currency as the PROVIDER may send them (#1316). Both
+ * halves are optional here and required by the contract on purpose: the JSON schema
+ * reaching the model cannot say «an amount needs its currency», so requiring the pair
+ * at this seam would turn the ordinary reading — a price column whose currency sits
+ * in a header the model did not carry down — into a definitive failure. The pair is
+ * completed or dropped by {@link usableMoney}, where dropping it costs a warning
+ * instead of the whole capture.
+ */
+export const visionMoneySchema = z
+  .object({
+    amount: visionPrintedNumberSchema.optional(),
+    currency: currencySchema.optional(),
+  })
+  .strict();
+
+type VisionMoney = z.infer<typeof visionMoneySchema>;
+
+/** A printed pair the contract will take: the figure parsed, its currency intact. */
+export interface PrintedMoney {
+  amount: number;
+  currency: string;
+}
+
+/**
+ * The printed pair the contract will take, or nothing.
+ *
+ * ONE message serves BOTH directions of an incomplete pair — an amount with no
+ * currency and a currency with no amount — because it reports that the figure could
+ * not be recovered without asserting which half the paper carried. An entirely empty
+ * pair is silent: nothing was read, so nothing was lost, which is the same
+ * distinction the holding-event family draws for a declared effect's stray currency.
+ *
+ * An amount that does not read as a number takes the same exit as a missing currency,
+ * and for the same reason: the figure could not be recovered. Which half failed is
+ * not something the card can honestly assert.
+ */
+export function usableMoney(money: VisionMoney | undefined): {
+  money: PrintedMoney | undefined;
+  dropped: boolean;
+} {
+  const { amount: printed, currency } = money ?? {};
+  if (printed === undefined || currency === undefined) {
+    return {
+      dropped: printed !== undefined || currency !== undefined,
+      money: undefined,
+    };
+  }
+  const amount = printedNumber(printed);
+  return amount === undefined
+    ? { dropped: true, money: undefined }
+    : { dropped: false, money: { amount, currency } };
+}
 
 /**
  * One output spec that ASKS for one shape and ACCEPTS another.
@@ -268,6 +323,34 @@ export function validateExtractedDocument(
 ): AttachmentExtractionResult {
   const parsed = extractedDocumentSchema.safeParse(candidate);
   return parsed.success ? { data: parsed.data, status: "valid" } : INVALID_OUTPUT_FAILURE;
+}
+
+/**
+ * The honesty text of a reading that took TWO calls (#1345), in the order it is owed.
+ *
+ * The DETAIL call's notes come first and the identification's yield to them: the
+ * detail is the reading that becomes the document, so its caveat about a figure a
+ * proposal will carry outranks a generic remark from the call that only typed the
+ * screen. Both are kept because both looked at the same pixels, and the same note
+ * volunteered twice is said once.
+ *
+ * The seam's own `disclosures` — what it dropped on the way in — take the LAST slots
+ * and the model's list yields, which is the call `warningsWithUncertaintyMark` makes for
+ * the same reason. Slicing the merged list from the front instead would evict exactly
+ * the disclosures on the noisiest readings, the ones where a dropped figure most needs
+ * saying, and turn the honesty guarantee into silence precisely when it matters.
+ */
+export function twoCallReadingWarnings(input: {
+  detail: readonly string[];
+  identification: readonly string[];
+  disclosures: readonly string[];
+}): string[] {
+  const modelWarnings = [...new Set([...input.detail, ...input.identification])];
+  const room = Math.max(
+    ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings - input.disclosures.length,
+    0,
+  );
+  return [...modelWarnings.slice(0, room), ...input.disclosures];
 }
 
 export function isInvalidOutput(result: AttachmentExtractionResult): boolean {

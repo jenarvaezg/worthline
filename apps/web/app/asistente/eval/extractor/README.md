@@ -26,8 +26,9 @@ nothing but the API key. `--only` takes the **id** (second column), not the scen
 | `payment-screen` | `synthetic-payment-screen` | committed, **negative** (#1247) |
 | `value-only-composition` | `synthetic-value-only-composition` | committed (#1345) |
 | `amortization-schedule-screenshot` | `synthetic-amortization-schedule` | committed, balance-series track |
+| `transfer-confirmation` | `synthetic-transfer-confirmation` | committed, transfer track (#1795) |
 
-Those four captures are the whole runnable set, which is what makes "the extractor
+Those five captures are the whole runnable set, which is what makes "the extractor
 evals do not regress" verifiable without private data.
 
 `synthetic-value-only-composition` is the one added by **#1345**, and it earns its place
@@ -154,6 +155,42 @@ synthetic render is, because since #1243 the same document can arrive as an imag
 - `synthetic-amortization-schedule` — committed PNG (`fixtures/`), scenario
   `amortization-schedule-screenshot`: the same debt document arriving as a screenshot
   instead of a PDF, which is the crossing #1243 exists to make work
+
+The **traspaso** track (`transfer` document, #1795) grades the paper of PRD #1793: a
+bank's «Ejecución de una orden de traspaso de IIC», printed to a page from the e-mail.
+The real one never enters git; `synthetic-transfer-confirmation` keeps its layout with
+an invented bank, holder, contract and figures.
+
+It is a **positive synthetic** fixture, which the `holding_event` note above says a
+render usually cannot be — and the reason this one can is that what fails on it is not
+the pixels. The paper prints three dates (the e-mail's, the fecha de operación and the
+fecha valor), two funds with an ISIN each, and both a gross and a net importe with the
+fee between them. Typing the paper as a traspaso, choosing the day, telling the origin
+from the destination and the bruto from the neto are judgements a clean render does not
+supply, and they are the ones the incident got wrong: the reader typed the paper as a
+dated fact on one product and threw it away, 2/2. The grader makes one check per
+judgement, so a red run names the one that failed:
+
+```json
+{
+  "transfer": {
+    "date": "2026-09-14",
+    "confirms": "redemption",
+    "origin": { "name": "MONETARIO EJEMPLO FI", "isin": "IE00B5BMR087" },
+    "destination": { "name": "GLOBAL INDICE EJEMPLO FI", "isin": "IE00B03HCZ61" },
+    "units": 84.21573,
+    "pricePerUnit": { "amount": 12.0951, "currency": "EUR" },
+    "amount": 1018.6,
+    "currency": "EUR",
+    "fees": { "amount": 1.02, "currency": "EUR" }
+  },
+  "labelIncludes": ["traspaso"]
+}
+```
+
+`label` is graded by fragment, never by equality: it is the paper's literal text and a
+model may transcribe its spacing differently. Every optional figure grades on both
+sides, as on the positions track.
 
 The XLSX/CSV **positions + movements** track (`positions_movements` document, PRD
 #1103 S4) is **deterministic** — it needs no API key — and declares no fixture today.
@@ -293,10 +330,12 @@ bun run eval:extractor -- \
 ```
 
 That is the **full gate**: since #1254 every declared fixture is committed, so the run
-above is complete and can come back green with nothing but the API key. It spans all
-three verdicts on purpose — two positive positions readings (one of them value-only), a
-positive balance-series reading and a negative case — which is the combination that
-makes a green run mean something (see the tripwire note above).
+above is complete and can come back green with nothing but the API key. It spans every
+verdict on purpose — two positive positions readings (one of them value-only), a
+positive balance-series reading, a positive traspaso reading and a negative case — which
+is the combination that makes a green run mean something (see the tripwire note above).
+The traspaso capture is also the one that watches the identification for #1345's
+regression: adding a document type must not cost the other captures their reading.
 
 Run a subset while iterating (the JSON report includes `"subset": true`; do not
 treat that verdict as a model admission):
@@ -337,7 +376,7 @@ committed capture passes.
 3. Only merge a model bump when the report is complete and `ADMITTED`.
 
 The gate is runnable by anyone with the API key. What it does NOT cover is the list of
-uncovered scenarios above — read a green run as "the three committed captures did not
+uncovered scenarios above — read a green run as "the five committed captures did not
 regress", not as "the extractor handles a photographed screen".
 
 Pure grading logic is covered in CI via `graders.test.ts`; no live vision calls.

@@ -78,7 +78,7 @@ function dateRange(
  *
  * `detailOmitted` is the honest notice when rows do not follow — budget for a
  * series/positions, policy for an extract. A holding_event carries the event
- * itself, so it never takes the notice.
+ * itself, and a transfer its one traspaso, so neither takes the notice.
  */
 export function typedDocumentCard(
   fileName: string,
@@ -148,8 +148,12 @@ export function typedDocumentCard(
         ...notice,
       };
     }
-    default:
+    case "holding_event":
       return { ...base, event: document.event };
+    // The traspaso travels whole, like the dated fact: it is ONE row, and its two
+    // identifiers are what the model searches the book with (#1793, #1795).
+    case "transfer":
+      return { ...base, transfer: document.transfer };
   }
 }
 
@@ -245,6 +249,22 @@ export function extractedDocumentDetail(
           { name: "fees", optional: true, value: (row) => row.fees },
           { name: "declaredEffect", optional: true, value: (row) => row.declaredEffect },
           { name: "nextInstalment", optional: true, value: (row) => row.nextInstalment },
+        ],
+      );
+    case "transfer":
+      return compactTable(
+        [document.transfer],
+        [
+          { name: "date", value: (row) => row.date },
+          { name: "confirms", value: (row) => row.confirms },
+          { name: "label", value: (row) => row.label },
+          { name: "origin", value: (row) => row.origin },
+          { name: "destination", value: (row) => row.destination },
+          { name: "units", optional: true, value: (row) => row.units },
+          { name: "pricePerUnit", optional: true, value: (row) => row.pricePerUnit },
+          { name: "amount", value: (row) => row.amount },
+          { name: "currency", value: (row) => row.currency },
+          { name: "fees", optional: true, value: (row) => row.fees },
         ],
       );
     default:

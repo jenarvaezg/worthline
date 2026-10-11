@@ -8,6 +8,7 @@ import {
   gradeBalanceSeriesAgainstExpected,
   gradeExtractionAgainstExpected,
   gradePositionsMovementsAgainstExpected,
+  gradeTransferAgainstExpected,
   NO_HALLUCINATION_CHECK_NAME,
 } from "./graders";
 import type {
@@ -15,6 +16,7 @@ import type {
   GoldenExpectedNegative,
   GoldenExpectedPositive,
   PositionsMovementsGoldenExpected,
+  TransferGoldenExpected,
 } from "./manifest";
 
 const BASELINE: GoldenExpectedPositive = {
@@ -392,5 +394,156 @@ describe("gradePositionsMovementsAgainstExpected", () => {
       name: "documento de posiciones + movimientos",
       pass: false,
     });
+  });
+});
+
+const TRANSFER_EXPECTED: TransferGoldenExpected = {
+  labelIncludes: ["traspaso"],
+  transfer: {
+    amount: 1018.6,
+    confirms: "redemption",
+    currency: "EUR",
+    date: "2026-09-14",
+    destination: { isin: "IE00B03HCZ61", name: "GLOBAL INDICE EJEMPLO FI" },
+    fees: { amount: 1.02, currency: "EUR" },
+    origin: { isin: "IE00B5BMR087", name: "MONETARIO EJEMPLO FI" },
+    pricePerUnit: { amount: 12.0951, currency: "EUR" },
+    units: 84.21573,
+  },
+};
+
+const transferResult = (
+  patch: Record<string, unknown> = {},
+  label = "REEMB.POR TRASPASO I",
+): AttachmentExtractionResult => ({
+  data: {
+    documentType: "transfer",
+    transfer: { ...TRANSFER_EXPECTED.transfer, label, ...patch },
+    warnings: [],
+  } as unknown as ExtractedDocument,
+  status: "valid",
+});
+
+function failedChecks(result: AttachmentExtractionResult): string[] {
+  return gradeTransferAgainstExpected(result, TRANSFER_EXPECTED)
+    .filter((check) => !check.pass)
+    .map((check) => check.name);
+}
+
+describe("gradeTransferAgainstExpected (#1795)", () => {
+  it("passes a reading of the traspaso as the paper prints it", () => {
+    expect(failedChecks(transferResult())).toEqual([]);
+  });
+
+  it("reads the fund names on the fact, not on the glyph", () => {
+    expect(
+      failedChecks(
+        transferResult({
+          origin: { isin: "IE00B5BMR087", name: "Monetario Ejemplo FI" },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("fails the value date taken for the fecha de operación, and names it", () => {
+    expect(failedChecks(transferResult({ date: "2026-09-16" }))).toEqual([
+      "fecha de operación (nunca la fecha valor)",
+    ]);
+  });
+
+  it("fails the net importe taken for the gross one", () => {
+    expect(failedChecks(transferResult({ amount: 1017.58 }))).toEqual(["importe bruto"]);
+  });
+
+  it("fails swapped sides: the destination read as the origin", () => {
+    expect(
+      failedChecks(
+        transferResult({
+          destination: TRANSFER_EXPECTED.transfer.origin,
+          origin: TRANSFER_EXPECTED.transfer.destination,
+        }),
+      ),
+    ).toEqual(["origen y su identificador", "destino y su identificador"]);
+  });
+
+  it("fails an identifier the reading dropped, and one it invented", () => {
+    expect(
+      failedChecks(transferResult({ origin: { name: "MONETARIO EJEMPLO FI" } })),
+    ).toEqual(["origen y su identificador"]);
+    expect(
+      failedChecks(
+        transferResult({
+          destination: {
+            dgsCode: "N5394",
+            name: "GLOBAL INDICE EJEMPLO FI",
+          },
+        }),
+      ),
+    ).toEqual(["destino y su identificador"]);
+  });
+
+  it("grades an optional figure on both sides: omitted fails, and so does invented", () => {
+    const { fees: _fees, ...withoutFees } = TRANSFER_EXPECTED.transfer;
+    expect(
+      failedChecks({
+        data: {
+          documentType: "transfer",
+          transfer: { ...withoutFees, label: "REEMB.POR TRASPASO I" },
+          warnings: [],
+        } as unknown as ExtractedDocument,
+        status: "valid",
+      }),
+    ).toEqual(["comisión"]);
+    expect(
+      gradeTransferAgainstExpected(transferResult(), {
+        ...TRANSFER_EXPECTED,
+        transfer: withoutFees,
+      })
+        .filter((check) => !check.pass)
+        .map((check) => check.name),
+    ).toEqual(["comisión"]);
+  });
+
+  it("fails the wrong half and a label that is not the operation", () => {
+    expect(failedChecks(transferResult({ confirms: "subscription" }))).toEqual([
+      "mitad confirmada",
+    ]);
+    expect(failedChecks(transferResult({}, "Ejecución de una orden"))).toEqual([
+      "concepto literal",
+    ]);
+  });
+
+  it("fails a dated fact on one product: the incident's misreading", () => {
+    const checks = gradeTransferAgainstExpected(
+      {
+        data: {
+          documentType: "holding_event",
+          event: {
+            amount: 1018.6,
+            currency: "EUR",
+            date: "2026-09-14",
+            kind: "withdrawal",
+            label: "REEMB.POR TRASPASO I",
+          },
+          warnings: [],
+        } as unknown as ExtractedDocument,
+        status: "valid",
+      },
+      TRANSFER_EXPECTED,
+    );
+    expect(checks).toContainEqual({ name: "documento de traspaso", pass: false });
+  });
+
+  it("fails a paper the seam declined", () => {
+    expect(
+      gradeTransferAgainstExpected(
+        {
+          message: "No reconozco",
+          reason: "unidentified_document",
+          status: "unrecognized",
+        },
+        TRANSFER_EXPECTED,
+      ),
+    ).toEqual([{ name: "extracción válida", pass: false }]);
   });
 });

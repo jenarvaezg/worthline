@@ -12,6 +12,9 @@ import {
   POSITIONS_MOVEMENTS_GOLDEN_FIXTURES,
   parseBalanceSeriesGoldenExpected,
   parseGoldenExpected,
+  parseTransferGoldenExpected,
+  TRANSFER_GOLDEN_FIXTURES,
+  TRANSFER_GOLDEN_SCENARIOS,
 } from "./manifest";
 import {
   localExtractorGoldenRoot,
@@ -19,6 +22,8 @@ import {
   resolveBalanceSeriesSourcePath,
   resolveFixtureExpectedPath,
   resolveFixtureImagePath,
+  resolveTransferExpectedPath,
+  resolveTransferSourcePath,
 } from "./paths";
 import { MIN_SYNTHETIC_CAPTURE_BYTES, syntheticFixtureSpec } from "./synthetic-fixtures";
 
@@ -54,6 +59,14 @@ const COMMITTED_CAPTURES = [
     imagePath: resolveBalanceSeriesSourcePath(fixture),
     parseExpected: parseBalanceSeriesGoldenExpected,
   })),
+  ...TRANSFER_GOLDEN_FIXTURES.filter((fixture) => fixture.storage === "committed").map(
+    (fixture) => ({
+      expectedPath: resolveTransferExpectedPath(fixture),
+      id: fixture.id,
+      imagePath: resolveTransferSourcePath(fixture),
+      parseExpected: parseTransferGoldenExpected,
+    }),
+  ),
 ];
 
 const POSITIVE_EXPECTED = {
@@ -86,10 +99,11 @@ describe("extractor golden manifest", () => {
     }
   });
 
-  it("keeps every fixture id unique across the three tracks", () => {
+  it("keeps every fixture id unique across the four tracks", () => {
     const ids = [
       ...EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.id),
       ...BALANCE_SERIES_GOLDEN_FIXTURES.map((fixture) => fixture.id),
+      ...TRANSFER_GOLDEN_FIXTURES.map((fixture) => fixture.id),
       ...POSITIONS_MOVEMENTS_GOLDEN_FIXTURES.map((fixture) => fixture.id),
     ];
     // `decideAdmission` measures completeness with a Set of ids, so a duplicate would
@@ -113,6 +127,7 @@ describe("extractor golden manifest", () => {
     const declared = [
       ...EXTRACTOR_GOLDEN_FIXTURES,
       ...BALANCE_SERIES_GOLDEN_FIXTURES,
+      ...TRANSFER_GOLDEN_FIXTURES,
       ...POSITIONS_MOVEMENTS_GOLDEN_FIXTURES,
     ];
     expect(
@@ -204,6 +219,40 @@ describe("extractor golden manifest", () => {
       const image = await readFile(capture.imagePath);
       expect(readPngSize(image), capture.id).toEqual(spec?.capture);
       expect(image.byteLength).toBeGreaterThanOrEqual(MIN_SYNTHETIC_CAPTURE_BYTES);
+    }
+  });
+
+  /**
+   * The traspaso capture (#1795) is a POSITIVE reading of its own document, and what it
+   * grades is the judgement the incident got wrong: the fecha de operación among three
+   * printed dates, and the gross importe beside the net one. Pinned so the expected
+   * cannot quietly drift onto the dates or the figure the paper prints as a decoy.
+   */
+  it("grades the traspaso capture on the fecha de operación and the gross importe", async () => {
+    const fixture = TRANSFER_GOLDEN_FIXTURES.find(
+      (candidate) => candidate.id === "synthetic-transfer-confirmation",
+    );
+    expect(fixture?.storage).toBe("committed");
+    expect(fixture?.sourceFile).toMatch(/^fixtures\/synthetic-/);
+    const raw = await readFile(resolveTransferExpectedPath(fixture!), "utf8");
+    const expected = parseTransferGoldenExpected(JSON.parse(raw));
+    expect(expected.transfer.date).toBe("2026-09-14");
+    expect(expected.transfer.amount).toBe(1018.6);
+    const html = await readFile(
+      resolveTransferSourcePath(fixture!).replace(/\.png$/, ".html"),
+      "utf8",
+    );
+    // The decoys are really on the paper: the e-mail's day, the fecha valor, the net.
+    for (const decoy of ["15/09/2026", "16/09/2026", "1.017,58"]) {
+      expect(html).toContain(decoy);
+    }
+  });
+
+  it("grades each transfer scenario at most once, and none the catalog lacks", () => {
+    const scenarios = TRANSFER_GOLDEN_FIXTURES.map((fixture) => fixture.scenario);
+    expect(new Set(scenarios).size).toBe(scenarios.length);
+    for (const scenario of scenarios) {
+      expect(TRANSFER_GOLDEN_SCENARIOS).toContain(scenario);
     }
   });
 

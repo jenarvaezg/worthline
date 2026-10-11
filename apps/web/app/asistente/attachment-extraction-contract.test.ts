@@ -698,6 +698,77 @@ describe("positions + movements document (PRD #1103 S4)", () => {
   });
 });
 
+/**
+ * ONE traspaso between two funds, as its confirmation prints it (#1795). Invented
+ * figures and names; only the layout is the one of PRD #1793.
+ */
+describe("transfer document", () => {
+  const confirmation = {
+    documentType: "transfer",
+    transfer: {
+      date: "2026-09-14",
+      confirms: "redemption",
+      label: "REEMB.POR TRASPASO I",
+      origin: { name: "MONETARIO EJEMPLO FI", isin: "ie00b5bmr087" },
+      destination: { name: "PLAN EJEMPLO DOS PP", dgsCode: "N5394" },
+      units: "84,21573",
+      pricePerUnit: { amount: "12,0951", currency: "EUR" },
+      amount: "1.018,60",
+      currency: "EUR",
+      fees: { amount: "0,00", currency: "EUR" },
+    },
+    warnings: [],
+  };
+
+  test("is a branded member of the contract, with both sides and the figures read", () => {
+    const parsed = extractedDocumentSchema.parse(confirmation);
+
+    if (parsed.documentType !== "transfer") throw new Error(parsed.documentType);
+    expect(parsed.transfer).toEqual({
+      date: "2026-09-14",
+      confirms: "redemption",
+      label: "REEMB.POR TRASPASO I",
+      origin: { name: "MONETARIO EJEMPLO FI", isin: "IE00B5BMR087" },
+      destination: { name: "PLAN EJEMPLO DOS PP", dgsCode: "N5394" },
+      units: 84.21573,
+      pricePerUnit: { amount: 12.0951, currency: "EUR" },
+      amount: 1018.6,
+      currency: "EUR",
+      fees: { amount: 0, currency: "EUR" },
+    });
+  });
+
+  test("carries ONE traspaso and no list, so the validated door cannot pass a bulk import", () => {
+    expect(
+      extractedDocumentSchema.safeParse({
+        ...confirmation,
+        transfers: [confirmation.transfer],
+      }).success,
+    ).toBe(false);
+  });
+
+  test.each([
+    {
+      case: "a side with an ISIN and a DGS code at once",
+      patch: {
+        origin: { name: "MONETARIO EJEMPLO FI", isin: "IE00B5BMR087", dgsCode: "N5394" },
+      },
+    },
+    { case: "the value date riding along", patch: { valueDate: "2026-09-16" } },
+    { case: "a derived net importe", patch: { netAmount: "1.018,60" } },
+    { case: "a zero importe", patch: { amount: "0" } },
+    { case: "a half that is neither", patch: { confirms: "both" } },
+    { case: "a side with no name", patch: { destination: { isin: "IE00B03HCZ61" } } },
+  ])("refuses $case", ({ patch }) => {
+    expect(
+      extractedDocumentSchema.safeParse({
+        ...confirmation,
+        transfer: { ...confirmation.transfer, ...patch },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("holding_event document", () => {
   /** The capture that originated PRD #1241: Revolut «Detalles del pago». */
   const originCapture = {
