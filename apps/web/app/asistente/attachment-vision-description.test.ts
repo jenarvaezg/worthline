@@ -46,6 +46,17 @@ function stubbedGenerate(output: unknown) {
 }
 
 describe("vision attachment descriptive reading (#1246)", () => {
+  test("asks to copy identifiers, dates and labelled figures verbatim before summarizing (#1797)", async () => {
+    const generate = stubbedGenerate({ description: "Aviso de traspaso." });
+
+    await describeVisionAttachment(IMAGE, { env: ENV, generate });
+
+    const prompt = promptOf(generate.mock.calls[0]?.[0]);
+    expect(prompt).toMatch(/Antes de resumir, copia LITERALMENTE/);
+    expect(prompt).toMatch(/ISIN, código DGS, referencia/);
+    expect(prompt).toMatch(/fechas y cada cifra con su etiqueta/);
+  });
+
   test("describes what is on screen with the same fixed model, outside the pool", async () => {
     const model = { modelId: "test-model" } as never;
     const createModel = vi.fn(() => model);

@@ -267,7 +267,7 @@ describe("unvalidated-evidence envelopes (#1248)", () => {
     expect(envelope.error).toBe("unvalidated_evidence");
     expect(envelope.message).toMatch(/importar-extracto/);
     expect(envelope.message).toMatch(/extracto original/i);
-    expect(envelope.message).toMatch(/dato puntual/i);
+    expect(envelope.message).toMatch(/hecho fechado suelto/i);
     expect(envelope.message).not.toMatch(/sube el fichero|sube el archivo/i);
     // Sibling of the paywall envelope, never the same reason.
     expect(envelope.error).not.toBe("premium_required");

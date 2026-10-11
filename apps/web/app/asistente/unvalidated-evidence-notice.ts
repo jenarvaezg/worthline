@@ -46,11 +46,12 @@ import { unreadableTypedSeriesRejected } from "./unvalidated-evidence-gate";
  * mortgage schedule there was sending someone to a door that did not open.
  */
 export const UNVALIDATED_EVIDENCE_NOTE =
-  "Ese archivo no lo he podido leer como tabla, así que de él no puedo llevar nada en " +
-  "bloque al patrimonio — y repetir sus datos en el chat tampoco lo consigue, con una " +
-  "excepción: el histórico de saldos de una deuda. Ese escríbemelo aquí, una línea por " +
-  "fecha con la fecha y el saldo, y lo leo yo de tu mensaje. Y para cargar un documento " +
-  "entero el camino es /patrimonio/importar-extracto: la pestaña «Operaciones» para " +
+  "Ese archivo no puedo llevarlo en bloque al patrimonio, pero un hecho " +
+  "fechado suelto —un traspaso, una compra o venta, un saldo— sí te lo preparo como " +
+  "tarjeta si me lo escribes o me pegas aquí sus cifras. Y si es el histórico de " +
+  "saldos de una deuda, escríbemelo aquí, una línea por fecha con la fecha y el " +
+  "saldo, y lo leo yo de tu mensaje. Para cargar un documento entero el camino es " +
+  "/patrimonio/importar-extracto: la pestaña «Operaciones» para " +
   `posiciones y movimientos —entran ${STATEMENT_GATE_FORMATS.join(" o ")}—, y «Cuadro ` +
   "de amortización» para el cuadro del banco.";
 
