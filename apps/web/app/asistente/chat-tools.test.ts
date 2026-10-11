@@ -1720,6 +1720,260 @@ describe("createChatTools · propose_transfer (#1482)", () => {
       });
       store.close();
     });
+
+    describe("the two funds are the ones the paper names (#1800)", () => {
+      // Real, public fund ISINs with a valid check digit; the holdings' names are
+      // invented, and so are the figures.
+      const MUNDO = "IE00B4L5Y983";
+      const EMERGENTES = "IE00B5BMR087";
+      const EUROPA = "LU1681043599";
+
+      interface Fund {
+        id: string;
+        name: string;
+        isin?: string;
+      }
+
+      /** The origin is the FIRST fund, and the only one holding participaciones. */
+      async function fundsStore(funds: readonly Fund[]) {
+        const store = await createInMemoryStore();
+        await store.workspace.initializeWorkspace({
+          members: [{ id: "mJ", name: "Jorge" }],
+          mode: "individual",
+        });
+        for (const fund of funds) {
+          await store.assets.createInvestmentAsset({
+            currency: "EUR",
+            id: fund.id,
+            instrument: "fund",
+            manualPricePerUnit: "12",
+            name: fund.name,
+            ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+            ...(fund.isin
+              ? { securityId: { kind: "isin" as const, value: fund.isin } }
+              : {}),
+          });
+        }
+        await store.command.recordInvestmentOperation(
+          {
+            assetId: funds[0]!.id,
+            currency: "EUR",
+            executedAt: "2025-09-15",
+            id: "op-seed",
+            kind: "buy",
+            pricePerUnit: "10",
+            units: "100",
+          },
+          { today: "2026-08-21" },
+        );
+        return store;
+      }
+
+      /** The tools over that store, with the paper validated and every id read. */
+      async function paperTools(
+        store: WorthlineStore,
+        paper: ReturnType<typeof confirmation>,
+        grounded?: (ids: Record<string, string>) => string[],
+      ) {
+        const ids: Record<string, string> = Object.fromEntries(
+          (await store.agentView.readPublicIds())
+            .filter((row) => row.entityType === "holding")
+            .map((row) => [row.entityId, row.publicId]),
+        );
+        return {
+          ids,
+          tools: createChatTools({
+            asOf: "2026-08-21",
+            groundedHoldingIds: grounded ? grounded(ids) : Object.values(ids),
+            runWithStore: (run) =>
+              run({
+                agentView: store.agentView,
+                assets: store.assets,
+                assistantProposals: store.assistantProposals,
+                operations: store.operations,
+              }),
+            validatedAttachments: [{ document: paper, fileName: "aviso-traspaso.pdf" }],
+            validatedDocuments: [paper],
+          }),
+        };
+      }
+
+      const PAPER = {
+        destination: { isin: EMERGENTES, name: "FONDO EMERGENTES EJEMPLO" },
+        origin: { isin: MUNDO, name: "FONDO MUNDO EJEMPLO" },
+      };
+
+      it("the description asks for each fund to be searched by its ISIN before calling it missing", async () => {
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+        ]);
+        const { tools } = await paperTools(store, confirmation(PAPER));
+
+        expect(tools["propose_transfer"]?.description ?? "").toContain(
+          "busca cada fondo por ISIN antes de concluir que no existe",
+        );
+        store.close();
+      });
+
+      it("refuses a destination whose ISIN is not the paper's, naming both ISINs", async () => {
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+          { id: "europa", isin: EUROPA, name: "Fondo Europa" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        // The model confused the two funds, as it did in the incident.
+        const result = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["europa"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        )) as { audience?: string; error?: string; message?: string };
+
+        expect(result.error).toBe("transfer_identity_mismatch");
+        expect(result.audience).toBe("user");
+        expect(result.message).toContain(EMERGENTES);
+        expect(result.message).toContain(EUROPA);
+        expect(result.message).toContain("«Fondo Europa»");
+        store.close();
+      });
+
+      it("two funds swapped are refused on the origin, naming the holding that is the paper's origin", async () => {
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        const result = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["mundo"], originHoldingId: ids["emergentes"] },
+          toolCallContext(),
+        )) as { candidateHoldings?: unknown; error?: string; message?: string };
+
+        expect(result.error).toBe("transfer_identity_mismatch");
+        expect(result.message).toContain("sale de «FONDO MUNDO EJEMPLO»");
+        expect(result.candidateHoldings).toEqual([
+          { id: ids["mundo"], label: "Fondo Mundo" },
+        ]);
+        store.close();
+      });
+
+      it("finds the destination inside a managed portfolio, and takes it as the paper's", async () => {
+        // The incident: the destination lived inside a cartera gestionada, worth nothing
+        // yet and below the summary's cut, and the model picked a namesake instead.
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "tocayo", name: "Emergentes (antiguo)" },
+          { id: "emergentes", isin: EMERGENTES, name: "Fondo Emergentes" },
+        ]);
+        await store.managedPortfolios.createManagedPortfolio({
+          containerOwnership: [{ memberId: "mJ", shareBps: 10_000 }],
+          memberHoldingIds: ["emergentes"],
+          name: "Cartera Gestionada Ejemplo",
+          scopeId: "household",
+        });
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        const byName = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["tocayo"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        )) as { error?: string; candidateHoldings?: unknown; message?: string };
+
+        expect(byName.error).toBe("transfer_identity_mismatch");
+        expect(byName.message).toContain("«Fondo Emergentes»");
+        expect(byName.candidateHoldings).toEqual([
+          { id: ids["emergentes"], label: "Fondo Emergentes" },
+        ]);
+
+        const byIsin = await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["emergentes"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        );
+
+        expect(byIsin).toMatchObject({
+          // 739,22 € at the member's own 12 € VL.
+          destination: {
+            positionLine: "Entran en «Fondo Emergentes»: 0 → 61,601667 participaciones",
+          },
+          proposalType: "investment_transfer",
+        });
+        store.close();
+      });
+
+      it("a destination whose ISIN no holding has is refused with the route to an alta without opening", async () => {
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "europa", isin: EUROPA, name: "Fondo Europa" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        const result = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["europa"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        )) as { candidateHoldings?: unknown; error?: string; message?: string };
+
+        expect(result.error).toBe("transfer_destination_not_held");
+        expect(result.message).toContain(`ISIN ${EMERGENTES}`);
+        expect(result.message).toContain("no está");
+        expect(result.message).toContain("sin valoración de apertura");
+        expect(result.candidateHoldings).toBeUndefined();
+        store.close();
+      });
+
+      it("a destination with no identifier registered contradicts nothing when no holding has the paper's", async () => {
+        // The operation lane's rule: a fund registered without its ISIN is still a fund
+        // the user has, and refusing it would send them to a duplicate alta.
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "emergentes", name: "Fondo Emergentes" },
+        ]);
+        const { ids, tools } = await paperTools(store, confirmation(PAPER));
+
+        const result = await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["emergentes"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        );
+
+        expect(result).toMatchObject({ proposalType: "investment_transfer" });
+        store.close();
+      });
+
+      it("several holdings with the paper's ISIN: the refusal lists their ids, and those count as read (#1263)", async () => {
+        const store = await fundsStore([
+          { id: "mundo", isin: MUNDO, name: "Fondo Mundo" },
+          { id: "europa", isin: EUROPA, name: "Fondo Europa" },
+          { id: "emergentes-a", isin: EMERGENTES, name: "Emergentes en MyInvestor" },
+          { id: "emergentes-b", isin: EMERGENTES, name: "Emergentes en la cartera" },
+        ]);
+        // The model has read only the two funds it is about to (wrongly) pass.
+        const { ids, tools } = await paperTools(store, confirmation(PAPER), (all) => [
+          all["mundo"]!,
+          all["europa"]!,
+        ]);
+
+        const refused = (await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["europa"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        )) as { candidateHoldings?: unknown; error?: string; message?: string };
+
+        // The app never picks between them: it says both, and asks.
+        expect(refused.error).toBe("transfer_identity_ambiguous");
+        expect(refused.message).toContain("«Emergentes en MyInvestor»");
+        expect(refused.message).toContain("«Emergentes en la cartera»");
+        expect(refused.candidateHoldings).toEqual([
+          { id: ids["emergentes-a"], label: "Emergentes en MyInvestor" },
+          { id: ids["emergentes-b"], label: "Emergentes en la cartera" },
+        ]);
+
+        // Those ids came out of worthline's own lookup, so the next call may use one.
+        const chosen = await tools["propose_transfer"]?.execute?.(
+          { destinationHoldingId: ids["emergentes-b"], originHoldingId: ids["mundo"] },
+          toolCallContext(),
+        );
+
+        expect(chosen).toMatchObject({ proposalType: "investment_transfer" });
+        store.close();
+      });
+    });
   });
 });
 
@@ -1982,6 +2236,128 @@ describe("createChatTools · propose_holding (#1105)", () => {
     expect(schema.properties["feesMinor"]).toEqual({ type: "integer" });
     expect(schema.additionalProperties).toBe(false);
     store.close();
+  });
+
+  describe("the destination of a traspaso, born empty with its identifier (#1800)", () => {
+    async function altaTools() {
+      const store = await createInMemoryStore();
+      await store.workspace.initializeWorkspace({
+        members: [{ id: "mJ", name: "Jorge" }],
+        mode: "individual",
+      });
+      const tools = createChatTools({
+        runWithStore: (run) =>
+          run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            liabilities: store.liabilities,
+            workspace: store.workspace,
+          }),
+        asOf: AS_OF,
+      });
+      /** The identifier the draft will write onto the new holding. */
+      const plannedSecurityId = async (result: unknown) => {
+        const { proposalId } = (result as { draft: { proposalId: string } }).draft;
+        const draft = await store.assistantProposals.read(proposalId);
+        const row = draft?.documents[0]?.facts[0] as
+          | { row: { securityId?: unknown } }
+          | undefined;
+        return row?.row.securityId;
+      };
+      return { plannedSecurityId, store, tools };
+    }
+
+    it("a fund with its ISIN and no opening gets its card, valued by what the traspaso brings", async () => {
+      const { plannedSecurityId, store, tools } = await altaTools();
+
+      const result = await tools["propose_holding"]?.execute?.(
+        {
+          family: "investment",
+          instrument: "fund",
+          isin: "IE00B5BMR087",
+          name: "Fondo Emergentes",
+        },
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        holding: { detail: "Sin valoración de apertura", name: "Fondo Emergentes" },
+        proposalType: "holding_creation",
+      });
+      expect(await plannedSecurityId(result)).toEqual({
+        kind: "isin",
+        value: "IE00B5BMR087",
+      });
+      store.close();
+    });
+
+    it("a plan de pensiones is given its DGS code, which an ISIN field cannot carry", async () => {
+      const { plannedSecurityId, store, tools } = await altaTools();
+
+      const result = await tools["propose_holding"]?.execute?.(
+        {
+          dgsCode: "n-5394",
+          family: "investment",
+          instrument: "pension_plan",
+          name: "Plan Indexado Ejemplo",
+        } as never,
+        toolCallContext(),
+      );
+
+      expect(result).toMatchObject({
+        holding: { detail: "Sin valoración de apertura" },
+        proposalType: "holding_creation",
+      });
+      expect(await plannedSecurityId(result)).toEqual({ kind: "dgs", value: "N5394" });
+      store.close();
+    });
+
+    it("refuses a DGS code on a fund, and both identifiers at once", async () => {
+      const { store, tools } = await altaTools();
+
+      const onAFund = (await tools["propose_holding"]?.execute?.(
+        {
+          dgsCode: "N5394",
+          family: "investment",
+          instrument: "fund",
+          name: "Fondo",
+        } as never,
+        toolCallContext(),
+      )) as { error?: string };
+      const both = (await tools["propose_holding"]?.execute?.(
+        {
+          dgsCode: "N5394",
+          family: "investment",
+          instrument: "pension_plan",
+          isin: "IE00B5BMR087",
+          name: "Plan",
+        } as never,
+        toolCallContext(),
+      )) as { error?: string };
+
+      expect(onAFund.error).toContain("código DGS");
+      expect(both.error).toContain("ISIN o código DGS");
+      store.close();
+    });
+
+    it("a plan's code passed as an ISIN is refused naming the field it belongs in", async () => {
+      const { store, tools } = await altaTools();
+
+      const result = (await tools["propose_holding"]?.execute?.(
+        {
+          family: "investment",
+          instrument: "pension_plan",
+          isin: "N5394",
+          name: "Plan Indexado Ejemplo",
+        },
+        toolCallContext(),
+      )) as { error?: string };
+
+      expect(result.error).toContain("N5394 es el código DGS");
+      expect(result.error).toContain("dgsCode");
+      store.close();
+    });
   });
 });
 

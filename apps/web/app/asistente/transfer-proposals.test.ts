@@ -630,3 +630,76 @@ describe("confirmTransferProposalAction — the pair the gate writes", () => {
     store.close();
   });
 });
+
+describe("confirmTransferProposalAction — the paper's identifiers, re-checked (#1800)", () => {
+  /** A reembolso notice that prints the origin plan's DGS code, read by worthline. */
+  async function draftFromPaper(store: WorthlineStore) {
+    return buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: DESTINATION,
+        destinationHolding: "wl_hld_destino",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        source: {
+          currency: "EUR",
+          fileName: "aviso-traspaso.pdf",
+          from: "document",
+          funds: {
+            destination: { name: "CARTERA PERMANENTE EJEMPLO PP" },
+            origin: {
+              name: "INDEXADO EJEMPLO PP",
+              securityId: { kind: "dgs", value: "N5394" },
+            },
+          },
+        },
+        transfer: { executedAt: DATE, portion: { amountMinor: 73_922, kind: "amount" } },
+      },
+      TODAY,
+    );
+  }
+
+  test("a plan whose DGS code changed since the card is refused, writing nothing", async () => {
+    const store = await seed();
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    const built = await draftFromPaper(store);
+    if (!built.ok) throw new Error(built.error);
+
+    // Between arming the card and confirming it, the ficha now says another plan.
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5396" },
+    });
+    const result = await confirmTransferProposalAction(
+      built.proposal.draft,
+      store,
+      clock,
+    );
+
+    expect(result.status).toBe("error");
+    const { message } = result as { message: string };
+    expect(message).toContain("código DGS N5394");
+    expect(message).toContain("código DGS N5396");
+    expect(
+      (await store.operations.readOperations(ORIGIN)).some(
+        (operation) => operation.kind === "transfer_out",
+      ),
+    ).toBe(false);
+    store.close();
+  });
+
+  test("the same code at confirm writes the pair", async () => {
+    const store = await seed();
+    await store.assets.patchInvestmentIdentity(ORIGIN, {
+      securityId: { kind: "dgs", value: "N5394" },
+    });
+    const built = await draftFromPaper(store);
+    if (!built.ok) throw new Error(built.error);
+
+    expect(
+      await confirmTransferProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
+    store.close();
+  });
+});

@@ -28,6 +28,9 @@
  *   message instead of a 500).
  * - **The same traspaso is never written twice**: a pair already sitting on the origin
  *   at that date, towards that same destination, is reported and not doubled.
+ * - **The two funds are the paper's** (#1800): when the figures came off a confirmation
+ *   that prints each fund's ISIN or DGS code, both holdings are checked against them
+ *   ({@link ../transfer-identity}), at build and again at confirm.
  *
  * What it does NOT ask the user for: the two VLs. Nobody dictates them. A leg whose
  * participaciones the message DID state derives its own (#1544) and needs no price at
@@ -46,7 +49,12 @@ import type {
   InvestmentTransferPlan,
   WorthlineStore,
 } from "@worthline/db";
-import type { CurrencyCode, DecimalString, TransferPortion } from "@worthline/domain";
+import type {
+  CurrencyCode,
+  DecimalString,
+  SecurityId,
+  TransferPortion,
+} from "@worthline/domain";
 import {
   addUnits,
   derivePosition,
@@ -66,6 +74,12 @@ import {
 import { formatIsoDayEs } from "./iso-day-es";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 import { boundProposalSummary } from "./proposal-summary";
+import {
+  type PrintedFund,
+  type TransferIdentityRefusal,
+  transferIdentityContradiction,
+  transferIdentityRefusal,
+} from "./transfer-identity";
 import type {
   TransferProposal,
   TransferProposalSide,
@@ -132,6 +146,11 @@ export type TransferSource =
       fileName: string;
       /** The currency the paper prints the importe in. */
       currency: string;
+      /**
+       * The two funds the paper names, with the identifier each prints — what the two
+       * holdings the model chose are checked against (#1800).
+       */
+      funds: { origin: PrintedFund; destination: PrintedFund };
     };
 
 /**
@@ -197,6 +216,9 @@ export interface TransferWrite {
   destinationPricePerUnit?: DecimalString | undefined;
   /** The participaciones that arrived, when they were stated rather than divided. */
   destinationUnits?: DecimalString | undefined;
+  /** The identifier the paper printed for each fund, re-checked here (#1800). */
+  originSecurityId?: SecurityId | undefined;
+  destinationSecurityId?: SecurityId | undefined;
 }
 
 /**
@@ -226,6 +248,19 @@ export async function projectTransferWrite(
   if (!destination) {
     return { error: `La inversión de destino: ${NOT_AN_INVESTMENT}`, ok: false };
   }
+
+  // The identity contradiction, through the operation's own piece (#1800): a holding
+  // that registers another identifier than the paper's is another instrument. The
+  // build already refused it with the holdings that DO carry it; what reaches here is
+  // the confirm, after a ficha edit in between.
+  const contradiction =
+    transferIdentityContradiction("origin", write.originSecurityId, origin) ??
+    transferIdentityContradiction(
+      "destination",
+      write.destinationSecurityId,
+      destination,
+    );
+  if (contradiction) return { error: contradiction, ok: false };
 
   // The connected-source frontier, in code (#1326) and on BOTH sides: the gate throws
   // on a sync-owned holding, whose position its own sync re-rolls, so a hand-written
@@ -398,6 +433,8 @@ export function transferWriteFromPlan(plan: InvestmentTransferPlan): TransferWri
     originAssetId: plan.originAssetId,
     originPricePerUnit: plan.originPricePerUnit,
     portion: plan.portion,
+    originSecurityId: plan.originSecurityId,
+    destinationSecurityId: plan.destinationSecurityId,
   };
 }
 
@@ -405,7 +442,15 @@ export async function buildTransferProposal(
   store: TransferStore,
   args: TransferArgs,
   today: string,
-): Promise<{ ok: true; proposal: TransferProposal } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; proposal: TransferProposal }
+  | {
+      ok: false;
+      error: string;
+      /** The typed answer, when the refusal is more than its sentence (#1800). */
+      refusal?: TransferIdentityRefusal;
+    }
+> {
   const { destinationUnits, executedAt, portion } = args.transfer;
   if (executedAt > today) {
     return {
@@ -414,6 +459,20 @@ export async function buildTransferProposal(
         "Dime el día en que lo hiciste.",
       ok: false,
     };
+  }
+
+  // The two funds are the paper's (#1800), judged before any price is read: a wrong
+  // holding with no VL would otherwise be refused for its missing price, and the
+  // person told to type participaciones for a fund the traspaso never touched.
+  if (args.source?.from === "document") {
+    const refusal = await transferIdentityRefusal(store, {
+      destination: {
+        assetId: args.destinationAssetId,
+        printed: args.source.funds.destination,
+      },
+      origin: { assetId: args.originAssetId, printed: args.source.funds.origin },
+    });
+    if (refusal) return { error: refusal.message, ok: false, refusal };
   }
 
   // The VLs the arithmetic still needs, and only those: a leg that DECLARES its
@@ -437,6 +496,8 @@ export async function buildTransferProposal(
       ? {}
       : { destinationPricePerUnit: prices.destination.pricePerUnit }),
     ...(destinationUnits === undefined ? {} : { destinationUnits }),
+    // And what the paper printed about WHICH funds, so the confirm re-checks it (#1800).
+    ...printedSecurityIds(args.source),
   };
 
   const projected = await projectTransferWrite(store, {
@@ -588,6 +649,18 @@ export async function buildTransferProposal(
  * the typed balance series' (#1418): what backs these figures is the user's message.
  */
 export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
+
+/** The identifier each fund's paper printed, when the figures came off a paper. */
+function printedSecurityIds(
+  source: TransferSource | undefined,
+): Pick<TransferWrite, "originSecurityId" | "destinationSecurityId"> {
+  if (source?.from !== "document") return {};
+  const { destination, origin } = source.funds;
+  return {
+    ...(origin.securityId ? { originSecurityId: origin.securityId } : {}),
+    ...(destination.securityId ? { destinationSecurityId: destination.securityId } : {}),
+  };
+}
 
 /** The caption under the echo: the file, an earlier message, or the turn's own. */
 function transferSourceCaption(source: TransferSource): string {

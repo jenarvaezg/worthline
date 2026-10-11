@@ -49,6 +49,7 @@ export const HOLDING_CREATION_PROPOSAL_SCHEMA = jsonSchema<HoldingCreationArgs>(
     debtModel: { type: "string", enum: ["amortizable", "revolving", "informal"] },
     providerSymbol: { type: "string" },
     isin: { type: "string" },
+    dgsCode: { type: "string" },
     openingValueMinor: { type: "integer" },
     pricePerUnit: { type: "string" },
     units: { type: "string" },

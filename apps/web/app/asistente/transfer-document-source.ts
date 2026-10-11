@@ -26,9 +26,13 @@
 
 import { multiplyToMinor, normalizeDecimal } from "@worthline/domain";
 import type { ValidatedAttachment } from "./attachment-chat";
-import type { ExtractedTransfer } from "./attachment-extraction-contract";
+import {
+  type ExtractedTransfer,
+  extractedSecurityId,
+} from "./attachment-extraction-contract";
 import { formatDocumentMoney } from "./document-figures";
 import { type ProposalRefusal, userRefusal } from "./proposal-refusal";
+import type { PrintedFund } from "./transfer-identity";
 import type { TypedTransfer } from "./typed-transfer";
 
 /** The last traspaso confirmation the model was handed, with the file it came in. */
@@ -59,6 +63,11 @@ export type TransferDocumentReading =
       transfer: TypedTransfer;
       /** The currency the paper prints its importe in: the lane refuses another one. */
       currency: string;
+      /**
+       * The two funds as the paper names them, each with the identifier it prints: what
+       * the lane checks the model's two holdings against (#1800).
+       */
+      funds: { origin: PrintedFund; destination: PrintedFund };
     }
   | { ok: false; refusal: ProposalRefusal };
 
@@ -87,6 +96,10 @@ export function transferFromDocument(
     transfer.units === undefined ? undefined : normalizeDecimal(String(transfer.units));
   const read = (typed: TypedTransfer): TransferDocumentReading => ({
     currency: transfer.currency,
+    funds: {
+      destination: printedFund(transfer.destination),
+      origin: printedFund(transfer.origin),
+    },
     ok: true,
     transfer: typed,
   });
@@ -102,6 +115,12 @@ export function transferFromDocument(
     });
   }
   return read({ executedAt, portion: { amountMinor, kind: "units", units } });
+}
+
+/** One side as the paper prints it: the name, and the identifier when it has one. */
+function printedFund(fund: ExtractedTransfer["origin"]): PrintedFund {
+  const securityId = extractedSecurityId(fund);
+  return { name: fund.name, ...(securityId === null ? {} : { securityId }) };
 }
 
 /** A major-unit figure the paper printed, as exact integer cents. */

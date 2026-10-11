@@ -34,7 +34,11 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
     propose_transfer: tool({
       description:
         "Anota UN TRASPASO entre dos inversiones que YA EXISTEN, desde su justificante (documentType transfer en los DATOS ESTRUCTURADOS) o desde lo que el usuario te cuente por el chat («he traspasado hoy 1.018,67 € del fondo A al fondo B»): UN movimiento con dos patas atadas, no una venta más una compra. " +
-        "Tú decides las dos posiciones y nada más: `originHoldingId` y `destinationHoldingId`. " +
+        // The two id fields are not named here: the schema already does (#1342). The
+        // ISIN rule is (#1800): in the incident the model searched by name and declared
+        // missing a fund it held. The rest of the identity check — which holding does
+        // carry the paper's ISIN, the alta route — is taught by its refusals.
+        "Tú decides las dos posiciones y nada más; con ISIN en la mano, busca cada fondo por ISIN antes de concluir que no existe. " +
         // The three consequences of the instrument (no plusvalía, cost travels, no cupo
         // spent) are NOT here: the card prints them for the user
         // (TRANSFER_NEUTRALITY_NOTE), and the floor is paid on every turn while card
@@ -88,7 +92,8 @@ export function transferProposalTools(turn: ChatToolTurn): ToolSet {
             },
             input.asOf,
           );
-          return built.ok ? built.proposal : { error: built.error };
+          if (built.ok) return built.proposal;
+          return built.refusal ?? { error: built.error };
         });
       },
     }),
@@ -118,6 +123,7 @@ function transferSource(
         currency: fromDocument.currency,
         fileName: document.fileName,
         from: "document",
+        funds: fromDocument.funds,
       },
       transfer: fromDocument.transfer,
     };
