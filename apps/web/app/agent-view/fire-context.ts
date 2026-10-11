@@ -2,6 +2,8 @@ import type { AgentViewReadStore } from "@worthline/db";
 import type {
   FireResult,
   FireScopeConfig,
+  FireSustainableIncome,
+  FireSustainableSpending,
   GoalReservationInput,
   ManualAsset,
   ScopeFireResult,
@@ -33,7 +35,10 @@ import {
   AgentViewHttpError,
   type AgentViewMoney,
   type AgentViewScope,
+  type AgentViewStandaloneIncomes,
+  type AgentViewSustainableIncome,
 } from "./contract";
+import { derivePublicId } from "./derived-id";
 import { ratioStringFromBps } from "./financial-context";
 import { unknownScope } from "./http-errors";
 import { money, moneyOf, zero } from "./money";
@@ -111,10 +116,10 @@ export async function resolveFire(
     // The declared rents the rate reads (#1448). Without them the assistant would
     // quote the tier default while the screen shows the rent-derived rate — the
     // same figure with two values, which is the failure the single door exists for.
-    // Skipped when a manual `expectedRealReturn` is set: it wins over the whole
-    // computation (ADR 0074/0076), so the query would buy nothing (#783).
-    const payoutSchedules =
-      config.expectedRealReturn === undefined ? await store.readPayoutSchedules() : [];
+    // Read even under a manual `expectedRealReturn` (#1674): the rate ignores them
+    // then, but the sustainable spending still reads the incomes no holding
+    // generates, and skipping the query (#783) would drop a pension from the answer.
+    const payoutSchedules = await store.readPayoutSchedules();
     result = calculateFireForScope(
       config,
       assets,
@@ -347,8 +352,64 @@ function toResult(result: ScopeFireResult): AgentViewFireResult {
                   ),
                   untilAge: spending.depletion.untilAge,
                 }),
+            ...standaloneIncomesOf(spending, currency),
           },
         }),
+  };
+}
+
+/**
+ * Las rentas sin activo tal como las lee la tarjeta (#1674): mismas cuatro listas, mismo
+ * reparto. Sin ninguna, el bloque no aparece — un asistente no tiene que distinguir
+ * «ninguna» de cuatro listas vacías.
+ */
+function standaloneIncomesOf(
+  spending: FireSustainableSpending,
+  currency: string,
+): { standaloneIncomes?: AgentViewStandaloneIncomes } {
+  const { conditionBroken, current, upcoming, withheld } = spending.incomes;
+  if (conditionBroken.length + current.length + upcoming.length + withheld.length === 0) {
+    return {};
+  }
+  const line = (income: FireSustainableIncome): AgentViewSustainableIncome => ({
+    condition:
+      income.condition === null
+        ? null
+        : {
+            assumedContributionThrough: income.condition.throughISO,
+            check:
+              income.condition.state === "holds"
+                ? "holds"
+                : income.condition.missing === "retirement_age"
+                  ? "no_retirement_age"
+                  : "no_birth_date",
+          },
+    endDate: income.income.endISO,
+    id: derivePublicId("psc", income.income.incomeId),
+    label: income.income.label,
+    monthly: moneyOf(income.monthlyMinor, currency),
+    provenance: income.income.provenance,
+    provenanceAsOf: income.income.provenanceAsOf,
+    startDate: income.income.startISO,
+  });
+  return {
+    standaloneIncomes: {
+      conditionBroken: conditionBroken.map((broken) => ({
+        assumedContributionThrough: broken.throughISO,
+        declaredRetirement: broken.retirement,
+        id: derivePublicId("psc", broken.income.incomeId),
+        label: broken.income.label,
+        monthly: moneyOf(broken.monthlyMinor, currency),
+        startDate: broken.income.startISO,
+      })),
+      current: current.map(line),
+      upcoming: upcoming.map(line),
+      withheld: withheld.map((income) => ({
+        id: derivePublicId("psc", income.incomeId),
+        label: income.label,
+        reason: income.reason,
+      })),
+    },
   };
 }
 

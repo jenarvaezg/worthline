@@ -8,6 +8,11 @@ import type { FireContext, FireScopeConfig } from "./fire";
 import type { FireCapitalAvailability } from "./fire-capital-availability";
 import { splitFireCapital } from "./fire-capital-split";
 import type { FireRentReturnReport } from "./fire-rent-return";
+import type {
+  FireStandaloneIncome,
+  FireStandaloneIncomeReport,
+} from "./fire-standalone-income";
+import { NO_STANDALONE_INCOMES } from "./fire-standalone-income";
 import { fireSustainableSpending } from "./fire-sustainable-spending";
 
 /** 100.000 € vendibles y 370.000 € de ladrillo: la forma de la cartera de Jorge. */
@@ -53,6 +58,7 @@ function result(
     countsImmobilized?: boolean;
     reservedForGoalsMinor?: number;
     availability?: FireCapitalAvailability;
+    standaloneIncomes?: FireStandaloneIncomeReport;
   } = {},
 ) {
   const config: FireScopeConfig = {
@@ -92,6 +98,7 @@ function result(
         ? {}
         : { netRentAnnualMinor: overrides.netRentAnnualMinor }),
     },
+    standaloneIncomes: overrides.standaloneIncomes ?? NO_STANDALONE_INCOMES,
   };
 }
 
@@ -283,5 +290,224 @@ describe("la declaración del servicio de deuda no mueve ninguna cifra (#1520)",
     // separa de las otras, es que la resta entró por la puerta de atrás.
     expect(included).toEqual(undeclared);
     expect(excluded).toEqual(undeclared);
+  });
+});
+
+// ── las rentas sin activo (#1674, S3 de #1522) ─────────────────────────────────
+
+/** La pensión de la simulación oficial de Jorge: 3.383,56 €/mes desde dic 2030. */
+function pension(overrides: Partial<FireStandaloneIncome> = {}): FireStandaloneIncome {
+  return {
+    annualMinor: 4_060_272,
+    assumedContributionThrough: null,
+    endISO: null,
+    incomeId: "inc-pension",
+    label: "Pensión",
+    provenance: "official_simulation",
+    provenanceAsOf: "2026-08-18",
+    startISO: "2030-12-10",
+    startsLater: true,
+    ...overrides,
+  };
+}
+
+/** Nacido en noviembre de 1963: a los 67 se jubila en noviembre de 2030. */
+const BORN_NOV_1963 = { birthMonth: 11, birthYear: 1963 };
+
+function withIncomes(
+  readable: FireStandaloneIncome[],
+  options: {
+    base?: FireScopeConfig;
+    config?: Partial<FireScopeConfig>;
+    referenceBirth?: FireStandaloneIncomeReport["referenceBirth"];
+    netRentAnnualMinor?: number;
+  } = {},
+) {
+  return fireSustainableSpending(
+    result({
+      ...(options.base === undefined ? {} : { base: options.base }),
+      ...(options.config === undefined ? {} : { config: options.config }),
+      ...(options.netRentAnnualMinor === undefined
+        ? {}
+        : { netRentAnnualMinor: options.netRentAnnualMinor }),
+      standaloneIncomes: {
+        readable,
+        referenceBirth:
+          options.referenceBirth === undefined ? BORN_NOV_1963 : options.referenceBirth,
+        withheld: [],
+      },
+    }),
+  )!;
+}
+
+describe("fireSustainableSpending — sin rentas sin activo, nada cambia", () => {
+  it("el informe vacío deja cada cifra donde estaba y las cuatro listas vacías", () => {
+    const spending = fireSustainableSpending(result({ netRentAnnualMinor: 1_175_000 }))!;
+
+    expect(spending.perpetual.total).toEqual({
+      annualMinor: 1_525_000,
+      monthlyMinor: 127_083,
+    });
+    expect(spending.incomes).toEqual({
+      conditionBroken: [],
+      current: [],
+      upcoming: [],
+      withheld: [],
+    });
+  });
+});
+
+describe("fireSustainableSpending — la renta vigente hoy entra en las rentas", () => {
+  it("suma al total de las dos versiones, sin tocar el capital ni el alquiler", () => {
+    const today = pension({
+      annualMinor: 1_200_000,
+      startISO: "2024-01-01",
+      startsLater: false,
+    });
+    const spending = withIncomes([today], {
+      config: { capitalLastsUntilAge: 90 },
+      netRentAnnualMinor: 1_175_000,
+    });
+    const without = withIncomes([], {
+      config: { capitalLastsUntilAge: 90 },
+      netRentAnnualMinor: 1_175_000,
+    });
+
+    expect(spending.incomes.current).toEqual([
+      { annualMinor: 1_200_000, condition: null, income: today, monthlyMinor: 100_000 },
+    ]);
+    // 3.500 € del capital + 11.750 € de alquiler + 12.000 € de la pensión vigente.
+    expect(spending.perpetual.total).toEqual({
+      annualMinor: 2_725_000,
+      monthlyMinor: 227_083,
+    });
+    expect(spending.perpetual.capital).toEqual(without.perpetual.capital);
+    expect(spending.rents).toEqual(without.rents);
+    expect(spending.depletion!.total.annualMinor).toBe(
+      without.depletion!.total.annualMinor + 1_200_000,
+    );
+  });
+});
+
+describe("fireSustainableSpending — la renta futura es la tercera línea, con fecha", () => {
+  it("se enseña aparte, al mes, y no se suma a ninguna cifra de hoy", () => {
+    const spending = withIncomes([pension()]);
+    const without = withIncomes([]);
+
+    expect(spending.incomes.upcoming).toEqual([
+      {
+        annualMinor: 4_060_272,
+        condition: null,
+        income: pension(),
+        monthlyMinor: 338_356,
+      },
+    ]);
+    expect(spending.perpetual).toEqual(without.perpetual);
+    expect(spending.incomes.current).toEqual([]);
+  });
+});
+
+describe("fireSustainableSpending — la condición se comprueba contra la jubilación declarada", () => {
+  it("cotizar hasta el mes en que se jubila se sostiene, y la cifra la nombra", () => {
+    const spending = withIncomes([pension({ assumedContributionThrough: "2030-11-30" })]);
+
+    expect(spending.incomes.upcoming[0]?.condition).toEqual({
+      state: "holds",
+      throughISO: "2030-11-30",
+    });
+    expect(spending.incomes.conditionBroken).toEqual([]);
+  });
+
+  it("una jubilación declarada anterior la rompe: la renta sale de la tarjeta y dice cuándo se jubila", () => {
+    const income = pension({ assumedContributionThrough: "2030-11-30" });
+    const spending = withIncomes([income], { config: { targetRetirementAge: 66 } });
+
+    expect(spending.incomes.upcoming).toEqual([]);
+    expect(spending.incomes.conditionBroken).toEqual([
+      {
+        annualMinor: 4_060_272,
+        income,
+        monthlyMinor: 338_356,
+        retirement: { age: 66, month: 11, year: 2029 },
+        throughISO: "2030-11-30",
+      },
+    ]);
+  });
+
+  it("una vigente con la condición rota también sale del total", () => {
+    const income = pension({
+      annualMinor: 1_200_000,
+      assumedContributionThrough: "2027-06-30",
+      startISO: "2024-01-01",
+      startsLater: false,
+    });
+    const spending = withIncomes([income], { config: { targetRetirementAge: 62 } });
+
+    expect(spending.incomes.current).toEqual([]);
+    expect(spending.incomes.conditionBroken).toHaveLength(1);
+    expect(spending.perpetual.total).toEqual(spending.perpetual.capital);
+  });
+
+  it("con solo el año de nacimiento, el mismo año no la rompe: no se inventa el mes", () => {
+    const spending = withIncomes(
+      [pension({ assumedContributionThrough: "2030-11-30" })],
+      {
+        referenceBirth: { birthYear: 1963 },
+      },
+    );
+    const later = withIncomes([pension({ assumedContributionThrough: "2031-01-31" })], {
+      referenceBirth: { birthYear: 1963 },
+    });
+
+    expect(spending.incomes.upcoming[0]?.condition?.state).toBe("holds");
+    expect(later.incomes.conditionBroken[0]?.retirement).toEqual({
+      age: 67,
+      month: null,
+      year: 2030,
+    });
+  });
+
+  it("sin edad de jubilación declarada no se compara con ninguna: se enseña nombrando lo que falta", () => {
+    const { targetRetirementAge: _declared, ...undeclared } = BASE_CONFIG;
+    const spending = withIncomes(
+      [pension({ assumedContributionThrough: "2030-11-30" })],
+      {
+        base: undeclared,
+      },
+    );
+
+    expect(spending.incomes.upcoming[0]?.condition).toEqual({
+      missing: "retirement_age",
+      state: "unchecked",
+      throughISO: "2030-11-30",
+    });
+  });
+
+  it("con la edad declarada y sin fecha de nacimiento, lo que falta es la fecha", () => {
+    const spending = withIncomes(
+      [pension({ assumedContributionThrough: "2030-11-30" })],
+      {
+        referenceBirth: null,
+      },
+    );
+
+    expect(spending.incomes.upcoming[0]?.condition).toEqual({
+      missing: "birth_date",
+      state: "unchecked",
+      throughISO: "2030-11-30",
+    });
+  });
+});
+
+describe("fireSustainableSpending — las rentas sin activo que no entran", () => {
+  it("viajan con su razón tal como las dejó el informe", () => {
+    const withheld = [
+      { incomeId: "inc-nomina", label: "Nómina", reason: "work_income" as const },
+    ];
+    const spending = fireSustainableSpending(
+      result({ standaloneIncomes: { ...NO_STANDALONE_INCOMES, withheld } }),
+    )!;
+
+    expect(spending.incomes.withheld).toEqual(withheld);
   });
 });

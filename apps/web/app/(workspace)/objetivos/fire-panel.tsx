@@ -376,13 +376,39 @@ export function FirePanel({
 
                 <ul className="fireSustainableRows">
                   {sustainableCopy.rows.map((row) => (
-                    <li className={`fireSustainableRow is-${row.key}`} key={row.key}>
+                    <li className={`fireSustainableRow is-${row.key}`} key={row.id}>
                       <span className="fireSustainableLabel">{row.label}</span>
                       <span className="fireSustainableGloss">{row.gloss}</span>
                       <strong>{row.value}</strong>
                     </li>
                   ))}
                 </ul>
+
+                {/* La tercera línea (#1674): las rentas sin activo que llegarán, con su
+                    fecha delante y su procedencia al lado. Fuera de las filas de arriba
+                    porque no suman en el titular — ese es lo que el capital de HOY
+                    soporta, y sumarle una pensión de 2030 mezclaría dos relojes. */}
+                {sustainableCopy.upcoming.length > 0 ? (
+                  <div className="fireSustainableUpcoming">
+                    <span className="fireSustainableUpcomingTitle">Más adelante</span>
+                    <ul className="fireSustainableRows">
+                      {sustainableCopy.upcoming.map((row) => (
+                        <li className="fireSustainableRow is-upcoming" key={row.id}>
+                          <span className="fireSustainableLabel">
+                            {row.when} · {row.label}
+                          </span>
+                          <span className="fireSustainableGloss">{row.gloss}</span>
+                          <strong>{row.value}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {/* Y la que su condición deja fuera, nombrando la jubilación declarada y
+                    el dato que falta: desaparecer en silencio se leería como un fallo. */}
+                {sustainableCopy.conditionNote ? (
+                  <p className="objetivosSubNote">{sustainableCopy.conditionNote}</p>
+                ) : null}
 
                 {/* La segunda versión, cuando el usuario ha dicho hasta cuándo: este
                     perfil no necesita preservar el principal a perpetuidad, así que

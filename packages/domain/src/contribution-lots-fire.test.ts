@@ -51,15 +51,7 @@ function pensionPlan(amountMinor: number, lots?: ContributionLot[]): ManualAsset
 const fireFor = (assets: ManualAsset[]) =>
   calculateFireForScope(CONFIG, assets, [], workspace, "alice", 0, { todayISO: TODAY });
 
-const spendingFor = (assets: ManualAsset[]) => {
-  const fire = fireFor(assets);
-  return fireSustainableSpending({
-    availability: fire.availability,
-    capitalSplit: fire.capitalSplit,
-    context: fire.context,
-    rentReturns: fire.rentReturns,
-  });
-};
+const spendingFor = (assets: ManualAsset[]) => fireSustainableSpending(fireFor(assets));
 
 describe("el reparto de agotamiento respeta los lotes (#1676)", () => {
   it("no reparte, en los primeros años, el tramo que todavía no ha vencido", () => {

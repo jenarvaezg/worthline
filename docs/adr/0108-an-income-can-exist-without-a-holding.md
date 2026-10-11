@@ -37,7 +37,7 @@ projected income on a property cannot be read as passive and real, none of that
 property's declared income substitutes its rung return: the all-or-nothing rule
 survives. An unlinked income has no holding return to replace and does not enter
 holding payout totals. Its consumption by the dated sustainable-spending card
-belongs to S3. `calculateFire` is unchanged.
+belongs to S3, decided in ADR 0111. `calculateFire` is unchanged.
 
 One-off `payouts` are untouched. Occurrences are still derived only up to today,
 never materialized, and future start dates are preserved verbatim (ADR 0054 point 4).
@@ -83,3 +83,11 @@ route trees import; neither imports from the other.
   because amending it re-derives past payouts.
 
 Standalone incomes carry no owner or scope yet; which scope consumes one is S3's call.
+
+## Amendment (#1674) — the dated card reads it
+
+ADR 0111 is S3. A passive, real income with no holding now counts in the sustainable
+spending — in its income half while in force, as its dated line before it starts —
+and its Rentas row says so instead of «todavía no cuenta». The scope question is
+answered there: with no owner declared, it counts whole in a scope that covers every
+active member and is withheld from a partial one.

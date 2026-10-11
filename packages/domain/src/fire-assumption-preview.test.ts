@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { calculateFireForScope, type FireScopeConfig } from "./fire";
 import { previewFireWithAssumptions } from "./fire-assumption-preview";
-import type { Liability, ManualAsset, Workspace } from "./index";
+import { fireSustainableSpending } from "./fire-sustainable-spending";
+import type { Income, Liability, ManualAsset, Workspace } from "./index";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -203,5 +204,51 @@ describe("el inmovilizado previsualiza como los demás supuestos (#1473)", () =>
     expect(preview.context.config.immobilizedCountsAsFireCapital).toBe(
       counting.context.config.immobilizedCountsAsFireCapital,
     );
+  });
+});
+
+describe("la condición de una renta sin activo responde a la edad tecleada (#1674)", () => {
+  const pension: Income = {
+    amountBasis: "real",
+    amountMinor: 3_383_56,
+    assumedContributionThrough: "2030-11-30",
+    cadence: "monthly",
+    endISO: null,
+    exclusions: [],
+    holdingId: null,
+    id: "inc_pension",
+    label: "Pensión",
+    nature: "passive",
+    provenance: "official_simulation",
+    provenanceAsOf: "2026-08-18",
+    startISO: "2030-12-10",
+  };
+
+  test("adelantar la jubilación por debajo de lo que la cifra supone cotizar la saca de la tarjeta, en vivo", () => {
+    const server = calculateFireForScope(
+      {
+        currentAge: 63,
+        monthlySpendingMinor: 2_000_00,
+        safeWithdrawalRate: 0.035,
+        targetRetirementAge: 67,
+      },
+      assets,
+      liabilities,
+      workspace,
+      "household",
+      0,
+      { rents: { schedules: [pension], todayISO: "2026-10-11" } },
+    );
+
+    // Nacido en 1963 y sin mes: a los 67 se jubila en 2030, el año en que supone
+    // dejar de cotizar — no la rompe. A los 65 (2028), sí.
+    expect(fireSustainableSpending(server)!.incomes.upcoming).toHaveLength(1);
+    const typed = fireSustainableSpending(
+      previewFireWithAssumptions(server, { targetRetirementAge: 65 }),
+    )!;
+    expect(typed.incomes.upcoming).toEqual([]);
+    expect(typed.incomes.conditionBroken.map((line) => line.retirement)).toEqual([
+      { age: 65, month: null, year: 2028 },
+    ]);
   });
 });

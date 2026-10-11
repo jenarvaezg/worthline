@@ -1,3 +1,8 @@
+import type {
+  FireStandaloneIncomeWithholding,
+  IncomeProvenance,
+} from "@worthline/domain";
+
 import type { AgentViewMoney, AgentViewObjectReference, AgentViewScope } from "./shared";
 
 /** Whether a scope has a FIRE configuration (PRD #328, #340). */
@@ -161,7 +166,10 @@ export interface AgentViewFireResult {
    * present only when that age is declared. Absent when there is no withdrawal rate.
    */
   sustainableSpending?: {
-    /** `rents` + what the sellable capital supports, perpetually. */
+    /**
+     * `rents` + the `standaloneIncomes.current` + what the sellable capital supports,
+     * perpetually. Never the `upcoming` incomes: they have not started.
+     */
     totalMonthly: AgentViewMoney;
     capitalMonthly: AgentViewMoney;
     /** Declared net rent, monthly. Absent when the scope declares none. */
@@ -169,7 +177,63 @@ export interface AgentViewFireResult {
     /** Perpetual + depleting the principal by `untilAge`. Absent without that age. */
     depletionMonthly?: AgentViewMoney;
     untilAge?: number;
+    /**
+     * Incomes no holding generates — a public pension, an annuity (#1674, ADR 0111) —
+     * as the card reads them. `current` ones are in force today and INSIDE
+     * `totalMonthly`/`depletionMonthly`; `upcoming` ones start later and are inside NO
+     * figure of today: quote each as "from <startDate>, <monthly> more", with its
+     * provenance, its cut-off date and its condition. They never move the FIRE number
+     * or the funded percentage. Absent when the scope has none of any kind.
+     */
+    standaloneIncomes?: AgentViewStandaloneIncomes;
   };
+}
+
+/** The four ways the sustainable spending treats an income with no holding (#1674). */
+export interface AgentViewStandaloneIncomes {
+  current: AgentViewSustainableIncome[];
+  upcoming: AgentViewSustainableIncome[];
+  /**
+   * Out of the card: the figure assumes contributing past the DECLARED retirement
+   * (target age on the reference member's birth date). It is not that the income
+   * does not exist — the amount it would be is a different figure nobody declared.
+   */
+  conditionBroken: AgentViewConditionBrokenIncome[];
+  /** Out of the card by their declaration (ADR 0108) or by having no owner in this scope. */
+  withheld: { id: string; label: string; reason: FireStandaloneIncomeWithholding }[];
+}
+
+export interface AgentViewSustainableIncome {
+  /** The income's drilldown id (`wl_psc_…`), the same one its declaration carries. */
+  id: string;
+  label: string;
+  /** Net of declared expenses; undeclared expenses subtract nothing. */
+  monthly: AgentViewMoney;
+  startDate: string;
+  endDate: string | null;
+  /** Where the amount comes from; null on a migrated income that never said. */
+  provenance: IncomeProvenance | null;
+  /** The cut-off date of that data, never the day it was typed. */
+  provenanceAsOf: string | null;
+  /**
+   * The contribution the amount assumes, and how it stands against the declared
+   * retirement: `holds`, or unchecked for lack of a declared retirement age or of a
+   * birth date. Null when the income declares no condition.
+   */
+  condition: {
+    assumedContributionThrough: string;
+    check: "holds" | "no_retirement_age" | "no_birth_date";
+  } | null;
+}
+
+export interface AgentViewConditionBrokenIncome {
+  id: string;
+  label: string;
+  monthly: AgentViewMoney;
+  startDate: string;
+  assumedContributionThrough: string;
+  /** The declared retirement placed on the calendar; `month` null when only the year is known. */
+  declaredRetirement: { age: number; year: number; month: number | null };
 }
 
 /**

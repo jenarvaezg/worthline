@@ -125,7 +125,6 @@ describe("a declared net rent resolves the rate for its own property", () => {
     { nature: "work" as const },
     { amountBasis: null },
     { amountBasis: "nominal" as const },
-    { holdingId: null },
   ])("%j adds nothing to FIRE, sustainable spending or spending coverage", (declaration) => {
     const assets = [brick, market];
     const config = { ...BASE_CONFIG, currentAge: 63, targetRetirementAge: 68 };
@@ -153,6 +152,56 @@ describe("a declared net rent resolves the rate for its own property", () => {
     });
     expect(coverage.netMinor).toBe(0);
     expect(coverage.coverageRatio).toBe(0);
+  });
+
+  // La línea roja de #1674: una renta sin activo —hoy o en 2030— entra en el gasto
+  // sostenible y en NINGUNA cifra del motor. `calculateFire` sigue siendo SWR puro.
+  it.each([
+    { label: "vigente hoy", startISO: "2024-01-01" },
+    { label: "futura", startISO: "2030-12-10" },
+  ])("una renta sin activo $label no mueve ninguna cifra FIRE ni la cobertura del gasto", ({
+    startISO,
+  }) => {
+    const assets = [brick, market];
+    const config = { ...BASE_CONFIG, currentAge: 63, targetRetirementAge: 68 };
+    const todayISO = "2026-08-18";
+    const linked = rent("piso", 155_000, 25_000);
+    const pension = {
+      ...rent("piso", 338_356),
+      holdingId: null,
+      id: "inc-pension",
+      label: "Pensión",
+      startISO,
+    };
+    const baseline = calculateFireForScope(config, assets, [], workspace, "alice", 0, {
+      rents: { schedules: [linked], todayISO },
+    });
+    const result = calculateFireForScope(config, assets, [], workspace, "alice", 0, {
+      rents: { schedules: [linked, pension], todayISO },
+    });
+
+    const { standaloneIncomes, ...engine } = result;
+    const { standaloneIncomes: none, ...baselineEngine } = baseline;
+    expect(engine).toEqual(baselineEngine);
+    expect(none.readable).toEqual([]);
+    expect(standaloneIncomes.readable.map((income) => income.incomeId)).toEqual([
+      "inc-pension",
+    ]);
+    const coverage = scopePassiveIncome({
+      holdings: assets,
+      payoutsByHolding: collectHoldingPayouts([], [linked, pension], todayISO),
+      scopeMemberIds: new Set(["alice"]),
+      monthlySpendingMinor: config.monthlySpendingMinor,
+      todayISO,
+    });
+    const baselineCoverage = scopePassiveIncome({
+      holdings: assets,
+      payoutsByHolding: collectHoldingPayouts([], [linked], todayISO),
+      scopeMemberIds: new Set(["alice"]),
+      monthlySpendingMinor: config.monthlySpendingMinor,
+      todayISO,
+    });
+    expect(coverage).toEqual(baselineCoverage);
   });
 
   it("the housing default is what applies with no schedule in hand", () => {

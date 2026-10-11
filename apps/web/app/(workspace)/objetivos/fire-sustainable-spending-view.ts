@@ -12,27 +12,55 @@
  * - La **tarjeta**: la respuesta a «¿cuánto puedo gastar sin mermar mi patrimonio?»,
  *   partida en las dos mitades que la hacen honesta (rentas netas y capital vendible),
  *   con sus dos versiones y, cuando falta una, con la razón exacta de lo que falta.
+ * - La **línea con fecha** (#1674): las rentas sin activo que empiezan más adelante
+ *   —una pensión desde 2030—, cada una con su procedencia y su fecha de corte al lado,
+ *   y la condición que supone. Las que no aplican salen nombrando por qué.
  *
  * Puro: las cifras vienen de `fireSustainableSpending` y `fireRetirementProfile`; aquí
  * solo se ponen en palabras. Ninguna línea vuelve a dividir nada — si una frase cita
  * una aritmética, cita la que produjo la cifra (ADR 0077).
  */
 
+import { incomeProvenanceLine } from "@web/_income/income-view";
 import type {
+  FireConditionBrokenIncome,
+  FireIncomeCondition,
   FireRetirementProfile,
+  FireStandaloneIncomeWithholding,
+  FireSustainableIncome,
   FireSustainableSpending,
   FireSustainableSpendingPart,
+  FireWithheldStandaloneIncome,
   RentReturnNotice,
 } from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
+import { formatDay } from "./format-day";
 
 /** Una fila de la tarjeta: de dónde sale el dinero, cuánto es y con qué aritmética. */
 export interface FireSustainableSpendingRow {
-  key: "rents" | "capital";
+  /** Único en la tarjeta: puede haber varias rentas sin activo vigentes. */
+  id: string;
+  /** Qué mitad es: alquileres, una renta sin activo o el capital. */
+  key: "rents" | "income" | "capital";
   label: string;
   /** «97,92 €/mes» — la cifra mensual, que es la que el usuario piensa. */
   value: string;
   /** La aritmética o la procedencia, en una línea. */
+  gloss: string;
+}
+
+/**
+ * La tercera línea (#1674): una renta sin activo que empieza más adelante. No suma en
+ * el titular —ese es lo que soporta el capital de HOY— y por eso lleva su fecha delante.
+ */
+export interface FireSustainableSpendingDatedRow {
+  id: string;
+  /** «Desde el 10 dic 2030», o «Del 10 nov 2030 al 10 nov 2063» si declara final. */
+  when: string;
+  label: string;
+  /** «3.383,56 €/mes más». */
+  value: string;
+  /** De dónde sale, a qué fecha y qué supone (#1508): siempre junto a la cifra. */
   gloss: string;
 }
 
@@ -43,6 +71,13 @@ export interface FireSustainableSpendingCopy {
   headlineAnnual: string;
   /** Las mitades, en orden: primero lo que ya llega, después lo que el capital soporta. */
   rows: FireSustainableSpendingRow[];
+  /** Las rentas que llegarán, por fecha. Vacío cuando no hay ninguna. */
+  upcoming: FireSustainableSpendingDatedRow[];
+  /**
+   * Las rentas cuya condición contradice la jubilación declarada: fuera de la tarjeta,
+   * nombrando la jubilación y el dato que falta. Null cuando no hay ninguna.
+   */
+  conditionNote: string | null;
   /** La versión de agotamiento, o el hueco con la razón de por qué no está. */
   depletion: { value: string; gloss: string } | null;
   /** Qué falta para poder enseñar la versión de agotamiento. Null cuando está. */
@@ -101,13 +136,26 @@ export function fireSustainableSpendingCopy(input: {
   if (spending.rents) {
     rows.push({
       gloss: `alquiler neto declarado: ${formatMoney(spending.rents.annualMinor)}/año`,
+      id: "rents",
       key: "rents",
       label: "Tus rentas netas",
       value: monthly(spending.rents, formatMoney),
     });
   }
+  // Las rentas sin activo que ya llegan, en la misma mitad que los alquileres (#1674):
+  // una fila cada una, porque cada una tiene su procedencia y su fecha de corte.
+  for (const line of spending.incomes.current) {
+    rows.push({
+      gloss: incomeGloss(line),
+      id: `income-${line.income.incomeId}`,
+      key: "income",
+      label: line.income.label,
+      value: monthly(line, formatMoney),
+    });
+  }
   rows.push({
     gloss: `${formatMoney(spending.sellableMinor)} de capital vendible × ${rate} ÷ 12`,
+    id: "capital",
     key: "capital",
     label: "Lo que soporta tu capital",
     value: monthly(spending.perpetual.capital, formatMoney),
@@ -123,16 +171,79 @@ export function fireSustainableSpendingCopy(input: {
         }
       : null,
     availabilityNote: availabilityNoteOf({ formatMoney, spending }),
+    conditionNote: conditionNoteOf(spending.incomes.conditionBroken),
     depletionAbsence: depletionAbsenceNote(spending.depletionAbsence),
     exclusionNote: exclusionNoteOf({
       formatMoney,
       immobilizedMinor,
       rentNotices: input.rentNotices,
+      withheldIncomes: spending.incomes.withheld,
     }),
     headline: monthly(spending.perpetual.total, formatMoney),
     headlineAnnual: `${formatMoney(spending.perpetual.total.annualMinor)}/año`,
     rows,
+    upcoming: spending.incomes.upcoming.map((line) => ({
+      gloss: incomeGloss(line),
+      id: `income-${line.income.incomeId}`,
+      label: line.income.label,
+      value: `${monthly(line, formatMoney)} más`,
+      when:
+        line.income.endISO === null
+          ? `Desde el ${formatDay(line.income.startISO)}`
+          : `Del ${formatDay(line.income.startISO)} al ${formatDay(line.income.endISO)}`,
+    })),
   };
+}
+
+/**
+ * La procedencia y la condición de una renta, en la línea de su cifra (#1508): de dónde
+ * sale, con datos a qué fecha, y qué supone. La procedencia es la MISMA frase que dice
+ * la lista de Rentas, para que la renta no cuente dos historias.
+ */
+function incomeGloss(line: FireSustainableIncome): string {
+  const provenance = incomeProvenanceLine(line.income);
+  return line.condition === null
+    ? provenance
+    : `${provenance} · ${conditionClause(line.condition)}`;
+}
+
+function conditionClause(condition: FireIncomeCondition): string {
+  const premise = `supone seguir cotizando hasta el ${formatDay(condition.throughISO)}`;
+  if (condition.state === "holds") {
+    return premise;
+  }
+  return condition.missing === "retirement_age"
+    ? `${premise}, y sin edad de jubilación declarada no podemos contrastarlo`
+    : `${premise}, y sin tu fecha de nacimiento no podemos situar tu jubilación para contrastarlo`;
+}
+
+const retirementMonthFormatter = new Intl.DateTimeFormat("es-ES", {
+  month: "long",
+  timeZone: "UTC",
+  year: "numeric",
+});
+
+/**
+ * Las rentas que la jubilación declarada deja fuera (ADR 0074/0079): la cifra suponía
+ * cotizar más allá del día en que el usuario dijo que se jubila. Se dice cuál, contra
+ * qué fecha y qué dato falta — sin él, la renta que llegará es otra cifra.
+ */
+function conditionNoteOf(broken: readonly FireConditionBrokenIncome[]): string | null {
+  if (broken.length === 0) {
+    return null;
+  }
+  return broken
+    .map(({ income, retirement, throughISO }) => {
+      // Con solo el año no se sabe el mes, y decir uno sería inventárselo.
+      const when =
+        retirement.month === null
+          ? `${retirement.year}`
+          : retirementMonthFormatter.format(
+              new Date(Date.UTC(retirement.year, retirement.month - 1, 1)),
+            );
+      return `«${income.label}» no está en esta tarjeta: supone seguir cotizando hasta el ${formatDay(throughISO)}, y declaraste jubilarte a los ${retirement.age}, en ${when}. Falta una cifra que suponga dejar de cotizar al jubilarte: una simulación a esa fecha, o tu edad de jubilación corregida.`;
+    })
+    .join(" ");
 }
 
 /**
@@ -208,6 +319,7 @@ function exclusionNoteOf(input: {
   formatMoney: FormatMoney;
   immobilizedMinor: number;
   rentNotices: readonly RentReturnNotice[];
+  withheldIncomes: readonly FireWithheldStandaloneIncome[];
 }): string | null {
   const { formatMoney, immobilizedMinor } = input;
   const parts: string[] = [];
@@ -223,7 +335,41 @@ function exclusionNoteOf(input: {
     parts.push(rentGap);
   }
 
+  const incomeGap = withheldIncomesClause(input.withheldIncomes);
+  if (incomeGap !== null) {
+    parts.push(incomeGap);
+  }
+
   return parts.length === 0 ? null : parts.join(" ");
+}
+
+/**
+ * Por qué una renta sin activo no suma (#1674, ADR 0108). Por nombre, no por razón
+ * agregada como los alquileres: son pocas, no tienen ficha de activo donde verse, y
+ * «una pensión no suma» sin decir cuál obliga a buscarla.
+ */
+const WITHHELD_INCOME_REASON: Record<FireStandaloneIncomeWithholding, string> = {
+  missing_amount_basis: "su importe está sin declarar como real o nominal",
+  missing_nature: "su naturaleza está sin declarar",
+  // El aviso del ticket: un importe fijo a fecha futura no es real, y tratarlo como tal
+  // se equivoca en la dirección peligrosa. Nunca se le inventa una tasa de decaimiento.
+  nominal_amount:
+    "su importe es nominal: a fecha futura no son euros de hoy, y contarlo como tales sobreestimaría lo que te llegará",
+  ownerless_in_partial_scope:
+    "no tiene dueño declarado y este ámbito no incluye a todos los miembros",
+  work_income: "es renta del trabajo, no vivir de tus activos",
+};
+
+function withheldIncomesClause(
+  withheld: readonly FireWithheldStandaloneIncome[],
+): string | null {
+  if (withheld.length === 0) {
+    return null;
+  }
+  const clauses = withheld.map(
+    (income) => `«${income.label}», porque ${WITHHELD_INCOME_REASON[income.reason]}`,
+  );
+  return `Rentas sin activo que no suman aquí: ${clauses.join("; ")}.`;
 }
 
 /**

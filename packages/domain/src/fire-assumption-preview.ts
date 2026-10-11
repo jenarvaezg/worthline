@@ -150,6 +150,10 @@ export function previewFireWithAssumptions(
     percentFunded: recomputed.percentFunded,
     rentReturns: side.rentReturns,
     returnMix: side.returnMix,
+    // Lo que se declaró de cada renta no lo mueve ningún supuesto; su condición sí
+    // (la edad objetivo), y por eso se resuelve después, contra el `config` de arriba
+    // (#1674): teclear otra edad de jubilación enciende o apaga la línea en vivo.
+    standaloneIncomes: side.standaloneIncomes,
     ...(recomputed.coastFireRequired === undefined
       ? {}
       : { coastFireRequired: recomputed.coastFireRequired }),
