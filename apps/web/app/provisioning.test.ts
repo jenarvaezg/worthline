@@ -47,14 +47,35 @@ const PRODUCTION = { VERCEL_ENV: "production" };
 async function harness(env: Record<string, string> = {}) {
   const controlPlane = await createInMemoryControlPlaneStore();
   const turso = fakeTurso();
+  const trialsStarted: unknown[] = [];
   const deps = {
     controlPlane,
     now: () => MORNING,
+    // The welcome email (#1173) is deferred with `after()`, which needs a request.
+    onTrialStarted: (trial: unknown) => {
+      trialsStarted.push(trial);
+    },
     openAndMigrate: skipMigration,
     turso: turso.port,
   };
-  return { controlPlane, created: turso.created, deps, env };
+  return { controlPlane, created: turso.created, deps, env, trialsStarted };
 }
+
+describe("resolveWorkspaceForSignIn · welcome email (#1173)", () => {
+  test("a brand-new sign-in announces its trial for the welcome; a returning one does not", async () => {
+    const { controlPlane, deps, env, trialsStarted } = await harness();
+    try {
+      await resolveWorkspaceForSignIn("ana@example.com", env, deps);
+      await resolveWorkspaceForSignIn("ana@example.com", env, deps);
+
+      expect(trialsStarted).toEqual([
+        expect.objectContaining({ email: "ana@example.com", trialStartedAt: MORNING }),
+      ]);
+    } finally {
+      controlPlane.close();
+    }
+  });
+});
 
 const capOf = (value: string) => ({ [DAILY_PROVISIONING_CAP_ENV]: value });
 

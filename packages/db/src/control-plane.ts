@@ -40,6 +40,11 @@ import {
   type TenancyDirectory,
 } from "./control-plane/tenancy-directory";
 import {
+  createTrialEmailLedger,
+  TRIAL_EMAIL_SCHEMA,
+  type TrialEmailLedger,
+} from "./control-plane/trial-email-ledger";
+import {
   createUsageLimits,
   USAGE_SCHEMA,
   type UsageLimits,
@@ -110,6 +115,13 @@ export type {
   ControlPlaneWorkspaceWithOwner,
   TenancyDirectory,
 } from "./control-plane/tenancy-directory";
+export {
+  TRIAL_EMAIL_KINDS,
+  type TrialEmailClaim,
+  type TrialEmailKind,
+  type TrialEmailLedger,
+  type TrialEmailMarks,
+} from "./control-plane/trial-email-ledger";
 export type {
   AiDailyTokenUsage,
   AiTokenUsage,
@@ -136,7 +148,8 @@ export interface ControlPlaneStore
     DailyProvisioningCap,
     ExposureProfileCatalog,
     MaintainerAlertLog,
-    JobStore {
+    JobStore,
+    TrialEmailLedger {
   close(): void;
 }
 
@@ -175,6 +188,7 @@ const SCHEMA = [
   EXPOSURE_PROFILE_SCHEMA,
   MAINTAINER_ALERT_SCHEMA,
   JOB_SCHEMA,
+  TRIAL_EMAIL_SCHEMA,
 ].join("\n");
 
 async function buildControlPlaneStore(
@@ -195,6 +209,7 @@ async function buildControlPlaneStore(
     ...createExposureProfileCatalog(client),
     ...createMaintainerAlertLog(client, newId),
     ...createJobStore(client, newId),
+    ...createTrialEmailLedger(client),
     close() {
       client.close();
     },

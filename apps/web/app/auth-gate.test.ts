@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { shouldRedirectToLogin } from "./auth-gate";
+import { REMINDER_OPT_OUT_PATH } from "./trial-emails/reminder-opt-out-token";
 
 describe("shouldRedirectToLogin", () => {
   test("never redirects when auth is not configured (local no-auth mode)", () => {
@@ -61,6 +62,28 @@ describe("shouldRedirectToLogin", () => {
           pathname,
         }),
       ).toBe(false);
+    }
+  });
+
+  test("the «no recibir recordatorios» link opens with no session: its signed token is the credential (#1173)", () => {
+    const loggedOut = (pathname: string) =>
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        hasPersonaCookie: false,
+        pathname,
+      });
+    // The path the emails link to (pinned against the constant they build it from).
+    expect(REMINDER_OPT_OUT_PATH).toBe("/correo/recordatorios");
+    expect(loggedOut(REMINDER_OPT_OUT_PATH)).toBe(false);
+    // That one path, exactly: nothing else under /correo, nor a lookalike.
+    for (const pathname of [
+      "/correo",
+      "/correo/otra",
+      "/correo/recordatorios/extra",
+      "/correos-falsos",
+    ]) {
+      expect(loggedOut(pathname), pathname).toBe(true);
     }
   });
 

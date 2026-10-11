@@ -6,6 +6,24 @@
  * front of the user's own data (#1127).
  */
 
+/**
+ * What premium adds over free, one line per gate below — the list any surface
+ * that says «qué incluye premium» reads, so it cannot drift from what the
+ * paywall actually gates. First reader: the trial emails (#1173), which tell a
+ * person what stops when the trial ends. Each line fits after «Deja de estar
+ * incluido:». A new premium gate adds its line here.
+ */
+export const PREMIUM_INCLUDES: readonly string[] = [
+  // PAYWALL_ATTACHMENT_MESSAGE, PAYWALL_OPERATION_MESSAGE
+  "que la IA lea tus documentos, adjuntos y justificantes por ti",
+  // PAYWALL_STATEMENT_MESSAGE, PAYWALL_RECONCILE_MESSAGE
+  "importar extractos de broker y reconciliar tu cartera desde un documento",
+  // PAYWALL_CONNECT_SOURCE_MESSAGE, PAYWALL_SOURCES_PAUSED_MESSAGE
+  "conectar fuentes de datos nuevas y que las conectadas sigan sincronizando solas",
+  // PAYWALL_COURTESY_MESSAGE
+  "usar el asistente más allá del cupo mensual de mensajes de cortesía",
+];
+
 /** Where the reminder's call-to-action points: the upgrade page (#1165), which launches the MoR's hosted checkout. */
 export const PREMIUM_CTA = { href: "/premium", label: "Gestionar premium" } as const;
 

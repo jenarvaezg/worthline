@@ -5,6 +5,7 @@ import {
   readDailyProvisioningCap,
 } from "@web/provisioning-cap";
 import { handOffSignInWorkspace, takeSignInWorkspace } from "@web/sign-in-handoff";
+import { scheduleWelcomeEmail } from "@web/trial-emails/trial-email-wiring";
 import { createTursoPort } from "@web/turso-port";
 import {
   type ControlPlaneStore,
@@ -24,6 +25,9 @@ import {
  * Creating a NEW workspace passes the daily provisioning cap (#1175): when it
  * refuses, the sign-in is turned away honestly and the maintainer gets an alert
  * (ADR 0064). A returning user never meets the cap.
+ *
+ * The trial the provisioner starts triggers the welcome email (#1173), deferred
+ * past the sign-in response so the provider's latency never reaches the login.
  */
 
 export interface ResolvedWorkspace {
@@ -50,6 +54,8 @@ export interface ProvisioningOverrides {
   turso?: TursoPort;
   now?: () => string;
   openAndMigrate?: ProvisionDeps["openAndMigrate"];
+  /** What a started trial triggers; the deferred welcome email (#1173) by default. */
+  onTrialStarted?: ProvisionDeps["onTrialStarted"];
 }
 
 type Env = Record<string, string | undefined>;
@@ -75,6 +81,9 @@ export async function resolveWorkspaceForSignIn(
           {
             controlPlane,
             now,
+            onTrialStarted:
+              overrides.onTrialStarted ??
+              ((trial) => scheduleWelcomeEmail(trial, { env })),
             provisioningCap,
             turso,
             ...(overrides.openAndMigrate

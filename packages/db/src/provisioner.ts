@@ -6,6 +6,7 @@ import type {
   EntitlementDirectory,
   TenancyDirectory,
 } from "./control-plane";
+import type { WorkspaceEntitlement } from "./entitlements";
 import { openLibsqlClient } from "./libsql-client";
 import { migrate } from "./migrate";
 
@@ -104,6 +105,23 @@ export interface ProvisionDeps {
   newDbName?: () => string;
   /** The reference "now" (ISO) for the trial window — injectable for tests. */
   now?: () => string;
+  /**
+   * Told once, right after THIS provision started the identity's trial — the
+   * welcome email's trigger (#1173). Never called when no trial started (an
+   * identity that already used its trial, or a failed start). Best-effort like
+   * the trial itself: whatever it throws is logged and the login goes on.
+   */
+  onTrialStarted?: (trial: StartedTrial) => void | Promise<void>;
+}
+
+/** The trial a fresh provision just started (#1173). */
+export interface StartedTrial {
+  userId: string;
+  /** The identity's sign-in address — where the welcome goes. */
+  email: string;
+  workspaceId: string;
+  trialStartedAt: string;
+  trialEndsAt: string;
 }
 
 function defaultDbName(): string {
@@ -299,7 +317,22 @@ async function createOwnedWorkspace(
     }
     return { workspace: winner, created: false };
   }
-  await startTrialBestEffort(controlPlane, user.id, workspace.id, now());
+  const startedAt = now();
+  const trial = await startTrialBestEffort(
+    controlPlane,
+    user.id,
+    workspace.id,
+    startedAt,
+  );
+  if (trial?.trialEndsAt && deps.onTrialStarted) {
+    await announceTrialBestEffort(deps.onTrialStarted, {
+      email: user.email,
+      trialEndsAt: trial.trialEndsAt,
+      trialStartedAt: startedAt,
+      userId: user.id,
+      workspaceId: workspace.id,
+    });
+  }
   return { workspace, created: true };
 }
 
@@ -310,18 +343,35 @@ async function createOwnedWorkspace(
  * Best-effort: a failure must not fail the login — the workspace simply reads
  * as `free` (the safe default) and the admin's manual grant is the recovery
  * palanca, matching the provisioner's other warn-and-continue cleanups.
+ * Resolves the started entitlement, or null when none started.
  */
 async function startTrialBestEffort(
   controlPlane: EntitlementDirectory,
   userId: string,
   workspaceId: string,
   now: string,
-): Promise<void> {
+): Promise<WorkspaceEntitlement | null> {
   try {
-    await controlPlane.startTrialIfUnused({ now, userId, workspaceId });
+    return await controlPlane.startTrialIfUnused({ now, userId, workspaceId });
   } catch (error) {
     console.warn(
       `provisioner: could not start the trial for workspace ${workspaceId}; it stays free (admin grant is the recovery)`,
+      error,
+    );
+    return null;
+  }
+}
+
+/** The welcome trigger (#1173) rides the login, so it can never fail it. */
+async function announceTrialBestEffort(
+  onTrialStarted: NonNullable<ProvisionDeps["onTrialStarted"]>,
+  trial: StartedTrial,
+): Promise<void> {
+  try {
+    await onTrialStarted(trial);
+  } catch (error) {
+    console.warn(
+      `provisioner: the trial-started hook failed for workspace ${trial.workspaceId}; the login goes on`,
       error,
     );
   }

@@ -214,6 +214,17 @@ describe("política de privacidad · RGPD (#1172)", () => {
     ]);
   });
 
+  test("declares the trial emails, what they carry and how to switch the reminders off (#1173)", () => {
+    expectAll("privacidad", [
+      "Los correos sobre tu prueba",
+      "un aviso antes de que termine y otro cuando termina",
+      "no recibir recordatorios",
+      "qué correos de la prueba se te han enviado",
+    ]);
+    const resend = LEGAL_PROCESSORS.find((processor) => processor.name === "Resend");
+    expect(resend?.purpose).toMatch(/prueba/);
+  });
+
   test("gives the feedback its own legal basis and keeps «nothing optional» true (#1174)", () => {
     const text = html("privacidad");
 

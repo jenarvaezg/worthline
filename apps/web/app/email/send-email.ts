@@ -36,8 +36,12 @@ const RESEND_SEND_URL = "https://api.resend.com/emails";
  */
 export const RESEND_SANDBOX_FROM = "worthline <onboarding@resend.dev>";
 
-/** A Resend call that hangs must not hold the caller (a server action) open. */
-const SEND_TIMEOUT_MS = 10_000;
+/**
+ * A Resend call that hangs must not hold the caller (a server action) open.
+ * Exported so a caller with its own deadline (the trial-email pass, #1173)
+ * budgets from the real figure instead of a copy.
+ */
+export const SEND_TIMEOUT_MS = 10_000;
 
 export type EmailEnv = Readonly<Record<string, string | undefined>>;
 
