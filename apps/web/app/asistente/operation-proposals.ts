@@ -42,7 +42,6 @@ import {
   multiplyToMinor,
   netUnitsFromOperations,
   normalizeDecimal,
-  SECURITY_ID_KIND_LABEL_INLINE,
   type SecurityId,
   subtractUnits,
 } from "@worthline/domain";
@@ -73,6 +72,7 @@ import {
 import { type OperationTerms, resolveOperationTerms } from "./operation-terms";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 import { boundProposalSummary } from "./proposal-summary";
+import { contradictingSecurityId, securityIdLabel } from "./security-identity";
 import {
   holdingEventFromTyped,
   TYPED_OPERATION_DOCUMENT_NAME,
@@ -183,27 +183,18 @@ export async function projectOperationWrite(
   // The identity contradiction (#1331/#1366's lesson): an identifier printed on the
   // paper that disagrees with the one registered on the holding means the paper is
   // about a DIFFERENT instrument, and this lane's whole reason to exist is that a jump
-  // of holding used to be invisible. A holding with no identifier registered
-  // contradicts nothing — the card prints both lines and the user sees the match.
-  //
-  // Compared as the TYPED pair (#1747), which is what lets a plan de pensiones take
-  // part at all: its paper prints a DGS code and never an ISIN, so before the pair the
-  // guard simply had nothing to compare and every plan slipped through it. Two
-  // different kinds contradict too — an ISIN paper does not belong on a plan.
+  // of holding used to be invisible. What «contradicts» means — the typed pair of
+  // #1747, a holding with nothing registered contradicting nothing — is the shared
+  // piece the traspaso checks with too (#1800).
   const documentId = write.documentSecurityId;
   const holdingId = declaredSecurityId(holding.securityId);
-  if (
-    documentId &&
-    holdingId &&
-    (documentId.kind !== holdingId.kind || documentId.value !== holdingId.value)
-  ) {
-    const printed = SECURITY_ID_KIND_LABEL_INLINE[documentId.kind];
-    const registered = SECURITY_ID_KIND_LABEL_INLINE[holdingId.kind];
+  const contradicted = contradictingSecurityId(documentId, holding.securityId);
+  if (documentId && contradicted) {
     return {
       ok: false as const,
       error:
-        `La operación es del ${printed} ${documentId.value} y «${holding.name}» tiene ` +
-        `registrado el ${registered} ${holdingId.value}: son instrumentos distintos, así ` +
+        `La operación es del ${securityIdLabel(documentId)} y «${holding.name}» tiene ` +
+        `registrado el ${securityIdLabel(contradicted)}: son instrumentos distintos, así ` +
         "que no anoto la operación ahí. Busca la posición de ese identificador en la " +
         "cartera, y si no existe, dala de alta.",
     };
