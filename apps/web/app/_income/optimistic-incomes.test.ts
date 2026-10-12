@@ -143,7 +143,7 @@ describe("planDeclarationUpdate", () => {
       mutation: {
         kind: "update",
         id: "inc_1",
-        declaration: {
+        correction: {
           nature: "work",
           amountBasis: "nominal",
           provenance: "user_estimate",
@@ -167,12 +167,12 @@ describe("planDeclarationUpdate", () => {
     expect(plan.kind === "optimistic" && plan.mutation).toEqual({
       kind: "update",
       id: "inc_1",
-      declaration: { provenance: "user_estimate", provenanceAsOf: "2026-10-01" },
+      correction: { provenance: "user_estimate", provenanceAsOf: "2026-10-01" },
     });
   });
 
-  // #1813: corregir una renta sin activo puede terminarla o cambiar su importe, y la
-  // fila tiene que enseñarlo antes de que conteste el servidor.
+  // #1813: correcting an income with no asset can end it or change its amount, and
+  // the row has to show it before the server answers.
   test("the recurrence of an income with no asset folds into the row, an emptied end as none", () => {
     const plan = planDeclarationUpdate({
       formData: form({
@@ -248,7 +248,7 @@ describe("applyIncomeMutations", () => {
       {
         kind: "update",
         id: "a",
-        declaration: {
+        correction: {
           nature: "work",
           amountBasis: "real",
           provenance: "official_simulation",
@@ -276,7 +276,7 @@ describe("applyIncomeMutations", () => {
         {
           kind: "update",
           id: "inc_1",
-          declaration: {
+          correction: {
             provenance: "official_simulation",
             provenanceAsOf: "2026-10-01",
           },

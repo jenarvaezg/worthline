@@ -20,6 +20,7 @@
 import { formAction, formActionInlineError } from "@web/form-action";
 import { errorRedirectUrl, preserveFields, successRedirectUrl } from "@web/intake";
 import { currentUrlOf } from "@web/inversiones/return-url";
+import type { Income } from "@worthline/domain";
 import {
   buildIncomeResult,
   INCOME_FORM_FIELDS,
@@ -35,13 +36,9 @@ const LINKED_RECURRENCE_REFUSED =
 
 /** The income this workspace holds under that id — a stale form may name a gone one. */
 async function findIncome(
-  store: {
-    payouts: {
-      readPayoutSchedules: () => Promise<Array<{ id: string; holdingId: string | null }>>;
-    };
-  },
+  store: { payouts: { readPayoutSchedules: () => Promise<Income[]> } },
   incomeId: string,
-): Promise<{ id: string; holdingId: string | null } | undefined> {
+): Promise<Pick<Income, "id" | "holdingId"> | undefined> {
   return (await store.payouts.readPayoutSchedules()).find(
     (income) => income.id === incomeId,
   );
@@ -138,12 +135,7 @@ export async function updateIncomeDeclarationAction(
         incomeCorrectionFieldsFromForm(formData),
         today,
       );
-      return result.ok
-        ? {
-            ok: true,
-            value: { declaration: result.declaration, recurrence: result.recurrence },
-          }
-        : { ok: false, error: result.error };
+      return result.ok ? { ok: true, value: result } : { ok: false, error: result.error };
     },
     requireId: false,
     run: async (store, { extra, parsed }) => {
@@ -152,13 +144,10 @@ export async function updateIncomeDeclarationAction(
       if (!income) {
         return { ok: false, error: INCOME_NOT_FOUND };
       }
-      if (parsed.recurrence !== null && income.holdingId !== null) {
+      if (parsed.correctsRecurrence && income.holdingId !== null) {
         return { ok: false, error: LINKED_RECURRENCE_REFUSED };
       }
-      await store.payouts.updatePayoutSchedule(incomeId, {
-        ...parsed.declaration,
-        ...parsed.recurrence,
-      });
+      await store.payouts.updatePayoutSchedule(incomeId, parsed.correction);
       return { ok: true };
     },
   })(formData, ..._testArgs);

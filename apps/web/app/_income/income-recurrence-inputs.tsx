@@ -10,6 +10,14 @@
 import type { RecurrenceCoreFields } from "./income-recurrence";
 import { PAYOUT_CADENCE_LABELS } from "./income-recurrence";
 
+/**
+ * The `aria-label` that tells a field from its namesake elsewhere on the page, or
+ * nothing when no suffix is given.
+ */
+export function suffixedName(name: string, suffix: string | undefined) {
+  return suffix === undefined ? {} : { "aria-label": `${name}${suffix}` };
+}
+
 export function IncomeRecurrenceInputs({
   accessibleSuffix,
   linked,
@@ -29,8 +37,7 @@ export function IncomeRecurrenceInputs({
   /** What to prefill: a stored recurrence, or the fields a refused post typed. */
   values: Readonly<Partial<RecurrenceCoreFields>>;
 }) {
-  const named = (name: string) =>
-    accessibleSuffix === undefined ? {} : { "aria-label": `${name}${accessibleSuffix}` };
+  const named = (name: string) => suffixedName(name, accessibleSuffix);
 
   return (
     <>
@@ -72,12 +79,9 @@ export function IncomeRecurrenceInputs({
       </label>
       <label>
         Desde
-        <input
-          {...named("Fecha de inicio")}
-          defaultValue={values.startISO || today}
-          name="startISO"
-          type="date"
-        />
+        {/* No suffix: any name other than «Desde» would drop the visible label
+            from it (§8), and «Desde de…» does not read. */}
+        <input defaultValue={values.startISO || today} name="startISO" type="date" />
       </label>
       <label>
         Hasta (opcional)

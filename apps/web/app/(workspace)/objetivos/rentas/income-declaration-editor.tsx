@@ -45,6 +45,8 @@ export function IncomeDeclarationEditor({
   const [rejection, setRejection] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inFlight = useRef(false);
+  // No asset generates it: no ficha holds its recurrence, so this form does.
+  const standalone = income.holdingId === null;
 
   const onSubmit = readOnly
     ? undefined
@@ -75,7 +77,7 @@ export function IncomeDeclarationEditor({
           {rejection}
         </p>
       ) : null}
-      {income.holdingId === null ? (
+      {standalone ? (
         <>
           {/* The marker that the recurrence travels: an emptied «Hasta» then reads
               as «sin fin», never as a field the form did not carry. */}
@@ -96,7 +98,7 @@ export function IncomeDeclarationEditor({
         </>
       ) : null}
       <IncomeDeclarationInputs
-        linked={income.holdingId !== null}
+        linked={!standalone}
         values={declarationValuesOf(income)}
       />
       <div className="formActions">
@@ -108,7 +110,7 @@ export function IncomeDeclarationEditor({
         >
           {isPending
             ? "Guardando…"
-            : income.holdingId === null
+            : standalone
               ? "Guardar renta"
               : "Guardar declaración"}
         </button>

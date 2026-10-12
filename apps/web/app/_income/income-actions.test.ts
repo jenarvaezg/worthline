@@ -355,9 +355,9 @@ describe("updateIncomeDeclarationAction — correcting an existing declaration",
   });
 });
 
-// #1813: una renta sin activo no tiene ficha, así que su recurrencia se corrige aquí.
-// Ninguna cifra deriva sus cobros pasados (ADR 0111 solo lee el estado de hoy), y
-// por eso se corrige en el sitio en vez de borrarla y volver a declararla.
+// #1813: an income with no asset has no ficha, so its recurrence is corrected here.
+// No figure derives its past payouts (ADR 0111 reads only today's state), which is
+// why it is corrected in place instead of deleted and declared again.
 describe("updateIncomeDeclarationAction — the recurrence of an income with no asset", () => {
   const DECLARED = {
     provenance: "official_simulation",
@@ -521,7 +521,10 @@ describe("updateIncomeDeclarationAction — the recurrence of an income with no 
       store,
     );
 
-    expect(state).toMatchObject({ ok: false });
+    expect(state).toEqual({
+      ok: false,
+      error: expect.stringContaining("se cambian en la ficha de ese activo"),
+    });
     expect((await store.payouts.readPayoutSchedules())[0]).toMatchObject({
       amountMinor: 90_000,
       provenance: null,

@@ -34,7 +34,7 @@ import {
 /** The mutations an income list can show before the server answers. */
 export type IncomeMutation =
   | { kind: "add"; income: Income }
-  | { kind: "update"; id: string; declaration: IncomeCorrection }
+  | { kind: "update"; id: string; correction: IncomeCorrection }
   | { kind: "delete"; id: string };
 
 function applyOne(list: readonly Income[], mutation: IncomeMutation): Income[] {
@@ -43,7 +43,7 @@ function applyOne(list: readonly Income[], mutation: IncomeMutation): Income[] {
       return [...list, mutation.income];
     case "update":
       return list.map((income) =>
-        income.id === mutation.id ? { ...income, ...mutation.declaration } : income,
+        income.id === mutation.id ? { ...income, ...mutation.correction } : income,
       );
     case "delete":
       return list.filter((income) => income.id !== mutation.id);
@@ -117,7 +117,7 @@ export function planDeclarationUpdate({
     mutation: {
       kind: "update",
       id: String(formData.get("incomeId") ?? ""),
-      declaration: { ...result.declaration, ...result.recurrence },
+      correction: result.correction,
     },
   };
 }

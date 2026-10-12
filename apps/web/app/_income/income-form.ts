@@ -143,9 +143,9 @@ export interface IncomeCorrectionFields {
 export type IncomeCorrectionResult =
   | {
       ok: true;
-      declaration: IncomeDeclarationPatch;
-      /** Null when the correction leaves the recurrence as it is. */
-      recurrence: IncomeRecurrencePatch | null;
+      correction: IncomeCorrection;
+      /** Whether it rewrites the recurrence — refused on a linked income. */
+      correctsRecurrence: boolean;
     }
   | { ok: false; error: string };
 
@@ -153,13 +153,18 @@ export type IncomeResult =
   | { ok: true; income: ParsedIncome }
   | { ok: false; error: string };
 
-/** The field names the form posts, in the order they are lifted. */
-export const INCOME_FORM_FIELDS = [
+/** The recurrence proper's field names — what a row with no asset is corrected on. */
+const RECURRENCE_FIELDS = [
   "label",
   "amount",
   "cadence",
   "startISO",
   "endISO",
+] as const satisfies ReadonlyArray<keyof RecurrenceCoreFields>;
+
+/** The field names the form posts, in the order they are lifted. */
+export const INCOME_FORM_FIELDS = [
+  ...RECURRENCE_FIELDS,
   "expenses",
   "leaseRegime",
   "rentRevision",
@@ -173,11 +178,16 @@ export const INCOME_FORM_FIELDS = [
  * has nothing to preserve, so a field the form did not carry is simply undeclared.
  */
 export function incomeFieldsFromForm(formData: FormData): IncomeFields {
-  const entries = INCOME_FORM_FIELDS.map((name) => {
+  return liftFields<IncomeFields>(formData, INCOME_FORM_FIELDS);
+}
+
+/** Every named field off a FormData, an absent one as `""`. */
+function liftFields<T>(formData: FormData, names: readonly string[]): T {
+  const entries = names.map((name) => {
     const raw = formData.get(name);
     return [name, typeof raw === "string" ? raw : ""] as const;
   });
-  return Object.fromEntries(entries) as unknown as IncomeFields;
+  return Object.fromEntries(entries) as T;
 }
 
 /**
@@ -194,35 +204,22 @@ export function incomeDeclarationFieldsFromForm(
   return Object.fromEntries(present);
 }
 
-const RECURRENCE_FIELDS = [
-  "label",
-  "amount",
-  "cadence",
-  "startISO",
-  "endISO",
-] as const satisfies ReadonlyArray<keyof RecurrenceCoreFields>;
-
 /**
  * Lift a CORRECTION off its FormData. The declaration is lifted field by field (see
  * {@link incomeDeclarationFieldsFromForm}); the recurrence travels whole, and only
- * when the form marks it with `saveRecurrence=1` — the marker the ficha's costs and
- * lease rows already use — so an emptied «Hasta» reads as «sin fin» instead of
- * being indistinguishable from a form that never showed it (#1813).
+ * when the form marks it with `saveRecurrence=1` — the pattern of the ficha's
+ * `saveExpenses` and `saveLease` rows — so an emptied «Hasta» reads as «sin fin»
+ * instead of being indistinguishable from a form that never showed it (#1813).
  */
 export function incomeCorrectionFieldsFromForm(
   formData: FormData,
 ): IncomeCorrectionFields {
-  const declaration = incomeDeclarationFieldsFromForm(formData);
-  if (formData.get("saveRecurrence") !== "1") {
-    return { declaration, recurrence: null };
-  }
-  const entries = RECURRENCE_FIELDS.map((name) => {
-    const raw = formData.get(name);
-    return [name, typeof raw === "string" ? raw : ""] as const;
-  });
   return {
-    declaration,
-    recurrence: Object.fromEntries(entries) as unknown as RecurrenceCoreFields,
+    declaration: incomeDeclarationFieldsFromForm(formData),
+    recurrence:
+      formData.get("saveRecurrence") === "1"
+        ? liftFields<RecurrenceCoreFields>(formData, RECURRENCE_FIELDS)
+        : null,
   };
 }
 
@@ -350,7 +347,11 @@ export function parseIncomeCorrection(
   }
   const declaration = parseIncomeDeclaration(fields.declaration, todayISO);
   if (!declaration.ok) return declaration;
-  return { ok: true, declaration: declaration.declaration, recurrence };
+  return {
+    ok: true,
+    correction: { ...declaration.declaration, ...recurrence },
+    correctsRecurrence: recurrence !== null,
+  };
 }
 
 /**

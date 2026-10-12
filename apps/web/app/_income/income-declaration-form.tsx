@@ -28,7 +28,7 @@ import type { Income } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
 import { IncomeDeclarationInputs } from "./income-declaration-inputs";
 import { IncomeDeclarationSummary } from "./income-declaration-summary";
-import { IncomeRecurrenceInputs } from "./income-recurrence-inputs";
+import { IncomeRecurrenceInputs, suffixedName } from "./income-recurrence-inputs";
 import { LeaseTermFields } from "./lease-term-fields";
 import {
   applyIncomeMutations,
@@ -89,8 +89,6 @@ export function IncomeDeclarationForm({
   const inFlight = useRef(false);
   const error = rejection ?? initialError;
   const linked = holdingId !== null;
-  const named = (name: string) =>
-    accessibleSuffix === undefined ? {} : { "aria-label": `${name}${accessibleSuffix}` };
 
   const onSubmit = readOnly
     ? undefined
@@ -138,7 +136,7 @@ export function IncomeDeclarationForm({
           <label>
             Gastos (opcional)
             <input
-              {...named("Gastos")}
+              {...suffixedName("Gastos", accessibleSuffix)}
               defaultValue={initialValues.expenses ?? ""}
               inputMode="decimal"
               name="expenses"

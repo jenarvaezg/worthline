@@ -163,8 +163,8 @@ export function IncomesLedger({
                   ) : (
                     <div className="incomeRowActions">
                       <details className="incomeCorrect" suppressHydrationWarning>
-                        {/* Sin activo se corrige entera (#1813): terminarla es poner
-                            su «Hasta», así que el botón lo nombra. */}
+                        {/* With no asset it is corrected whole (#1813): ending it is
+                            giving it an end, so the summary names it. */}
                         <summary>
                           {income.holdingId === null
                             ? "Corregir o terminar"
