@@ -338,11 +338,55 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     // The only ink-filled button is the habitual one (#1732).
     expect(bar).toContain('class="btn" data-ficha-action="operacion"');
     expect(bar).toContain('class="btn btnSecondary" data-ficha-action="traspaso"');
-    expect(bar).toContain('class="btn btnSecondary" data-ficha-action="cobro"');
     expect(bar).toContain("Más");
     // The rarer ones are behind «Más», not in the bar.
     expect(bar).not.toContain('data-ficha-action="extracto"');
     expect(bar).not.toContain('data-ficha-action="correccion"');
+  });
+
+  test("«Añadir cobro» is at hand once the holding has paid something, and in «Más» before (#1829)", async () => {
+    const barOf = (html: string) =>
+      html.slice(
+        html.indexOf('aria-label="Acciones del activo"'),
+        html.indexOf('class="fichaFigures"'),
+      );
+
+    // A fund that never paid anything does not need the button in view.
+    expect(barOf(await renderedHtml())).not.toContain('data-ficha-action="cobro"');
+
+    calls.readPayoutsForHolding.mockResolvedValueOnce([
+      { amountMinor: 12_50, dateISO: "2026-06-01", holdingId: ASSET_ID, id: "pay_1" },
+    ]);
+    expect(barOf(await renderedHtml())).toContain(
+      'class="btn btnSecondary" data-ficha-action="cobro"',
+    );
+  });
+
+  test("the cobro panel asks first which kind, and opens on the one-off (#1829)", async () => {
+    const cobro = panel(await renderedHtml({ accion: "cobro" }));
+
+    expect(cobro).toContain("Un cobro suelto");
+    expect(cobro).toContain("Uno que se repite");
+    // The one-off is the habitual cobro of a fund (a dividend), so it starts chosen.
+    expect(cobro).toMatch(/checked=""[^>]*value="suelto"|value="suelto"[^>]*checked=""/);
+    // Each form in its own pane, the one shown being the chosen one.
+    const oneOff = cobro.indexOf('data-seed-choice="suelto"');
+    const recurring = cobro.indexOf('data-seed-choice="recurrente"');
+    expect(oneOff).toBeGreaterThan(-1);
+    expect(recurring).toBeGreaterThan(oneOff);
+    expect(cobro.slice(oneOff, recurring)).toContain("Registrar un cobro puntual");
+    expect(cobro.slice(recurring)).toContain("Declarar un cobro recurrente");
+  });
+
+  test("a success is said beside the tabs, once (#1829)", async () => {
+    const html = await renderedHtml({ ok: "saved" });
+
+    // Between the state header and the tabs, where the landed row is — the band
+    // that offers «Añadir otra» once the panel's submit is the one that landed.
+    const notice = html.indexOf('role="status">Guardado.</p>');
+    expect(notice).toBeGreaterThan(html.indexOf('aria-label="Estado del activo"'));
+    expect(notice).toBeLessThan(html.indexOf('aria-label="Secciones de la ficha"'));
+    expect(html.split("Guardado.")).toHaveLength(2);
   });
 
   test("four tabs with their counts, and the ledger on show by default", async () => {

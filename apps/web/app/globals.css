@@ -7232,6 +7232,148 @@ td.rowActions > * {
   }
 }
 
+/* ── Añadir sin buscar (#1829) ───────────────────────────────────────────────
+   La franja que mantiene «Registrar operación» a mano cuando la barra de acciones
+   ha salido de la pantalla, el aviso de éxito con «Añadir otra», la fila recién
+   registrada y la pregunta de «Añadir cobro». */
+
+/* En escritorio, arriba: la cabecera de la ficha condensada, sobre su misma
+   columna y bajo el riel de ámbitos, que también se queda pegado (#47). Papel
+   cerrado por la regla gruesa, como el masthead del shell — sin sombra (canon §4).
+   La isla mide columna y riel (`--ficha-strip-*`); el panel lateral (70) la tapa. */
+.fichaStrip {
+  background: var(--paper);
+  border-bottom: var(--rule-heavy);
+  left: var(--ficha-strip-left, 24px);
+  position: fixed;
+  top: var(--ficha-strip-top, 0px);
+  width: var(--ficha-strip-width, calc(100% - 48px));
+  z-index: 60;
+}
+
+.fichaStripInner {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.fichaStripName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fichaStripValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+/* El aviso de éxito, junto a las pestañas donde aterrizó el resultado. */
+.fichaNotice {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  /* Lo que el riel de ámbitos y la franja tapan arriba al traerlo a la vista. */
+  scroll-margin-top: 128px;
+}
+
+.fichaNotice p {
+  margin: 0;
+}
+
+.fichaNoticeAgain {
+  font-size: 0.82rem;
+  min-height: 32px;
+  padding: 0.3rem 0.85rem;
+}
+
+/* La fila recién registrada: el tinte del aviso de éxito y la palabra «nueva» —
+   el tinte solo no es una lectura (canon §8). */
+#operaciones [data-fresh],
+.cobrosRow[data-fresh] {
+  background: rgba(0, 111, 95, 0.1);
+  scroll-margin: 128px 0 84px;
+}
+
+/* En tinta: sobre el verde del mapa de calor, un contorno verde no llega al 3:1. */
+.cobrosCell[data-fresh-month] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* Mientras la franja se ve, lo que se enfoca con el teclado no queda debajo de
+   ella: arriba en escritorio (riel de ámbitos + franja), abajo en el teléfono. */
+:root:has(.fichaStrip:not([hidden])) {
+  scroll-padding-top: 128px;
+}
+
+.fichaFreshMark {
+  color: var(--green);
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+/* «Añadir cobro» pregunta primero: el `.segmented` de radios y solo el formulario
+   elegido. Sin `:has()` se ven los dos, que es lo que había. */
+.cobroKind {
+  margin: 4px 0 14px;
+  padding: 0;
+}
+
+.cobroKindChoice:has(input[name="cobroKind"][value="suelto"]:checked)
+  [data-seed-choice="recurrente"],
+.cobroKindChoice:has(input[name="cobroKind"][value="recurrente"]:checked)
+  [data-seed-choice="suelto"] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  /* En el teléfono la franja es un solo botón abajo, a la izquierda del lanzador
+     del asistente (48 px a 20 px del borde) y a su altura, sin taparlo. */
+  .fichaStrip {
+    background: transparent;
+    border-bottom: 0;
+    bottom: 20px;
+    left: 16px;
+    right: 84px;
+    top: auto;
+    width: auto;
+  }
+
+  .fichaStripInner {
+    padding: 0;
+  }
+
+  .fichaStripName,
+  .fichaStripValue,
+  .fichaStrip .fichaMore {
+    display: none;
+  }
+
+  .fichaStripPrimary {
+    flex: 1 1 auto;
+    min-height: 48px;
+  }
+
+  /* El final de la ficha no se queda debajo del botón fijo. */
+  .ficha {
+    padding-bottom: 72px;
+  }
+
+  :root:has(.fichaStrip:not([hidden])) {
+    scroll-padding-bottom: 84px;
+    scroll-padding-top: 0;
+  }
+}
+
 /* ── La cabecera honesta (#1828) ────────────────────────────────────────────
    Bajo el precio, de dónde sale y de cuándo, con el pie de cifra de siempre
    (`.priceRefreshCaption`). El aviso del símbolo va justo debajo, en el oro de

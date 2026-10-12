@@ -28,6 +28,7 @@ import { writeViewParam } from "@web/view-state";
 import { compareInvestmentOperations } from "@worthline/domain";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, useId, useTransition } from "react";
+import { useFreshRows } from "./fresh-rows";
 import { useOperationsBook } from "./operations-book";
 import {
   LEDGER_VIEW_PARAM,
@@ -37,13 +38,10 @@ import {
   readLedgerScope,
 } from "./operations-ledger-view";
 
-/** No row is fresh unless the ficha says so. */
-const NO_FRESH_ROWS: ReadonlySet<string> = new Set();
-
 export function OperationsLedger({
   currentUrl,
   deleteAction,
-  freshIds = NO_FRESH_ROWS,
+  freshIds,
   privacyMode = false,
   readOnly = false,
   transferCounterparts,
@@ -53,7 +51,8 @@ export function OperationsLedger({
   deleteAction: (formData: FormData) => void | Promise<void>;
   /**
    * The ids of the rows just recorded (#1829): each is marked, and shows even when it
-   * sorts past the tenth.
+   * sorts past the tenth. Absent, they are the ones the ficha's last render added
+   * (`useFreshRows`) — none outside a ficha.
    */
   freshIds?: ReadonlySet<string>;
   privacyMode?: boolean;
@@ -69,6 +68,8 @@ export function OperationsLedger({
   transferCounterparts?: Record<string, TransferRowCounterpart>;
 }) {
   const { addPending, operations } = useOperationsBook();
+  const fichaFresh = useFreshRows("operaciones");
+  const freshRows = freshIds ?? fichaFresh;
   const [isDeleting, startDeleting] = useTransition();
   // Unfolded or not is the URL's (`?libro=todas`), read from it and never held beside
   // it: a delete's terminal remounts the ledger, and it has to come back as it was.
@@ -99,7 +100,7 @@ export function OperationsLedger({
   const { shown, toggle } = ledgerRowsOnShow(
     [...operations].sort((a, b) => compareInvestmentOperations(b, a)),
     scope === "todas",
-    (op) => freshIds.has(op.id),
+    (op) => freshRows.has(op.id),
   );
 
   return (
@@ -143,7 +144,7 @@ export function OperationsLedger({
                   counterpart: transferCounterparts?.[op.id] ?? { kind: "unresolved" },
                   privacyMode,
                 });
-                const fresh = freshIds.has(op.id);
+                const fresh = freshRows.has(op.id);
 
                 return (
                   <tr data-fresh={fresh ? "" : undefined} key={op.id}>

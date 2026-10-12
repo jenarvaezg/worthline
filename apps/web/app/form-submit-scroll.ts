@@ -139,14 +139,24 @@ export function isEditableTarget(input: {
   return tag === "input" || tag === "textarea" || tag === "select";
 }
 
+/**
+ * The attribute a surface puts around its forms to say it decides where their
+ * terminal lands, so the offset behind it is not restored (#1829: the ficha's side
+ * panel, which overlays the page and brings the new row into view itself).
+ */
+export const OWN_LANDING_ATTRIBUTE = "data-own-landing";
+
 /** Whether a submit event is one whose scroll offset is worth saving. */
 export function shouldSaveScroll(input: {
   method: string;
+  /** The form sits inside an {@link OWN_LANDING_ATTRIBUTE} surface. */
+  ownLanding?: boolean;
   scrollX: number;
   scrollY: number;
 }): boolean {
   // `method="dialog"` closes a <dialog>; it never navigates.
   if (input.method.toLowerCase() === "dialog") return false;
+  if (input.ownLanding) return false;
   // Nothing to restore from the top of the page.
   return input.scrollX !== 0 || input.scrollY !== 0;
 }

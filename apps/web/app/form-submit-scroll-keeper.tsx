@@ -18,6 +18,7 @@ import {
   isEditableTarget,
   isStaleRecord,
   isUserScrollKey,
+  OWN_LANDING_ATTRIBUTE,
   parseSavedScroll,
   type SavedScroll,
   shouldSaveScroll,
@@ -72,6 +73,7 @@ export default function FormSubmitScrollKeeper() {
       if (
         !shouldSaveScroll({
           method: event.target.method,
+          ownLanding: event.target.closest(`[${OWN_LANDING_ATTRIBUTE}]`) !== null,
           scrollX: window.scrollX,
           scrollY: window.scrollY,
         })

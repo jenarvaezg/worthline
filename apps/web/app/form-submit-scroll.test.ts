@@ -100,6 +100,15 @@ describe("shouldSaveScroll", () => {
   it("saves a horizontal-only offset", () => {
     expect(shouldSaveScroll({ method: "post", scrollX: 120, scrollY: 0 })).toBe(true);
   });
+
+  it("leaves alone a form whose surface decides where its terminal lands", () => {
+    // The ficha's side panel (#1829): it overlays the page, so the offset behind it
+    // is not where the person was working, and its terminal has to bring the new
+    // row into view instead of putting them back where the panel hid it.
+    expect(
+      shouldSaveScroll({ method: "post", ownLanding: true, scrollX: 0, scrollY: 863 }),
+    ).toBe(false);
+  });
 });
 
 describe("parseSavedScroll", () => {
