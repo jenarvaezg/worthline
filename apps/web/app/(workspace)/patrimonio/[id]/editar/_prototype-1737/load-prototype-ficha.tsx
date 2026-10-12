@@ -12,7 +12,9 @@ import {
   readOperationFees,
   readOperationPrice,
 } from "@web/_components/operation-capture-reading";
-import OperationsEditor from "@web/_components/operations-editor";
+import { OperationRecordForm } from "@web/_components/operation-record-form";
+import { OperationsBookProvider } from "@web/_components/operations-book";
+import { OperationsLedger } from "@web/_components/operations-ledger";
 import { formatMeasurePct, signClass } from "@web/_components/returns-format";
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
 import { formatIsoDayEs } from "@web/asistente/iso-day-es";
@@ -236,30 +238,33 @@ export async function loadPrototypeFicha(
   ) : null;
 
   // ── El editor de operaciones, montado dos veces y recortado por CSS ─────────
+  // (desde #1826 son dos piezas; el prototipo las monta juntas en cada sitio)
   const editor = (
-    <OperationsEditor
-      assetId={id}
-      assetName={asset.name}
-      context={{
-        ...(position ? { currentUnits: position.currentUnits } : {}),
-        ...(usablePrice !== null ? { unitPrice: usablePrice } : {}),
-        ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
-      }}
-      currentUrl={currentUrl}
-      defaultCurrency={lastCapturedCurrency(operations)}
-      deleteAction={noop}
-      formError={formError}
-      operations={operations}
-      privacyMode={privacyMode}
-      readOnly={false}
-      recordAction={noop}
-      today={today}
-      transferCounterparts={counterpartMap}
-    />
+    <OperationsBookProvider operations={operations}>
+      <section aria-label="Operaciones de la inversión">
+        <OperationRecordForm
+          assetId={id}
+          currentUrl={currentUrl}
+          defaultCurrency={lastCapturedCurrency(operations)}
+          formError={formError}
+          heldUnits={position?.currentUnits ?? "0"}
+          readOnly={false}
+          recordAction={noop}
+          today={today}
+        />
+        <OperationsLedger
+          currentUrl={currentUrl}
+          deleteAction={noop}
+          privacyMode={privacyMode}
+          readOnly={false}
+          transferCounterparts={counterpartMap}
+        />
+      </section>
+    </OperationsBookProvider>
   );
 
   const forms: Partial<Record<ActionKey, ReactNode>> = {
-    cobro: ctx.payoutsPanel,
+    cobro: ctx.payoutsPanel.section,
     extracto: (
       <StatementUploadSection
         confirmAction={noop}
@@ -328,7 +333,7 @@ export async function loadPrototypeFicha(
   }
 
   const tabs: Record<TabKey, ReactNode> = {
-    cobros: ctx.payoutsPanel,
+    cobros: ctx.payoutsPanel.section,
     datos: (
       <>
         {chrome.basics}

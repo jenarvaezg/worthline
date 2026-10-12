@@ -24,11 +24,15 @@
 
 import type { Liability, ManualAsset } from "@worthline/domain";
 import { instrumentOfAsset, valuationMethodOfAsset } from "@worthline/domain";
-import type { ReactNode } from "react";
 import { loadBinanceSurface, readConnectedSourceOfAsset } from "./binance-family";
 import { loadCoinCollectionSurface } from "./coin-collection-family";
 import { loadDebtSurface } from "./debt-family";
-import type { AssetFamilyContext, FichaContext, HoldingSurface } from "./family-contract";
+import type {
+  AssetFamilyContext,
+  FichaContext,
+  HoldingSurface,
+  PayoutsPanel,
+} from "./family-contract";
 import type { HoldingFamily } from "./holding-family";
 import { holdingFamily } from "./holding-family";
 import { loadHousingSurface } from "./housing-family";
@@ -37,15 +41,15 @@ import { loadStoredSurface } from "./stored-family";
 
 export async function loadHoldingSurface(
   input: FichaContext & {
-    asset: ManualAsset | null;
+    /** The asset, with the shared Cobros panel the page loaded for it. */
+    asset: { row: ManualAsset; payoutsPanel: PayoutsPanel } | null;
     liability: Liability | null;
-    /** The shared Cobros panel; null when the holding is a liability's. */
-    payoutsPanel: ReactNode;
   },
 ): Promise<HoldingSurface | null> {
-  const { asset, liability, payoutsPanel, ...ficha } = input;
+  const { asset: assetWithPanel, liability, ...ficha } = input;
 
-  if (asset) {
+  if (assetWithPanel) {
+    const { payoutsPanel, row: asset } = assetWithPanel;
     const ctx = { ...ficha, asset, payoutsPanel };
     const connectedSource = await readConnectedSourceOfAsset(ficha.store, asset);
     const method = valuationMethodOfAsset(asset);

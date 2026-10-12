@@ -19,7 +19,7 @@
 
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 
-import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
+import { addHolding, expect, holdingRow, test } from "./fixtures";
 
 test("price refresh: board hover + detail caption show date + provider for a cached investment (#303)", async ({
   page,
@@ -72,15 +72,13 @@ test("price refresh: board hover + detail caption show date + provider for a cac
   );
 
   // 5. Detail caption: opening the ficha shows the visible absolute date + provider
-  //    next to the unit price (es-ES "D mmm YYYY"), inside the operations context.
+  //    next to the unit price (es-ES "D mmm YYYY"), on its state header (#1826).
   await holdingRow(page, "Fondo Refresh E2E")
     .getByRole("link", { name: "Fondo Refresh E2E" })
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  // The operations context lives inside the advanced block, folded shut on
-  // arrival: a person opens it to read the caption, so the journey does too.
-  await openAdvancedSettings(page);
-  const ctx = page.locator(".operacionContext");
-  await expect(ctx).toContainText(/Precio actualizado el \d{1,2} \w+\.? \d{4} · Yahoo/);
+  // On the header, the first thing the ficha shows — no fold to open any more.
+  const state = page.getByRole("region", { name: "Estado del activo" });
+  await expect(state).toContainText(/Precio actualizado el \d{1,2} \w+\.? \d{4} · Yahoo/);
 });

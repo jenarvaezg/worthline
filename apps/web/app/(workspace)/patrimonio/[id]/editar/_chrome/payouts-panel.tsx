@@ -5,8 +5,14 @@
  * A payout is a pure attribution record: this holding paid its owner. It is never
  * a figure, so it belongs to no valuation family — a rented flat, a dividend fund
  * and a term deposit all take the same panel. The family decides only WHERE it
- * sits in its own order, which is why this loader returns a node instead of
- * rendering itself into the page.
+ * sits in its own order, which is why this loader returns the pieces instead of
+ * rendering itself into the page: the whole section for a ficha that keeps the
+ * accordion, or its record and its entry forms for a tabbed one (#1826), each
+ * returning to whichever URL the family says its result shows on.
+ *
+ * It also hands back the payouts themselves, dated as the return engine reads
+ * them, so a family that measures a return folds the rows this panel already read
+ * instead of reading them twice (#657).
  *
  * A liability pays nobody: the page asks for this only for an asset, and the
  * reads below never happen on a debt ficha.
@@ -19,12 +25,19 @@ import {
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/cobros-actions";
-import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
-import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
+import type {
+  FichaContext,
+  PayoutsPanel,
+} from "@web/patrimonio/[id]/editar/_families/family-contract";
+import {
+  CobrosEntry,
+  type CobrosProps,
+  CobrosRecord,
+  CobrosSection,
+} from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import type { ManualAsset, WarningOverride } from "@worthline/domain";
-import { isHousingAsset } from "@worthline/domain";
-import type { ReactNode } from "react";
+import { collectHoldingPayouts, isHousingAsset } from "@worthline/domain";
 import { doubleCountNotice } from "./double-count-notice";
 
 export async function loadPayoutsPanel(
@@ -41,7 +54,7 @@ export async function loadPayoutsPanel(
     /** The scope whose declared spending frames the renta-pasiva coverage. */
     scopeId: string | undefined;
   },
-): Promise<ReactNode> {
+): Promise<PayoutsPanel> {
   const { currentUrl, formError, id, isDemo, privacyMode, store, today } = ficha;
   const { asset, overrides, scopeId } = input;
 
@@ -90,29 +103,39 @@ export async function loadPayoutsPanel(
     await deletePayoutScheduleAction(id, formData);
   }
 
-  return (
-    <CobrosSection
-      acknowledgeWarningAction={acknowledgeWarningAction}
-      createPayoutAction={boundCreatePayoutAction}
-      createIncomeAction={boundCreateIncomeAction}
-      currency={asset.currency}
-      currentUrl={currentUrl}
-      deletePayoutAction={boundDeletePayoutAction}
-      deletePayoutScheduleAction={boundDeletePayoutScheduleAction}
-      doubleCount={doubleCount}
-      error={formError?.formId === "payout" ? formError.message : null}
-      errorValues={formError?.formId === "payout" ? formError.values : {}}
-      holdingId={id}
-      monthlySpendingMinor={
-        scopeId ? (fireConfig?.[scopeId]?.monthlySpendingMinor ?? null) : null
-      }
-      payouts={payouts}
-      privacyMode={privacyMode}
-      readOnly={isDemo}
-      schedules={schedules}
-      showLeaseTerms={isHousingAsset(asset)}
-      today={today}
-      updatePayoutScheduleAction={boundUpdatePayoutScheduleAction}
-    />
-  );
+  const props = (returnUrl: string): CobrosProps => ({
+    acknowledgeWarningAction,
+    createIncomeAction: boundCreateIncomeAction,
+    createPayoutAction: boundCreatePayoutAction,
+    currency: asset.currency,
+    currentUrl: returnUrl,
+    deletePayoutAction: boundDeletePayoutAction,
+    deletePayoutScheduleAction: boundDeletePayoutScheduleAction,
+    doubleCount,
+    error: formError?.formId === "payout" ? formError.message : null,
+    errorValues: formError?.formId === "payout" ? formError.values : {},
+    holdingId: id,
+    monthlySpendingMinor: scopeId
+      ? (fireConfig?.[scopeId]?.monthlySpendingMinor ?? null)
+      : null,
+    payouts,
+    privacyMode,
+    readOnly: isDemo,
+    schedules,
+    showLeaseTerms: isHousingAsset(asset),
+    today,
+    updatePayoutScheduleAction: boundUpdatePayoutScheduleAction,
+  });
+
+  return {
+    count: payouts.length + schedules.length,
+    // The same rows, the same rule the board's returns fold (#657): one-offs plus
+    // each schedule's occurrences, up to today.
+    datedPayouts: (collectHoldingPayouts(payouts, schedules, today).get(id) ?? []).map(
+      (row) => ({ amountMinor: row.amountMinor, date: row.dateISO }),
+    ),
+    entry: (returnUrl) => <CobrosEntry {...props(returnUrl)} />,
+    record: (returnUrl) => <CobrosRecord {...props(returnUrl)} />,
+    section: <CobrosSection {...props(currentUrl)} />,
+  };
 }

@@ -5,8 +5,9 @@
  * The page does four things and no more: resolve which holding the public
  * `wl_hld_…` id names (#1318), load the surface family that holding belongs to
  * (`_families/holding-surface`), render the chrome every ficha shares — the
- * feedback bands, «Lo básico», the advanced disclosure, the Zona de peligro — and
- * hand the family's body to the middle of it.
+ * feedback bands, «Lo básico», the Zona de peligro — and lay the family out the
+ * way the family says: its body inside the «Configuración avanzada» disclosure, or
+ * (#1826) the tabbed ficha, where that chrome becomes the «Datos del activo» tab.
  *
  * What it deliberately does NOT do is branch on the instrument. It used to: a
  * dozen booleans re-tested at every read and again at every section, every family's
@@ -33,12 +34,34 @@ import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
+import type { FichaTarget } from "./_ficha/ficha-view";
+import { fichaTabUrl } from "./_ficha/ficha-view";
+import { HoldingFicha } from "./_ficha/holding-ficha";
 import { prototypeVariantFor } from "./_prototype-1737/prototype-model";
 import { renderFichaPrototype } from "./_prototype-1737/render-prototype";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
+import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 
 /** The forms that render their own error band, next to the field that produced it. */
-const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer", "trash"];
+const SECTIONS_WITH_OWN_ERROR_BAND = [
+  "operation",
+  "payout",
+  "transfer",
+  TRASH_FORM_ID,
+  // «Traer de otra entidad» prints its own band (#1518): without it here, its
+  // refusal was printed twice.
+  "externalEntry",
+];
+
+/** The tabbed ficha's chrome tab: «Lo básico», the availability, the Zona de peligro. */
+const DATOS_TAB = "datos";
+
+/** The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha. */
+const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
+  availableFrom: { tab: DATOS_TAB },
+  edit: { tab: DATOS_TAB },
+  [TRASH_FORM_ID]: { tab: DATOS_TAB },
+};
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -97,6 +120,7 @@ export default async function EditarPage({
     allAssets,
     // `?archivar=1`: the Papelera's «Lo traspasé a…» exit came back here (#1549).
     archiveOriginAfterTransfer: resolvedSearchParams?.archivar === "1",
+    baseCurrency: workspace.baseCurrency,
     checkedAt: persistence.checkedAt,
     currentUrl,
     formError,
@@ -109,15 +133,27 @@ export default async function EditarPage({
 
   // Cobros rides on every asset ficha whatever its family, so it is loaded here
   // and PLACED by the family — only the family knows where in its own order the
-  // panel belongs. A liability pays nobody and loads nothing.
-  const payoutsPanel = asset
-    ? await loadPayoutsPanel(ficha, { asset, overrides, scopeId: selectedScope?.id })
+  // panel belongs. A liability pays nobody and loads nothing, so the panel travels
+  // WITH the asset: there is no asset without one to guard against downstream.
+  const assetWithPanel = asset
+    ? {
+        payoutsPanel: await loadPayoutsPanel(ficha, {
+          asset,
+          overrides,
+          scopeId: selectedScope?.id,
+        }),
+        row: asset,
+      }
     : null;
 
   // The one dispatch: which family this holding belongs to, and everything that
   // family needs — its rows, its sections, its bound actions (#1607). Null when
   // the resolved id names neither an asset nor a liability.
-  const surface = await loadHoldingSurface({ ...ficha, asset, liability, payoutsPanel });
+  const surface = await loadHoldingSurface({
+    ...ficha,
+    asset: assetWithPanel,
+    liability,
+  });
 
   if (surface === null) {
     notFound();
@@ -127,9 +163,23 @@ export default async function EditarPage({
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
+  // On a tabbed ficha the chrome's forms live in «Datos del activo», so that is
+  // where their terminals return (#1826); elsewhere, to the ficha as it was.
+  const layout = surface.layout;
+  const chromeUrl =
+    layout.kind === "ficha"
+      ? fichaTabUrl(
+          currentUrl,
+          [...layout.ficha.tabs.map((tab) => tab.key), DATOS_TAB],
+          DATOS_TAB,
+        )
+      : currentUrl;
+  const chromeContext = { ...ficha, currentUrl: chromeUrl };
+
   // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
   // unfolded and the archive intent in the URL (#1549) — the traspaso surface is
-  // inside a collapsed <details>, so a bare fragment would reveal nothing.
+  // inside a collapsed <details>, so a bare fragment would reveal nothing. (A
+  // tabbed ficha reads the same `?abrir=` in its island, `_ficha/ficha-view.ts`.)
   const abrir = resolvedSearchParams?.abrir;
   const advancedOpen =
     abrir === "operaciones" || abrir === "traspaso" || abrir === "cobros";
@@ -143,9 +193,9 @@ export default async function EditarPage({
   // La disponibilidad va con el ESCALÓN, no con la familia (#1528): el panel decide
   // solo, y devuelve null para cualquier holding que no esté a plazo. La página no
   // pregunta por el peldaño — un booleano más aquí es lo que #1607 vino a quitar.
-  const availabilityPanel = await loadAvailabilityPanel(ficha, asset);
+  const availabilityPanel = await loadAvailabilityPanel(chromeContext, asset);
 
-  const dangerPanel = await loadDangerPanel(ficha, {
+  const dangerPanel = await loadDangerPanel(chromeContext, {
     asset,
     manualLedger: surface.manualLedger,
     trashImpact: surface.trashImpact,
@@ -168,7 +218,7 @@ export default async function EditarPage({
         <AssetEditForm
           asset={asset}
           boardHref={boardHref}
-          currentUrl={currentUrl}
+          currentUrl={chromeUrl}
           investment={surface.basics.investment}
           isBinanceHolding={surface.basics.isBinanceHolding}
           isCoinCollection={surface.basics.isCoinCollection}
@@ -184,7 +234,7 @@ export default async function EditarPage({
         <LiabilityEditForm
           assets={allAssets.filter((a) => a.type !== "investment")}
           boardHref={boardHref}
-          currentUrl={currentUrl}
+          currentUrl={chromeUrl}
           liability={liability}
           members={activeMembers}
           scopeMemberId={ownershipScopeMemberId}
@@ -197,12 +247,16 @@ export default async function EditarPage({
 
   // PROTOTIPO #1737 — desechable: solo en desarrollo, solo inversión, solo con `?variante=`.
   const prototypeVariant = prototypeVariantFor(resolvedSearchParams, surface.family);
-  if (prototypeVariant && asset) {
+  if (prototypeVariant && assetWithPanel) {
     return renderFichaPrototype({
       availability: availabilityPanel,
       basics: basicsSection,
       boardHref,
-      ctx: { ...ficha, asset, payoutsPanel },
+      ctx: {
+        ...ficha,
+        asset: assetWithPanel.row,
+        payoutsPanel: assetWithPanel.payoutsPanel,
+      },
       danger: dangerPanel,
       overrides,
       searchParams: resolvedSearchParams,
@@ -211,13 +265,69 @@ export default async function EditarPage({
     });
   }
 
+  const okBand = formOk ? (
+    <p className="successBand" role="status">
+      {formOk}
+    </p>
+  ) : null;
+
+  // The page-level band carries only the errors NO section prints itself. The list
+  // is the seam: a section that grows its own band adds itself here, and the reader
+  // sees at a glance which forms speak for themselves.
+  const errorBand =
+    formError && !SECTIONS_WITH_OWN_ERROR_BAND.includes(formError.formId ?? "") ? (
+      <p className="errorBand" role="alert">
+        {formError.message}
+      </p>
+    ) : null;
+
+  if (layout.kind === "ficha") {
+    const { ficha: tabbed } = layout;
+    const holdingFicha = (
+      <HoldingFicha
+        actions={tabbed.actions}
+        basePath={currentUrl}
+        boardHref={boardHref}
+        errorTargets={{ ...tabbed.errorTargets, ...CHROME_ERROR_TARGETS }}
+        figures={tabbed.figures}
+        instrument={tabbed.instrument}
+        name={(asset ?? liability)?.name ?? ""}
+        tabs={[
+          ...tabbed.tabs,
+          {
+            content: (
+              <div className="fichaDatos">
+                {basicsSection}
+                {availabilityPanel}
+                {/* Last on purpose: the two-step delete, with the truth about what
+                    it withdraws, is the one thing on this tab nobody comes for. */}
+                {dangerPanel}
+              </div>
+            ),
+            key: DATOS_TAB,
+            label: "Datos del activo",
+            shortLabel: "Datos",
+          },
+        ]}
+        value={tabbed.value}
+      />
+    );
+
+    return (
+      <>
+        {okBand}
+        <section className="formPage fichaPage" aria-label="Ficha del activo">
+          {warningsBand}
+          {errorBand}
+          {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
+        </section>
+      </>
+    );
+  }
+
   return (
     <>
-      {formOk ? (
-        <p className="successBand" role="status">
-          {formOk}
-        </p>
-      ) : null}
+      {okBand}
 
       <section className="formPage" aria-label="Editar holding">
         <div className="panelHeader">
@@ -227,14 +337,7 @@ export default async function EditarPage({
 
         {warningsBand}
 
-        {/* The page-level band carries only the errors NO section prints itself. The
-            list is the seam: a section that grows its own band adds itself here, and
-            the reader sees at a glance which forms speak for themselves. */}
-        {formError && !SECTIONS_WITH_OWN_ERROR_BAND.includes(formError.formId ?? "") ? (
-          <p className="errorBand" role="alert">
-            {formError.message}
-          </p>
-        ) : null}
+        {errorBand}
 
         {basicsSection}
 
@@ -245,7 +348,7 @@ export default async function EditarPage({
 
         <details suppressHydrationWarning className="editAdvanced" open={advancedOpen}>
           <summary>Configuración avanzada</summary>
-          <div className="editAdvancedBody">{surface.body}</div>
+          <div className="editAdvancedBody">{layout.body}</div>
         </details>
 
         {/* Danger zone — two-step delete, with the truth about what it withdraws */}

@@ -26,7 +26,7 @@ import {
   addHolding,
   delayServerActions,
   expect,
-  openAdvancedSettings,
+  openFichaAction,
   test,
 } from "./fixtures";
 
@@ -43,9 +43,9 @@ async function primeRefusedOperation(
   await page.goto("/patrimonio");
   await page.getByRole("link", { name }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
 
-  const form = page.getByRole("form", { name: "Registrar operación" });
+  const panel = await openFichaAction(page, "Registrar operación");
+  const form = panel.getByRole("form", { name: "Registrar operación" });
   // Price typed, units left empty: the server refuses, and there is no buildable
   // optimistic row — the exact submit shape #1311 lost.
   await form.getByLabel("Precio por unidad en EUR").fill("105,50");
@@ -62,10 +62,12 @@ test("a refused operation says why in place, without navigating", async ({ page 
   await expect(band).toBeVisible();
   await expect(band).toHaveText(REFUSAL);
   // No navigation happened, and these three are what that buys the person: the
-  // typed amounts never reach the address bar, the block they opened stays open,
-  // and what they typed is still in the field.
+  // typed amounts never reach the address bar, the panel they opened stays open
+  // (#1826: a navigation to the bare ficha would have closed it), and what they
+  // typed is still in the field.
   await expect(page).not.toHaveURL(/error=/);
-  await expect(page.locator("details.editAdvanced")).toHaveJSProperty("open", true);
+  await expect(page).toHaveURL(/accion=operacion/);
+  await expect(page.getByRole("dialog", { name: "Registrar operación" })).toBeVisible();
   await expect(form.getByLabel("Precio por unidad en EUR")).toHaveValue("105,50");
 });
 

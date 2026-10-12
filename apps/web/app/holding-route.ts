@@ -45,23 +45,32 @@ export function holdingDetailHref(publicHoldingId: string): string {
 }
 
 /**
- * The ficha with the operations surface unfolded. That surface lives inside
- * collapsed «Configuración avanzada»; a bare `#operaciones` would scroll to a
- * closed `<details>` and show nothing. `?abrir=operaciones` is what the server
- * renders open (#1365).
+ * The ficha with its operations on show (#1365). Since #1826 an investment's ficha
+ * reads `?abrir=operaciones` as its «Operaciones» tab (`_ficha/ficha-view.ts`); a
+ * ficha that still keeps the «Configuración avanzada» accordion renders it unfolded,
+ * where a bare `#operaciones` would scroll to a closed `<details>` and show nothing.
  */
 export function holdingOperationsHref(publicHoldingId: string): string {
   return `${holdingDetailHref(publicHoldingId)}?abrir=operaciones#operaciones`;
 }
 
 /**
- * The ficha with the cobros surface unfolded and scrolled into view (#1510).
- * That surface lives inside collapsed «Configuración avanzada»; a bare `#cobros`
- * would scroll to a closed `<details>` and show nothing. `?abrir=cobros` is what
- * the server renders open.
+ * The ficha with its cobros on show and scrolled into view (#1510). A tabbed ficha
+ * (#1826) reads `?abrir=cobros` as its «Cobros» tab; one that still keeps the
+ * «Configuración avanzada» accordion renders it unfolded, where a bare `#cobros`
+ * would scroll to a closed `<details>` and show nothing.
  */
 export function holdingCobrosHref(publicHoldingId: string): string {
   return `${holdingDetailHref(publicHoldingId)}?abrir=cobros#cobros`;
+}
+
+/**
+ * The ficha with «Cargar movimientos» open in its side panel (#1826): where an
+ * investment created to be filled from a broker statement lands (#173), so the
+ * «ahora carga el extracto» it is greeted with is one click, not a search.
+ */
+export function holdingStatementHref(publicHoldingId: string): string {
+  return `${holdingDetailHref(publicHoldingId)}?accion=extracto`;
 }
 
 /** The holding's row on the board, as an anchor target (the ficha's «← Volver»). */

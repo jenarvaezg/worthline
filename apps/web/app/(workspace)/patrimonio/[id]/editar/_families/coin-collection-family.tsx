@@ -45,7 +45,7 @@ export async function loadCoinCollectionSurface(
           valuationFreshness={valuationCache?.freshnessState ?? null}
           valuationStaleReason={valuationCache?.staleReason ?? null}
         />
-        {payoutsPanel}
+        {payoutsPanel.section}
       </>
     ),
   });

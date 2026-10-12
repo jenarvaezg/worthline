@@ -7,7 +7,7 @@
  * in the catalog the card is omitted entirely.
  */
 
-import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
+import { addHolding, expect, holdingRow, openFichaTab, test } from "./fixtures";
 
 test("holding ficha shows vs-benchmark card when tracked index is assigned", async ({
   page,
@@ -23,7 +23,8 @@ test("holding ficha shows vs-benchmark card when tracked index is assigned", asy
   await page.goto("/patrimonio");
   const row = holdingRow(page, "ETF Benchmark S5");
   await row.getByRole("link", { name: "ETF Benchmark S5" }).first().click();
-  await openAdvancedSettings(page);
+  // The comparison sits with the returns, in «Rentabilidad» (#1826).
+  await openFichaTab(page, "Rentabilidad");
 
   const benchmark = page.getByLabel("Comparación con MSCI World");
   await expect(benchmark).toBeVisible();
@@ -46,7 +47,8 @@ test("holding ficha omits vs-benchmark when no tracked index is assigned", async
     .getByRole("link", { name: "Fondo sin benchmark" })
     .first()
     .click();
-  await openAdvancedSettings(page);
+  // Asked where it would be, so its absence means something.
+  await openFichaTab(page, "Rentabilidad");
 
   await expect(page.getByLabel(/Comparación con/)).toHaveCount(0);
 });

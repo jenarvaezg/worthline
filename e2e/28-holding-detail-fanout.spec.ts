@@ -8,6 +8,9 @@
  * value → record sell → delete operation) reachable from the detail page — no
  * longer only under /inversiones. The four pre-existing surfaces (stored,
  * appreciating, amortized, anchored) must still render/edit from the detail page.
+ *
+ * Since #1826 the derived ficha is the tabbed one: the state header says the units
+ * and the value, the record form opens in the side panel, the ledger is a tab.
  */
 
 import {
@@ -15,8 +18,8 @@ import {
   expect,
   holdingRow,
   openAdvancedSettings,
+  openFichaAction,
   test,
-  wholeDocument,
 } from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -39,7 +42,6 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await expect(row).toBeVisible();
   await row.getByRole("link", { name: "Fondo Ficha S6" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
   const assetId = new URL(page.url()).pathname.split("/")[2]!;
   expect(assetId).toBeTruthy();
 
@@ -50,57 +52,48 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   });
   await expect(operationsRegion).toBeVisible();
   await expect(page.getByLabel("Valor actual en EUR")).toHaveCount(0);
+  const state = page.getByRole("region", { name: "Estado del activo" });
 
-  // 4. Record a BUY of 10 units @ 100 from the detail page.
-  const opForm = page.getByRole("form", { name: "Registrar operación" });
+  // 4. Record a BUY of 10 units @ 100 from the side panel.
+  let panel = await openFichaAction(page, "Registrar operación");
+  let opForm = panel.getByRole("form", { name: "Registrar operación" });
   await opForm.getByLabel("Unidades").fill("10");
   await opForm.getByLabel("Precio por unidad en EUR").fill("100");
-  await page.getByRole("button", { name: "Registrar operación" }).click();
+  await opForm.getByRole("button", { name: "Registrar operación" }).click();
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
-  await openAdvancedSettings(page);
 
-  // 5. The detail surface now reports the units held and the derived value.
-  const ctx = operationsRegion.locator(".operacionContext");
-  await expect(ctx.getByText("10", { exact: true })).toBeVisible();
-  await expect(ctx.getByText(/1\.?000\s*€/)).toBeVisible(); // 10 × 100 = 1000 €
+  // 5. The state header now reports the units held and the derived value.
+  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
+  await expect(state.locator(".fichaValue")).toHaveText(/1\.?000\s*€/); // 10 × 100
 
-  // 6. Record a SELL of 4 units @ 120 from the same page.
+  // 6. Record a SELL of 4 units @ 120 from the same panel.
+  panel = await openFichaAction(page, "Registrar operación");
+  opForm = panel.getByRole("form", { name: "Registrar operación" });
   await opForm.getByLabel("Tipo").selectOption("sell");
   await opForm.getByLabel("Unidades").fill("4");
   await opForm.getByLabel("Precio por unidad en EUR").fill("120");
-  await page.getByRole("button", { name: "Registrar operación" }).click();
+  await opForm.getByRole("button", { name: "Registrar operación" }).click();
   // Waiting on the URL is no signal here: this redirect lands on the SAME
   // `?ok=saved` URL step 4 already produced. The honest signal is the settled
-  // figure the server re-rendered — and it arrives inside the advanced block,
-  // which the redirect folds shut again (its `open` is server-driven). So this
-  // one asks the DOCUMENT on purpose: `wholeDocument` is what makes «present but
-  // not on screen» expressible now that page queries answer about the screen.
-  await expect(
-    wholeDocument(page)
-      .locator("details.editAdvanced .operacionContext")
-      .getByText("6", { exact: true }),
-  ).toHaveCount(1);
-  await openAdvancedSettings(page);
+  // figure the server re-rendered, on the header that is always on screen.
+  await expect(state.locator(".fichaFigures")).toContainText("6 × 100 €");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // 7. Both operations are listed; remaining units = 6.
-  const opsPanel = operationsRegion.locator("details.recentOpsPanel");
+  // 7. Both operations are listed in the «Operaciones» tab.
+  const opsPanel = operationsRegion.locator(".recentOpsPanel");
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(2);
-  await expect(ctx.getByText("6", { exact: true })).toBeVisible();
 
   // 8. Delete the sell operation (two-step confirm in its row).
   const sellRow = opsPanel.locator("tbody tr").filter({ hasText: "Venta" });
   await sellRow.locator("details.confirmDelete summary").click();
   await sellRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
-  await openAdvancedSettings(page);
 
   // 9. Only the buy remains; units back to 10.
-  await expect(operationsRegion.locator("details.recentOpsPanel tbody tr")).toHaveCount(
-    1,
-  );
-  await expect(ctx.getByText("10", { exact: true })).toBeVisible();
+  await expect(operationsRegion.locator(".recentOpsPanel tbody tr")).toHaveCount(1);
+  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
 });
 
 test("stored: a cash asset edits its current value from the detail page", async ({

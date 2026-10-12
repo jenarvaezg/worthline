@@ -12,7 +12,7 @@
  * Runs after journey 30 so the holdings it adds don't perturb earlier totals.
  */
 
-import { expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
+import { expect, holdingRow, test } from "./fixtures";
 
 /** Open the investment drawer and select one of the 3 behavior groups. */
 async function openInvestmentGroup(
@@ -99,11 +99,13 @@ test("importar extracto: routes to «Cargar movimientos» with no opening operat
   const importPane = page.locator('.invModePane[data-mode="import"]');
   await importPane.getByRole("button", { name: "Añadir" }).click();
 
-  // Routed to the holding's ficha, where «Cargar movimientos» lives (#173).
-  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/, { timeout: 10_000 });
+  // Routed to the holding's ficha, where «Cargar movimientos» lives (#173) — and
+  // already open in its side panel (#1826), so «carga el extracto» is one step.
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar\?accion=extracto/, {
+    timeout: 10_000,
+  });
   await expect(page.getByRole("status")).toContainText("carga el extracto");
-  await openAdvancedSettings(page);
-  await expect(page.getByRole("heading", { name: "Cargar movimientos" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Cargar movimientos" })).toBeVisible();
 
   // No opening operation was invented — the operations list is empty.
   await expect(

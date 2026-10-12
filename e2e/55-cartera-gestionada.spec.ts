@@ -37,7 +37,7 @@ import {
   addHolding,
   expect,
   holdingRow,
-  openAdvancedSettings,
+  openFichaAction,
   test,
   waitForHydration,
 } from "./fixtures";
@@ -100,9 +100,10 @@ async function addFundWithBuy(
   await expect(row).toBeVisible();
   await row.getByRole("link", { name: input.name }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
 
-  const form = page.getByRole("form", { name: "Registrar operación" });
+  const form = (await openFichaAction(page, "Registrar operación")).getByRole("form", {
+    name: "Registrar operación",
+  });
   await form.getByLabel("Unidades").fill(input.units);
   await form.getByLabel("Precio por unidad en EUR").fill(input.unitPrice);
   await form.getByRole("button", { name: "Registrar operación" }).click();
@@ -120,7 +121,6 @@ async function openMemberFicha(page: import("@playwright/test").Page, name: stri
   await page.goto(fichaUrl);
   await region(page, "Composición").getByRole("link", { exact: true, name }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
 }
 
 /** Marca fondos como miembros de la cartera y guarda. */
@@ -388,6 +388,7 @@ test("traspaso interno: la rentabilidad de la cartera no lo cuenta como flujo, y
   // 2. Un traspaso interno de 200 € entre dos miembros: 2 participaciones salen de
   //    Alfa a VL 100 y 2 entran en Beta al mismo VL.
   await openMemberFicha(page, ALFA);
+  await openFichaAction(page, "Traspasar");
 
   const traspaso = page.getByRole("form", { name: "Traspasar a otra inversión" });
   await expect(traspaso).toBeVisible();
@@ -402,7 +403,7 @@ test("traspaso interno: la rentabilidad de la cartera no lo cuenta como flujo, y
 
   // 3. El par queda ATADO en las operaciones: cada mitad nombra a la otra, así que
   //    la salida no se lee como una venta ni la entrada como una compra (#1481).
-  await openAdvancedSettings(page);
+  //    El libro es la pestaña por defecto de la ficha (#1826).
   const salida = page.locator(".recentOpsPanel tr", { hasText: "Traspaso (salida)" });
   await expect(salida).toContainText(`a ${BETA}`);
 

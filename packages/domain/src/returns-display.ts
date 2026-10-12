@@ -4,6 +4,7 @@ import type { DecimalString } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentValuation } from "./investment-valuation";
 import { deriveInvestmentValuation } from "./investment-valuation";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type {
@@ -299,6 +300,73 @@ function subsetSliceOf(
   };
 }
 
+/** One holding's raw reads, as the board's row hands them to the fold. */
+export interface HoldingReturnsReads {
+  assetId: string;
+  instrument: Instrument;
+  operations: readonly InvestmentOperation[];
+  cachedPrice: DecimalString | undefined;
+  manualPrice: DecimalString | undefined;
+  /** Its monthly-close series; absent when the surface has none to measure a TWR on. */
+  monthlyCloses?: readonly MonthlyCloseValue[];
+  /** Its recorded payouts (one-offs + derived occurrences) up to the valuation date. */
+  payouts?: readonly DatedPayout[];
+  currency: CurrencyCode;
+  valuationDate: string;
+  /**
+   * The realized/unrealized split, for a surface that prints it (the ficha's
+   * Rentabilidad). It only adds lines: the measures are the fold's either way.
+   */
+  split?: { realizedPnl?: MoneyMinor; unrealizedPnl?: MoneyMinor };
+}
+
+/**
+ * One holding's returns, and the valuation they were measured against (#1826).
+ *
+ * The SAME fold the board's row runs — {@link investmentReturnsById} is this, once
+ * per holding — so the ficha's header can print «Ganancia total» as the very
+ * figure of the row it came from, and its value and price as the ones that figure
+ * was measured with (#1422): one call, never two engines that happen to agree.
+ */
+export function holdingReturns(input: HoldingReturnsReads): {
+  valuation: InvestmentValuation;
+  view: HoldingReturnsView | null;
+} {
+  const valuation = deriveInvestmentValuation({
+    assetId: input.assetId,
+    cachedPrice: input.cachedPrice,
+    currency: input.currency,
+    manualPrice: input.manualPrice,
+    operations: [...input.operations],
+  });
+  const payouts = input.payouts ?? [];
+  const returnsInput = {
+    currency: input.currency,
+    marketValueMinor: valuation.valueMinor,
+    operations: input.operations,
+    payouts,
+    valuationDate: input.valuationDate,
+  };
+  const view = buildHoldingReturnsView({
+    instrument: input.instrument,
+    irr: holdingIrr(returnsInput),
+    payoutsIncluded: payouts.length > 0,
+    simpleGain: simpleGain(returnsInput),
+    twr: input.monthlyCloses
+      ? holdingTwr({ monthlyCloses: input.monthlyCloses, operations: input.operations })
+      : null,
+    // The grade comes from the SAME valuation the market value came from
+    // (#1505, #1422): the caveat must be about the figure on screen.
+    ...(valuation.costBasisGrade === undefined
+      ? {}
+      : { costBasisGrade: valuation.costBasisGrade }),
+    ...(input.split?.realizedPnl ? { realizedPnl: input.split.realizedPnl } : {}),
+    ...(input.split?.unrealizedPnl ? { unrealizedPnl: input.split.unrealizedPnl } : {}),
+  });
+
+  return { valuation, view };
+}
+
 /**
  * Per-holding returns for every operation-bearing investment, keyed by asset id.
  * Folds each holding's operations + current market value through the engine, then
@@ -320,27 +388,18 @@ export function investmentReturnsById(
     if (instrument === undefined) {
       continue;
     }
-    const valuation = holdingValuation(assetId, operations, ctx);
     const monthlyCloses = ctx.monthlyClosesByAsset?.get(assetId);
-    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
-    const returnsInput = {
+    const payouts = ctx.payoutsByAsset?.get(assetId);
+    const { view } = holdingReturns({
+      assetId,
+      cachedPrice: ctx.cachedPriceByAsset.get(assetId),
       currency: ctx.currency,
-      marketValueMinor: valuation.valueMinor,
-      operations,
-      payouts,
-      valuationDate: ctx.valuationDate,
-    };
-    const view = buildHoldingReturnsView({
       instrument,
-      irr: holdingIrr(returnsInput),
-      payoutsIncluded: payouts.length > 0,
-      simpleGain: simpleGain(returnsInput),
-      twr: monthlyCloses ? holdingTwr({ monthlyCloses, operations }) : null,
-      // The grade comes from the SAME valuation the market value came from
-      // (#1505, #1422): the caveat must be about the figure on screen.
-      ...(valuation.costBasisGrade === undefined
-        ? {}
-        : { costBasisGrade: valuation.costBasisGrade }),
+      manualPrice: ctx.manualPriceByAsset.get(assetId),
+      operations,
+      valuationDate: ctx.valuationDate,
+      ...(monthlyCloses ? { monthlyCloses } : {}),
+      ...(payouts ? { payouts } : {}),
     });
     if (view !== null) {
       views.set(assetId, view);

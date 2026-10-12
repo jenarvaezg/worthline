@@ -12,6 +12,7 @@ import {
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
+  holdingReturns,
   investmentReturnsById,
   MARKET_CAVEAT,
   MARKET_PAYOUTS_CAVEAT,
@@ -299,6 +300,96 @@ describe("investmentReturnsById", () => {
     // +500.00 distribution lands as realized gain on a flat holding.
     expect(view.totalGain).toEqual(money(500_00, "EUR"));
     expect(view.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+  });
+});
+
+/**
+ * One holding's returns, measured by the fold the board's row runs (#1826). The
+ * ficha's header prints «Ganancia total» beside the row it came from, so the two
+ * figures are one call, not two engines that happen to agree (#1422).
+ */
+describe("holdingReturns", () => {
+  const currency = "EUR";
+  const valuationDate = "2026-07-04";
+  const buy = op("buy", "10", "100", "2024-01-01", "a1");
+
+  test("the ficha's figure IS the board row's, payouts and closes included", () => {
+    const payouts = [{ amountMinor: 50_000, date: "2025-01-01" }];
+    const monthlyCloses = [
+      { date: "2024-01-31", valueMinor: 100_000 },
+      { date: "2026-07-04", valueMinor: 150_000 },
+    ];
+
+    const { view } = holdingReturns({
+      assetId: "a1",
+      cachedPrice: "150",
+      currency,
+      instrument: "fund",
+      manualPrice: undefined,
+      monthlyCloses,
+      operations: [buy],
+      payouts,
+      valuationDate,
+    });
+    const board = investmentReturnsById({
+      cachedPriceByAsset: new Map([["a1", "150"]]),
+      currency,
+      instrumentByAsset: new Map([["a1", "fund"]]),
+      manualPriceByAsset: new Map(),
+      monthlyClosesByAsset: new Map([["a1", monthlyCloses]]),
+      operationsByAsset: new Map([["a1", [buy]]]),
+      payoutsByAsset: new Map([["a1", payouts]]),
+      valuationDate,
+    }).get("a1");
+
+    // 10 × 150 = 1.500,00 against a 1.000,00 cost, plus the 500,00 it paid.
+    expect(view?.totalGain).toEqual(money(1_000_00, "EUR"));
+    expect(view?.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
+    expect(view).toEqual(board);
+  });
+
+  test("hands back the valuation the figure was measured against", () => {
+    const { valuation } = holdingReturns({
+      assetId: "a1",
+      cachedPrice: undefined,
+      currency,
+      instrument: "fund",
+      manualPrice: "120",
+      operations: [buy],
+      valuationDate,
+    });
+
+    // No quote cached, so the manual price values it: the price on the header and
+    // the value beside it are the ones the gain was measured with.
+    expect(valuation.valueMinor).toBe(1_200_00);
+    expect(valuation.pricePerUnit).toBe("120");
+    expect(valuation.priceSource).toBe("manual");
+  });
+
+  test("the realized/unrealized split adds lines, never moves the measures", () => {
+    const input = {
+      assetId: "a1",
+      cachedPrice: "150",
+      currency,
+      instrument: "fund" as const,
+      manualPrice: undefined,
+      operations: [buy],
+      valuationDate,
+    };
+
+    const bare = holdingReturns(input).view;
+    const split = holdingReturns({
+      ...input,
+      split: {
+        realizedPnl: money(0, "EUR"),
+        unrealizedPnl: money(500_00, "EUR"),
+      },
+    }).view;
+
+    expect(split?.unrealizedPnl).toEqual(money(500_00, "EUR"));
+    expect(split?.realizedPnl).toEqual(money(0, "EUR"));
+    expect(split?.totalGain).toEqual(bare?.totalGain);
+    expect(split?.irr).toEqual(bare?.irr);
   });
 });
 

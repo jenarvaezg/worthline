@@ -113,6 +113,14 @@ marca de procedencia (#1257) no abre una entrada nueva: el envoltorio
 `.assistantProposalOrigin` se queda con la regla gruesa y el sello pasa a ser la
 primera línea impresa de la MISMA entrada, en oro y nombrado con palabras.
 
+La ficha de un activo con pestañas (#1826) reutiliza esa receta para su panel lateral
+(`.fichaPanel`): una hoja encartada a la derecha, ligada por su lomo con regla gruesa,
+que se superpone sin recolocar la página y empieza bajo la barra de navegación mientras
+esta se ve; en el teléfono ocupa la pantalla, con su cabecera fija. Una acción cada vez.
+Su cabecera de estado (`.fichaHero`) es la `.heroPanel` de la página —la única hoja
+destacada—; las pestañas son `.navTab` con el recuento en gris, y la acción cuyo panel
+está abierto se marca con contorno de tinta, nunca con el azul del foco.
+
 Dentro de una propuesta, elegir el destino de una fila (#1373) no es un commit: son
 alternativas, y llevan `.assistantRowChoice` —radios nativos con marca de selección
 de regla lateral y hoja fuerte, el registro de los chips de selección de holding—

@@ -80,7 +80,7 @@ export async function loadBinanceSurface(
           sinceDateKey={sinceDateKey}
           sourceId={source.id}
         />
-        {payoutsPanel}
+        {payoutsPanel.section}
       </>
     ),
   });

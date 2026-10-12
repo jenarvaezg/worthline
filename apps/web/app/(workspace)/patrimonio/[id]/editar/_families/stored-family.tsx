@@ -13,5 +13,5 @@ import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
 export function loadStoredSurface(ctx: AssetFamilyContext): HoldingSurface {
-  return holdingSurface("stored", { body: ctx.payoutsPanel });
+  return holdingSurface("stored", { body: ctx.payoutsPanel.section });
 }
