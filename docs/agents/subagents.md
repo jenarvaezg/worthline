@@ -27,7 +27,7 @@ criterion has to keep working.
 
 | Agent | Why it does not apply here |
 | --- | --- |
-| `database-reviewer` | Speaks PostgreSQL and Supabase — RLS policies, `EXPLAIN ANALYZE`, connection pooling. The stack is libsql/Turso with Drizzle: there is no Postgres planner to advise on, migrations are ordered SQL replayed by `packages/db`, and interactive transactions do not work over `:memory:` — `store-context.ts` hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK` for local clients. Its advice is not wrong so much as addressed to a different database. |
+| `database-reviewer` | Speaks PostgreSQL and Supabase — RLS policies, `EXPLAIN ANALYZE`, connection pooling. The stack is libsql/Turso with Drizzle: there is no Postgres planner to advise on, migrations are a version ladder in `packages/db/src/migrate.ts` that runs when a store opens, and interactive transactions do not work over `:memory:` — `store-context.ts` hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK` for local clients. Its advice is not wrong so much as addressed to a different database. Use [`wl-db-reviewer`](../../.claude/agents/wl-db-reviewer.md) instead. |
 | `python-reviewer` | There is no application Python to review. The only Python in the tree lives under `.local/`, which is gitignored because it holds real data. |
 | `doc-updater` | It runs `/update-codemaps` and writes `docs/CODEMAPS/*`, which does not exist here. Domain documentation is `GLOSSARY.md` plus `docs/adr/` — see [`domain.md`](domain.md). |
 
@@ -108,3 +108,5 @@ Each agent registers itself here as it lands. The first tranche is tracked in #1
   the tree path. Tools: `Bash`, `Read`, `Grep`, plus a `PreToolUse` hook that blocks
   Bash commands that change state. It never edits.
 - [`calc-reviewer`](../../.claude/agents/calc-reviewer.md) (#1624): read-only review of a calc, db or figure-preview diff against the financial-domain invariants; brief it with the issue and the diff.
+- [`wl-db-reviewer`](../../.claude/agents/wl-db-reviewer.md) (#1625): read-only review of a persistence diff against the libsql/Turso stack — migrations, units of work, the control-plane boundary, round trips, the store seam's guards; brief it with the issue and the diff.
+- [`front-reviewer`](../../.claude/agents/front-reviewer.md) (#1625): read-only review of a UI diff against [`design-system.md`](../design-system.md) and [`interaction-patterns.md`](../interaction-patterns.md); brief it with the issue and the diff.

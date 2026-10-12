@@ -43,3 +43,29 @@ bundler-safe and identical across vitest, `next dev`, and `next build`.
   will be missing columns that the forward migrations then try to add.
 - Forward migration steps are idempotent (IF NOT EXISTS, try/catch on ALTER TABLE).
 - Local `.local/*.sqlite` data is disposable and git-ignored pre-release.
+
+## Amendment (#1625): the ladder as it runs today
+
+Four things above stopped describing the code, and a reviewer reading this ADR
+would mark correct code as wrong.
+
+- **The version lives in `schema_meta`, not in `user_version`.** Turso rejects
+  `PRAGMA user_version = N` over HTTP, so the authoritative version is the one-row
+  `schema_meta` table (`readSchemaVersion` / `writeSchemaVersion` in `migrate.ts`).
+  The PRAGMA is still written best-effort on local SQLite and read only as the
+  fallback for a database older than the table. Where this ADR or ADR 0030 says
+  «`user_version`», read `schema_meta`.
+- **`schema-sql.ts` is kept by hand.** `db:generate` still exists, but nothing has
+  been generated since `packages/db/drizzle/0008` (June 2026). Steps 2 and 3 of the
+  workflow are now one: write the new DDL into `schemaSql` by hand, in the same change
+  as the `schema.ts` edit and the rung, so a fresh database and a migrated one end up
+  with the same schema.
+- **A step tolerates only «already applied».** «try/catch on ALTER TABLE» narrowed:
+  a step checks `PRAGMA table_info` before an `ADD COLUMN`, or uses
+  `execToleratingMissingTable`, and every other error surfaces
+  (`migrate-index-ddl-guard.persistence.test.ts`). A bare catch also swallows a typo,
+  and the version is stamped anyway.
+- **What `ALTER TABLE` cannot do is a rebuild.** Dropping or retyping a column, or
+  adding `NOT NULL`, rebuilds the table the way v18, v25, v70 and v71 do:
+  `PRAGMA foreign_keys = OFF` outside any transaction, then create, copy, drop and
+  rename inside one `BEGIN … COMMIT`, then `foreign_keys` back on.
