@@ -288,7 +288,8 @@ export type FireIncomeCondition =
  * La edad es la DECLARADA: el `?? 65` con el que el motor calcula no es una declaración
  * (ADR 0081), y comparar contra él le diría a quien nunca tocó el campo que su pensión
  * no aplica por una edad que no escribió. Y nunca contra una fecha de cese inventada:
- * worthline no tiene escenarios de cese.
+ * worthline no tiene escenarios de cese. La edad guardada cuenta como declaración desde
+ * la v72 (#1812), que quitó el 65 rellenado por el formulario de antes de #1474.
  *
  * La granularidad es el mes, porque es la del dato: del cumpleaños se sabe el mes, no
  * el día. Jubilarse el mismo mes en que la cifra deja de cotizar es el caso coherente —

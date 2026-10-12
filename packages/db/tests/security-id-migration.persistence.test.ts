@@ -93,7 +93,7 @@ describe("schema migration v70 (el identificador tipado, #1743)", () => {
     expect(columns).toContain("security_id");
     expect(columns).toContain("security_id_kind");
     expect(columns).not.toContain("isin");
-    expect(SCHEMA_VERSION).toBe(72);
+    expect(SCHEMA_VERSION).toBe(73);
   });
 
   test("un ISIN registrado queda tipado como lo que es", async () => {
