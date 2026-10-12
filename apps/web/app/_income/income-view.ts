@@ -140,7 +140,7 @@ export function incomeCountingStatus(
 
 /**
  * An income no asset generates: the sustainable spending is the figure that reads it.
- * An ended one first — the card drops it whatever the scope, and nothing revives it —
+ * An ended one first — the card drops it whatever the scope until its end is cleared —
  * then whatever keeps the card from reading it, in the domain's order.
  */
 function standaloneCountingStatus(

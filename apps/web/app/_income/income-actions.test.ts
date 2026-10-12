@@ -355,6 +355,206 @@ describe("updateIncomeDeclarationAction — correcting an existing declaration",
   });
 });
 
+// #1813: una renta sin activo no tiene ficha, así que su recurrencia se corrige aquí.
+// Ninguna cifra deriva sus cobros pasados (ADR 0111 solo lee el estado de hoy), y
+// por eso se corrige en el sitio en vez de borrarla y volver a declararla.
+describe("updateIncomeDeclarationAction — the recurrence of an income with no asset", () => {
+  const DECLARED = {
+    provenance: "official_simulation",
+    provenanceAsOf: "2026-08-18",
+  } as const;
+
+  async function withPension(): Promise<{ store: WorthlineStore; id: string }> {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
+    const income = await store.payouts.createPayoutSchedule({
+      amountBasis: "real",
+      amountMinor: 150_000,
+      assumedContributionThrough: "2030-10-31",
+      cadence: "monthly",
+      label: "Pensión pública",
+      nature: "passive",
+      ...DECLARED,
+      startISO: "2030-11-01",
+    });
+    return { id: income.id, store };
+  }
+
+  test("a new official simulation changes the amount in place, keeping the declaration", async () => {
+    const { id, store } = await withPension();
+
+    const digest = await redirectOf(() =>
+      updateDeclaration(
+        form({
+          incomeId: id,
+          saveRecurrence: "1",
+          label: "Pensión pública",
+          amount: "1.620,40",
+          cadence: "monthly",
+          startISO: "2030-11-01",
+          endISO: "",
+          provenance: "official_simulation",
+          provenanceAsOf: "2026-10-01",
+        }),
+        store,
+      ),
+    );
+
+    expect(digest).toContain("ok=income_updated");
+    const incomes = await store.payouts.readPayoutSchedules();
+    expect(incomes).toHaveLength(1);
+    expect(incomes[0]).toMatchObject({
+      id,
+      holdingId: null,
+      amountMinor: 162_040,
+      startISO: "2030-11-01",
+      endISO: null,
+      provenanceAsOf: "2026-10-01",
+      // What the form did not carry is left as declared.
+      nature: "passive",
+      amountBasis: "real",
+      assumedContributionThrough: "2030-10-31",
+    });
+  });
+
+  test("a life annuity that ended is ended on its last payment, not deleted", async () => {
+    const { id, store } = await withPension();
+    await store.payouts.updatePayoutSchedule(id, { startISO: "2019-03-01" });
+
+    await redirectOf(() =>
+      updateDeclaration(
+        form({
+          incomeId: id,
+          saveRecurrence: "1",
+          label: "Renta vitalicia",
+          amount: "1.500,00",
+          cadence: "quarterly",
+          startISO: "2019-03-01",
+          endISO: "2026-09-01",
+          ...DECLARED,
+        }),
+        store,
+      ),
+    );
+
+    expect((await store.payouts.readPayoutSchedules())[0]).toMatchObject({
+      label: "Renta vitalicia",
+      cadence: "quarterly",
+      startISO: "2019-03-01",
+      endISO: "2026-09-01",
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-08-18",
+    });
+  });
+
+  test("an emptied end reactivates it", async () => {
+    const { id, store } = await withPension();
+    await store.payouts.updatePayoutSchedule(id, { endISO: "2040-01-01" });
+
+    await redirectOf(() =>
+      updateDeclaration(
+        form({
+          incomeId: id,
+          saveRecurrence: "1",
+          label: "Pensión pública",
+          amount: "1.500,00",
+          cadence: "monthly",
+          startISO: "2030-11-01",
+          endISO: "",
+          ...DECLARED,
+        }),
+        store,
+      ),
+    );
+
+    expect((await store.payouts.readPayoutSchedules())[0]?.endISO).toBeNull();
+  });
+
+  test("an invalid recurrence is refused on the door's own terms, nothing written", async () => {
+    const { id, store } = await withPension();
+
+    const state = await updateDeclaration(
+      form({
+        incomeId: id,
+        saveRecurrence: "1",
+        label: "Pensión pública",
+        amount: "1.500,00",
+        cadence: "monthly",
+        startISO: "2030-11-01",
+        endISO: "2030-01-01",
+        ...DECLARED,
+        inlineError: "1",
+      }),
+      store,
+    );
+
+    expect(state).toEqual({
+      ok: false,
+      error: "La fecha de fin no puede ser anterior al inicio.",
+    });
+    expect((await store.payouts.readPayoutSchedules())[0]?.endISO).toBeNull();
+  });
+
+  test("the recurrence of an income an asset generates is refused: it is changed on its ficha", async () => {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+    const rent = await store.payouts.createPayoutSchedule({
+      amountMinor: 90_000,
+      cadence: "monthly",
+      holdingId: HOLDING,
+      label: "Alquiler",
+      startISO: "2025-01-01",
+    });
+
+    const state = await updateDeclaration(
+      form({
+        incomeId: rent.id,
+        saveRecurrence: "1",
+        label: "Alquiler",
+        amount: "950,00",
+        cadence: "monthly",
+        startISO: "2025-01-01",
+        endISO: "",
+        ...DECLARED,
+        inlineError: "1",
+      }),
+      store,
+    );
+
+    expect(state).toMatchObject({ ok: false });
+    expect((await store.payouts.readPayoutSchedules())[0]).toMatchObject({
+      amountMinor: 90_000,
+      provenance: null,
+    });
+  });
+
+  test("the declaration of an income an asset generates is still corrected from Rentas", async () => {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+    const rent = await store.payouts.createPayoutSchedule({
+      amountMinor: 90_000,
+      cadence: "monthly",
+      holdingId: HOLDING,
+      label: "Alquiler",
+      startISO: "2025-01-01",
+    });
+
+    await redirectOf(() =>
+      updateDeclaration(
+        form({ incomeId: rent.id, nature: "passive", ...DECLARED }),
+        store,
+      ),
+    );
+
+    expect((await store.payouts.readPayoutSchedules())[0]).toMatchObject({
+      amountMinor: 90_000,
+      holdingId: HOLDING,
+      nature: "passive",
+      provenance: "official_simulation",
+    });
+  });
+});
+
 describe("deleteIncomeAction", () => {
   test("deletes the income from the list", async () => {
     const store = await createInMemoryStore();

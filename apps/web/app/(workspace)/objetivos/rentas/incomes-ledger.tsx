@@ -163,7 +163,13 @@ export function IncomesLedger({
                   ) : (
                     <div className="incomeRowActions">
                       <details className="incomeCorrect" suppressHydrationWarning>
-                        <summary>Corregir la declaración</summary>
+                        {/* Sin activo se corrige entera (#1813): terminarla es poner
+                            su «Hasta», así que el botón lo nombra. */}
+                        <summary>
+                          {income.holdingId === null
+                            ? "Corregir o terminar"
+                            : "Corregir la declaración"}
+                        </summary>
                         <IncomeDeclarationEditor
                           action={updateAction}
                           applyOptimistic={applyOptimistic}

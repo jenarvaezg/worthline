@@ -28,11 +28,15 @@ import type {
   IncomeNature,
   IncomeProvenance,
 } from "@worthline/domain";
+import { formatMoneyInput } from "@worthline/domain";
 import {
   buildPayoutScheduleResult,
   isValidISODate,
   type ParsedPayoutSchedule,
+  type ParsedRecurrenceCore,
   type PayoutScheduleFields,
+  parseRecurrenceCore,
+  type RecurrenceCoreFields,
 } from "./income-recurrence";
 
 /** The three states of a declaration nobody has to make: «sin declarar» is `""`. */
@@ -117,6 +121,34 @@ export type IncomeDeclarationResult =
   | { ok: true; declaration: IncomeDeclarationPatch }
   | { ok: false; error: string };
 
+/**
+ * The recurrence of an income with no asset, as its correction rewrites it (#1813):
+ * every field, because the form carries all of them. An emptied end is «sin fin» —
+ * how an ended income is reactivated — so it is written as `null`, not left out.
+ */
+export type IncomeRecurrencePatch = Omit<ParsedRecurrenceCore, "endISO"> & {
+  endISO: string | null;
+};
+
+/** A correction, flat as the row it lands on: the declaration, and the recurrence if sent. */
+export type IncomeCorrection = IncomeDeclarationPatch & Partial<IncomeRecurrencePatch>;
+
+/** What a correction form carried: the declaration it sent, and its recurrence if any. */
+export interface IncomeCorrectionFields {
+  declaration: Partial<IncomeDeclarationFields>;
+  /** Null when the form did not carry the recurrence — a linked income's correction. */
+  recurrence: RecurrenceCoreFields | null;
+}
+
+export type IncomeCorrectionResult =
+  | {
+      ok: true;
+      declaration: IncomeDeclarationPatch;
+      /** Null when the correction leaves the recurrence as it is. */
+      recurrence: IncomeRecurrencePatch | null;
+    }
+  | { ok: false; error: string };
+
 export type IncomeResult =
   | { ok: true; income: ParsedIncome }
   | { ok: false; error: string };
@@ -160,6 +192,51 @@ export function incomeDeclarationFieldsFromForm(
     return typeof raw === "string" ? [[name, raw] as const] : [];
   });
   return Object.fromEntries(present);
+}
+
+const RECURRENCE_FIELDS = [
+  "label",
+  "amount",
+  "cadence",
+  "startISO",
+  "endISO",
+] as const satisfies ReadonlyArray<keyof RecurrenceCoreFields>;
+
+/**
+ * Lift a CORRECTION off its FormData. The declaration is lifted field by field (see
+ * {@link incomeDeclarationFieldsFromForm}); the recurrence travels whole, and only
+ * when the form marks it with `saveRecurrence=1` — the marker the ficha's costs and
+ * lease rows already use — so an emptied «Hasta» reads as «sin fin» instead of
+ * being indistinguishable from a form that never showed it (#1813).
+ */
+export function incomeCorrectionFieldsFromForm(
+  formData: FormData,
+): IncomeCorrectionFields {
+  const declaration = incomeDeclarationFieldsFromForm(formData);
+  if (formData.get("saveRecurrence") !== "1") {
+    return { declaration, recurrence: null };
+  }
+  const entries = RECURRENCE_FIELDS.map((name) => {
+    const raw = formData.get(name);
+    return [name, typeof raw === "string" ? raw : ""] as const;
+  });
+  return {
+    declaration,
+    recurrence: Object.fromEntries(entries) as unknown as RecurrenceCoreFields,
+  };
+}
+
+/** An income's stored recurrence as the form's field values — the correction's prefill. */
+export function recurrenceValuesOf(
+  income: Pick<Income, "label" | "amountMinor" | "cadence" | "startISO" | "endISO">,
+): RecurrenceCoreFields {
+  return {
+    label: income.label,
+    amount: formatMoneyInput(income.amountMinor),
+    cadence: income.cadence,
+    startISO: income.startISO,
+    endISO: income.endISO ?? "",
+  };
 }
 
 /** An income's stored declaration as the form's field values — the prefill. */
@@ -253,6 +330,27 @@ export function parseIncomeDeclaration(
         : { assumedContributionThrough: condition || null }),
     },
   };
+}
+
+/**
+ * Parse a correction of an existing income: its recurrence first, when the form
+ * carried it, then the declaration proper — the door's order, so the first problem
+ * the person meets is the same one declaring would have shown. The provenance is
+ * required either way, as it is at the door.
+ */
+export function parseIncomeCorrection(
+  fields: IncomeCorrectionFields,
+  todayISO: string,
+): IncomeCorrectionResult {
+  let recurrence: IncomeRecurrencePatch | null = null;
+  if (fields.recurrence !== null) {
+    const parsed = parseRecurrenceCore(fields.recurrence);
+    if (!parsed.ok) return parsed;
+    recurrence = { ...parsed.core, endISO: parsed.core.endISO ?? null };
+  }
+  const declaration = parseIncomeDeclaration(fields.declaration, todayISO);
+  if (!declaration.ok) return declaration;
+  return { ok: true, declaration: declaration.declaration, recurrence };
 }
 
 /**

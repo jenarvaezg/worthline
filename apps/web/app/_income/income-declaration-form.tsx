@@ -28,7 +28,7 @@ import type { Income } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
 import { IncomeDeclarationInputs } from "./income-declaration-inputs";
 import { IncomeDeclarationSummary } from "./income-declaration-summary";
-import { PAYOUT_CADENCE_LABELS } from "./income-recurrence";
+import { IncomeRecurrenceInputs } from "./income-recurrence-inputs";
 import { LeaseTermFields } from "./lease-term-fields";
 import {
   applyIncomeMutations,
@@ -89,7 +89,6 @@ export function IncomeDeclarationForm({
   const inFlight = useRef(false);
   const error = rejection ?? initialError;
   const linked = holdingId !== null;
-  const value = (name: string) => initialValues[name] ?? "";
   const named = (name: string) =>
     accessibleSuffix === undefined ? {} : { "aria-label": `${name}${accessibleSuffix}` };
 
@@ -129,57 +128,18 @@ export function IncomeDeclarationForm({
         </p>
       ) : null}
       <div className="cobrosFormGrid">
-        <label>
-          Concepto
-          <input
-            {...named("Concepto")}
-            aria-required="true"
-            autoComplete="off"
-            defaultValue={value("label")}
-            name="label"
-            placeholder={linked ? "Alquiler, cupón…" : "Pensión, nómina…"}
-          />
-        </label>
-        <label>
-          Importe
-          <input
-            {...named("Importe")}
-            aria-required="true"
-            defaultValue={value("amount")}
-            inputMode="decimal"
-            name="amount"
-            placeholder="0,00"
-          />
-        </label>
-        <label>
-          Cadencia
-          <select defaultValue={value("cadence") || "monthly"} name="cadence">
-            {PAYOUT_CADENCE_LABELS.map(({ cadence, label }) => (
-              <option key={cadence} value={cadence}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Desde
-          <input defaultValue={value("startISO") || today} name="startISO" type="date" />
-        </label>
-        <label>
-          Hasta (opcional)
-          <input
-            {...named("Fecha de fin")}
-            defaultValue={value("endISO")}
-            name="endISO"
-            type="date"
-          />
-        </label>
+        <IncomeRecurrenceInputs
+          accessibleSuffix={accessibleSuffix}
+          linked={linked}
+          today={today}
+          values={initialValues}
+        />
         {linked ? (
           <label>
             Gastos (opcional)
             <input
               {...named("Gastos")}
-              defaultValue={value("expenses")}
+              defaultValue={initialValues.expenses ?? ""}
               inputMode="decimal"
               name="expenses"
               placeholder="misma cadencia"

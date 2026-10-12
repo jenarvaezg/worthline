@@ -171,6 +171,59 @@ describe("planDeclarationUpdate", () => {
     });
   });
 
+  // #1813: corregir una renta sin activo puede terminarla o cambiar su importe, y la
+  // fila tiene que enseñarlo antes de que conteste el servidor.
+  test("the recurrence of an income with no asset folds into the row, an emptied end as none", () => {
+    const plan = planDeclarationUpdate({
+      formData: form({
+        incomeId: "inc_1",
+        saveRecurrence: "1",
+        label: "Renta vitalicia",
+        amount: "1.620,40",
+        cadence: "quarterly",
+        startISO: "2019-03-01",
+        endISO: "",
+        provenance: "official_simulation",
+        provenanceAsOf: "2026-10-01",
+      }),
+      today: TODAY,
+    });
+    expect(plan.kind).toBe("optimistic");
+
+    const [row] = applyIncomeMutations(
+      [income({ endISO: "2026-09-01" })],
+      plan.kind === "optimistic" ? [plan.mutation] : [],
+    );
+    expect(row).toMatchObject({
+      label: "Renta vitalicia",
+      amountMinor: 162_040,
+      cadence: "quarterly",
+      startISO: "2019-03-01",
+      endISO: null,
+      provenance: "official_simulation",
+      provenanceAsOf: "2026-10-01",
+    });
+  });
+
+  test("an invalid recurrence is refused before any round-trip, with the door's words", () => {
+    expect(
+      planDeclarationUpdate({
+        formData: form({
+          incomeId: "inc_1",
+          saveRecurrence: "1",
+          label: "Pensión pública",
+          amount: "0",
+          cadence: "monthly",
+          startISO: "2030-11-01",
+          endISO: "",
+          provenance: "official_simulation",
+          provenanceAsOf: "2026-10-01",
+        }),
+        today: TODAY,
+      }),
+    ).toEqual({ kind: "reject", error: "Introduce un importe mayor que cero." });
+  });
+
   test("the correction is refused on the same terms as the declaration", () => {
     expect(
       planDeclarationUpdate({
