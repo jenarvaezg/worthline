@@ -24,6 +24,11 @@ describe("gate-runner guard: what the agent's own procedure needs", () => {
     "bunx vitest run --root apps/web --config vitest.config.ts app/x.test.ts",
     "bun run verify 2>/dev/null",
     `cd ${REPO}/.claude/worktrees/x && bun run verify > "$LOG" 2>&1`,
+    "rm /tmp/gate-verify.abc",
+    'rm -f "$LOG" 2>/dev/null',
+    "cp /tmp/gate-verify.abc /tmp/gate-verify.keep",
+    String.raw`perl -pi -e 's/\e\][^\a\e]*(?:\a|\e\\)//g; s/\e\[[0-9;?]*[A-Za-z]//g' "$LOG"`,
+    "perl -ne 'print if /TODO/' apps/web/app/x.ts",
   ])("allows %s", (command) => {
     expect(denyReason(command, ROOTS)).toBeNull();
   });
@@ -52,6 +57,14 @@ describe("gate-runner guard: what changes state", () => {
     `echo x > ${REPO}/packages/domain/src/x.ts`,
     `cd ${REPO} && bun run verify > gate.log 2>&1`,
     "bun run verify | tee apps/web/gate.log",
+    "rm -rf apps/web",
+    `rm -f ${REPO}/probe.txt`,
+    "mv packages/domain/src/x.ts /tmp/",
+    "cp /tmp/x.ts apps/web/app/x.ts",
+    "cd /tmp && /bin/rm -rf -- apps",
+    "perl -pi -e 's/a/b/' apps/web/app/x.ts",
+    "perl -i.bak -pe 's/a/b/' apps/web/app/x.ts",
+    "perl -p -i -e 's/a/b/' README.md",
   ])("denies %s", (command) => {
     expect(denyReason(command, ROOTS)).not.toBeNull();
   });
