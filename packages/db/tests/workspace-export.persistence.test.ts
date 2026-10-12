@@ -57,6 +57,8 @@ async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
     ],
     priceProvider: "stooq",
     providerSymbol: "VWCE.DE",
+    // The caller's instant (ADR 0024): the store dates the price with nothing else.
+    savedAt: "2026-06-20T08:00:00.000Z",
     unitSymbol: "VWCE",
   });
   await store.operations.recordOperation({
@@ -284,7 +286,7 @@ describe("exportWorkspace", () => {
     expect(inv.investment!.priceProvider).toBe("stooq");
     expect(inv.investment!.providerSymbol).toBe("VWCE.DE");
     expect(inv.investment!.manualPricePerUnit).toBe("105.5");
-    expect(typeof inv.investment!.manualPriceSetAt).toBe("string");
+    expect(inv.investment!.manualPriceSetAt).toBe("2026-06-20T08:00:00.000Z");
 
     // Liabilities: live only, associatedAssetId carried when set.
     expect(doc.liabilities.map((l) => l.id)).toEqual(["l_mort"]);
