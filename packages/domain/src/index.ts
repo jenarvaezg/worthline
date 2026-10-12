@@ -854,7 +854,9 @@ export type {
   PositionWarningCode,
 } from "./investment-types";
 export type {
+  CachedQuoteProvenance,
   DeriveInvestmentValuationInput,
+  InvestmentPriceOrigin,
   InvestmentPriceSource,
   InvestmentValuation,
   SelectedInvestmentPrice,

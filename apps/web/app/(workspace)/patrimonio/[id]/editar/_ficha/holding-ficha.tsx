@@ -38,6 +38,9 @@ import {
 } from "react";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import {
+  claimFichaOpen,
+  FICHA_OPEN_EVENT,
+  type FichaOpenRequest,
   type FichaTarget,
   type FichaView,
   type FichaViewSpec,
@@ -141,6 +144,34 @@ export function HoldingFicha({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openKey, show]);
+
+  // A link to where something is fixed — «Indicar símbolo» beside the price, a
+  // warning's «Ver operaciones» in the band (#1828) — asks for a tab and a field:
+  // the tab switches in place and the cursor lands on the field (§8). Declared
+  // after the panel's focus effect so, when the ask also closes a panel, the field
+  // keeps the focus rather than the panel's opener.
+  const [focusAsk, setFocusAsk] = useState<Required<FichaOpenRequest> | null>(null);
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const request = (event as CustomEvent<FichaOpenRequest>).detail;
+      const change = claimFichaOpen(request, spec);
+      if (change === null) return;
+      event.preventDefault();
+      setFocusAsk(request.field ? { field: request.field, tab: change.tab } : null);
+      show(change);
+    }
+    window.addEventListener(FICHA_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(FICHA_OPEN_EVENT, onOpen);
+  }, [show, spec]);
+  const activeTabKey = activeTab?.key;
+  useEffect(() => {
+    // The asked tab is not on show yet: the render that shows it runs this again.
+    if (focusAsk === null || focusAsk.tab !== activeTabKey) return;
+    setFocusAsk(null);
+    rootRef.current
+      ?.querySelector<HTMLElement>(`.fichaTabBody [name="${focusAsk.field}"]`)
+      ?.focus();
+  }, [activeTabKey, focusAsk]);
 
   const panelTop = usePanelTop(openKey !== null);
 

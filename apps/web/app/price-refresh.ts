@@ -13,7 +13,10 @@
  * the wording is unit-testable.
  */
 
-import type { PriceSource } from "@worthline/domain";
+// The leaf date formatter, not the domain barrel's: the board row that imports this
+// module is a client island, and string slicing is not worth the barrel.
+import { formatIsoDayEs } from "@web/asistente/iso-day-es";
+import type { InvestmentPriceOrigin, PriceSource } from "@worthline/domain";
 
 /**
  * Short es-ES display label for a recorded price source. Investment prices come
@@ -88,4 +91,22 @@ export function detailRefreshCaption(
 ): string | null {
   if (!fetchedAtIso || !source) return null;
   return `Precio actualizado el ${absoluteRefreshDate(fetchedAtIso)} · ${priceSourceLabel(source)}`;
+}
+
+/**
+ * The line under a holding's price on its ficha (#1828): where the price comes
+ * from and of when — «cotización Yahoo · 11/10/2026», «precio a mano · 03/10/2026»,
+ * «sin precio: se valora a lo que costó». It only words the origin the valuation
+ * engine handed back with the price; it never infers one. A day nobody can vouch
+ * for is left out rather than guessed.
+ */
+export function priceOriginCaption(origin: InvestmentPriceOrigin): string {
+  if (origin.kind === "cost") return "sin precio: se valora a lo que costó";
+  const what =
+    origin.kind === "manual"
+      ? "precio a mano"
+      : origin.provider === null || origin.provider === "manual"
+        ? "cotización guardada"
+        : `cotización ${priceSourceLabel(origin.provider)}`;
+  return origin.asOf === null ? what : `${what} · ${formatIsoDayEs(origin.asOf)}`;
 }

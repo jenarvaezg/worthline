@@ -139,6 +139,39 @@ export function writeFichaView(
 }
 
 /**
+ * «Datos del activo»: the tab every tabbed ficha ends with — «Lo básico», the
+ * availability, the Zona de peligro. Named here because a family links INTO it
+ * («Indicar símbolo», #1828) while the page is the one that appends it.
+ */
+export const FICHA_DATOS_TAB = "datos";
+
+/**
+ * The ask a link to a fix sends the ficha (#1828): show this tab, and focus this
+ * field in it. A cancelable window event — `FichaTabLink` dispatches it, the island
+ * claims it with `preventDefault` — so a link outside the island (the warnings
+ * band) can ask too.
+ */
+export const FICHA_OPEN_EVENT = "worthline:ficha-open";
+
+/** What a link to a fix asks for: a tab, and the `name` of the field to focus in it. */
+export interface FichaOpenRequest {
+  tab: string;
+  field?: string;
+}
+
+/**
+ * The view change a link to a fix asks for, or null when this ficha has no such
+ * tab — then the click is not claimed and the link navigates. Showing the tab
+ * closes the open panel: the fix is on the tab, not behind a sheet.
+ */
+export function claimFichaOpen(
+  request: FichaOpenRequest,
+  spec: FichaViewSpec,
+): FichaView | null {
+  return spec.tabs.includes(request.tab) ? { action: null, tab: request.tab } : null;
+}
+
+/**
  * The ficha open on `tab`: a tab's real `href` (it works with JS off and from the
  * keyboard), and the `currentUrl` a form posts so its terminal lands back on the
  * tab where its result shows. The default tab is the bare URL.
