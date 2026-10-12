@@ -13,6 +13,10 @@
  * And the ledger (#1827): compact rows with their importe, the 10 latest and the rest
  * unfolded in place without a reload, and at 390 px two lines per apunte that never
  * scroll sideways.
+ *
+ * And the header is honest about its price (#1828): it says where the price comes
+ * from and of when, and the warning about a missing symbol sits beside it with its
+ * two ways out — fix it in «Datos del activo», or say it is quoted by hand.
  */
 
 import {
@@ -22,6 +26,7 @@ import {
   openFichaAction,
   openFichaTab,
   test,
+  waitForHydration,
 } from "./fixtures";
 
 /** A fund with a manual price (no network) and one buy, so every action is offered. */
@@ -146,6 +151,52 @@ test("the links that already existed land where they promised", async ({ page })
   await expect(
     page.getByRole("form", { name: "Traspasar a otra inversión" }),
   ).toBeVisible();
+});
+
+test("the price says where it comes from, and «Indicar símbolo» lands on the field (#1828)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Origen E2E");
+  const state = page.getByRole("region", { name: "Estado del activo" });
+
+  // The alta's hand-set price, dated the day it was set — today.
+  const [year, month, day] = new Date().toISOString().slice(0, 10).split("-");
+  await expect(state).toContainText("10 a 100 €");
+  await expect(state).toContainText(`precio a mano · ${day}/${month}/${year}`);
+
+  // No symbol: the warning sits beside the price, and the band does not repeat it.
+  await expect(state).toContainText("Sin cotización automática.");
+  await expect(page.getByRole("alert", { name: "Avisos" })).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const fix = state.getByRole("link", { name: "Indicar símbolo" });
+  await waitForHydration(fix);
+  await fix.click();
+
+  // «Datos del activo», in place, with the cursor on the symbol field (§8).
+  await expect(page).toHaveURL(/pesta%C3%B1a=datos/);
+  await expect(page.getByRole("textbox", { name: "Símbolo de precio" })).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+});
+
+test("«Cotiza a mano» is today's «Es intencional»: the price stops asking for a symbol", async ({
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo A Mano E2E");
+  const state = page.getByRole("region", { name: "Estado del activo" });
+
+  await state.getByRole("button", { name: "Cotiza a mano" }).click();
+  await expect(page).toHaveURL(/ok=warning_acknowledged/);
+
+  await page.goto(ficha);
+  await expect(state).toContainText("precio a mano");
+  await expect(state).not.toContainText("Sin cotización automática");
 });
 
 test("a cobro added from the panel lands on the Cobros tab", async ({ page }) => {

@@ -7232,6 +7232,47 @@ td.rowActions > * {
   }
 }
 
+/* ── La cabecera honesta (#1828) ────────────────────────────────────────────
+   Bajo el precio, de dónde sale y de cuándo, con el pie de cifra de siempre
+   (`.priceRefreshCaption`). El aviso del símbolo va justo debajo, en el oro de
+   aviso, y sus dos salidas —arreglarlo o declararlo intencional— son controles de
+   texto: la receta de `.lotRow button` y `.assistantRowAside button`, en el azul
+   de interacción y las dos iguales al pasar por encima. La hoja destacada no se
+   llena de botones por un aviso. */
+.fichaPriceNotice {
+  align-items: baseline;
+  color: var(--gold);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 650;
+  gap: 2px 6px;
+}
+
+.fichaPriceNotice form {
+  display: inline;
+  margin: 0;
+}
+
+.fichaPriceNotice a,
+.fichaPriceNotice button {
+  background: transparent;
+  border: 0;
+  color: var(--blue);
+  font-size: inherit;
+  font-weight: inherit;
+  min-height: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fichaPriceNotice a:hover,
+.fichaPriceNotice button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ink);
+}
+
 .infoNote {
   font-size: 0.875rem;
   color: var(--muted);

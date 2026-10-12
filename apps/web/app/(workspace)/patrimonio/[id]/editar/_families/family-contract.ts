@@ -38,6 +38,7 @@ import type {
   ManualAsset,
   ValuationMethod,
   ValueOnlyOpening,
+  WarningOverride,
 } from "@worthline/domain";
 import type { ReactNode } from "react";
 import type { HoldingFamily } from "./holding-family";
@@ -64,6 +65,11 @@ export interface FichaContext {
   checkedAt: string;
   /** `?archivar=1`: the Papelera's «Lo traspasé a…» exit came back here (#1549). */
   archiveOriginAfterTransfer: boolean;
+  /**
+   * The «Es intencional» acknowledgements, already read for the band: a family
+   * that prints a warning beside its figure (#1828) asks the same list.
+   */
+  overrides: readonly WarningOverride[];
 }
 
 /**
@@ -166,6 +172,15 @@ export interface FichaFigure {
   detail?: ReactNode;
 }
 
+/** Where a warning is fixed on the ficha: a tab, and the field in it to focus (#1828). */
+export interface FichaFix {
+  tab: string;
+  /** The `name` of the field to focus once the tab is on show. */
+  field?: string;
+  /** The link's words: «Ver operaciones». */
+  label: string;
+}
+
 /** What a tabbed ficha carries — the common pieces render the rest (#1826). */
 export interface FichaLayout {
   /** The instrument, in words, under the name. */
@@ -179,6 +194,14 @@ export interface FichaLayout {
   tabs: readonly FichaTab[];
   /** By `formId`: the tab or panel whose form prints a refusal that came back. */
   errorTargets: Readonly<Record<string, FichaTarget>>;
+  /**
+   * The warning codes this ficha prints beside the figure they are about (#1828) —
+   * the band above the header leaves them out. Read from the same list the band
+   * reads (`holdingWarnings`), so a warning is in exactly one place.
+   */
+  inlineWarnings?: readonly string[];
+  /** By warning code: where the band links for that warning to be fixed (#1828). */
+  warningFixes?: Readonly<Record<string, FichaFix>>;
   /** Client state its tabs and panels share, wrapped around the whole ficha. */
   wrap?: (ficha: ReactNode) => ReactNode;
 }

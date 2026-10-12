@@ -489,3 +489,139 @@ describe("deriveInvestmentValuation — derived value", () => {
     expect(result.valueMinor).toBe(0); // 0 units after oversell clamp
   });
 });
+
+// ---------------------------------------------------------------------------
+// deriveInvestmentValuation — where the price comes from, and of when (#1828)
+// ---------------------------------------------------------------------------
+
+describe("deriveInvestmentValuation — the price says where it comes from and of when (#1828)", () => {
+  const ops = [buyOp("10", "100", "op1")];
+  const base = {
+    assetId: "asset_inv",
+    currency: "EUR",
+    operations: ops,
+  };
+  const yahooQuote = {
+    fetchedAt: "2026-10-12T06:00:00.000Z",
+    freshnessState: "fresh" as const,
+    priceDate: "2026-10-11",
+    source: "yahoo" as const,
+  };
+
+  test("a cached quote is the provider's, dated by the market day it closed", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "118.75",
+      cachedQuote: yahooQuote,
+      manualPrice: undefined,
+    });
+
+    expect(result.valueMinor).toBe(1_187_50);
+    expect(result.priceOrigin).toEqual({
+      asOf: "2026-10-11",
+      kind: "quote",
+      provider: "yahoo",
+    });
+  });
+
+  test("a fresh quote with no market day is dated by the fetch that brought it", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "118.75",
+      cachedQuote: {
+        fetchedAt: "2026-10-12T06:00:00.000Z",
+        freshnessState: "fresh",
+        source: "coingecko",
+      },
+      manualPrice: undefined,
+    });
+
+    expect(result.priceOrigin).toEqual({
+      asOf: "2026-10-12",
+      kind: "quote",
+      provider: "coingecko",
+    });
+  });
+
+  test("a quote kept after a failed refresh claims no date its fetch did not bring", () => {
+    // The pool keeps the last good price and stamps the FAILED attempt's time on
+    // the row: that time is when it tried, not when the price is from.
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "118.75",
+      cachedQuote: {
+        fetchedAt: "2026-10-12T06:00:00.000Z",
+        freshnessState: "stale",
+        source: "yahoo",
+      },
+      manualPrice: undefined,
+    });
+
+    expect(result.priceOrigin).toEqual({ asOf: null, kind: "quote", provider: "yahoo" });
+  });
+
+  test("a hand-set price is said as such, dated by when it was set", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: undefined,
+      manualPrice: "118.75",
+      manualPricedAt: "2026-10-03T09:15:00.000Z",
+    });
+
+    expect(result.valueMinor).toBe(1_187_50);
+    expect(result.priceOrigin).toEqual({ asOf: "2026-10-03", kind: "manual" });
+  });
+
+  test("a hand-set price that equals the last operation's is still a hand-set price", () => {
+    // The trap the prototype fell in (#1731): comparing figures afterwards called
+    // this «precio de la última operación». The live rule never reads the ledger's
+    // prices (ADR 0006), so the origin is the one the rule picked.
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: undefined,
+      manualPrice: "100",
+    });
+
+    expect(result.priceOrigin).toEqual({ asOf: null, kind: "manual" });
+  });
+
+  test("a quote beats a hand-set price, and the origin follows the price it picked", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "118.75",
+      cachedQuote: yahooQuote,
+      manualPrice: "90",
+      manualPricedAt: "2026-10-03T09:15:00.000Z",
+    });
+
+    expect(result.pricePerUnit).toBe("118.75");
+    expect(result.priceOrigin.kind).toBe("quote");
+  });
+
+  test("with no price the value is what it cost, and the origin says so", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: undefined,
+      manualPrice: undefined,
+    });
+
+    expect(result.valueMinor).toBe(1_000_00);
+    expect(result.priceOrigin).toEqual({ kind: "cost" });
+  });
+
+  test("a failed fetch's zero is not a quote: the provider is not credited with it (#1330)", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "0",
+      cachedQuote: {
+        fetchedAt: "2026-10-12T06:00:00.000Z",
+        freshnessState: "failed",
+        source: "yahoo",
+      },
+      manualPrice: undefined,
+    });
+
+    expect(result.valueMinor).toBe(1_000_00);
+    expect(result.priceOrigin).toEqual({ kind: "cost" });
+  });
+});

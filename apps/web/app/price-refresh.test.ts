@@ -1,9 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  absoluteRefreshDate,
   boardRefreshHover,
-  detailRefreshCaption,
+  priceOriginCaption,
   priceSourceLabel,
   relativeRefreshDate,
 } from "./price-refresh";
@@ -45,12 +44,6 @@ describe("relativeRefreshDate", () => {
   });
 });
 
-describe("absoluteRefreshDate", () => {
-  test("renders an es-ES day-month-year date", () => {
-    expect(absoluteRefreshDate("2026-06-08T09:30:00.000Z")).toBe("8 jun 2026");
-  });
-});
-
 describe("boardRefreshHover", () => {
   const now = "2026-06-10T12:00:00.000Z";
 
@@ -67,15 +60,35 @@ describe("boardRefreshHover", () => {
   });
 });
 
-describe("detailRefreshCaption", () => {
-  test("builds the absolute caption with the source label", () => {
-    expect(detailRefreshCaption("2026-06-08T09:30:00.000Z", "yahoo")).toBe(
-      "Precio actualizado el 8 jun 2026 · Yahoo",
+describe("priceOriginCaption (#1828)", () => {
+  test("a provider's quote, with the day it is from", () => {
+    expect(
+      priceOriginCaption({ asOf: "2026-10-11", kind: "quote", provider: "yahoo" }),
+    ).toBe("cotización Yahoo · 11/10/2026");
+  });
+
+  test("a hand-set price, with the day it was set", () => {
+    expect(priceOriginCaption({ asOf: "2026-10-03", kind: "manual" })).toBe(
+      "precio a mano · 03/10/2026",
     );
   });
 
-  test("is null when metadata is missing", () => {
-    expect(detailRefreshCaption(null, "yahoo")).toBeNull();
-    expect(detailRefreshCaption("2026-06-08T09:30:00.000Z", null)).toBeNull();
+  test("no day it can vouch for, no day printed", () => {
+    expect(priceOriginCaption({ asOf: null, kind: "quote", provider: "finect" })).toBe(
+      "cotización Finect",
+    );
+    expect(priceOriginCaption({ asOf: null, kind: "manual" })).toBe("precio a mano");
+  });
+
+  test("a quote nobody can name the provider of is still a stored quote", () => {
+    expect(
+      priceOriginCaption({ asOf: "2026-10-11", kind: "quote", provider: null }),
+    ).toBe("cotización guardada · 11/10/2026");
+  });
+
+  test("no price at all: valued at what it cost", () => {
+    expect(priceOriginCaption({ kind: "cost" })).toBe(
+      "sin precio: se valora a lo que costó",
+    );
   });
 });
