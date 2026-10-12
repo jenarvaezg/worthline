@@ -18,8 +18,8 @@ function op(overrides: Partial<InvestmentOperation> = {}): InvestmentOperation {
 }
 
 describe("readOperationPrice", () => {
-  test("a euro operation reads as one figure, with nothing to add", () => {
-    expect(readOperationPrice(op(), false)).toEqual({ capture: null, price: "6,8" });
+  test("a euro operation reads as one figure with its mark, nothing to add", () => {
+    expect(readOperationPrice(op(), false)).toEqual({ capture: null, price: "6,8 €" });
   });
 
   test("a converted operation shows the euros AND what the bank stated", () => {
@@ -35,7 +35,7 @@ describe("readOperationPrice", () => {
       false,
     );
 
-    expect(reading).toEqual({ capture: "8 USD", price: "6,8" });
+    expect(reading).toEqual({ capture: "8 USD", price: "6,8 €" });
   });
 
   test("an optimistic row still in its own currency says so instead of lying", () => {
@@ -70,13 +70,13 @@ describe("readOperationPrice", () => {
   test("a 20-decimal leftover reads at 8 dp with a comma, without migrating it (#1467)", () => {
     expect(
       readOperationPrice(op({ pricePerUnit: "52.09166666666666667" }), false),
-    ).toEqual({ capture: null, price: "52,09166667" });
+    ).toEqual({ capture: null, price: "52,09166667 €" });
   });
 
   test("a quoted price keeps its decimals and uses the es-ES comma", () => {
     expect(readOperationPrice(op({ pricePerUnit: "65.045" }), false)).toEqual({
       capture: null,
-      price: "65,045",
+      price: "65,045 €",
     });
   });
 
@@ -86,7 +86,7 @@ describe("readOperationPrice", () => {
       true,
     );
 
-    expect(reading.price).toBe("**,********");
+    expect(reading.price).toBe("**,******** €");
     expect(reading.price).not.toContain("52");
   });
 });
