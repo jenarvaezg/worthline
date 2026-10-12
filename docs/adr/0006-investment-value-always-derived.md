@@ -12,6 +12,25 @@
 > cost, and the row stays in the table for the freshness and salud-de-datos
 > surfaces, which need its state and `stale_reason`.
 
+> **Amended 2026-10-12 (#1828, #1731 review): the pick says where the price comes
+> from, and of when.** `deriveInvestmentValuation` returns `priceOrigin` out of the
+> SAME selection that valued the holding, so a surface that names the price quotes
+> the rule instead of re-deriving it afterwards. There are three origins and only
+> three: a provider's cached `quote` (its provider, and `asOf` — the market day the
+> provider reported, or the fetch day of a `fresh` row without one), a `manual`
+> price (`asOf` from `manual_priced_at`), or `cost` (no price: valued at what it
+> cost). «The last operation's price» is not an origin — the live rule never reads
+> the ledger's prices, so a hand-set price that equals the last buy is still a
+> hand-set price. `asOf` is the day the price is FROM and never anything else: a row
+> kept after a failed refresh carries the failed attempt's time, so without a market
+> day it has none. `refreshFailed` says the provider's last refresh failed (`stale`
+> or `failed` row) whichever origin was picked, so the ficha can say «no se pudo
+> actualizar» instead of a bare «cotización Yahoo». `manual_priced_at` is stamped
+> on the alta and on every price change since #1828; the v72 rung cleared every
+> earlier stamp (it was only ever the alta's), and the workspace document carries the
+> stamp as `manualPriceSetAt` so a restore cannot bring an old one back. A hand-set
+> price with no stamp says «precio a mano» with no day.
+
 Investment assets appeared in two tables at once: the ledger, where their
 `currentValue` was manually editable like any other asset, and the positions table,
 where their value derives from units held × unit price. Two write paths to one

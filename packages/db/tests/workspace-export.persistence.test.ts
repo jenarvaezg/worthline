@@ -284,7 +284,7 @@ describe("exportWorkspace", () => {
     expect(inv.investment!.priceProvider).toBe("stooq");
     expect(inv.investment!.providerSymbol).toBe("VWCE.DE");
     expect(inv.investment!.manualPricePerUnit).toBe("105.5");
-    expect(typeof inv.investment!.manualPricedAt).toBe("string");
+    expect(typeof inv.investment!.manualPriceSetAt).toBe("string");
 
     // Liabilities: live only, associatedAssetId carried when set.
     expect(doc.liabilities.map((l) => l.id)).toEqual(["l_mort"]);

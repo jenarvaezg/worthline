@@ -1,5 +1,5 @@
 import { multiplyToMinor } from "./decimal";
-import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentOperation, OperationKind } from "./investment-types";
 
 /**
  * The signed money one operation moved, and the one place the sign of a ledger kind
@@ -80,27 +80,31 @@ export function operationAmountMinor(
 }
 
 /**
+ * Which way each kind moves the holder's money — in (+1) or back out (−1) — and
+ * whether it is a half of a traspaso, which the `zero` policy leaves out. A fifth
+ * kind stops compiling here until it says both (`satisfies`).
+ */
+const INVESTED_FLOW = {
+  buy: { sign: 1, transfer: false },
+  sell: { sign: -1, transfer: false },
+  transfer_in: { sign: 1, transfer: true },
+  transfer_out: { sign: -1, transfer: true },
+} as const satisfies Record<OperationKind, { sign: 1 | -1; transfer: boolean }>;
+
+/**
  * Positive = money the holder put IN (a buy, and — under `flow` — the incoming half
  * of a traspaso). Negative = money that came back OUT (a sell, and the outgoing
  * half). Fees are capitalized on the way in and netted off on the way out, exactly
- * as they always were: the magnitude is {@link operationAmountMinor}.
+ * as they always were: the magnitude is {@link operationAmountMinor}, the sign is
+ * the kind's ({@link INVESTED_FLOW}).
  */
 export function signedInvestedMinor(
   operation: InvestmentOperation,
   transferPolicy: TransferFlowPolicy,
 ): number {
-  switch (operation.kind) {
-    case "buy":
-      return operationAmountMinor(operation);
-    case "sell":
-      return -operationAmountMinor(operation);
-    case "transfer_in":
-      return transferPolicy === "zero" ? 0 : operationAmountMinor(operation);
-    case "transfer_out":
-      return transferPolicy === "zero" ? 0 : -operationAmountMinor(operation);
-    default:
-      return unhandledOperationKind(operation.kind);
-  }
+  const flow = INVESTED_FLOW[operation.kind];
+  if (flow.transfer && transferPolicy === "zero") return 0;
+  return flow.sign * operationAmountMinor(operation);
 }
 
 /**

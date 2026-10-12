@@ -61,34 +61,73 @@ describe("boardRefreshHover", () => {
 });
 
 describe("priceOriginCaption (#1828)", () => {
+  const ok = { refreshFailed: false };
+
   test("a provider's quote, with the day it is from", () => {
     expect(
-      priceOriginCaption({ asOf: "2026-10-11", kind: "quote", provider: "yahoo" }),
+      priceOriginCaption({ ...ok, asOf: "2026-10-11", kind: "quote", provider: "yahoo" }),
     ).toBe("cotización Yahoo · 11/10/2026");
   });
 
   test("a hand-set price, with the day it was set", () => {
-    expect(priceOriginCaption({ asOf: "2026-10-03", kind: "manual" })).toBe(
+    expect(priceOriginCaption({ ...ok, asOf: "2026-10-03", kind: "manual" })).toBe(
       "precio a mano · 03/10/2026",
     );
   });
 
   test("no day it can vouch for, no day printed", () => {
-    expect(priceOriginCaption({ asOf: null, kind: "quote", provider: "finect" })).toBe(
-      "cotización Finect",
+    expect(
+      priceOriginCaption({ ...ok, asOf: null, kind: "quote", provider: "finect" }),
+    ).toBe("cotización Finect");
+    // A hand-set price saved before every change was stamped: «a mano», and no
+    // day invented or borrowed from anywhere else (#1731 review).
+    expect(priceOriginCaption({ ...ok, asOf: null, kind: "manual" })).toBe(
+      "precio a mano",
     );
-    expect(priceOriginCaption({ asOf: null, kind: "manual" })).toBe("precio a mano");
   });
 
   test("a quote nobody can name the provider of is still a stored quote", () => {
     expect(
-      priceOriginCaption({ asOf: "2026-10-11", kind: "quote", provider: null }),
+      priceOriginCaption({ ...ok, asOf: "2026-10-11", kind: "quote", provider: null }),
     ).toBe("cotización guardada · 11/10/2026");
   });
 
   test("no price at all: valued at what it cost", () => {
-    expect(priceOriginCaption({ kind: "cost" })).toBe(
+    expect(priceOriginCaption({ ...ok, kind: "cost" })).toBe(
       "sin precio: se valora a lo que costó",
+    );
+  });
+});
+
+describe("priceOriginCaption says a failed refresh (#1731 review)", () => {
+  const failed = { refreshFailed: true };
+
+  test("a quote kept from before the failure keeps its day, and says it is not up to date", () => {
+    expect(
+      priceOriginCaption({
+        ...failed,
+        asOf: "2026-10-08",
+        kind: "quote",
+        provider: "yahoo",
+      }),
+    ).toBe("cotización Yahoo · 08/10/2026 · no se pudo actualizar");
+  });
+
+  test("a kept quote with no day of its own is still said to be out of date, never dated by the attempt", () => {
+    expect(
+      priceOriginCaption({ ...failed, asOf: null, kind: "quote", provider: "yahoo" }),
+    ).toBe("cotización Yahoo · no se pudo actualizar");
+  });
+
+  test("a hand-set price standing in for the quote says the quote failed", () => {
+    expect(priceOriginCaption({ ...failed, asOf: "2026-10-03", kind: "manual" })).toBe(
+      "precio a mano · 03/10/2026 · falló la cotización automática",
+    );
+  });
+
+  test("valued at its cost because the quote failed: said so", () => {
+    expect(priceOriginCaption({ ...failed, kind: "cost" })).toBe(
+      "sin precio: falló la cotización y se valora a lo que costó",
     );
   });
 });

@@ -20,13 +20,7 @@
  */
 
 import type { FormSeed } from "@web/_components/form-seed";
-
-/**
- * The fields a re-opened form keeps: the operation's date and currency, the
- * one-off cobro's date. Amounts, units and notes are what changes from one to the
- * next, so they start blank.
- */
-const SEEDED_FIELDS = ["executedAt", "currency", "dateISO"] as const;
+import { SEEDED_FIELDS, type SeededField } from "@web/_components/form-seed-names";
 
 /** The read side of `FormData`. */
 export interface FormDataReader {
@@ -61,7 +55,8 @@ export function panelSubmission(
   const returnUrl = formData.get("currentUrl");
   if (typeof returnUrl !== "string" || returnUrl === "") return null;
 
-  const values: Record<string, string> = {};
+  // The date and the currency, never a figure (`SEEDED_FIELDS`).
+  const values: Partial<Record<SeededField, string>> = {};
   for (const field of SEEDED_FIELDS) {
     const value = formData.get(field);
     if (typeof value === "string" && value.trim() !== "") values[field] = value.trim();

@@ -401,8 +401,13 @@ describe("holdingReturns", () => {
       asOf: "2026-07-03",
       kind: "quote",
       provider: "finect",
+      refreshFailed: false,
     });
-    expect(handSet.valuation.priceOrigin).toEqual({ asOf: "2026-06-01", kind: "manual" });
+    expect(handSet.valuation.priceOrigin).toEqual({
+      asOf: "2026-06-01",
+      kind: "manual",
+      refreshFailed: false,
+    });
   });
 
   test("the provenance names the price and never moves a figure (#1828)", () => {

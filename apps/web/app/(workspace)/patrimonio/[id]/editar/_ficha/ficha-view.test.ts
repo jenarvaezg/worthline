@@ -145,6 +145,56 @@ describe("claimFichaOpen", () => {
   test("a tab it does not have is left to the link", () => {
     expect(claimFichaOpen({ tab: "valoracion" }, INVESTMENT)).toBeNull();
   });
+
+  // One mechanism for every link into the ficha (#1731 review): a link printed in a
+  // tab that opens an action — Cobros' «Añadir un cobro» — asks the same way.
+  test("an action it has opens its panel over the tab that asked", () => {
+    expect(claimFichaOpen({ action: "cobro", tab: "cobros" }, INVESTMENT)).toEqual({
+      action: "cobro",
+      tab: "cobros",
+    });
+  });
+
+  test("an action alone opens its panel over whatever tab is on show", () => {
+    expect(claimFichaOpen({ action: "traspaso" }, INVESTMENT)).toEqual({
+      action: "traspaso",
+    });
+  });
+
+  test("an action it does not offer is left to the link", () => {
+    // A holding with no hand-written ledger offers no «Traspasar».
+    expect(
+      claimFichaOpen({ action: "traspaso" }, { ...INVESTMENT, actions: ["operacion"] }),
+    ).toBeNull();
+    expect(claimFichaOpen({ action: "cobro", tab: "valoracion" }, INVESTMENT)).toBeNull();
+  });
+
+  test("an ask that names nothing is not claimed", () => {
+    expect(claimFichaOpen({}, INVESTMENT)).toBeNull();
+  });
+});
+
+/**
+ * The default tab — the one the bare URL shows — is the first of the list,
+ * wherever a URL is built or read (#1731 review: one rule, not three copies).
+ */
+describe("the default tab", () => {
+  const base = "/patrimonio/wl_hld_fondo/editar";
+
+  test("is the bare URL for a tab, and is left out beside an action", () => {
+    expect(fichaTabUrl(base, INVESTMENT.tabs, "operaciones")).toBe(base);
+    expect(fichaActionUrl(base, INVESTMENT.tabs, "operaciones", "operacion")).toBe(
+      `${base}?accion=operacion`,
+    );
+    expect(
+      writeFichaView("?pesta%C3%B1a=cobros", INVESTMENT, { tab: "operaciones" }),
+    ).toBe("");
+  });
+
+  test("a ficha with no tabs has no default to fall back on", () => {
+    expect(fichaTabUrl(base, [], "")).toBe(base);
+    expect(read("", { ...INVESTMENT, tabs: [] }).tab).toBe("");
+  });
 });
 
 describe("fichaActionUrl", () => {

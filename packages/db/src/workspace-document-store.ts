@@ -338,7 +338,10 @@ async function importWorkspace(
             securityId: securityId?.value ?? null,
             securityIdKind: securityId?.kind ?? null,
             manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
-            manualPricedAt: asset.investment?.manualPricedAt ?? null,
+            // Only the stamp written since every price change rewrites it: the
+            // legacy `manualPricedAt` may be the alta's, and the v72 rung cleared
+            // those (#1731 review) — a restore must not bring them back.
+            manualPricedAt: asset.investment?.manualPriceSetAt ?? null,
             priceProvider: asset.investment?.priceProvider ?? null,
             providerSymbol: asset.investment?.providerSymbol ?? null,
             unitSymbol: asset.investment?.unitSymbol ?? null,
@@ -959,7 +962,8 @@ async function buildWorkspaceExport(
               ...(meta.manualPricePerUnit
                 ? { manualPricePerUnit: meta.manualPricePerUnit }
                 : {}),
-              ...(meta.manualPricedAt ? { manualPricedAt: meta.manualPricedAt } : {}),
+              // Under its new name (#1731 review): the old one may carry an alta's stamp.
+              ...(meta.manualPricedAt ? { manualPriceSetAt: meta.manualPricedAt } : {}),
             },
           }
         : {}),

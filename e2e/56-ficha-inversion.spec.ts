@@ -197,9 +197,11 @@ test("«Cotiza a mano» is today's «Es intencional»: the price stops asking fo
   const state = page.getByRole("region", { name: "Estado del activo" });
 
   await state.getByRole("button", { name: "Cotiza a mano" }).click();
-  await expect(page).toHaveURL(/ok=warning_acknowledged/);
 
-  await page.goto(ficha);
+  // It stays on the ficha (#1731 review): its own notice, beside the price that
+  // no longer asks for a symbol — not a trip to the board.
+  await expect(page).toHaveURL(new RegExp(`${ficha}\\?ok=warning_acknowledged$`));
+  await expect(page.getByRole("status")).toHaveText("Aviso marcado como intencional.");
   await expect(state).toContainText("precio a mano");
   await expect(state).not.toContainText("Sin cotización automática");
 });
@@ -215,8 +217,66 @@ test("a cobro added from the panel lands on the Cobros tab", async ({ page }) =>
   await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_saved/);
   await expect(page.getByRole("status")).toHaveText("Cobro registrado.");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  // The record rounds its strip to the euro, so the count is the exact signal.
-  await expect(page.getByRole("region", { name: "Cobros" })).toContainText("1 cobro.");
+  // The record rounds its strip to the euro, so the count is the exact signal. It
+  // ends the window's line, or comes before the coverage when the run's FIRE
+  // settings declare a spending (journey 37 does): the suite shares one database.
+  await expect(page.getByRole("region", { name: "Cobros" })).toContainText(
+    /· 1 cobro(?: ·|\.)/,
+  );
+});
+
+test("a refused cobro comes back to its form in the panel, with what was typed (#1731 review)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Cobro Rechazado E2E");
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByLabel("Importe del cobro", { exact: true }).fill("0");
+  await panel.getByLabel("Nota del cobro").fill("Dividendo");
+  await panel.getByRole("button", { name: "Añadir cobro" }).click();
+
+  // The panel is where the refusal is read, over the form that produced it: the
+  // refusal's own form id opens it, over the Cobros tab.
+  await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*form=payoutOneOff/);
+  const reopened = page.getByRole("dialog", { name: "Añadir cobro" });
+  await expect(reopened.getByRole("alert")).toHaveText(
+    "Introduce un importe mayor que cero.",
+  );
+  await expect(reopened.getByRole("radio", { name: "Un cobro suelto" })).toBeChecked();
+  await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(reopened.getByLabel("Nota del cobro")).toHaveValue("Dividendo");
+});
+
+test("with JavaScript off, a refused recurring cobro reopens on «Uno que se repite» (#1731 review)", async ({
+  browser,
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo Recurrente Sin JS E2E");
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const bare = await context.newPage();
+    await bare.goto(`${ficha}?accion=cobro`);
+    const panel = bare.getByRole("dialog", { name: "Añadir cobro" });
+    await panel.getByText("Uno que se repite").click();
+    // A concept and nothing else: the door asks where the figure comes from.
+    await panel.getByLabel("Concepto del cobro recurrente").fill("Cupón");
+    await panel.getByRole("button", { name: "Añadir recurrente" }).click();
+
+    await expect(bare).toHaveURL(/form=payoutRecurring/);
+    const reopened = bare.getByRole("dialog", { name: "Añadir cobro" });
+    await expect(
+      reopened.getByRole("radio", { name: "Uno que se repite" }),
+    ).toBeChecked();
+    await expect(reopened.getByRole("alert")).toBeVisible();
+    await expect(reopened.getByLabel("Concepto del cobro recurrente")).toHaveValue(
+      "Cupón",
+    );
+  } finally {
+    await context.close();
+  }
 });
 
 test("at 390 px the four tabs fit, nothing scrolls sideways, and the panel takes the screen", async ({
@@ -434,6 +494,55 @@ test("«Añadir cobro» asks which cobro first, shows that form only, and «Aña
   await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue("");
 });
 
+test("a recurring cobro just declared is pointed at in the declared list (#1731 review)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Cupón E2E");
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByText("Uno que se repite").click();
+  await panel.getByLabel("Concepto del cobro recurrente").fill("Cupón semestral");
+  await panel.getByLabel("Importe del cobro recurrente").fill("40");
+  // It starts next year: no occurrence in the grid yet, so the grid has nothing
+  // new to point at — the declaration is the row that is new.
+  await panel
+    .locator('input[name="startISO"]')
+    .fill(`${new Date().getFullYear() + 1}-01-15`);
+  // The radio is drawn by its label (the input is visually hidden): click the words.
+  await panel
+    .getByRole("radiogroup", { name: "De dónde sale la cifra" })
+    .getByText("Estimación mía")
+    .click();
+  await panel.getByLabel("Fecha de corte de la cifra").fill("2026-01-01");
+  await panel.getByRole("button", { name: "Añadir recurrente" }).click();
+
+  await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_schedule_saved/);
+  const fresh = page.locator(".cobrosSchedule[data-fresh]");
+  await expect(fresh).toHaveCount(1);
+  await expect(fresh).toContainText("Cupón semestral");
+  await expect(fresh).toContainText("nuevo");
+});
+
+test("when the notice and the new row do not fit together, «Añadir otro» stays on screen with the focus (#1731 review)", async ({
+  page,
+}) => {
+  // A short screen: the Cobros tab, its grid and the open month are taller than
+  // what is left under the notice. Focus never lands on something off screen.
+  const ficha = await fundWithBuy(page, "Fondo Pantalla Corta E2E");
+  await page.setViewportSize({ height: 520, width: 1280 });
+  await page.goto(ficha);
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByLabel("Importe del cobro", { exact: true }).fill("12,50");
+  await panel.getByRole("button", { name: "Añadir cobro" }).click();
+  await expect(page).toHaveURL(/ok=payout_saved/);
+
+  const again = page.getByRole("button", { name: "Añadir otro" });
+  await expect(again).toBeFocused();
+  await expect(again).toBeInViewport();
+  await expect(page.locator(".cobrosRow[data-fresh]")).toContainText("nuevo");
+});
+
 test("the ledger shows the 10 latest with their importe and unfolds the rest without a reload (#1827)", async ({
   page,
 }) => {
@@ -584,4 +693,166 @@ test("«Datos del activo» splits identity from price: no field spans the ficha 
   const narrowSymbol = await page.getByLabel("Símbolo de precio").boundingBox();
   expect(narrowSymbol?.x).toBe(narrowName?.x);
   expect(await sidewaysOverflow(page)).toBeLessThanOrEqual(0);
+});
+
+// ── #1731 review: the rarer actions, end to end ────────────────────────────────
+
+/** The ISO day `days` before today. */
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
+/** The ficha's tab on show, by its visible name. */
+const activeTab = (page: import("@playwright/test").Page, name: RegExp) =>
+  page
+    .getByRole("navigation", { name: "Secciones de la ficha" })
+    .getByRole("link", { name });
+
+test("«Traer de otra entidad» records the entry and lands on its row in the ledger", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Entrada E2E");
+
+  const panel = await openFichaAction(page, "Traer de otra entidad");
+  const form = panel.getByRole("form", { name: "Registrar entrada desde otra entidad" });
+  await form.getByLabel("¿Cuánto entró? (€)").fill("500");
+  await form.getByLabel("Valor liquidativo de ese día (€)").fill("100");
+  await form.getByRole("button", { name: "Registrar entrada" }).click();
+
+  await expect(page).toHaveURL(/ok=external_entry_recorded/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText(
+    "Entrada por traspaso desde otra entidad registrada.",
+  );
+  await expect(activeTab(page, /Operaciones/)).toHaveAttribute("aria-current", "true");
+  const fresh = page.locator("#operaciones tr[data-fresh]");
+  await expect(fresh).toContainText("Traspaso (entrada)");
+  await expect(fresh).toContainText("desde otra entidad");
+  // 10 bought + 5 that came in.
+  await expect(page.getByRole("region", { name: "Estado del activo" })).toContainText(
+    "15 a 100 €",
+  );
+});
+
+test("«Corregir precio de un día» previews the snapshots it touches and confirms on Rentabilidad", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Corrección E2E");
+
+  const panel = await openFichaAction(page, "Corregir precio de un día");
+  await panel.getByLabel("Precio por unidad (EUR)").fill("105");
+  await panel.getByRole("button", { name: "Ver cambios" }).click();
+  await expect(panel.getByText(/Esta corrección aplicará/)).toBeVisible();
+  await panel.getByRole("button", { name: "Confirmar corrección" }).click();
+
+  await expect(page).toHaveURL(/ok=snapshot_price_corrected/);
+  await expect(page.getByRole("status")).toContainText("corregido.");
+  await expect(activeTab(page, /Rentabilidad/)).toHaveAttribute("aria-current", "true");
+});
+
+test("«Rellenar histórico de precios» freezes the provider's past prices on the days valued at cost", async ({
+  page,
+}) => {
+  // CoinGecko is the provider the harness fakes (`E2E_FAKE_PORT`): a flat 40.000 €
+  // a day over the last 75 days. No symbol at the alta, so nothing prices it today
+  // and the history a backdated buy rebuilds is valued at cost.
+  await addHolding(page, { instrument: "crypto", name: "Cripto Histórico E2E" });
+  await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
+  await page.goto("/patrimonio");
+  await holdingRow(page, "Cripto Histórico E2E")
+    .getByRole("link", { name: "Cripto Histórico E2E" })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+
+  const buy = (await openFichaAction(page, "Registrar operación")).getByRole("form", {
+    name: "Registrar operación",
+  });
+  await buy.getByLabel("Fecha de ejecución").fill(daysAgo(40));
+  await buy.getByLabel("Unidades").fill("0,1");
+  await buy.getByLabel("Precio por unidad en EUR").fill("30000");
+  await buy.getByRole("button", { name: "Registrar operación" }).click();
+  await expect(page).toHaveURL(/ok=saved/);
+
+  // Now the symbol: the provider can say what those days were worth. The buy left
+  // `?ok=saved` in the URL already, so the save's own terminal is the signal.
+  await openFichaTab(page, "Datos del activo");
+  await page.getByLabel("Símbolo de precio").fill("bitcoin");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page).toHaveURL(/editar\?pesta%C3%B1a=datos&ok=saved$/);
+
+  const panel = await openFichaAction(page, "Rellenar histórico de precios");
+  await panel.getByRole("button", { name: "Ver cambios" }).click();
+  await expect(panel.getByText("Este relleno aplicará:")).toBeVisible();
+  await panel.getByRole("button", { name: "Confirmar y rellenar" }).click();
+
+  await expect(page).toHaveURL(/ok=price_backfill_done/);
+  await expect(page.getByRole("status")).toHaveText(
+    "Histórico de precios rellenado desde coingecko.",
+  );
+  await expect(activeTab(page, /Rentabilidad/)).toHaveAttribute("aria-current", "true");
+});
+
+test("a warning's «Ver operaciones» switches to the ledger in place, without a reload", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Sobreventa E2E");
+
+  // A sale past the units held, confirmed: the band warns and links to the ledger.
+  const form = (await openFichaAction(page, "Registrar operación")).getByRole("form", {
+    name: "Registrar operación",
+  });
+  await form.getByLabel("Tipo").selectOption("sell");
+  await form.getByLabel("Unidades").fill("15");
+  await form.getByLabel("Precio por unidad en EUR").fill("100");
+  await form.getByRole("button", { name: "Registrar operación" }).click();
+  await form.getByLabel("Confirmo la venta").check();
+  await form.getByRole("button", { name: "Registrar operación" }).click();
+  // The buy left `?ok=saved` in the URL: the settled signal is the band's warning.
+  const band = page.getByRole("alert", { name: "Avisos" });
+  await expect(band).toBeVisible();
+
+  await openFichaTab(page, "Datos del activo");
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const fix = band.getByRole("link", { name: "Ver operaciones" }).first();
+  await waitForHydration(fix);
+  await fix.click();
+
+  await expect(activeTab(page, /Operaciones/)).toHaveAttribute("aria-current", "true");
+  await expect(page).not.toHaveURL(/pesta%C3%B1a=datos/);
+  await expect(
+    page.getByRole("region", { name: "Operaciones de la inversión" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+});
+
+test("the header's gain is the board row's gain, to the cent and the tenth of a percent (#1828)", async ({
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo Ganancia E2E");
+
+  // A price above what it cost, so the gain is not a trivial zero.
+  await openFichaTab(page, "Datos del activo");
+  await page.getByLabel(/Precio manual por unidad/).fill("123");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  // The buy left `?ok=saved` already: the save's own terminal is the signal.
+  await expect(page).toHaveURL(/editar\?pesta%C3%B1a=datos&ok=saved$/);
+
+  await page.goto(ficha);
+  const header = page
+    .getByRole("region", { name: "Estado del activo" })
+    .locator(".fichaFigures div", { hasText: "Ganancia total" })
+    .locator(".fichaFigure");
+  await expect(header).toHaveText(/· \+23,0\s%$/);
+  const headerGain = (await header.innerText()).trim();
+
+  await page.goto("/patrimonio");
+  const row = holdingRow(page, "Fondo Ganancia E2E").locator(".balanceRowReturns");
+  // The row prints «▲ 230 € · +23,0 %» plus its tooltip: the figure is the same.
+  await expect(row).toContainText(headerGain);
 });

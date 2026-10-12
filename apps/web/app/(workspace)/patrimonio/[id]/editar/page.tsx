@@ -24,12 +24,14 @@ import {
   resolveHoldingRoute,
 } from "@web/holding-route";
 import { parseFormError, resolveOkMessage } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadAvailabilityPanel } from "./_chrome/availability-panel";
 import { loadDangerPanel } from "./_chrome/danger-panel";
+import { holdingWarnings } from "./_chrome/holding-warnings";
 import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
@@ -43,7 +45,7 @@ import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 /** The forms that render their own error band, next to the field that produced it. */
 const SECTIONS_WITH_OWN_ERROR_BAND = [
   "operation",
-  "payout",
+  ...Object.values(COBRO_FORM_ID),
   "transfer",
   TRASH_FORM_ID,
   // «Traer de otra entidad» prints its own band (#1518): without it here, its
@@ -51,14 +53,11 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
   "externalEntry",
 ];
 
-/** The tabbed ficha's chrome tab: «Lo básico», the availability, the Zona de peligro. */
-const DATOS_TAB = FICHA_DATOS_TAB;
-
 /** The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha. */
 const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
-  availableFrom: { tab: DATOS_TAB },
-  edit: { tab: DATOS_TAB },
-  [TRASH_FORM_ID]: { tab: DATOS_TAB },
+  availableFrom: { tab: FICHA_DATOS_TAB },
+  edit: { tab: FICHA_DATOS_TAB },
+  [TRASH_FORM_ID]: { tab: FICHA_DATOS_TAB },
 };
 
 /**
@@ -167,10 +166,10 @@ export default async function EditarPage({
   const layout = surface.layout;
   const fichaTabKeys =
     layout.kind === "ficha"
-      ? [...layout.ficha.tabs.map((tab) => tab.key), DATOS_TAB]
+      ? [...layout.ficha.tabs.map((tab) => tab.key), FICHA_DATOS_TAB]
       : null;
   const chromeUrl = fichaTabKeys
-    ? fichaTabUrl(currentUrl, fichaTabKeys, DATOS_TAB)
+    ? fichaTabUrl(currentUrl, fichaTabKeys, FICHA_DATOS_TAB)
     : currentUrl;
   const chromeContext = { ...ficha, currentUrl: chromeUrl };
 
@@ -214,13 +213,18 @@ export default async function EditarPage({
         }
       : {};
 
+  // The holding's active warnings, read once (#1731 review): a tabbed family already
+  // read them to place its inline ones; the accordion's are read here.
+  const warnings =
+    layout.kind === "ficha"
+      ? layout.ficha.warnings
+      : holdingWarnings({ asset, id, operations: surface.operations, overrides });
+
   const warningsBand = (
     <WarningsBand
-      asset={asset}
       currentUrl={currentUrl}
       id={id}
-      operations={surface.operations}
-      overrides={overrides}
+      warnings={warnings}
       {...bandPlacement}
     />
   );
@@ -302,7 +306,7 @@ export default async function EditarPage({
                 {dangerPanel}
               </div>
             ),
-            key: DATOS_TAB,
+            key: FICHA_DATOS_TAB,
             label: "Datos del activo",
             shortLabel: "Datos",
           },

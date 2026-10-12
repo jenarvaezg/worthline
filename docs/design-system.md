@@ -24,6 +24,7 @@ siguen en [`interaction-patterns.md`](./interaction-patterns.md).
 | Banding | `--band` | `#eaedde` |
 | Interacción | `--blue` | `#1f4d74` |
 | Movimiento | `--green` / `--red` | `#006f5f` / `#b9442f` |
+| Tinte de confirmación | `--green-tint` | `rgba(0, 111, 95, 0.1)` |
 | Aviso / debe | `--gold` / `--debit-rule` | `#7d5c12` / `#a03a28` |
 | Forma | `--radius` / `--radius-sm` | `6px` / `4px` |
 | Regla de sección | `--rule-heavy` | `2px solid var(--ink)` |
@@ -175,6 +176,14 @@ El contrato global está formado por:
 `.section`, `.heroPanel`, `.navTab`, `.segmented`, `.btn`, `.totalRule`,
 `.debitCol`, `.band`, `.coverSurface`, `.coverSheet`, `.coverMasthead` y
 `.sessionBand`.
+
+**Control de texto.** Una acción secundaria dentro de una línea —«Quitar» de un
+lote, el aparte de una fila de propuesta, «Indicar símbolo» y «Cotiza a mano» bajo
+un precio— no es un botón de papel: sin fondo, sin borde, sin alto mínimo, sin
+relleno y subrayado. Es UNA regla de `globals.css` (bajo «Control de texto») cuya
+lista de selectores nombra cada superficie que la usa; cada superficie añade solo su
+tono, su cuerpo y su hover en una regla propia. Una superficie nueva se suma a esa
+lista, no copia las cinco declaraciones (lo fija el test-guardián).
 
 Las páginas consumen estas recetas; no duplican una versión equivalente ad hoc.
 El test-guardián escanea todas las hojas CSS y falla ante tokens deprecados,

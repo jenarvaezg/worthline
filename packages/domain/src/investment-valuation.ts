@@ -102,12 +102,24 @@ export function selectInvestmentPrice(input: {
  * valued at what it cost. «The last operation's price» is NOT one of them: the
  * live rule never reads the ledger's prices, and a hand-set price that happens to
  * equal the last purchase is still a hand-set price. `asOf` is the day the price
- * is FROM, and null when nothing the app stored can say it.
+ * is FROM, and null when nothing the app stored can say it — a hand-set price saved
+ * before every change was stamped has none (the v72 rung cleared those stamps).
+ *
+ * `refreshFailed` says the provider's last refresh of this holding failed (#1731
+ * review), whichever price was picked: a quote is then the one kept from before the
+ * failure, and a hand-set price or the cost stands in for a quote that never came.
+ * Without it a failed refresh was invisible — the day alone cannot say it, because a
+ * kept quote often has no market day to show.
  */
 export type InvestmentPriceOrigin =
-  | { kind: "quote"; provider: PriceSource | null; asOf: string | null }
-  | { kind: "manual"; asOf: string | null }
-  | { kind: "cost" };
+  | {
+      kind: "quote";
+      provider: PriceSource | null;
+      asOf: string | null;
+      refreshFailed: boolean;
+    }
+  | { kind: "manual"; asOf: string | null; refreshFailed: boolean }
+  | { kind: "cost"; refreshFailed: boolean };
 
 /**
  * What the cache row says about the price it carries — the provenance riding next
@@ -143,20 +155,34 @@ function quoteAsOf(quote: CachedQuoteProvenance | undefined): string | null {
   return null;
 }
 
+/**
+ * Whether the provider's last refresh failed: the pool marks a kept price `stale`
+ * and a failure with nothing to keep `failed` (#730, #1330).
+ */
+function lastRefreshFailed(quote: CachedQuoteProvenance | undefined): boolean {
+  return quote?.freshnessState === "stale" || quote?.freshnessState === "failed";
+}
+
 /** The origin of the price the rule picked — read off the pick, never re-derived. */
 function priceOriginOf(
   selected: SelectedInvestmentPrice | undefined,
   input: DeriveInvestmentValuationInput,
 ): InvestmentPriceOrigin {
-  if (selected === undefined) return { kind: "cost" };
+  const refreshFailed = lastRefreshFailed(input.cachedQuote);
+  if (selected === undefined) return { kind: "cost", refreshFailed };
   if (selected.source === "manual") {
-    return { asOf: input.manualPricedAt?.slice(0, 10) ?? null, kind: "manual" };
+    return {
+      asOf: input.manualPricedAt?.slice(0, 10) ?? null,
+      kind: "manual",
+      refreshFailed,
+    };
   }
   // A quote with no provenance handed in is still a quote; who quoted it is unknown.
   return {
     asOf: quoteAsOf(input.cachedQuote),
     kind: "quote",
     provider: input.cachedQuote?.source ?? null,
+    refreshFailed,
   };
 }
 

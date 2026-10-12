@@ -79,14 +79,29 @@ export function boardRefreshHover(
  * engine handed back with the price; it never infers one. A day nobody can vouch
  * for is left out rather than guessed. It replaced the «Precio actualizado el …»
  * caption, which dated a quote by its LAST FETCH — a failed refresh included.
+ *
+ * A failed refresh is said in words (#1731 review): the kept quote «no se pudo
+ * actualizar», and a hand-set price or the cost stands in because the quote failed.
+ * The day stays the price's own; the failed attempt never lends it one.
  */
 export function priceOriginCaption(origin: InvestmentPriceOrigin): string {
-  if (origin.kind === "cost") return "sin precio: se valora a lo que costó";
+  if (origin.kind === "cost") {
+    return origin.refreshFailed
+      ? "sin precio: falló la cotización y se valora a lo que costó"
+      : "sin precio: se valora a lo que costó";
+  }
   const what =
     origin.kind === "manual"
       ? "precio a mano"
       : origin.provider === null || origin.provider === "manual"
         ? "cotización guardada"
         : `cotización ${priceSourceLabel(origin.provider)}`;
-  return origin.asOf === null ? what : `${what} · ${formatIsoDayEs(origin.asOf)}`;
+  const failure = !origin.refreshFailed
+    ? null
+    : origin.kind === "quote"
+      ? "no se pudo actualizar"
+      : "falló la cotización automática";
+  return [what, origin.asOf === null ? null : formatIsoDayEs(origin.asOf), failure]
+    .filter((part) => part !== null)
+    .join(" · ");
 }

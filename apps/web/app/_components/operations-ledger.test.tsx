@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { FixedFreshRows } from "./fresh-rows";
 import { OperationsBookProvider } from "./operations-book";
 import { OperationsLedger } from "./operations-ledger";
 
@@ -198,7 +199,17 @@ describe("el libro compacto (#1827)", () => {
   });
 
   test("la fila recién registrada se marca, y se ve aunque caiga más allá de la décima (#1829)", () => {
-    const html = render(buys(12), { freshIds: new Set(["op_12"]) });
+    // Through the ficha's own path (`useFreshRows("operaciones")`), not a prop.
+    const html = renderToStaticMarkup(
+      <FixedFreshRows fresh={{ operaciones: new Set(["op_12"]) }}>
+        <OperationsBookProvider operations={buys(12)}>
+          <OperationsLedger
+            currentUrl="/patrimonio/wl_hld_1/editar"
+            deleteAction={noop}
+          />
+        </OperationsBookProvider>
+      </FixedFreshRows>,
+    );
 
     expect(html).toContain("19/09/2026");
     expect(html.match(/data-fresh=""/g)).toHaveLength(1);

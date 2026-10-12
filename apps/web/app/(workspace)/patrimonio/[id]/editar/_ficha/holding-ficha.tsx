@@ -16,25 +16,20 @@
  *
  * The panel overlays the page without moving it, starting under the top bar while
  * the bar is on screen; on a phone it takes the whole screen. It closes with
- * «Cerrar» or Esc, and focus goes back to the control that opened it (§8).
+ * «Cerrar» or Esc, and focus goes back to the control that opened it (§8). A link
+ * anywhere on the page (`FichaLink`) can ask for a tab, a field or a panel too.
  *
  * Adding never needs a search (#1829). Once the action bar scrolls away, a strip
- * keeps the habitual action at hand (`ficha-strip.tsx`). And a submit from the
- * panel keeps its terminal untouched — success redirects, a refusal comes back in
- * place (#1311, interaction-patterns §4.1); nothing here pushes a URL while it is in
- * flight — but the island remembers what left (`ficha-again.ts`), so when the URL
- * lands on that submit's success it brings the result into view: the notice beside
+ * keeps the habitual action at hand (`ficha-strip.tsx`). And a registration from
+ * the panel lands where its result shows (`ficha-landing.ts`): the notice beside
  * the tabs, the row the render added marked (`FreshRowsProvider`), and «Añadir otra»
  * re-opening the same form with its date and currency (`FormSeedProvider`).
  */
 
-import {
-  type FormSeed,
-  FormSeedProvider,
-  SEED_CHOICE_ATTRIBUTE,
-} from "@web/_components/form-seed";
+import { type FormSeed, FormSeedProvider } from "@web/_components/form-seed";
 import type { RowKeys } from "@web/_components/fresh-row-keys";
 import { FreshRowsProvider } from "@web/_components/fresh-rows";
+import { OWN_LANDING_ATTRIBUTE } from "@web/form-submit-scroll";
 import type {
   FichaAction,
   FichaFigure,
@@ -46,30 +41,19 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   type CSSProperties,
-  type FormEvent,
-  type RefObject,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { FichaActionOpener } from "./ficha-action-link";
-import {
-  againFor,
-  type LandedSubmission,
-  landedOk,
-  type PanelSubmission,
-  panelSubmission,
-  stillLanded,
-} from "./ficha-again";
+import { useFichaLanding } from "./ficha-landing";
+import type { FichaOpenDetail } from "./ficha-link";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import { FichaStrip } from "./ficha-strip";
 import {
   claimFichaOpen,
   FICHA_OPEN_EVENT,
-  type FichaOpenRequest,
   type FichaTarget,
   type FichaView,
   type FichaViewSpec,
@@ -100,6 +84,9 @@ export interface HoldingFichaProps {
 const PANEL_TITLE_ID = "ficha-panel-title";
 const NOTICE_ID = "ficha-notice";
 
+/** Its forms' terminals land where the ficha says (#1829), not where the page was. */
+const OWN_LANDING = { [OWN_LANDING_ATTRIBUTE]: "" };
+
 export function HoldingFicha({
   actions,
   basePath,
@@ -122,23 +109,26 @@ export function HoldingFicha({
     [actions, errorTargets, tabs],
   );
   const params = useSearchParams();
-  const searchKey = params.toString();
   const view = readFichaView(params, spec);
   const current = actions.find((action) => action.key === view.action) ?? null;
   const activeTab = tabs.find((tab) => tab.key === view.tab) ?? tabs[0];
+  const openKey = current?.key ?? null;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
-  const noticeRef = useRef<HTMLDivElement>(null);
-  const againRef = useRef<HTMLButtonElement>(null);
   // The control that opened the panel, so closing it can hand focus back (§8).
   const opener = useRef<HTMLElement | null>(null);
-  // The panel submit still waiting for its terminal, and the one that landed.
-  const pending = useRef<PanelSubmission | null>(null);
-  const [landed, setLanded] = useState<LandedSubmission | null>(null);
   // What «Añadir otra» re-opens its form with, for as long as that panel is open.
   const [seedFor, setSeedFor] = useState<{ action: string; seed: FormSeed } | null>(null);
+
+  const landing = useFichaLanding({
+    ok: params.get("ok"),
+    openAction: openKey,
+    panelRef,
+    rootRef,
+    searchKey: params.toString(),
+  });
 
   const show = useCallback(
     (change: Partial<FichaView>) => {
@@ -155,12 +145,11 @@ export function HoldingFicha({
 
   // Closing by hand abandons whatever the panel had sent and not yet landed: a
   // later success elsewhere on the ficha is not that submit's.
+  const { forget } = landing;
   const closePanel = useCallback(() => {
-    pending.current = null;
+    forget();
     show({ action: null });
-  }, [show]);
-
-  const openKey = current?.key ?? null;
+  }, [forget, show]);
 
   // Focus follows the panel: into it when it opens — a deep link included — and back
   // to its opener when it closes, whether by «Cerrar», Esc, Back or a terminal that
@@ -202,68 +191,23 @@ export function HoldingFicha({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openKey, closePanel]);
 
-  // What leaves the panel is remembered — which action, where its terminal returns,
-  // its date and currency — and nothing else is touched: the form's own handler
-  // still runs its action and keeps its terminal. A submit from anywhere else on
-  // the ficha (a delete in the ledger, «Lo básico») forgets it.
-  function onSubmitCapture(event: FormEvent<HTMLDivElement>) {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    if (current === null || !panelRef.current?.contains(form)) {
-      pending.current = null;
-      // The person moved on: this submit's own success is not the panel's.
-      setLanded(null);
-      return;
-    }
-    const choice = form
-      .closest(`[${SEED_CHOICE_ATTRIBUTE}]`)
-      ?.getAttribute(SEED_CHOICE_ATTRIBUTE);
-    pending.current = panelSubmission(current.key, new FormData(form), choice);
-  }
-
-  // The URL moved: if it is the success of what the panel sent, that submit landed;
-  // otherwise whatever had landed lasts only while the URL still reports it.
-  useEffect(() => {
-    const submitted = pending.current;
-    const ok = submitted
-      ? landedOk(submitted, { pathname: window.location.pathname, search: searchKey })
-      : null;
-    if (submitted !== null && ok !== null) {
-      pending.current = null;
-      setLanded({ ok, submission: submitted });
-      return;
-    }
-    setLanded((previous) =>
-      stillLanded(previous, new URLSearchParams(searchKey).get("ok")),
-    );
-  }, [searchKey]);
-
-  // It landed: bring the result into view — the notice, then the row the render
-  // added, which wins when both do not fit — and put focus where the next step is,
-  // «Añadir otra», if it is still on screen; never on something the view left.
-  // The page's scroll keeper leaves this terminal alone (`data-own-landing`).
-  useEffect(() => {
-    if (landed === null) return;
-    const band = noticeRef.current;
-    band?.scrollIntoView({ block: "nearest" });
-    rootRef.current?.querySelector("[data-fresh]")?.scrollIntoView({ block: "nearest" });
-    const next = againRef.current ?? band;
-    if (next && isOnScreen(next)) next.focus({ preventScroll: true });
-  }, [landed]);
-
-  // A link to where something is fixed — «Indicar símbolo» beside the price, a
-  // warning's «Ver operaciones» in the band (#1828) — asks for a tab and a field:
-  // the tab switches in place and the cursor lands on the field (§8). Declared
-  // after the panel's focus effect so, when the ask also closes a panel, the field
-  // keeps the focus rather than the panel's opener.
-  const [focusAsk, setFocusAsk] = useState<Required<FichaOpenRequest> | null>(null);
+  // A link into the ficha (`FichaLink`) — «Indicar símbolo» beside the price, a
+  // warning's «Ver operaciones» in the band (#1828), Cobros' «Añadir un cobro»
+  // (#1830) — asks for a tab and a field, or an action: the tab switches in place
+  // and the cursor lands on the field, or the panel opens and gives focus back to
+  // the link when it closes (§8). Declared after the panel's focus effect so, when
+  // the ask also closes a panel, the field keeps the focus rather than the opener.
+  const [focusAsk, setFocusAsk] = useState<{ field: string; tab: string } | null>(null);
   useEffect(() => {
     function onOpen(event: Event) {
-      const request = (event as CustomEvent<FichaOpenRequest>).detail;
+      const { request, trigger } = (event as CustomEvent<FichaOpenDetail>).detail;
       const change = claimFichaOpen(request, spec);
       if (change === null) return;
       event.preventDefault();
-      setFocusAsk(request.field ? { field: request.field, tab: change.tab } : null);
+      if (change.action) opener.current = trigger;
+      setFocusAsk(
+        request.field && change.tab ? { field: request.field, tab: change.tab } : null,
+      );
       show(change);
     }
     window.addEventListener(FICHA_OPEN_EVENT, onOpen);
@@ -280,22 +224,15 @@ export function HoldingFicha({
   }, [activeTabKey, focusAsk]);
 
   const panelTop = usePanelTop(openKey !== null);
-  const barOutOfView = useScrolledPast(actionsRef);
-  const stripPlace = useStripPlace(rootRef, barOutOfView);
 
   const shown = actions.filter((action) => action.tier !== "more");
   const more = actions.filter((action) => action.tier === "more");
-
-  // «Añadir otra»: offered while the URL still reports the success that landed, by
-  // an action that offers it, and with no panel open (`againFor`).
-  const againKey = againFor(landed, {
-    ok: params.get("ok"),
-    panelOpen: openKey !== null,
-  });
-  const again = actions.find((action) => action.key === againKey && action.again) ?? null;
+  const again =
+    actions.find((action) => action.key === landing.againKey && action.again) ?? null;
+  const landed = landing.landed;
 
   const ficha = (
-    <div className="ficha" onSubmitCapture={onSubmitCapture} ref={rootRef}>
+    <div className="ficha" onSubmitCapture={landing.onSubmitCapture} ref={rootRef}>
       <section aria-label="Estado del activo" className="heroPanel fichaHero">
         <div className="fichaHeroTop">
           <div className="fichaIdentity">
@@ -357,7 +294,7 @@ export function HoldingFicha({
           part of the announcement; the offer names it as its description. */}
       <div
         className={notice ? "successBand fichaNotice" : "srOnly"}
-        ref={noticeRef}
+        ref={landing.noticeRef}
         tabIndex={notice ? -1 : undefined}
       >
         <p id={NOTICE_ID} role="status">
@@ -371,7 +308,7 @@ export function HoldingFicha({
               setSeedFor({ action: again.key, seed: landed.submission.seed });
               openAction(again.key, event.currentTarget);
             }}
-            ref={againRef}
+            ref={landing.againRef}
             type="button"
           >
             {again.again}
@@ -412,21 +349,14 @@ export function HoldingFicha({
       {/* A client toggle is not a document navigation, so it is not announced (§8). */}
       <p aria-live="polite" className="srOnly">{`Sección: ${activeTab?.label ?? ""}`}</p>
 
-      <div className="fichaTabBody">
-        {/* A link inside a tab opens an action the way the bar does (#1830). */}
-        <FichaActionOpener.Provider value={openAction}>
-          {activeTab?.content}
-        </FichaActionOpener.Provider>
-      </div>
+      <div className="fichaTabBody">{activeTab?.content}</div>
 
       {current ? (
         <section
           aria-labelledby={PANEL_TITLE_ID}
           aria-modal="false"
           className="fichaPanel"
-          // Its forms' terminals land where the ficha says, not where the page
-          // behind the panel happened to be scrolled (#1829).
-          data-own-landing=""
+          {...OWN_LANDING}
           ref={panelRef}
           role="dialog"
           style={{ "--ficha-panel-top": `${panelTop}px` } as CSSProperties}
@@ -448,95 +378,22 @@ export function HoldingFicha({
         </section>
       ) : null}
 
-      {barOutOfView ? (
-        <FichaStrip
-          actions={actions}
-          hidden={openKey !== null}
-          name={name}
-          onOpen={openAction}
-          openKey={openKey}
-          place={stripPlace}
-          value={value}
-        />
-      ) : null}
+      <FichaStrip
+        actions={actions}
+        barRef={actionsRef}
+        columnRef={rootRef}
+        hidden={openKey !== null}
+        name={name}
+        onOpen={openAction}
+        openKey={openKey}
+        value={value}
+      />
     </div>
   );
 
   // Above the whole ficha, so the rows a terminal added are known to whichever
   // tab shows them — the «Cobros» grid mounts with the very landing (#1829).
   return <FreshRowsProvider rows={rows}>{ficha}</FreshRowsProvider>;
-}
-
-/** Whether the whole of `element` is inside the viewport right now. */
-function isOnScreen(element: HTMLElement): boolean {
-  const box = element.getBoundingClientRect();
-  return box.top >= 0 && box.bottom <= window.innerHeight;
-}
-
-/**
- * The workspace's scope rail (`.tabsBar`, #47) sticks to the top of the screen
- * while scrolling. The strip sits under it instead of covering it, so a scope stays
- * one click away too; this is the height it leaves, 0 where there is none.
- */
-function stickyRailHeight(): number {
-  return Math.round(
-    document.querySelector(".tabsBar")?.getBoundingClientRect().height ?? 0,
-  );
-}
-
-/**
- * Whether `ref`'s element has scrolled out of sight past the top — under the
- * sticky scope rail counts, since it is hidden there too — and not merely below
- * the fold, which is where nothing has been scrolled yet.
- */
-function useScrolledPast(ref: RefObject<HTMLElement | null>): boolean {
-  const [past, setPast] = useState(false);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || typeof IntersectionObserver === "undefined") return;
-    const rail = stickyRailHeight();
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry) {
-          setPast(!entry.isIntersecting && entry.boundingClientRect.top < rail);
-        }
-      },
-      { rootMargin: `-${rail}px 0px 0px 0px` },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-  return past;
-}
-
-/**
- * Where the strip goes on a desktop: over the ficha's own column — it is that
- * column's header, condensed — and under the sticky scope rail. Measured, because
- * neither is fixed: the column is the page's, the rail the shell's. (On a phone the
- * stylesheet pins it to the bottom and ignores these.)
- */
-function useStripPlace(
-  rootRef: RefObject<HTMLElement | null>,
-  isShown: boolean,
-): CSSProperties | undefined {
-  const [place, setPlace] = useState<CSSProperties | undefined>(undefined);
-  // Before paint, so the strip never shows a frame in the fallback place.
-  useLayoutEffect(() => {
-    if (!isShown) return;
-    function measure() {
-      const column = rootRef.current?.getBoundingClientRect();
-      if (!column) return;
-      setPlace({
-        "--ficha-strip-left": `${Math.round(column.left)}px`,
-        "--ficha-strip-top": `${stickyRailHeight()}px`,
-        "--ficha-strip-width": `${Math.round(column.width)}px`,
-      } as CSSProperties);
-    }
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [isShown, rootRef]);
-  return place;
 }
 
 /**
