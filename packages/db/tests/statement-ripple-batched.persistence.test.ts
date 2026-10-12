@@ -51,10 +51,47 @@ function countingClient(client: Client, bump: (sql: string) => void): Client {
       }
       if (prop === "batch") {
         return (...args: Parameters<Client["batch"]>) => {
-          for (const stmt of args[0]) {
-            bump(Array.isArray(stmt) ? stmt[0] : statementSql(stmt));
+          const [stmts] = args;
+          if (Array.isArray(stmts)) {
+            for (const stmt of stmts) {
+              bump(Array.isArray(stmt) ? stmt[0] : statementSql(stmt));
+            }
           }
           return (target.batch as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      if (prop === "transaction") {
+        return async (...args: Parameters<Client["transaction"]>) => {
+          const tx = await (target.transaction as (...a: unknown[]) => unknown)(...args);
+          const wrappedTx = new Proxy(tx as unknown as Client, {
+            get(t, p, r) {
+              if (p === "execute") {
+                return (...a: Parameters<Client["execute"]>) => {
+                  const sql = typeof a[0] === "string" ? a[0] : statementSql(a[0]);
+                  bump(sql);
+                  return (
+                    (t as unknown as Client).execute as (...x: unknown[]) => unknown
+                  )(...a);
+                };
+              }
+              if (p === "batch") {
+                return (...a: Parameters<Client["batch"]>) => {
+                  const [stmts] = a;
+                  if (Array.isArray(stmts)) {
+                    for (const stmt of stmts) {
+                      bump(Array.isArray(stmt) ? stmt[0] : statementSql(stmt));
+                    }
+                  }
+                  return ((t as unknown as Client).batch as (...x: unknown[]) => unknown)(
+                    ...a,
+                  );
+                };
+              }
+              const value = Reflect.get(t, p, r);
+              return typeof value === "function" ? value.bind(t) : value;
+            },
+          });
+          return wrappedTx;
         };
       }
       const value = Reflect.get(target, prop, receiver);

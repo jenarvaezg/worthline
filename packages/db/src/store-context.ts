@@ -64,17 +64,11 @@ export interface StoreContext {
   newId: () => string;
   /**
    * Bracket a unit of work in a SQLite transaction and run it, with both the
-   * drizzle `db` and raw `client` writes participating. Two drivers, chosen by
-   * connection kind (see `createStoreContext`):
-   *   - LOCAL (`file:`/`:memory:`) hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK` over
-   *     the single shared connection — libSQL's interactive transaction would
-   *     open a SEPARATE connection that can't see a `:memory:` database.
-   *   - REMOTE (Turso, `libsql://` → http/ws) opens an interactive
-   *     `client.transaction()` (one stream) and redirects the store's `db`/
-   *     `client` onto it — hand-rolled `BEGIN`/`COMMIT` would land on different
-   *     pooled streams and fail with "no transaction is active".
-   * Nested calls flatten into the outer transaction (every caller rethrows on
-   * failure, so the whole unit rolls back together under one flattened tx).
+   * drizzle `db` and raw `client` writes participating. Opens a single
+   * interactive `client.transaction()` and redirects the store's `db`/`client`
+   * onto it for the unit of work. Nested calls flatten into the outer
+   * transaction (every caller rethrows on failure, so the whole unit rolls back
+   * together under one flattened tx).
    */
   transaction: <T>(work: () => T | Promise<T>) => Promise<T>;
   /**
@@ -84,11 +78,9 @@ export interface StoreContext {
    */
   registerBeforeCommit: (hook: BeforeCommitHook) => void;
   /**
-   * Execute write statements as a group (#1532). Remote (interactive tx):
-   * `Transaction.batch` — one HTTP round-trip per chunk, no nested BEGIN.
-   * Local (already inside hand-rolled BEGIN): sequential `execute` on the
-   * shared connection — `Client.batch` would issue a nested BEGIN, and an
-   * interactive tx on `:memory:` cannot see the in-memory database.
+   * Execute write statements as a group (#1532). Inside an active interactive
+   * transaction: `Transaction.batch` (one round-trip per chunk, no nested BEGIN).
+   * Outside a transaction: sequential `execute` calls on the shared client.
    */
   batchWrites: (stmts: readonly InStatement[]) => Promise<void>;
   /** Append one row to the audit log. Shared concern (ADR audit trail). */
@@ -133,14 +125,10 @@ export function createStoreContext(
   // One drizzle instance per store lifetime, bound to the shared client.
   const baseDb = openDrizzle(client);
 
-  // A remote libSQL connection (Turso, `libsql://` → http/ws) cannot be driven
-  // by hand-rolled BEGIN/COMMIT: each `execute` may land on a different pooled
-  // stream, so COMMIT throws "no transaction is active". For remote we open one
-  // interactive `client.transaction()` and redirect both the drizzle `db` and
-  // the raw `client` writes onto it for the unit of work. Local `file:`/
-  // `:memory:` keeps the hand-rolled path over its single shared connection
-  // (an interactive tx would open a SEPARATE connection blind to `:memory:`).
-  const isRemote = client.protocol !== "file";
+  // Use a single interactive transaction for all connection kinds. The
+  // @libsql/client 0.18.0 pool holds the single in-memory/file connection for
+  // local targets, so an interactive tx sees the same database. Remote targets
+  // also use interactive transactions to ensure atomicity across streams.
 
   // The live transaction-scoped targets: the base instances outside a tx (and
   // always on local), the interactive-tx connection during a remote tx. The
@@ -168,6 +156,26 @@ export function createStoreContext(
   let txDepth = 0;
   let beforeCommitHooks: BeforeCommitHook[] = [];
 
+  // Establishment gate: resolves once the interactive tx is open and
+  // currentDb/currentClient are redirected onto it. A transaction() that runs
+  // while the outer tx is still being opened (concurrent pendings, Promise.all)
+  // sees txDepth > 0 but must NOT write yet — the interactive tx already holds
+  // the single local connection, so a write through the pooled base client
+  // rejects with TRANSACTION_ACTIVE. Joiners await the gate, then run inline.
+  let established: Promise<void> | null = null;
+  let openEstablishedGate: (() => void) | null = null;
+  let failEstablishedGate: ((err: unknown) => void) | null = null;
+
+  // In-flight joined units of work. The outer transaction drains them before
+  // COMMIT, so no joined write is left mid-flight on a transaction that just
+  // settled (its connection is released and the statement would throw).
+  const inFlightJoins = new Set<Promise<unknown>>();
+  const drainJoins = async (): Promise<void> => {
+    while (inFlightJoins.size > 0) {
+      await Promise.allSettled([...inFlightJoins]);
+    }
+  };
+
   const discardBeforeCommit = (): void => {
     const hooks = beforeCommitHooks;
     beforeCommitHooks = [];
@@ -186,16 +194,14 @@ export function createStoreContext(
   };
 
   /**
-   * Grouped writes (#1532). Inside a remote interactive tx we use
-   * `Transaction.batch` (one stream round-trip, no nested BEGIN). Locally we
-   * already hold a hand-rolled BEGIN, so we `execute` on the shared connection
-   * — `Client.batch` would BEGIN again, and an interactive tx on `:memory:`
-   * would not see this database.
+   * Grouped writes (#1532). Inside an active interactive transaction we use
+   * `Transaction.batch` (one round-trip per chunk, no nested BEGIN). Outside a
+   * transaction we fall back to sequential `execute` calls.
    */
   const batchWrites = async (stmts: readonly InStatement[]): Promise<void> => {
     if (stmts.length === 0) return;
     for (const group of chunk(stmts, STATEMENTS_PER_BATCH)) {
-      if (isRemote && currentClient !== client) {
+      if (currentClient !== client) {
         await (currentClient as Transaction).batch(group);
       } else {
         for (const stmt of group) {
@@ -205,13 +211,32 @@ export function createStoreContext(
     }
   };
 
-  // REMOTE: one interactive tx (a single stream); redirect db/client onto it.
-  const runRemoteTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
-    const tx = await client.transaction("write");
+  // Interactive transaction: open one tx and redirect db/client onto it. This
+  // works for both remote (libsql://) and local (:memory:/file:) connections in
+  // @libsql/client 0.18.0's pooled implementation.
+  const runInteractiveTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
+    let tx: Transaction;
+    try {
+      tx = await client.transaction("write");
+    } catch (err) {
+      // Establishment failed: unblock joiners so they can fall back to running
+      // their work against the (never redirected) base client, then rethrow.
+      failEstablishedGate?.(err);
+      established = null;
+      openEstablishedGate = null;
+      failEstablishedGate = null;
+      throw err;
+    }
     currentClient = tx;
     currentDb = openDrizzle(tx as unknown as Client);
+    // Redirect is complete: let any caller waiting to join run inline now.
+    openEstablishedGate?.();
     try {
       const result = await work();
+      // Every joined unit of work must settle before COMMIT. Joiners pass the
+      // establishment gate and run inline on the tx connection; without this
+      // drain a joiner still mid-insert would hit an already-settled tx.
+      await drainJoins();
       await runBeforeCommit();
       await tx.commit();
       return result;
@@ -227,25 +252,9 @@ export function createStoreContext(
       tx.close();
       currentClient = client;
       currentDb = baseDb;
-    }
-  };
-
-  // LOCAL: hand-rolled BEGIN/COMMIT over the single shared connection.
-  const runLocalTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
-    await client.execute("BEGIN");
-    try {
-      const result = await work();
-      await runBeforeCommit();
-      await client.execute("COMMIT");
-      return result;
-    } catch (err) {
-      discardBeforeCommit();
-      try {
-        await client.execute("ROLLBACK");
-      } catch {
-        // A failed rollback must not mask the original error.
-      }
-      throw err;
+      established = null;
+      openEstablishedGate = null;
+      failEstablishedGate = null;
     }
   };
 
@@ -277,16 +286,31 @@ export function createStoreContext(
     newId: () => randomUUID(),
     transaction: async (work) => {
       if (txDepth > 0) {
-        // Already inside a transaction → run inline; the outer owns commit/rollback.
-        return work();
+        // Already inside a transaction → run inline; the outer owns
+        // commit/rollback. Wait for the outer interactive tx to be open and
+        // db/client redirected onto it first (see `established` above), so the
+        // join lands on the tx connection and not the held pooled connection.
+        const joined = (async () => {
+          if (established) await established.catch(() => {});
+          return work();
+        })();
+        inFlightJoins.add(joined);
+        try {
+          return await joined;
+        } finally {
+          inFlightJoins.delete(joined);
+        }
       }
       txDepth += 1;
+      established = new Promise<void>((resolve, reject) => {
+        openEstablishedGate = resolve;
+        failEstablishedGate = reject;
+      });
       try {
-        return isRemote
-          ? await runRemoteTransaction(work)
-          : await runLocalTransaction(work);
+        return await runInteractiveTransaction(work);
       } finally {
         txDepth -= 1;
+        established = null;
       }
     },
     registerBeforeCommit: (hook) => {

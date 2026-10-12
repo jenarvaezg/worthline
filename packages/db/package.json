@@ -18,7 +18,7 @@
     }
   },
   "dependencies": {
-    "@libsql/client": "latest",
+    "@libsql/client": "^0.18.0",
     "@worthline/domain": "workspace:*",
     "@worthline/pricing": "workspace:*",
     "drizzle-orm": "latest"

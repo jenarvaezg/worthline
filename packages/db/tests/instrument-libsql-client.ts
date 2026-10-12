@@ -54,6 +54,37 @@ export function instrumentClient(
           return (target.batch as (...a: unknown[]) => unknown)(...args);
         };
       }
+      if (prop === "transaction") {
+        return async (...args: unknown[]) => {
+          const tx = await (target.transaction as (...a: unknown[]) => unknown)(...args);
+          const wrappedTx = new Proxy(tx as unknown as Client, {
+            get(t, p, r) {
+              if (p === "execute") {
+                return (...a: unknown[]) => {
+                  tally(sqlText(a[0]));
+                  onRoundTrip?.();
+                  return (
+                    (t as unknown as Client).execute as (...x: unknown[]) => unknown
+                  )(...a);
+                };
+              }
+              if (p === "batch") {
+                return (...a: unknown[]) => {
+                  const [stmts] = a;
+                  if (Array.isArray(stmts)) for (const s of stmts) tally(sqlText(s));
+                  onRoundTrip?.();
+                  return ((t as unknown as Client).batch as (...x: unknown[]) => unknown)(
+                    ...a,
+                  );
+                };
+              }
+              const value = Reflect.get(t, p, r);
+              return typeof value === "function" ? value.bind(t) : value;
+            },
+          });
+          return wrappedTx;
+        };
+      }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? value.bind(target) : value;
     },
