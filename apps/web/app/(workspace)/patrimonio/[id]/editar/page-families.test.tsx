@@ -404,7 +404,8 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     // `holdingCobrosHref`: the Cobros tab, its `#cobros` fragment on screen.
     const cobros = tabBody(await renderedHtml({ abrir: "cobros" }));
     expect(cobros).toContain('id="cobros"');
-    expect(cobros).toContain("Renta pasiva");
+    // A fund that never paid anything: the record says so (#1830).
+    expect(cobros).toContain("Este activo no ha pagado nada todavía.");
     // The Papelera's «Lo traspasé a…» exit (#1549): the traspaso, with its intent.
     const traspaso = panel(await renderedHtml({ abrir: "traspaso", archivar: "1" }));
     expect(traspaso).toContain("<h3>Traspasar</h3>");
@@ -432,11 +433,29 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(html).toMatch(/Cobros<span class="fichaTabCount">1</);
   });
 
+  test("a fund with no cobros says it in one line, with the door to «Añadir cobro» (#1830)", async () => {
+    const body = tabBody(await renderedHtml({ pestaña: "cobros" }));
+
+    expect(body).toContain("Este activo no ha pagado nada todavía.");
+    // No block of zeros: no renta-pasiva strip, no month grid.
+    expect(body).not.toContain("Renta pasiva");
+    expect(body).not.toContain("cobrosPasiva");
+    // The link opens the «Añadir cobro» panel over this tab — a real href, so it
+    // lands with JS off too.
+    expect(body).toContain(
+      `href="/patrimonio/${PUBLIC_ID}/editar?pesta%C3%B1a=cobros&amp;accion=cobro"`,
+    );
+  });
+
   test("the Rentabilidad tab measures what the header measures", async () => {
     const html = await renderedHtml({ pestaña: "rentabilidad" });
 
     // The same fold, the same 2.000 €: the panel and the header cannot disagree.
     expect(tabBody(html)).toMatch(/2\.?000\s€/);
+    // Two questions faced, the owner's money first (#1830).
+    const body = tabBody(html);
+    expect(body.indexOf("Tu dinero")).toBeGreaterThan(-1);
+    expect(body.indexOf("El fondo")).toBeGreaterThan(body.indexOf("Tu dinero"));
   });
 });
 

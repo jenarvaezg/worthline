@@ -151,3 +151,20 @@ export function fichaTabUrl(
   if (tab === (tabs[0] ?? "")) return basePath;
   return `${basePath}?${new URLSearchParams({ [FICHA_TAB_PARAM]: tab })}`;
 }
+
+/**
+ * The ficha open on `tab` with `action`'s panel over it (#1830): the real `href` of
+ * a link printed inside a tab that opens an action — Cobros' «Añadir un cobro» —
+ * so it still lands with JS off, in a new tab or from a copied link.
+ */
+export function fichaActionUrl(
+  basePath: string,
+  tabs: readonly string[],
+  tab: string,
+  action: string,
+): string {
+  const params = new URLSearchParams();
+  if (tab !== (tabs[0] ?? "")) params.set(FICHA_TAB_PARAM, tab);
+  params.set(FICHA_ACTION_PARAM, action);
+  return `${basePath}?${params}`;
+}

@@ -73,7 +73,7 @@ test("the tabs switch without a reload, mirror ?pestaña= and walk back with Atr
   await openFichaTab(page, "Cobros");
   await expect(page).toHaveURL(/pesta%C3%B1a=cobros/);
   await expect(page.getByRole("region", { name: "Cobros" })).toContainText(
-    "Renta pasiva",
+    "Este activo no ha pagado nada todavía.",
   );
 
   await openFichaTab(page, "Datos del activo");
@@ -273,4 +273,81 @@ test("the ledger shows the 10 latest with their importe and unfolds the rest wit
   await expect(
     ledger.getByRole("button", { name: "Ver solo las 10 últimas" }),
   ).toHaveAttribute("aria-expanded", "true");
+});
+
+// ── #1830: the polish of the tabs ─────────────────────────────────────────────
+
+test("a fund with no cobros says so in one line, and its link opens «Añadir cobro» without a reload", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Sin Cobros E2E");
+  await openFichaTab(page, "Cobros");
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+
+  const record = page.getByRole("region", { name: "Cobros" });
+  await expect(record).toContainText("Este activo no ha pagado nada todavía.");
+  // No block of zeros: no renta-pasiva strip over an empty year.
+  await expect(record).not.toContainText("Renta pasiva");
+
+  const add = record.getByRole("link", { name: "Añadir un cobro" });
+  await add.click();
+  await expect(page.getByRole("dialog", { name: "Añadir cobro" })).toBeVisible();
+  await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*accion=cobro/);
+
+  // Closed, focus goes back to the link that opened it (§8) — still no reload.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(add).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+});
+
+test("Rentabilidad faces your money (TIR) with the fund (TWR), and each absence says why", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Rentabilidad E2E");
+  await openFichaTab(page, "Rentabilidad");
+
+  const money = page.getByRole("region", { name: "Tu dinero TIR" });
+  const fund = page.getByRole("region", { name: "El fondo TWR" });
+  await expect(money).toBeVisible();
+  await expect(fund).toBeVisible();
+  // Side by side on a desktop, the owner first.
+  const [left, right] = [await money.boundingBox(), await fund.boundingBox()];
+  expect(right?.x ?? 0).toBeGreaterThan((left?.x ?? 0) + (left?.width ?? 0) - 1);
+  expect(right?.y).toBe(left?.y);
+
+  // Bought today, with no monthly close yet: neither measure exists, and each
+  // side says why instead of printing a bare dash.
+  await expect(money).toContainText("Sin TIR: todos los movimientos son del mismo día.");
+  await expect(fund).toContainText(
+    "Sin TWR: hacen falta al menos dos cierres mensuales.",
+  );
+  await expect(money).toContainText("Ganancia total");
+});
+
+test("«Datos del activo» splits identity from price: no field spans the ficha on a desktop", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Datos E2E");
+  await openFichaTab(page, "Datos del activo");
+
+  const datos = await page.locator(".fichaDatos").boundingBox();
+  const name = await page.getByLabel("Nombre del activo").boundingBox();
+  const symbol = await page.getByLabel("Símbolo de precio").boundingBox();
+  expect(name?.width ?? 0).toBeLessThan((datos?.width ?? 0) * 0.6);
+  // Price beside identity, not under it.
+  expect(symbol?.x ?? 0).toBeGreaterThan((name?.x ?? 0) + (name?.width ?? 0));
+
+  // At 390 px the two columns are one again, and nothing scrolls sideways.
+  await page.setViewportSize({ height: 844, width: 390 });
+  const narrowName = await page.getByLabel("Nombre del activo").boundingBox();
+  const narrowSymbol = await page.getByLabel("Símbolo de precio").boundingBox();
+  expect(narrowSymbol?.x).toBe(narrowName?.x);
+  expect(await sidewaysOverflow(page)).toBeLessThanOrEqual(0);
 });
