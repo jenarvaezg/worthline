@@ -169,6 +169,7 @@ export async function recordTransferAction(
         // The VL a brand-new destination is born priced at is the one the pair will be
         // WRITTEN at — which in the `units` reading is derived, not typed (#1544).
         pricePerUnit: preview.inPricePerUnit,
+        savedAt: now,
         seed,
         securityId: destinationSecurityId.securityId,
       });
@@ -285,6 +286,12 @@ async function resolveDestination(
     destination: TransferDestination;
     origin: ManualAsset;
     pricePerUnit: DecimalString;
+    /**
+     * The action's instant (ADR 0024): the day the destination's price — the VL just
+     * declared — is stamped with. Required, so a future caller cannot leave the
+     * store to guess it.
+     */
+    savedAt: string;
     seed: number | string;
     /**
      * El par tipado del identificador, ya validado contra el instrumento (#1772).
@@ -327,6 +334,7 @@ async function resolveDestination(
       liquidityTier: defaultsFor(instrument).rung,
       manualPricePerUnit: params.pricePerUnit,
       name: params.destination.name,
+      savedAt: params.savedAt,
       ownership: params.origin.ownership,
       // El par tipado no viaja suelto: la fila escrita y el stub del catálogo leen
       // el MISMO, así que no pueden clavarse bajo identidades distintas.

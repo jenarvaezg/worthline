@@ -26,7 +26,8 @@
 > day it has none. `refreshFailed` says the provider's last refresh failed (`stale`
 > or `failed` row) whichever origin was picked, so the ficha can say «no se pudo
 > actualizar» instead of a bare «cotización Yahoo». `manual_priced_at` is stamped
-> on the alta and on every price change since #1828; the v73 rung cleared every
+> on the alta and on every price change since #1828, with the instant of the
+> action's clock (ADR 0024: the store reads none); the v73 rung cleared every
 > earlier stamp (it was only ever the alta's), and the workspace document carries the
 > stamp as `manualPriceSetAt` so a restore cannot bring an old one back. A hand-set
 > price with no stamp says «precio a mano» with no day.
