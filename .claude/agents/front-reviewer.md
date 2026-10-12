@@ -56,8 +56,12 @@ Design-system § 7 says how temporary debt may enter.
 
 ## How each section shows up in a diff
 
-The rule is in the canon. These are only the signals that send you to it.
+The rule is in the canon. These are only the signals that send you to it, and the
+list is not complete: for every surface the diff touches, walk design-system § 8 and
+interaction-patterns § 12, which are.
 
+- A figure fetched, computed or awaited in a client component, or a spinner before
+  the numbers → interaction-patterns § 0, § 1.
 - A new class or inline `style` whose declarations repeat a catalogue recipe or
   another class in `globals.css` → design-system § 1, § 7.
 - A second sheet with its own background on a page, a second dominant figure,

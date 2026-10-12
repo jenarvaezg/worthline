@@ -51,29 +51,20 @@ before judging, and if the diff contradicts an ADR, say so.
 
 ### 1. A migration is a new rung, and the three schemas agree
 
-Read: ADR 0002 § Schema evolution workflow and § Consequences; ADR 0030 §
-Consequences (migrations per workspace, on open, behind a version fast-path); ADR
-0087 § Decision (the control-plane ladder); `migrate`, `readSchemaVersion` and
-`execToleratingMissingTable` in `packages/db/src/migrate.ts`, and
-`migrateControlPlane` in `packages/db/src/control-plane/migrate.ts`.
-
-Where the canon lags the code, judge by the code. The version lives in the one-row
-`schema_meta` table, and `PRAGMA user_version` is written best-effort only, because
-Turso rejects it over HTTP. `packages/db/drizzle/` stopped being generated long ago,
-so `schema-sql.ts` is kept by hand whatever its header says. ADR 0002 makes a step
-idempotent with «try/catch on ALTER TABLE»; the code has since narrowed that to
-tolerating only the error that means «already there» and surfacing the rest
-(`packages/db/tests/migrate-index-ddl-guard.persistence.test.ts`).
+Read: ADR 0002 whole, its § Amendment (#1625) included — it says where the version
+lives, why `schema-sql.ts` is kept by hand, what a step may tolerate and how a table
+is rebuilt; ADR 0030 § Consequences (migrations per workspace, on open, behind a
+version fast-path); ADR 0087 § Decision (the control-plane ladder); `migrate` in
+`packages/db/src/migrate.ts` and `migrateControlPlane` in
+`packages/db/src/control-plane/migrate.ts`.
 
 Tells: a step that already shipped edited instead of a new `if (version < N)` rung
-appended; a column in `schema.ts` without its rung, or without its line in
-`schema-sql.ts`, so a fresh database and a migrated one end up different; a
-`SCHEMA_VERSION` bump with no rung, or a rung with no bump; a catch around DDL that
-would also swallow a typo; a change SQLite's `ALTER TABLE` cannot make in place
-(drop or retype a column, add `NOT NULL`) done without the table rebuild the ladder
-already uses (`foreign_keys` off outside the transaction, copy, drop and rename
-inside it); a statement added to every open before the fast return; control-plane
-DDL that is not a rung of its own ladder.
+appended; a schema change that does not land in all three of `schema.ts`, the rung
+and `schemaSql`, so a fresh database and a migrated one end up different; a
+`SCHEMA_VERSION` that disagrees with the last rung; DDL whose error handling would
+also swallow a typo; a change `ALTER TABLE` cannot make in place done without a
+rebuild; a statement added to every open before the fast return; control-plane DDL
+that is not a rung of its own ladder.
 
 ### 2. A unit of work is one `ctx.transaction`
 
@@ -89,8 +80,9 @@ connection that cannot see a `:memory:` database. Against Turso it opens
 calls flatten into the outermost one. Tests run on `:memory:`, so the remote driver
 is not what a green test proves.
 
-Tells: `db.transaction(`, `client.transaction(`, `client.batch(` or
-`execute("BEGIN")` outside `store-context.ts`; writes that must stand or fall
+Tells: `db.transaction(`, `client.transaction(`, `client.batch(` or a hand-written
+`BEGIN` outside `store-context.ts` and the two migration ladders, whose rebuilds
+bracket themselves; writes that must stand or fall
 together issued as separate calls, each in its own transaction, so a failure between
 them leaves half of them written; a dated fact persisted outside a command, or
 persisted and rippled in two calls; an error caught and dropped inside a
@@ -116,21 +108,24 @@ written unsealed or carried into an export.
 
 ### 4. Turso is across a network: round trips stay bounded
 
+The shape of a historical ripple is `calc-reviewer`'s invariant 4. Yours is every
+other path: what a page or a loader reads, a write outside the ripple, a store open.
+
 Read: ADR 0030 § Consequences (the fast path is one cheap read); ADR 0038 §
-Considered options; ADR 0089 § Context; `docs/performance-budgets.md`; the docblock of
-`chunk` in `packages/db/src/chunk.ts`; `batchWrites` and `registerBeforeCommit` in
-`store-context.ts`.
+Considered options; `docs/performance-budgets.md`; the docblock of `chunk` in
+`packages/db/src/chunk.ts`; `batchWrites` in `store-context.ts`.
 
-No document fixes a statement budget. The proof of a bounded shape is a statement and
-round-trip count with `packages/db/tests/instrument-libsql-client.ts`, the way the
-`*-batched-*.persistence.test.ts` files do it; a new read or write path without one is
-a gap worth naming.
+No document fixes a statement budget. A count taken with
+`packages/db/tests/instrument-libsql-client.ts` is what proves a shape, as
+`statement-import-work.persistence.test.ts` and
+`manual-value-history.persistence.test.ts` do; a new path without one is a gap worth
+naming.
 
-Tells: a store read or write inside a loop over rows, dates, holdings or scopes; a
-multi-row insert or an `inArray` without `chunk`, which breaks on SQLite's parameter
-cap once the list grows; audit entries written one per row; writes that skip
-`batchWrites`; a query added to every store open or every request; a bound in a
-`*-batched-*` test loosened, or a ceiling in `performance-budgets.md` raised.
+Tells: a store read or write inside a loop over rows, holdings or scopes; a multi-row
+insert or an `inArray` without `chunk`, which breaks on SQLite's parameter cap once
+the list grows; audit entries written one per row; a query added to every store open
+or every request; a read with no window over a table that grows every day; a bound in
+a statement-count test loosened, or a ceiling in `performance-budgets.md` raised.
 
 ### 5. Every writer passes the store seam's guards, in the store's types
 

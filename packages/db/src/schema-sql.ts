@@ -1,9 +1,11 @@
-// GENERATED from src/schema.ts via `npm run db:generate` (drizzle-kit).
-// Do not edit by hand — change src/schema.ts and regenerate.
+// The full target schema of a fresh database, kept BY HAND in step with
+// src/schema.ts and the ladder in src/migrate.ts (ADR 0002, Amendment #1625). It
+// began as drizzle-kit output, but ./drizzle stops at 0008 and nothing regenerates
+// it: a new table or column is written here in the same change as its rung.
 //
-// This is the runtime form of the migration in ./drizzle: inlining the DDL as a
-// string keeps it bundler-safe (no filesystem read at runtime, which Turbopack
-// cannot resolve once the package is bundled). SQLite ignores the `--` comments.
+// Inlining the DDL as a string keeps it bundler-safe (no filesystem read at
+// runtime, which Turbopack cannot resolve once the package is bundled). SQLite
+// ignores the `--` comments.
 
 export const schemaSql = `
 CREATE TABLE \`app_settings\` (

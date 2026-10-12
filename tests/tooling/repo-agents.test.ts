@@ -20,9 +20,10 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const AGENTS_DIR = join(REPO_ROOT, ".claude/agents");
 const CANON = readFileSync(join(REPO_ROOT, "docs/agents/subagents.md"), "utf8");
 
-const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit"];
+/** `*` grants every tool, the writing ones included. */
+const WRITING_TOOLS = ["*", "Write", "Edit", "NotebookEdit"];
 
-type RepoAgent = { body: string; file: string; name?: string; tools?: string[] };
+type RepoAgent = { file: string; name?: string; source: string; tools?: string[] };
 
 /** Top-level `key: value` lines of the frontmatter; nested blocks are skipped. */
 function frontmatterField(source: string, key: string): string | undefined {
@@ -36,12 +37,12 @@ const agents: RepoAgent[] = readdirSync(AGENTS_DIR)
   .map((file) => {
     const source = readFileSync(join(AGENTS_DIR, file), "utf8");
     return {
-      body: source,
       file,
       name: frontmatterField(source, "name"),
       tools: frontmatterField(source, "tools")
         ?.split(",")
         .map((tool) => tool.trim()),
+      source,
     };
   });
 
@@ -53,10 +54,12 @@ const agent = (name: string) => {
 
 describe("repo agents (#1622, #1625)", () => {
   test("every agent is named after its file", () => {
+    const misnamed = agents
+      .filter(({ file, name }) => `${name}.md` !== file)
+      .map(({ file, name }) => `${file}: name ${name}`);
+
     expect(agents.length).toBeGreaterThan(0);
-    for (const { file, name } of agents) {
-      expect(`${name}.md`).toBe(file);
-    }
+    expect(misnamed).toEqual([]);
   });
 
   test("every agent is registered in the subagent canon", () => {
@@ -79,11 +82,11 @@ describe("repo agents (#1622, #1625)", () => {
   });
 
   test("wl-db-reviewer speaks libsql/Turso, never the stack of the generic it replaces", () => {
-    const { body } = agent("wl-db-reviewer");
+    const { source } = agent("wl-db-reviewer");
 
-    expect(body).not.toMatch(/postgre|supabase/i);
-    expect(body).toMatch(/libsql/i);
-    expect(body).toMatch(/turso/i);
+    expect(source).not.toMatch(/postgre|supabase/i);
+    expect(source).toMatch(/libsql/i);
+    expect(source).toMatch(/turso/i);
   });
 
   test("the canon vetoes database-reviewer and names wl-db-reviewer in its place", () => {
@@ -96,12 +99,12 @@ describe("repo agents (#1622, #1625)", () => {
   });
 
   test("front-reviewer cites both front canon documents and copies neither", () => {
-    const { body } = agent("front-reviewer");
+    const { source } = agent("front-reviewer");
 
-    expect(body).toContain("docs/design-system.md");
-    expect(body).toContain("docs/interaction-patterns.md");
+    expect(source).toContain("docs/design-system.md");
+    expect(source).toContain("docs/interaction-patterns.md");
     // The token table is the first thing a copy would carry: a hex literal in the
     // agent means a value that will go stale the day globals.css changes it.
-    expect(body).not.toMatch(/#[0-9a-f]{6}\b/i);
+    expect(source).not.toMatch(/#[0-9a-f]{6}\b/i);
   });
 });
