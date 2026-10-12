@@ -1,17 +1,15 @@
+import { currencyMark, formatDocumentMoney } from "@web/asistente/document-figures";
 import type { InvestmentOperation, MoneyMinor } from "@worthline/domain";
-import {
-  BASE_CURRENCY,
-  formatMoneyMinorPrivacy,
-  formatPrice,
-  maskMoneyString,
-} from "@worthline/domain";
+import { formatPrice, maskMoneyString } from "@worthline/domain";
 
 /**
  * How an operation's unit price reads in the ledger table (#1401).
  *
  * Three states, and the point is that they are told apart:
  *
- * - a euro operation: one figure, nothing else to say;
+ * - a euro operation: one figure with its «€», nothing else to say (the mark rides
+ *   with it since #1827, because the phone reads the row as «5 × 106,65 €», without
+ *   a column header to say what the figure is in);
  * - a CONVERTED one: the euros the engine folded, plus the apunte the bank stated
  *   («8 USD») underneath — the whole reason the original is persisted, and what
  *   lets a user reconcile a row against a statement in dollars. Figures go through
@@ -38,6 +36,9 @@ export interface OperationPriceReading {
  *
  * Null when there were no fees: an empty cell is the existing convention («—»), and «0,00
  * USD» is noise.
+ *
+ * The captured fees print in the document voice (`formatDocumentMoney`): the cents
+ * whenever there are any, because this is the figure checked against the bank's own.
  */
 export function readOperationFees(
   operation: InvestmentOperation,
@@ -55,12 +56,22 @@ export function readOperationFees(
   }
 
   return {
-    capture: formatMoneyMinorPrivacy(
+    capture: readDocumentMoney(
       { amountMinor: captured.feesMinor, currency: captured.currency },
       privacyMode,
     ),
     fees,
   };
+}
+
+/**
+ * Money as a ledger row prints it (#1827): the document voice — whole units, the
+ * cents whenever there are any — because every amount on the row is one a user holds
+ * against the bank's confirmation. Privacy masks the digits and keeps the shape.
+ */
+export function readDocumentMoney(value: MoneyMinor, privacyMode: boolean): string {
+  const formatted = formatDocumentMoney(value.amountMinor, value.currency);
+  return privacyMode ? maskMoneyString(formatted) : formatted;
 }
 
 export function readOperationPrice(
@@ -75,18 +86,16 @@ export function readOperationPrice(
     return privacyMode ? maskMoneyString(formatted) : formatted;
   };
 
+  // A converted row's `currency` is the base one the engine folded it into; a row
+  // still in its own currency carries that one. Either way the mark is the row's.
+  const price = `${read(operation.pricePerUnit)} ${currencyMark(operation.currency)}`;
+
   if (operation.capture !== undefined) {
     return {
       capture: `${read(operation.capture.pricePerUnit)} ${operation.capture.currency}`,
-      price: read(operation.pricePerUnit),
+      price,
     };
   }
 
-  return {
-    capture: null,
-    price:
-      operation.currency === BASE_CURRENCY
-        ? read(operation.pricePerUnit)
-        : `${read(operation.pricePerUnit)} ${operation.currency}`,
-  };
+  return { capture: null, price };
 }

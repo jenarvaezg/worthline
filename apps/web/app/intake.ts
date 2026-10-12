@@ -5,7 +5,6 @@ import type {
   DrilldownKey,
   NetWorthFraming,
   PortfolioGroupKey,
-  PriceFreshnessState,
 } from "@worthline/domain";
 import { formatUnits, PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
 
@@ -791,18 +790,4 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
   }
 
   return value;
-}
-
-// === #58 inversiones ===
-
-/** Map a price freshness state to a localized label (shared by /inversiones pages). */
-export function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {
-  if (!freshness) return "—";
-  const labels: Record<PriceFreshnessState, string> = {
-    failed: "Fallido",
-    fresh: "Reciente",
-    manual: "Manual",
-    stale: "Obsoleto",
-  };
-  return labels[freshness];
 }

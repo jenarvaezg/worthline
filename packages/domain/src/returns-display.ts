@@ -4,7 +4,7 @@ import type { DecimalString } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
-import type { InvestmentValuation } from "./investment-valuation";
+import type { CachedQuoteProvenance, InvestmentValuation } from "./investment-valuation";
 import { deriveInvestmentValuation } from "./investment-valuation";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type {
@@ -307,6 +307,12 @@ export interface HoldingReturnsReads {
   operations: readonly InvestmentOperation[];
   cachedPrice: DecimalString | undefined;
   manualPrice: DecimalString | undefined;
+  /**
+   * Who quoted `cachedPrice` and of when, and when `manualPrice` was set (#1828):
+   * provenance for the surface that names the price, never an input to a figure.
+   */
+  cachedQuote?: CachedQuoteProvenance;
+  manualPricedAt?: string;
   /** Its monthly-close series; absent when the surface has none to measure a TWR on. */
   monthlyCloses?: readonly MonthlyCloseValue[];
   /** Its recorded payouts (one-offs + derived occurrences) up to the valuation date. */
@@ -338,6 +344,8 @@ export function holdingReturns(input: HoldingReturnsReads): {
     currency: input.currency,
     manualPrice: input.manualPrice,
     operations: [...input.operations],
+    ...(input.cachedQuote ? { cachedQuote: input.cachedQuote } : {}),
+    ...(input.manualPricedAt ? { manualPricedAt: input.manualPricedAt } : {}),
   });
   const payouts = input.payouts ?? [];
   const returnsInput = {

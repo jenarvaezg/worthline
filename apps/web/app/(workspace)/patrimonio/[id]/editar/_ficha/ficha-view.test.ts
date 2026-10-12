@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  claimFichaOpen,
   type FichaViewSpec,
   fichaActionUrl,
   fichaTabUrl,
@@ -122,6 +123,27 @@ describe("fichaTabUrl", () => {
     expect(fichaTabUrl(base, INVESTMENT.tabs, "cobros")).toBe(
       `${base}?pesta%C3%B1a=cobros`,
     );
+  });
+});
+
+/**
+ * A link to where something is fixed (#1828) — «Indicar símbolo», «Ver
+ * operaciones» — asks the ficha to show a tab. The ficha claims only a tab it has,
+ * and showing it closes whatever panel was open: the fix is on the tab, not behind
+ * a sheet.
+ */
+describe("claimFichaOpen", () => {
+  test("a tab the ficha has is shown, and the open panel closes", () => {
+    expect(claimFichaOpen({ field: "providerSymbol", tab: "datos" }, INVESTMENT)).toEqual(
+      {
+        action: null,
+        tab: "datos",
+      },
+    );
+  });
+
+  test("a tab it does not have is left to the link", () => {
+    expect(claimFichaOpen({ tab: "valoracion" }, INVESTMENT)).toBeNull();
   });
 });
 

@@ -131,7 +131,7 @@ test("investment: create with manual price → buy operation → derived value v
   //     the buy was at 105,50 — value is units × current price (ADR 0006), not
   //     cost basis; this is the same figure the Patrimonio list shows.
   const state = page.getByRole("region", { name: "Estado del activo" });
-  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
+  await expect(state.locator(".fichaFigures")).toContainText("10 a 100 €");
   await expect(state.locator(".fichaValue")).toHaveText(/1\.?000\s*€/);
 
   // 11. The unified Patrimonio list shows the same derived value for the holding.

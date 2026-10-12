@@ -136,7 +136,7 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   // 8 of the 10 participaciones are left, worth 800 € — the header prints a round
   // figure without decimals, so this asserts the figure and not its padding.
   const state = page.getByRole("region", { name: "Estado del activo" });
-  await expect(state.locator(".fichaFigures")).toContainText("8 × 100 €");
+  await expect(state.locator(".fichaFigures")).toContainText("8 a 100 €");
   await expect(state.locator(".fichaValue")).toHaveText(/^800\s€$/);
   expect(await netWorth(page)).toBe(netAfterBuy);
 

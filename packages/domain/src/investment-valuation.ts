@@ -4,6 +4,7 @@ import { isPositiveDecimal } from "./decimal";
 import type { DomainViolation } from "./domain-result";
 import type { InvestmentOperation, PositionWarning } from "./investment-types";
 import { derivePosition } from "./positions";
+import type { AssetPrice, PriceSource } from "./prices";
 import type { ManualAsset } from "./workspace-types";
 
 /**
@@ -93,6 +94,30 @@ export function selectInvestmentPrice(input: {
   return undefined;
 }
 
+/**
+ * Where the price that values an investment comes from, and of when (#1828).
+ *
+ * The three answers the selection rule can give (ADR 0006) and nothing else: a
+ * provider's cached quote, the price someone set by hand, or no price at all —
+ * valued at what it cost. «The last operation's price» is NOT one of them: the
+ * live rule never reads the ledger's prices, and a hand-set price that happens to
+ * equal the last purchase is still a hand-set price. `asOf` is the day the price
+ * is FROM, and null when nothing the app stored can say it.
+ */
+export type InvestmentPriceOrigin =
+  | { kind: "quote"; provider: PriceSource | null; asOf: string | null }
+  | { kind: "manual"; asOf: string | null }
+  | { kind: "cost" };
+
+/**
+ * What the cache row says about the price it carries — the provenance riding next
+ * to `cachedPrice`, never a second copy of the figure.
+ */
+export type CachedQuoteProvenance = Pick<
+  AssetPrice,
+  "source" | "priceDate" | "fetchedAt" | "freshnessState"
+>;
+
 /** Inputs for a single investment's derived valuation. */
 export interface DeriveInvestmentValuationInput {
   assetId: string;
@@ -100,6 +125,39 @@ export interface DeriveInvestmentValuationInput {
   operations: InvestmentOperation[];
   cachedPrice: DecimalString | undefined;
   manualPrice: DecimalString | undefined;
+  /** The cache row behind `cachedPrice`: who quoted it and of when (#1828). */
+  cachedQuote?: CachedQuoteProvenance;
+  /** When `manualPrice` was set (an ISO instant), when the app knows it (#1828). */
+  manualPricedAt?: string;
+}
+
+/**
+ * The day a cached quote is FROM. The market day the provider reported wins; a
+ * fresh row without one was fetched live, so its fetch is its moment. A row kept
+ * after a failed refresh carries the failed attempt's time (#730), so without a
+ * market day it has no date to give.
+ */
+function quoteAsOf(quote: CachedQuoteProvenance | undefined): string | null {
+  if (quote?.priceDate) return quote.priceDate.slice(0, 10);
+  if (quote?.freshnessState === "fresh") return quote.fetchedAt.slice(0, 10);
+  return null;
+}
+
+/** The origin of the price the rule picked — read off the pick, never re-derived. */
+function priceOriginOf(
+  selected: SelectedInvestmentPrice | undefined,
+  input: DeriveInvestmentValuationInput,
+): InvestmentPriceOrigin {
+  if (selected === undefined) return { kind: "cost" };
+  if (selected.source === "manual") {
+    return { asOf: input.manualPricedAt?.slice(0, 10) ?? null, kind: "manual" };
+  }
+  // A quote with no provenance handed in is still a quote; who quoted it is unknown.
+  return {
+    asOf: quoteAsOf(input.cachedQuote),
+    kind: "quote",
+    provider: input.cachedQuote?.source ?? null,
+  };
 }
 
 /** The derived valuation of one investment. */
@@ -110,6 +168,12 @@ export interface InvestmentValuation {
   pricePerUnit: DecimalString | undefined;
   /** Which source supplied the price, if any. */
   priceSource: InvestmentPriceSource | undefined;
+  /**
+   * Where that price comes from and of when (#1828), out of the SAME pick that
+   * valued the holding — so a surface that prints «cotización Yahoo · 11/10/2026»
+   * beside the value is quoting the rule, not guessing at it afterwards.
+   */
+  priceOrigin: InvestmentPriceOrigin;
   /** Coded clamps raised during position derivation (e.g. oversell). */
   warnings: PositionWarning[];
   /**
@@ -150,6 +214,7 @@ export function deriveInvestmentValuation(
     ...(position.costBasisGrade === undefined
       ? {}
       : { costBasisGrade: position.costBasisGrade }),
+    priceOrigin: priceOriginOf(selected, input),
     pricePerUnit: selected?.pricePerUnit,
     priceSource: selected?.source,
     valueMinor: position.marketValue?.amountMinor ?? position.costBasis.amountMinor,

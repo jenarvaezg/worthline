@@ -854,7 +854,9 @@ export type {
   PositionWarningCode,
 } from "./investment-types";
 export type {
+  CachedQuoteProvenance,
   DeriveInvestmentValuationInput,
+  InvestmentPriceOrigin,
   InvestmentPriceSource,
   InvestmentValuation,
   SelectedInvestmentPrice,
@@ -975,6 +977,7 @@ export {
 export type { TransferFlowPolicy } from "./operation-flow";
 export {
   isDeclaredOpening,
+  operationAmountMinor,
   signedInvestedMinor,
   unhandledOperationKind,
 } from "./operation-flow";

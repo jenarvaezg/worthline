@@ -10,6 +10,14 @@
  * they did; a form returns to the tab its result shows on; and at 390 px the four
  * tabs fit and nothing scrolls sideways.
  *
+ * And the ledger (#1827): compact rows with their importe, the 10 latest and the rest
+ * unfolded in place without a reload, and at 390 px two lines per apunte that never
+ * scroll sideways.
+ *
+ * And the header is honest about its price (#1828): it says where the price comes
+ * from and of when, and the warning about a missing symbol sits beside it with its
+ * two ways out — fix it in «Datos del activo», or say it is quoted by hand.
+ *
  * And adding never needs a search (#1829): scrolled anywhere, the habitual action
  * is one click away (a strip on a desktop, a button at the bottom of a phone);
  * «Añadir cobro» asks which cobro first and shows one form; and a registration
@@ -23,6 +31,7 @@ import {
   openFichaAction,
   openFichaTab,
   test,
+  waitForHydration,
 } from "./fixtures";
 
 /** A fund with a manual price (no network) and one buy, so every action is offered. */
@@ -149,6 +158,52 @@ test("the links that already existed land where they promised", async ({ page })
   ).toBeVisible();
 });
 
+test("the price says where it comes from, and «Indicar símbolo» lands on the field (#1828)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Origen E2E");
+  const state = page.getByRole("region", { name: "Estado del activo" });
+
+  // The alta's hand-set price, dated the day it was set — today.
+  const [year, month, day] = new Date().toISOString().slice(0, 10).split("-");
+  await expect(state).toContainText("10 a 100 €");
+  await expect(state).toContainText(`precio a mano · ${day}/${month}/${year}`);
+
+  // No symbol: the warning sits beside the price, and the band does not repeat it.
+  await expect(state).toContainText("Sin cotización automática.");
+  await expect(page.getByRole("alert", { name: "Avisos" })).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const fix = state.getByRole("link", { name: "Indicar símbolo" });
+  await waitForHydration(fix);
+  await fix.click();
+
+  // «Datos del activo», in place, with the cursor on the symbol field (§8).
+  await expect(page).toHaveURL(/pesta%C3%B1a=datos/);
+  await expect(page.getByRole("textbox", { name: "Símbolo de precio" })).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+});
+
+test("«Cotiza a mano» is today's «Es intencional»: the price stops asking for a symbol", async ({
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo A Mano E2E");
+  const state = page.getByRole("region", { name: "Estado del activo" });
+
+  await state.getByRole("button", { name: "Cotiza a mano" }).click();
+  await expect(page).toHaveURL(/ok=warning_acknowledged/);
+
+  await page.goto(ficha);
+  await expect(state).toContainText("precio a mano");
+  await expect(state).not.toContainText("Sin cotización automática");
+});
+
 test("a cobro added from the panel lands on the Cobros tab", async ({ page }) => {
   await fundWithBuy(page, "Fondo Cobro E2E");
 
@@ -179,6 +234,21 @@ test("at 390 px the four tabs fit, nothing scrolls sideways, and the panel takes
     await tabs.evaluate((nav) => nav.scrollWidth - nav.clientWidth),
   ).toBeLessThanOrEqual(0);
   await expect(tabs.getByRole("link", { name: "Datos" })).toBeVisible();
+
+  // The ledger reads in two lines per apunte, with nothing to scroll sideways
+  // (#1827): «dd/mm/aaaa · Compra» with the importe at the right, the sum under it.
+  const ledger = page.getByRole("region", { name: "Operaciones de la inversión" });
+  const row = ledger.locator("tbody tr").first();
+  await expect(row.locator(".opsCalc")).toHaveText(/^10 × 100\s€$/);
+  expect(
+    await ledger.evaluate((el) => el.scrollWidth - el.clientWidth),
+  ).toBeLessThanOrEqual(0);
+  const date = await row.locator(".opsDate").boundingBox();
+  const amount = await row.locator(".opsAmount").boundingBox();
+  const sum = await row.locator(".opsCalc").boundingBox();
+  expect(Math.abs((date?.y ?? 0) - (amount?.y ?? 0))).toBeLessThan(6);
+  expect(sum?.y ?? 0).toBeGreaterThanOrEqual((date?.y ?? 0) + (date?.height ?? 0) - 1);
+  expect((amount?.x ?? 0) + (amount?.width ?? 0)).toBeLessThanOrEqual(390);
 
   const panel = await openFichaAction(page, "Registrar operación");
   const box = await panel.boundingBox();
@@ -362,6 +432,81 @@ test("«Añadir cobro» asks which cobro first, shows that form only, and «Aña
   await expect(reopened.getByRole("radio", { name: "Un cobro suelto" })).toBeChecked();
   await expect(reopened.locator('input[name="dateISO"]')).toHaveValue("2026-03-15");
   await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue("");
+});
+
+test("the ledger shows the 10 latest with their importe and unfolds the rest without a reload (#1827)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Libro E2E");
+
+  // Eleven older buys in one go, through the ficha's own «Cargar movimientos».
+  const statement = await openFichaAction(page, "Cargar movimientos");
+  const csv = [
+    "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+    ...Array.from(
+      { length: 11 },
+      (_, index) =>
+        `2026-01-${String(index + 1).padStart(2, "0")};Fondo;IE00B4L5Y983;Compra;2;210;1,50;Fondo Libro E2E`,
+    ),
+  ].join("\n");
+  await statement.locator('input[name="file"]').setInputFiles({
+    buffer: Buffer.from(csv),
+    mimeType: "text/csv",
+    name: "movimientos.csv",
+  });
+  await statement.getByRole("button", { name: "Ver cambios" }).click();
+  await expect(statement.getByText("11 movimientos nuevos")).toBeVisible();
+  await statement.getByRole("button", { name: "Confirmar y cargar" }).click();
+  await expect(page).toHaveURL(/ok=statement_loaded/);
+
+  const ledger = page.getByRole("region", { name: "Operaciones de la inversión" });
+  const rows = ledger.locator("tbody tr");
+  await expect(rows).toHaveCount(10);
+
+  // The importe is the domain's: 2 × 105 € + 1,50 € of fees.
+  const older = rows.filter({ hasText: "11/01/2026" });
+  await expect(older.locator(".opsAmount")).toHaveText(/^211,50\s€$/);
+  // «Eliminar» waits inside the row's «⋯».
+  await expect(older.getByText("Eliminar")).toBeHidden();
+  await older.getByLabel("Acciones de la operación del 11/01/2026").click();
+  await expect(older.getByText("Eliminar")).toBeVisible();
+  await older.getByLabel("Acciones de la operación del 11/01/2026").click();
+
+  // Ten rows of about 35 px fit a desktop screen.
+  const firstBox = await rows.first().boundingBox();
+  expect(firstBox?.height ?? 0).toBeLessThanOrEqual(40);
+
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const more = ledger.getByRole("button", { name: "Ver las 12 operaciones" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(rows).toHaveCount(12);
+  // The unfolded ledger is in the URL (interaction-patterns §3): shareable, and what a
+  // terminal lands back on.
+  await expect(page).toHaveURL(/libro=todas/);
+  await expect(rows.last()).toContainText("01/01/2026");
+  await expect(
+    ledger.getByRole("button", { name: "Ver solo las 10 últimas" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+
+  // Deleting a row past the tenth keeps the ledger where the person left it:
+  // unfolded, so the next one is still in reach.
+  const oldest = rows.filter({ hasText: "01/01/2026" });
+  await oldest.getByLabel("Acciones de la operación del 01/01/2026").click();
+  await oldest.locator("details.confirmDelete summary").click();
+  await oldest.getByRole("button", { name: "Confirmar" }).click();
+  await expect(page.getByRole("status")).toContainText("Operación eliminada");
+  await expect(rows).toHaveCount(11);
+  await expect(
+    ledger.getByRole("button", { name: "Ver solo las 10 últimas" }),
+  ).toHaveAttribute("aria-expanded", "true");
 });
 
 // ── #1830: the polish of the tabs ─────────────────────────────────────────────

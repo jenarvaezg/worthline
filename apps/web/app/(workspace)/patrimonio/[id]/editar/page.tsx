@@ -35,7 +35,7 @@ import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
 import type { FichaTarget } from "./_ficha/ficha-view";
-import { fichaTabUrl } from "./_ficha/ficha-view";
+import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
@@ -52,7 +52,7 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
 ];
 
 /** The tabbed ficha's chrome tab: «Lo básico», the availability, the Zona de peligro. */
-const DATOS_TAB = "datos";
+const DATOS_TAB = FICHA_DATOS_TAB;
 
 /** The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha. */
 const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
@@ -124,6 +124,7 @@ export default async function EditarPage({
     formError,
     id,
     isDemo,
+    overrides,
     privacyMode,
     store,
     today,
@@ -164,14 +165,13 @@ export default async function EditarPage({
   // On a tabbed ficha the chrome's forms live in «Datos del activo», so that is
   // where their terminals return (#1826); elsewhere, to the ficha as it was.
   const layout = surface.layout;
-  const chromeUrl =
+  const fichaTabKeys =
     layout.kind === "ficha"
-      ? fichaTabUrl(
-          currentUrl,
-          [...layout.ficha.tabs.map((tab) => tab.key), DATOS_TAB],
-          DATOS_TAB,
-        )
-      : currentUrl;
+      ? [...layout.ficha.tabs.map((tab) => tab.key), DATOS_TAB]
+      : null;
+  const chromeUrl = fichaTabKeys
+    ? fichaTabUrl(currentUrl, fichaTabKeys, DATOS_TAB)
+    : currentUrl;
   const chromeContext = { ...ficha, currentUrl: chromeUrl };
 
   // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
@@ -199,6 +199,21 @@ export default async function EditarPage({
     trashImpact: surface.trashImpact,
   });
 
+  // A tabbed ficha prints some warnings beside their figure and links the rest to
+  // the tab where each is fixed (#1828); the accordion keeps its band as it was.
+  const bandPlacement =
+    layout.kind === "ficha" && fichaTabKeys
+      ? {
+          exclude: layout.ficha.inlineWarnings ?? [],
+          fixes: Object.fromEntries(
+            Object.entries(layout.ficha.warningFixes ?? {}).map(([code, fix]) => [
+              code,
+              { ...fix, href: fichaTabUrl(currentUrl, fichaTabKeys, fix.tab) },
+            ]),
+          ),
+        }
+      : {};
+
   const warningsBand = (
     <WarningsBand
       asset={asset}
@@ -206,6 +221,7 @@ export default async function EditarPage({
       id={id}
       operations={surface.operations}
       overrides={overrides}
+      {...bandPlacement}
     />
   );
 

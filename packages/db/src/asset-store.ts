@@ -112,6 +112,8 @@ export interface InvestmentAssetFull {
   priceProvider: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  /** When `manualPricePerUnit` was set, as an ISO instant (#1828); absent if unknown. */
+  manualPricedAt?: string;
   benchmarkDistributing?: boolean;
 }
 
@@ -141,6 +143,12 @@ export interface UpdateInvestmentAssetInput {
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  /**
+   * When this save happens, from the caller's clock (ADR 0024) — the day a CHANGED
+   * hand-set price is stamped with (#1828). A caller that does not say leaves a
+   * changed price undated rather than letting the store read the wall clock.
+   */
+  savedAt?: string;
   benchmarkDistributing?: boolean;
 }
 
@@ -1155,6 +1163,7 @@ async function readInvestmentAssetById(
       priceProvider: investmentAssets.priceProvider,
       providerSymbol: investmentAssets.providerSymbol,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
+      manualPricedAt: investmentAssets.manualPricedAt,
       benchmarkDistributing: investmentAssets.benchmarkDistributing,
     })
     .from(investmentAssets)
@@ -1187,6 +1196,10 @@ async function readInvestmentAssetById(
     ...(investRow.providerSymbol ? { providerSymbol: investRow.providerSymbol } : {}),
     ...(investRow.manualPricePerUnit
       ? { manualPricePerUnit: investRow.manualPricePerUnit }
+      : {}),
+    // The day only means something next to the price it dates.
+    ...(investRow.manualPricePerUnit && investRow.manualPricedAt
+      ? { manualPricedAt: investRow.manualPricedAt }
       : {}),
     benchmarkDistributing: investRow.benchmarkDistributing === 1,
   };
@@ -1396,6 +1409,23 @@ function storedSecurityIdField(row: {
   return stored ? { securityId: stored } : {};
 }
 
+/**
+ * The day a hand-set price is FROM, as an UPDATE writes it (#1828): the save's
+ * instant when the figure changes, the day it already had when the same figure
+ * comes back — «Lo básico» re-submits the price on every save, and renaming the
+ * fund is not a new quote — and none once there is no price. The instant is the
+ * caller's (ADR 0024); without one a changed price is left undated. One
+ * expression over the row's own columns, so it costs no read: in an UPDATE the
+ * right-hand side sees the OLD row.
+ */
+function manualPricedAtOnSave(
+  price: DecimalString | undefined,
+  savedAt: string | undefined,
+) {
+  if (price === undefined) return null;
+  return sql`CASE WHEN ${investmentAssets.manualPricePerUnit} IS ${price} THEN ${investmentAssets.manualPricedAt} ELSE ${savedAt ?? null} END`;
+}
+
 async function updateInvestmentAsset(
   ctx: StoreContext,
   input: UpdateInvestmentAssetInput,
@@ -1429,6 +1459,7 @@ async function updateInvestmentAsset(
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
+        manualPricedAt: manualPricedAtOnSave(input.manualPricePerUnit, input.savedAt),
         ...(input.benchmarkDistributing === undefined
           ? {}
           : { benchmarkDistributing: input.benchmarkDistributing ? 1 : 0 }),
