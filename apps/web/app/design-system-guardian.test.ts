@@ -202,6 +202,8 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "--cover-muted": "#9fb0a3",
       "--debit-rule": "#a03a28",
       "--gilt": "#c2a14e",
+      // The success band's tint, shared with the row a terminal just added (#1829).
+      "--green-tint": "rgba(0, 111, 95, 0.1)",
       "--hairline": "#dde1d0",
       "--ink": "#1c2420",
       "--line-soft": "#c9cfbd",
@@ -287,6 +289,38 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "border-left": "2px solid var(--gold)",
       "border-radius": "var(--radius-sm)",
     });
+  });
+
+  test("the text control is ONE recipe its surfaces share, not a copy each (#1731 review)", () => {
+    // A secondary action inside a line — «Quitar» of a lot, a proposal row's aside,
+    // «Indicar símbolo» and «Cotiza a mano» under a price — is a control of TEXT
+    // (design-system §7): no paper, no border, no minimum height, underlined.
+    const surfaces = [
+      ".lotRow button",
+      ".assistantProposal .assistantRowAside button",
+      ".fichaPriceNotice a",
+      ".fichaPriceNotice button",
+    ];
+    const recipe = {
+      background: "transparent",
+      border: "0",
+      "min-height": "0",
+      padding: "0",
+      "text-decoration": "underline",
+    };
+    const carriers = rules.filter(
+      (rule) =>
+        rule.file === "globals.css" &&
+        surfaces.some((selector) => ruleIncludesSelector(rule, selector)) &&
+        Object.entries(recipe).every(
+          ([property, value]) => rule.declarations.get(property) === value,
+        ),
+    );
+
+    expect(carriers).toHaveLength(1);
+    for (const selector of surfaces) {
+      expect(ruleIncludesSelector(carriers[0]!, selector), selector).toBe(true);
+    }
   });
 
   test("every consumed custom property resolves to a real definition (#913)", () => {

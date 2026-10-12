@@ -21,6 +21,8 @@
   --hairline: #dde1d0;
   --band: #eaedde;
   --green: #006f5f;
+  /* The tint of a confirmation: the success band, and the row it just added (#1829). */
+  --green-tint: rgba(0, 111, 95, 0.1);
   --blue: #1f4d74;
   --red: #b9442f;
   --gold: #7d5c12;
@@ -1162,7 +1164,7 @@ h3 {
 }
 
 .successBand {
-  background: rgba(0, 111, 95, 0.1);
+  background: var(--green-tint);
   border-color: var(--green);
   color: var(--green);
   /* Confirmation rise-in: discreet fade + small lift, once on appear (#639). */
@@ -6823,18 +6825,28 @@ td.rowActions > * {
   text-align: right;
 }
 
-/* «Quitar» es un control de TEXTO, no un botón de papel (design-system §4): la misma
-   receta que `.assistantRowAside button`, escrita aquí porque aquella vive anidada
-   bajo `.assistantProposal` y no se puede citar desde fuera de ese bloque. */
-.lotRow button {
+/* ── Control de texto (design-system §7) ─────────────────────────────────────
+   Una acción secundaria dentro de una línea —«Quitar» de un lote, el aparte de una
+   fila de propuesta, «Indicar símbolo» y «Cotiza a mano» bajo un precio— es un
+   control de TEXTO, no un botón de papel: sin fondo, sin borde, sin alto mínimo,
+   subrayado. UNA receta: cada superficie se suma a esta lista y pone en su propia
+   regla solo su tono, su cuerpo y su hover (#1731 review). */
+.lotRow button,
+.assistantProposal .assistantRowAside button,
+.fichaPriceNotice a,
+.fichaPriceNotice button {
   background: transparent;
   border: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
   min-height: 0;
   padding: 0;
   text-decoration: underline;
+}
+
+/* «Quitar», en gris de apoyo: quitar una fila no es descartar la propuesta. */
+.lotRow button {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .lotRow button:hover:not(:disabled) {
@@ -7237,6 +7249,15 @@ td.rowActions > * {
    ha salido de la pantalla, el aviso de éxito con «Añadir otra», la fila recién
    registrada y la pregunta de «Añadir cobro». */
 
+/* Las dos medidas de las que cuelga todo lo que se trae a la vista (#1731 review):
+   lo que el riel de ámbitos y la franja tapan arriba en escritorio, y lo que tapa
+   al lado o debajo un control fijo de 48 px a 20 px del borde —el lanzador del
+   asistente, el botón del teléfono—, con 16 px de aire. */
+:root {
+  --ficha-sticky-top: 128px;
+  --ficha-strip-clearance: 84px;
+}
+
 /* En escritorio, arriba: la cabecera de la ficha condensada, sobre su misma
    columna y bajo el riel de ámbitos, que también se queda pegado (#47). Papel
    cerrado por la regla gruesa, como el masthead del shell — sin sombra (canon §4).
@@ -7281,7 +7302,7 @@ td.rowActions > * {
   gap: 8px 14px;
   margin: 0;
   /* Lo que el riel de ámbitos y la franja tapan arriba al traerlo a la vista. */
-  scroll-margin-top: 128px;
+  scroll-margin-top: var(--ficha-sticky-top);
 }
 
 .fichaNotice p {
@@ -7299,8 +7320,8 @@ td.rowActions > * {
 #operaciones [data-fresh],
 .cobrosRow[data-fresh],
 .cobrosSchedule[data-fresh] {
-  background: rgba(0, 111, 95, 0.1);
-  scroll-margin: 128px 0 84px;
+  background: var(--green-tint);
+  scroll-margin: var(--ficha-sticky-top) 0 var(--ficha-strip-clearance);
 }
 
 /* En tinta: sobre el verde del mapa de calor, un contorno verde no llega al 3:1. */
@@ -7312,7 +7333,7 @@ td.rowActions > * {
 /* Mientras la franja se ve, lo que se enfoca con el teclado no queda debajo de
    ella: arriba en escritorio (riel de ámbitos + franja), abajo en el teléfono. */
 :root:has(.fichaStrip:not([hidden])) {
-  scroll-padding-top: 128px;
+  scroll-padding-top: var(--ficha-sticky-top);
 }
 
 .fichaFreshMark {
@@ -7344,7 +7365,7 @@ td.rowActions > * {
     border-bottom: 0;
     bottom: 20px;
     left: 16px;
-    right: 84px;
+    right: var(--ficha-strip-clearance);
     top: auto;
     width: auto;
   }
@@ -7370,7 +7391,7 @@ td.rowActions > * {
   }
 
   :root:has(.fichaStrip:not([hidden])) {
-    scroll-padding-bottom: 84px;
+    scroll-padding-bottom: var(--ficha-strip-clearance);
     scroll-padding-top: 0;
   }
 }
@@ -7379,9 +7400,9 @@ td.rowActions > * {
    Bajo el precio, de dónde sale y de cuándo, con el pie de cifra de siempre
    (`.priceRefreshCaption`). El aviso del símbolo va justo debajo, en el oro de
    aviso, y sus dos salidas —arreglarlo o declararlo intencional— son controles de
-   texto: la receta de `.lotRow button` y `.assistantRowAside button`, en el azul
-   de interacción y las dos iguales al pasar por encima. La hoja destacada no se
-   llena de botones por un aviso. */
+   texto (la receta de «Control de texto»), en el azul de interacción y las dos
+   iguales al pasar por encima. La hoja destacada no se llena de botones por un
+   aviso. */
 .fichaPriceNotice {
   align-items: baseline;
   color: var(--gold);
@@ -7399,14 +7420,9 @@ td.rowActions > * {
 
 .fichaPriceNotice a,
 .fichaPriceNotice button {
-  background: transparent;
-  border: 0;
   color: var(--blue);
   font-size: inherit;
   font-weight: inherit;
-  min-height: 0;
-  padding: 0;
-  text-decoration: underline;
   text-underline-offset: 2px;
 }
 
@@ -11266,15 +11282,11 @@ td.rowActions > * {
 .assistantRowAside {
   display: flex;
 }
+/* El control de texto (la receta de «Control de texto»), en gris de apoyo. */
 .assistantProposal .assistantRowAside button {
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 600;
-  min-height: 0;
-  text-decoration: underline;
   text-underline-offset: 2px;
 }
 .assistantProposal .assistantRowAside button:hover:not(:disabled) {
