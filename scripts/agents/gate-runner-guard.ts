@@ -10,8 +10,12 @@
  * command in `tool_input.command`. Exit 2 blocks the call and feeds stderr back to
  * the agent; exit 0 raises no objection.
  *
- * Not a sandbox. A redirect target held in a variable (`> "$LOG"`) cannot be
- * resolved statically, so it is allowed: that is how the agent writes its log.
+ * Not a sandbox. It reads the command line without running it (`shell-line.ts`). A
+ * path held in a variable (`> "$LOG"`, `perl -pi … "$LOG"`) cannot be resolved, so it
+ * is allowed: that is how the agent writes and cleans its log. A relative path, or
+ * one under `$PWD`, counts as inside the repo. A command that another program runs
+ * (`xargs rm`, `find -exec`, `sudo`) or that sits in a `$(…)` inside double quotes
+ * is not seen.
  *
  * Claude Code runs a project subagent's frontmatter hooks only once workspace
  * trust has been accepted for the folder the agent file came from, and a
@@ -20,6 +24,7 @@
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { isAbsolute, resolve, sep } from "node:path";
+import { invocation, operands, parseShellLine } from "./shell-line";
 
 const MUTATING_GIT_VERBS = [
   "add",
@@ -76,86 +81,83 @@ const RULES: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   },
 ];
 
-const WORD_BREAK = /[\s;&|<>()]/;
+// perl switches that take no value; the digits are the optional values of `-0` and `-l`.
+const PERL_VALUELESS_SWITCHES = /[0-9achlnpsStTuUvwWX]/;
 
-function readWord(command: string, start: number): { word: string; end: number } {
-  let word = "";
-  let quote: string | null = null;
-  let i = start;
-  for (; i < command.length; i++) {
-    const ch = command[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-      else word += ch;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      continue;
-    }
-    if (WORD_BREAK.test(ch)) break;
-    word += ch;
-  }
-  return { word, end: i };
-}
-
-/** Paths a command writes to through `>`, `>>`, `>|` or `tee`, quotes stripped. */
-export function writeTargets(command: string): string[] {
-  const targets: string[] = [];
-  let quote: string | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-      else if (ch === "\\" && quote === '"') i++;
-      continue;
-    }
-    if (ch === "\\") {
+/** The files `perl` would edit in place: none without `-i`. */
+function perlInPlaceFiles(args: readonly string[]): string[] {
+  let inPlace = false;
+  let inlineCode = false;
+  let i = 0;
+  for (; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "--") {
       i++;
-      continue;
+      break;
     }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      continue;
-    }
-    if (ch === ">") {
-      let j = i + 1;
-      if (command[j] === ">" || command[j] === "|") j++;
-      // `2>&1`, `>&2`: fd duplication. `>(…)`: process substitution.
-      if (command[j] === "&" || command[j] === "(") continue;
-      while (command[j] === " " || command[j] === "\t") j++;
-      const { word, end } = readWord(command, j);
-      if (word) targets.push(word);
-      i = end - 1;
-      continue;
-    }
-    if (command.startsWith("tee", i) && /^tee(?:\s|$)/.test(command.slice(i, i + 4))) {
-      const before = i === 0 ? " " : command[i - 1];
-      if (!/[\s;&|(]/.test(before)) continue;
-      let j = i + 3;
-      while (j < command.length) {
-        while (command[j] === " " || command[j] === "\t") j++;
-        if (j >= command.length || WORD_BREAK.test(command[j])) break;
-        const { word, end } = readWord(command, j);
-        if (word && !word.startsWith("-")) targets.push(word);
-        j = end;
-      }
-      i = j - 1;
+    if (!arg.startsWith("-") || arg === "-") break;
+    // A cluster of switches (`-pi`, `-0777ne`): `-i` takes the rest as its backup
+    // suffix, and a switch with a value takes the rest or, for `-e` and `-I`, the
+    // next argument.
+    for (let k = 1; k < arg.length; k++) {
+      const ch = arg.charAt(k);
+      if (PERL_VALUELESS_SWITCHES.test(ch)) continue;
+      if (ch === "i") inPlace = true;
+      if (ch === "e" || ch === "E") inlineCode = true;
+      if ("eEI".includes(ch) && k === arg.length - 1) i++;
+      break;
     }
   }
-  return targets;
+  if (!inPlace) return [];
+  // Without `-e`, the first operand is the script, not a file it edits.
+  return inlineCode ? args.slice(i) : args.slice(i + 1);
 }
 
-function writesIntoRepo(target: string, repoRoots: readonly string[]): boolean {
-  // A variable or a command substitution cannot be resolved here (see header).
-  if (target.startsWith("$") || target.startsWith("`")) return false;
-  if (target.startsWith("/dev/")) return false;
-  const expanded =
-    target === "~" || target.startsWith("~/") ? `${homedir()}${target.slice(1)}` : target;
+const TARGET_DIRECTORY = "--target-directory=";
+
+/** What `cp` and `mv` touch: their operands, and a destination named by option. */
+function copyOperands(args: readonly string[]): string[] {
+  const named = args
+    .filter((arg) => arg.startsWith(TARGET_DIRECTORY))
+    .map((arg) => arg.slice(TARGET_DIRECTORY.length));
+  return [...operands(args), ...named];
+}
+
+// The commands that change the files they name, and how each one names them.
+const PATH_READERS = new Map<string, (args: readonly string[]) => string[]>([
+  ["tee", operands],
+  ["rm", operands],
+  ["mv", copyOperands],
+  ["cp", copyOperands],
+  ["perl", perlInPlaceFiles],
+]);
+
+/** Every path `command` would write, remove, move, copy or edit in place, and how. */
+export function touchedPaths(command: string): Array<{ by: string; path: string }> {
+  const line = parseShellLine(command);
+  const named = line.commands.flatMap((words) => {
+    const call = invocation(words);
+    const read = call === null ? undefined : PATH_READERS.get(call.name);
+    if (call === null || read === undefined) return [];
+    const by = call.name === "perl" ? "perl -i" : call.name;
+    return read(call.args).map((path) => ({ by, path }));
+  });
+  return [...line.outputs.map((path) => ({ by: ">", path })), ...named];
+}
+
+function insideRepo(path: string, repoRoots: readonly string[]): boolean {
   // Relative to the tree the agent cd'd into: inside the repo by construction.
+  if (/^\$(?:PWD|\{PWD\})(?:\/|$)/.test(path)) return true;
+  // Any other variable or command substitution cannot be resolved here (see header).
+  if (path.startsWith("$") || path.startsWith("`")) return false;
+  if (path.startsWith("/dev/")) return false;
+  const expanded =
+    path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path;
   if (!isAbsolute(expanded)) return true;
-  const path = resolve(expanded);
-  return repoRoots.some((root) => path === root || path.startsWith(`${root}${sep}`));
+  const resolved = resolve(expanded);
+  return repoRoots.some(
+    (root) => resolved === root || resolved.startsWith(`${root}${sep}`),
+  );
 }
 
 /** Why the guard blocks `command`, or `null` when it raises no objection. */
@@ -163,11 +165,10 @@ export function denyReason(command: string, repoRoots: readonly string[]): strin
   for (const rule of RULES) {
     if (rule.pattern.test(command)) return rule.reason;
   }
-  const intoRepo = writeTargets(command).find((target) =>
-    writesIntoRepo(target, repoRoots),
-  );
-  if (intoRepo !== undefined) {
-    return `writing to \`${intoRepo}\` would touch the repo; logs go under $TMPDIR`;
+  const touched = touchedPaths(command).find(({ path }) => insideRepo(path, repoRoots));
+  if (touched !== undefined) {
+    const action = touched.by === ">" ? "writing to" : `\`${touched.by}\` on`;
+    return `${action} \`${touched.path}\` would touch the repo; logs go under $TMPDIR`;
   }
   return null;
 }

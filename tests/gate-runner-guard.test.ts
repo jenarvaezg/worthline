@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { denyReason, writeTargets } from "@scripts/agents/gate-runner-guard";
+import { denyReason, touchedPaths } from "@scripts/agents/gate-runner-guard";
 import { describe, expect, test } from "vitest";
 
 const REPO = "/work/worthline";
@@ -24,6 +24,23 @@ describe("gate-runner guard: what the agent's own procedure needs", () => {
     "bunx vitest run --root apps/web --config vitest.config.ts app/x.test.ts",
     "bun run verify 2>/dev/null",
     `cd ${REPO}/.claude/worktrees/x && bun run verify > "$LOG" 2>&1`,
+    "rm /tmp/gate-verify.abc",
+    'rm -f "$LOG" 2>/dev/null',
+    "cp /tmp/gate-verify.abc /tmp/gate-verify.keep",
+    String.raw`perl -pi -e 's/\e\][^\a\e]*(?:\a|\e\\)//g; s/\e\[[0-9;?]*[A-Za-z]//g' "$LOG"`,
+  ])("allows %s", (command) => {
+    expect(denyReason(command, ROOTS)).toBeNull();
+  });
+});
+
+describe("gate-runner guard: what only reads or names the repo", () => {
+  test.each([
+    "perl -ne 'print if /TODO/' apps/web/app/x.ts",
+    `perl -i scripts/strip.pl "$LOG"`,
+    "sort < apps/web/app/x.ts",
+    "echo rm -rf apps/web",
+    "grep -rn 'rm -rf' apps",
+    "ls apps # rm -rf apps",
   ])("allows %s", (command) => {
     expect(denyReason(command, ROOTS)).toBeNull();
   });
@@ -52,21 +69,40 @@ describe("gate-runner guard: what changes state", () => {
     `echo x > ${REPO}/packages/domain/src/x.ts`,
     `cd ${REPO} && bun run verify > gate.log 2>&1`,
     "bun run verify | tee apps/web/gate.log",
+    "rm -rf apps/web",
+    `rm -f ${REPO}/probe.txt`,
+    "mv packages/domain/src/x.ts /tmp/",
+    "cp /tmp/x.ts apps/web/app/x.ts",
+    "cd /tmp && /bin/rm -rf -- apps",
+    "perl -pi -e 's/a/b/' apps/web/app/x.ts",
+    "perl -i.bak -pe 's/a/b/' apps/web/app/x.ts",
+    "perl -p -i -e 's/a/b/' README.md",
+    "perl -i /tmp/strip.pl README.md",
+    "bun run verify &> gate.log",
+    "bun run verify >& apps/web/gate.log",
+    ": 3<>apps/web/app/x.ts",
+    "rm -rf $'apps/web'",
+    "echo `rm -rf apps/web`",
+    "if true; then rm -rf apps; fi",
+    "FOO=1 env -i rm -rf apps",
+    "time -p rm -rf apps",
+    "cp --target-directory=apps/web/app /tmp/x.ts",
+    'rm -rf "$PWD/apps"',
   ])("denies %s", (command) => {
     expect(denyReason(command, ROOTS)).not.toBeNull();
   });
 });
 
-describe("writeTargets", () => {
+describe("touchedPaths", () => {
   test("ignores fd duplication, quotes and process substitution", () => {
-    expect(writeTargets(`echo "a > b" 2>&1 >&2 >(cat)`)).toEqual([]);
+    expect(touchedPaths(`echo "a > b" 2>&1 >&2 >(cat)`)).toEqual([]);
   });
 
   test("strips quotes from targets and reads every tee argument", () => {
-    expect(writeTargets(`cmd > "out dir/x.log" | tee -a one.log 'two.log'`)).toEqual([
-      "out dir/x.log",
-      "one.log",
-      "two.log",
+    expect(touchedPaths(`cmd > "out dir/x.log" | tee -a one.log 'two.log'`)).toEqual([
+      { by: ">", path: "out dir/x.log" },
+      { by: "tee", path: "one.log" },
+      { by: "tee", path: "two.log" },
     ]);
   });
 });
