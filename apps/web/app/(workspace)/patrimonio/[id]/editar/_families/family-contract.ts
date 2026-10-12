@@ -33,7 +33,9 @@ import type { InvestmentAssetFull } from "@worthline/db";
 import type {
   CurrencyCode,
   DatedPayout,
+  DomainWarning,
   HoldingTrashImpact,
+  HoldingWarningCode,
   InvestmentOperation,
   Liability,
   ManualAsset,
@@ -211,13 +213,18 @@ export interface FichaLayout {
    */
   rows?: RowKeys;
   /**
-   * The warning codes this ficha prints beside the figure they are about (#1828) —
-   * the band above the header leaves them out. Read from the same list the band
-   * reads (`holdingWarnings`), so a warning is in exactly one place.
+   * The holding's active warnings, read ONCE (`holdingWarnings`, #1731 review): the
+   * family reads them to print its inline ones, and the page hands the same list to
+   * the band, which prints the rest.
    */
-  inlineWarnings?: readonly string[];
+  warnings: readonly DomainWarning[];
+  /**
+   * The warning codes this ficha prints beside the figure they are about (#1828) —
+   * the band above the header leaves them out, so a warning is in exactly one place.
+   */
+  inlineWarnings?: readonly HoldingWarningCode[];
   /** By warning code: where the band links for that warning to be fixed (#1828). */
-  warningFixes?: Readonly<Record<string, FichaFix>>;
+  warningFixes?: Readonly<Partial<Record<HoldingWarningCode, FichaFix>>>;
   /** Client state its tabs and panels share, wrapped around the whole ficha. */
   wrap?: (ficha: ReactNode) => ReactNode;
 }

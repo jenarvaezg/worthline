@@ -1352,6 +1352,7 @@ export {
 export type {
   CollectWarningsOptions,
   DomainWarning,
+  HoldingWarningCode,
   WarningOverride,
   WarningSeverity,
 } from "./warnings";

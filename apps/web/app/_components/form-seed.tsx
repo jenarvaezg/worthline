@@ -14,12 +14,14 @@
  */
 
 import { type ComponentProps, createContext, type ReactNode, useContext } from "react";
+import type { SeededField } from "./form-seed-names";
 
 /** The remembered defaults: field values by name, and which of a form's variants was used. */
 export interface FormSeed {
   /** Which variant of the action's form was sent (Cobros: `suelto` or `recurrente`). */
   choice?: string;
-  values: Readonly<Record<string, string>>;
+  /** Only the fields a re-opened form keeps (`SEEDED_FIELDS`). */
+  values: Readonly<Partial<Record<SeededField, string>>>;
 }
 
 const EMPTY_SEED: FormSeed = { values: {} };
@@ -45,12 +47,6 @@ export function FormSeedProvider({
 export function useFormSeed(): FormSeed {
   return useContext(FormSeedContext);
 }
-
-/**
- * The attribute that names which variant of a form a pane holds, so the ficha can
- * tell, as a form leaves, which of them was sent (`closest(...)` from the form).
- */
-export const SEED_CHOICE_ATTRIBUTE = "data-seed-choice";
 
 /**
  * One option of a choice between a form's variants (a `.segmented` radio). It
@@ -93,7 +89,8 @@ export function SeededInput({
   name,
   ...props
 }: Omit<ComponentProps<"input">, "defaultValue" | "name"> & {
-  name: string;
+  /** One of the fields a re-opened form keeps (`SEEDED_FIELDS`). */
+  name: SeededField;
   fallback: string;
 }) {
   const { values } = useFormSeed();

@@ -14,6 +14,7 @@
  */
 
 import { SeededChoice, SeededInput } from "@web/_components/form-seed";
+import { seedChoicePane } from "@web/_components/form-seed-names";
 import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
 import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
@@ -207,10 +208,10 @@ export function CobrosEntry(props: CobrosProps) {
           Uno que se repite
         </SeededChoice>
       </fieldset>
-      <div className="cobroKindPane" data-seed-choice="suelto">
+      <div className="cobroKindPane" {...seedChoicePane("suelto")}>
         <CobrosOneOffForm {...props} />
       </div>
-      <div className="cobroKindPane" data-seed-choice="recurrente">
+      <div className="cobroKindPane" {...seedChoicePane("recurrente")}>
         <CobrosRecurringForm {...props} />
       </div>
     </section>

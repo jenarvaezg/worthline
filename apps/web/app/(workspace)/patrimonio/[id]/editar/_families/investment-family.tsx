@@ -27,8 +27,7 @@ import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-ca
 import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
-import { FichaActionLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-action-link";
-import { FichaTabLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-tab-link";
+import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
 import {
   FICHA_DATOS_TAB,
   fichaActionUrl,
@@ -47,7 +46,7 @@ import { PendingSubmit } from "@web/pending-submit";
 import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { CurrencyCode, DecimalString } from "@worthline/domain";
+import type { CurrencyCode, DecimalString, HoldingWarningCode } from "@worthline/domain";
 import {
   costBasisGradeMark,
   declaredSecurityId,
@@ -80,11 +79,17 @@ import { bindInvestmentActions } from "./investment-actions";
 const TABS = ["operaciones", "rentabilidad", "cobros"] as const;
 
 /**
+ * Every tab the ficha ends up with, in order — the list each URL here is built
+ * against, so a link into «Datos del activo» and a form's return read the same one.
+ */
+const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
+
+/**
  * The warning about the price itself: printed beside the price, not in the band
  * (#1828), because what it says — nothing quotes this automatically — is about the
  * figure right there.
  */
-const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL";
+const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL" satisfies HoldingWarningCode;
 
 /** The ledger is where a sale or a traspaso past the units held gets fixed. */
 const LEDGER_FIX = { label: "Ver operaciones", tab: "operaciones" } as const;
@@ -229,7 +234,8 @@ export async function loadInvestmentSurface(
 
   const action = bindInvestmentActions(id);
   // Where each form returns: the tab its result shows on (#1826).
-  const tabUrl = (tab: (typeof TABS)[number]) => fichaTabUrl(currentUrl, TABS, tab);
+  const tabUrl = (tab: (typeof FICHA_TABS)[number]) =>
+    fichaTabUrl(currentUrl, FICHA_TABS, tab);
 
   // ── The state header ────────────────────────────────────────────────────────
   const money = (amountMinor: number) =>
@@ -237,11 +243,11 @@ export async function loadInvestmentSurface(
   const gainRatio = returnsView?.totalReturnRatio ?? null;
   const irrRate = returnsView?.irr?.rate ?? null;
   const irrTone = signClass(irrRate);
-  // The band's list, read here only to know whether the one about the price is
-  // active: the band leaves out what this ficha prints beside its figure.
-  const missingSymbol = holdingWarnings({ asset, id, operations, overrides }).some(
-    (warning) => warning.code === SYMBOL_WARNING,
-  );
+  // The holding's active warnings, read once: whether the one about the price is
+  // active decides the notice beside it, and the page hands the same list to the
+  // band, which leaves out what this ficha prints here (#1828, #1731 review).
+  const warnings = holdingWarnings({ asset, id, operations, overrides });
+  const missingSymbol = warnings.some((warning) => warning.code === SYMBOL_WARNING);
   const figures: FichaFigure[] = [
     {
       detail: (
@@ -254,17 +260,13 @@ export async function loadInvestmentSurface(
           {missingSymbol ? (
             <div className="fichaPriceNotice">
               <span>⚠ Sin cotización automática.</span>
-              <FichaTabLink
+              <FichaLink
                 field="providerSymbol"
-                href={fichaTabUrl(
-                  currentUrl,
-                  [...TABS, FICHA_DATOS_TAB],
-                  FICHA_DATOS_TAB,
-                )}
+                href={tabUrl(FICHA_DATOS_TAB)}
                 tab={FICHA_DATOS_TAB}
               >
                 Indicar símbolo
-              </FichaTabLink>
+              </FichaLink>
               <span aria-hidden="true">·</span>
               {/* Today's «Es intencional», by the same override: this fund is
                   quoted by hand on purpose. Its result is the server's redirect,
@@ -580,12 +582,13 @@ export async function loadInvestmentSurface(
             tabUrl("cobros"),
             // With none yet, the record is one line and this is its door (#1830):
             // the «Añadir cobro» panel, opened over the tab.
-            <FichaActionLink
+            <FichaLink
               action="cobro"
-              href={fichaActionUrl(currentUrl, TABS, "cobros", "cobro")}
+              href={fichaActionUrl(currentUrl, FICHA_TABS, "cobros", "cobro")}
+              tab="cobros"
             >
               Añadir un cobro
-            </FichaActionLink>,
+            </FichaLink>,
           ),
           count: payoutsPanel.count,
           key: "cobros",
@@ -593,6 +596,7 @@ export async function loadInvestmentSurface(
         },
       ],
       value: money(valuation.valueMinor),
+      warnings,
       warningFixes: { OVERSELL: LEDGER_FIX, OVER_TRANSFER: LEDGER_FIX },
       // The record form and the ledger are in different places now and still one
       // list: the row being recorded shows in the tab before its action resolves.
