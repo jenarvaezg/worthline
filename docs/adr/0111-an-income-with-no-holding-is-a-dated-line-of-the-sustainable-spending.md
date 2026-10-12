@@ -148,3 +148,30 @@ of one scope with one plan. The card is drawn only when the plan is declared ord
 4. **The nature note depends on the door.** With a holding, a passive income enters
    the passive income and the FIRE figures; without one, only the sustainable
    spending.
+
+## Amendment (#1812) — a stored 65 from before #1474 is not a declaration
+
+Point 6 checks the condition against the declared target age, and the check read
+`targetRetirementAge` as stored. Configs saved before #1474 carry a 65 that the old
+form parser filled in (`?? 65`) and that the form then prefilled, so the condition
+compared against the engine's default after all: «declaraste jubilarte a los 65» to
+someone who never typed an age.
+
+1. **Storage cannot tell them apart.** `fire.config` is one JSON per scope with no
+   per-field provenance, and its `updated_at` belongs to the whole row; since #1474
+   the form prefills the stored age, so a phantom 65 is re-written by any later save.
+2. **Schema v72 removes every stored `targetRetirementAge` of exactly 65**, and
+   nothing else. Any other value was typed: the old parser filled in only 65. The
+   engine keeps its `?? 65`, so no figure moves. What a genuine 65 loses is being read
+   as a declaration (this condition, the ordinary-retirement signal of ADR 0081, the
+   final-age check) until it is typed again. The other error, keeping a phantom,
+   takes a pension off the card with a sentence that is false. The costs are not
+   symmetric.
+3. **From v72 on, a stored target age is a declaration.** The form writes only what is
+   typed (#1474), so no reader needs a rule of its own about 65. The condition reads
+   the stored value and, without one, stays `unchecked` with `missing: "retirement_age"`.
+4. **Known limits: two ways back in.** Restoring an export made before v72 can bring a
+   phantom back: cleaning 65s on import would also erase the declared ones in newer
+   exports, and the file cannot tell the two apart either. So can a FIRE form rendered
+   before v72 ran (with the 65 prefilled) and submitted after it, a window as wide as a
+   tab left open across the deploy.
