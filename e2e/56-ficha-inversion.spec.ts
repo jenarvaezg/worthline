@@ -508,11 +508,11 @@ test("a recurring cobro just declared is pointed at in the declared list (#1731 
   await panel
     .locator('input[name="startISO"]')
     .fill(`${new Date().getFullYear() + 1}-01-15`);
+  // The radio is drawn by its label (the input is visually hidden): click the words.
   await panel
-    .getByRole("group", { name: "De dónde sale la cifra" })
-    .getByRole("radio")
-    .first()
-    .check();
+    .getByRole("radiogroup", { name: "De dónde sale la cifra" })
+    .getByText("Estimación mía")
+    .click();
   await panel.getByLabel("Fecha de corte de la cifra").fill("2026-01-01");
   await panel.getByRole("button", { name: "Añadir recurrente" }).click();
 
@@ -693,4 +693,166 @@ test("«Datos del activo» splits identity from price: no field spans the ficha 
   const narrowSymbol = await page.getByLabel("Símbolo de precio").boundingBox();
   expect(narrowSymbol?.x).toBe(narrowName?.x);
   expect(await sidewaysOverflow(page)).toBeLessThanOrEqual(0);
+});
+
+// ── #1731 review: the rarer actions, end to end ────────────────────────────────
+
+/** The ISO day `days` before today. */
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
+/** The ficha's tab on show, by its visible name. */
+const activeTab = (page: import("@playwright/test").Page, name: RegExp) =>
+  page
+    .getByRole("navigation", { name: "Secciones de la ficha" })
+    .getByRole("link", { name });
+
+test("«Traer de otra entidad» records the entry and lands on its row in the ledger", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Entrada E2E");
+
+  const panel = await openFichaAction(page, "Traer de otra entidad");
+  const form = panel.getByRole("form", { name: "Registrar entrada desde otra entidad" });
+  await form.getByLabel("¿Cuánto entró? (€)").fill("500");
+  await form.getByLabel("Valor liquidativo de ese día (€)").fill("100");
+  await form.getByRole("button", { name: "Registrar entrada" }).click();
+
+  await expect(page).toHaveURL(/ok=external_entry_recorded/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText(
+    "Entrada por traspaso desde otra entidad registrada.",
+  );
+  await expect(activeTab(page, /Operaciones/)).toHaveAttribute("aria-current", "true");
+  const fresh = page.locator("#operaciones tr[data-fresh]");
+  await expect(fresh).toContainText("Traspaso (entrada)");
+  await expect(fresh).toContainText("desde otra entidad");
+  // 10 bought + 5 that came in.
+  await expect(page.getByRole("region", { name: "Estado del activo" })).toContainText(
+    "15 a 100 €",
+  );
+});
+
+test("«Corregir precio de un día» previews the snapshots it touches and confirms on Rentabilidad", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Corrección E2E");
+
+  const panel = await openFichaAction(page, "Corregir precio de un día");
+  await panel.getByLabel("Precio por unidad (EUR)").fill("105");
+  await panel.getByRole("button", { name: "Ver cambios" }).click();
+  await expect(panel.getByText(/Esta corrección aplicará/)).toBeVisible();
+  await panel.getByRole("button", { name: "Confirmar corrección" }).click();
+
+  await expect(page).toHaveURL(/ok=snapshot_price_corrected/);
+  await expect(page.getByRole("status")).toContainText("corregido.");
+  await expect(activeTab(page, /Rentabilidad/)).toHaveAttribute("aria-current", "true");
+});
+
+test("«Rellenar histórico de precios» freezes the provider's past prices on the days valued at cost", async ({
+  page,
+}) => {
+  // CoinGecko is the provider the harness fakes (`E2E_FAKE_PORT`): a flat 40.000 €
+  // a day over the last 75 days. No symbol at the alta, so nothing prices it today
+  // and the history a backdated buy rebuilds is valued at cost.
+  await addHolding(page, { instrument: "crypto", name: "Cripto Histórico E2E" });
+  await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
+  await page.goto("/patrimonio");
+  await holdingRow(page, "Cripto Histórico E2E")
+    .getByRole("link", { name: "Cripto Histórico E2E" })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+
+  const buy = (await openFichaAction(page, "Registrar operación")).getByRole("form", {
+    name: "Registrar operación",
+  });
+  await buy.getByLabel("Fecha de ejecución").fill(daysAgo(40));
+  await buy.getByLabel("Unidades").fill("0,1");
+  await buy.getByLabel("Precio por unidad en EUR").fill("30000");
+  await buy.getByRole("button", { name: "Registrar operación" }).click();
+  await expect(page).toHaveURL(/ok=saved/);
+
+  // Now the symbol: the provider can say what those days were worth. The buy left
+  // `?ok=saved` in the URL already, so the save's own terminal is the signal.
+  await openFichaTab(page, "Datos del activo");
+  await page.getByLabel("Símbolo de precio").fill("bitcoin");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page).toHaveURL(/editar\?pesta%C3%B1a=datos&ok=saved$/);
+
+  const panel = await openFichaAction(page, "Rellenar histórico de precios");
+  await panel.getByRole("button", { name: "Ver cambios" }).click();
+  await expect(panel.getByText("Este relleno aplicará:")).toBeVisible();
+  await panel.getByRole("button", { name: "Confirmar y rellenar" }).click();
+
+  await expect(page).toHaveURL(/ok=price_backfill_done/);
+  await expect(page.getByRole("status")).toHaveText(
+    "Histórico de precios rellenado desde coingecko.",
+  );
+  await expect(activeTab(page, /Rentabilidad/)).toHaveAttribute("aria-current", "true");
+});
+
+test("a warning's «Ver operaciones» switches to the ledger in place, without a reload", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Sobreventa E2E");
+
+  // A sale past the units held, confirmed: the band warns and links to the ledger.
+  const form = (await openFichaAction(page, "Registrar operación")).getByRole("form", {
+    name: "Registrar operación",
+  });
+  await form.getByLabel("Tipo").selectOption("sell");
+  await form.getByLabel("Unidades").fill("15");
+  await form.getByLabel("Precio por unidad en EUR").fill("100");
+  await form.getByRole("button", { name: "Registrar operación" }).click();
+  await form.getByLabel("Confirmo la venta").check();
+  await form.getByRole("button", { name: "Registrar operación" }).click();
+  // The buy left `?ok=saved` in the URL: the settled signal is the band's warning.
+  const band = page.getByRole("alert", { name: "Avisos" });
+  await expect(band).toBeVisible();
+
+  await openFichaTab(page, "Datos del activo");
+  await page.evaluate(() => {
+    (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
+  });
+  const fix = band.getByRole("link", { name: "Ver operaciones" }).first();
+  await waitForHydration(fix);
+  await fix.click();
+
+  await expect(activeTab(page, /Operaciones/)).toHaveAttribute("aria-current", "true");
+  await expect(page).not.toHaveURL(/pesta%C3%B1a=datos/);
+  await expect(
+    page.getByRole("region", { name: "Operaciones de la inversión" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
+    ),
+  ).toBe(true);
+});
+
+test("the header's gain is the board row's gain, to the cent and the tenth of a percent (#1828)", async ({
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo Ganancia E2E");
+
+  // A price above what it cost, so the gain is not a trivial zero.
+  await openFichaTab(page, "Datos del activo");
+  await page.getByLabel(/Precio manual por unidad/).fill("123");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  // The buy left `?ok=saved` already: the save's own terminal is the signal.
+  await expect(page).toHaveURL(/editar\?pesta%C3%B1a=datos&ok=saved$/);
+
+  await page.goto(ficha);
+  const header = page
+    .getByRole("region", { name: "Estado del activo" })
+    .locator(".fichaFigures div", { hasText: "Ganancia total" })
+    .locator(".fichaFigure");
+  await expect(header).toHaveText(/· \+23,0\s%$/);
+  const headerGain = (await header.innerText()).trim();
+
+  await page.goto("/patrimonio");
+  const row = holdingRow(page, "Fondo Ganancia E2E").locator(".balanceRowReturns");
+  // The row prints «▲ 230 € · +23,0 %» plus its tooltip: the figure is the same.
+  await expect(row).toContainText(headerGain);
 });
