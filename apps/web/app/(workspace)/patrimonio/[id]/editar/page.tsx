@@ -133,15 +133,27 @@ export default async function EditarPage({
 
   // Cobros rides on every asset ficha whatever its family, so it is loaded here
   // and PLACED by the family — only the family knows where in its own order the
-  // panel belongs. A liability pays nobody and loads nothing.
-  const payoutsPanel = asset
-    ? await loadPayoutsPanel(ficha, { asset, overrides, scopeId: selectedScope?.id })
+  // panel belongs. A liability pays nobody and loads nothing, so the panel travels
+  // WITH the asset: there is no asset without one to guard against downstream.
+  const assetWithPanel = asset
+    ? {
+        payoutsPanel: await loadPayoutsPanel(ficha, {
+          asset,
+          overrides,
+          scopeId: selectedScope?.id,
+        }),
+        row: asset,
+      }
     : null;
 
   // The one dispatch: which family this holding belongs to, and everything that
   // family needs — its rows, its sections, its bound actions (#1607). Null when
   // the resolved id names neither an asset nor a liability.
-  const surface = await loadHoldingSurface({ ...ficha, asset, liability, payoutsPanel });
+  const surface = await loadHoldingSurface({
+    ...ficha,
+    asset: assetWithPanel,
+    liability,
+  });
 
   if (surface === null) {
     notFound();
@@ -162,7 +174,7 @@ export default async function EditarPage({
           DATOS_TAB,
         )
       : currentUrl;
-  const chrome = { ...ficha, currentUrl: chromeUrl };
+  const chromeContext = { ...ficha, currentUrl: chromeUrl };
 
   // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
   // unfolded and the archive intent in the URL (#1549) — the traspaso surface is
@@ -181,9 +193,9 @@ export default async function EditarPage({
   // La disponibilidad va con el ESCALÓN, no con la familia (#1528): el panel decide
   // solo, y devuelve null para cualquier holding que no esté a plazo. La página no
   // pregunta por el peldaño — un booleano más aquí es lo que #1607 vino a quitar.
-  const availabilityPanel = await loadAvailabilityPanel(chrome, asset);
+  const availabilityPanel = await loadAvailabilityPanel(chromeContext, asset);
 
-  const dangerPanel = await loadDangerPanel(chrome, {
+  const dangerPanel = await loadDangerPanel(chromeContext, {
     asset,
     manualLedger: surface.manualLedger,
     trashImpact: surface.trashImpact,
@@ -235,12 +247,16 @@ export default async function EditarPage({
 
   // PROTOTIPO #1737 — desechable: solo en desarrollo, solo inversión, solo con `?variante=`.
   const prototypeVariant = prototypeVariantFor(resolvedSearchParams, surface.family);
-  if (prototypeVariant && asset && payoutsPanel) {
+  if (prototypeVariant && assetWithPanel) {
     return renderFichaPrototype({
       availability: availabilityPanel,
       basics: basicsSection,
       boardHref,
-      ctx: { ...ficha, asset, payoutsPanel },
+      ctx: {
+        ...ficha,
+        asset: assetWithPanel.row,
+        payoutsPanel: assetWithPanel.payoutsPanel,
+      },
       danger: dangerPanel,
       overrides,
       searchParams: resolvedSearchParams,

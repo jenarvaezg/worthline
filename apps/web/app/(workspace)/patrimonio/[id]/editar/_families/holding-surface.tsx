@@ -41,16 +41,15 @@ import { loadStoredSurface } from "./stored-family";
 
 export async function loadHoldingSurface(
   input: FichaContext & {
-    asset: ManualAsset | null;
+    /** The asset, with the shared Cobros panel the page loaded for it. */
+    asset: { row: ManualAsset; payoutsPanel: PayoutsPanel } | null;
     liability: Liability | null;
-    /** The shared Cobros panel; null when the holding is a liability's. */
-    payoutsPanel: PayoutsPanel | null;
   },
 ): Promise<HoldingSurface | null> {
-  const { asset, liability, payoutsPanel, ...ficha } = input;
+  const { asset: assetWithPanel, liability, ...ficha } = input;
 
-  // The page loads the panel for every asset, so an asset always comes with one.
-  if (asset && payoutsPanel) {
+  if (assetWithPanel) {
+    const { payoutsPanel, row: asset } = assetWithPanel;
     const ctx = { ...ficha, asset, payoutsPanel };
     const connectedSource = await readConnectedSourceOfAsset(ficha.store, asset);
     const method = valuationMethodOfAsset(asset);

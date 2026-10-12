@@ -96,3 +96,30 @@ it does not branch on the instrument.**
   is the richest surface: returns, benchmark, traspaso, statement and two price
   repairs all hang off it. Its action binding lives in `investment-actions.ts`, so a
   new surface's action does not edit the file that renders.
+
+## Amendment (#1826): a family also says how its ficha is laid out
+
+The investment ficha stopped being one column behind «Configuración avanzada» (#1731,
+B2 of #1737): it is a state header with an action bar, one action at a time in a side
+panel, and tabs. The decision above holds — the page still does not branch on the
+instrument — and gains one field:
+
+- **The surface names its layout.** `HoldingSurface.layout` is either `advanced` (the
+  family's `body`, inside the accordion, as before) or `ficha` (a `FichaLayout`: the
+  header's figures and value, the actions — each a form for the panel — the family's
+  tabs, and which tab or panel each `formId`'s refusal lands on). The page switches on
+  the LAYOUT, never on the family, so moving a family to tabs (#1824) is a change to
+  that family's loader and nothing else.
+- **The behaviour is common, not per family.** `_ficha/holding-ficha.tsx` renders
+  header, bar, tabs and panel; `_ficha/ficha-view.ts` is the pure URL contract
+  (`?pestaña=`, `?accion=`, the legacy `?abrir=`, refusals that came back in the URL).
+  A family states what it carries, not how it behaves.
+- **The chrome becomes a tab.** On a tabbed ficha the page appends «Datos del activo»
+  — «Lo básico», the availability, the Zona de peligro last — and points those forms'
+  terminals at that tab.
+- **The shared Cobros panel comes in pieces** (`PayoutsPanel`): the whole section for
+  an accordion, its record (a tab) and its entry forms (an action) for a tabbed ficha,
+  plus the dated payouts a family that measures a return folds instead of reading them
+  twice.
+- **The page is no longer 233 lines** — it carries both layouts until every family has
+  moved; the accordion branch and `SurfaceLayout.advanced` go with the last one.

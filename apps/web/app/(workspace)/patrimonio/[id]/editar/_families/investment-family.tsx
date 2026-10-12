@@ -21,6 +21,7 @@ import {
   signClass,
 } from "@web/_components/returns-format";
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
+import { currencyMark } from "@web/asistente/document-figures";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 import { priceFreshnessLabel } from "@web/intake";
@@ -74,7 +75,7 @@ const TABS = ["operaciones", "rentabilidad", "cobros"] as const;
 function unitPrice(price: DecimalString, currency: CurrencyCode, privacyMode: boolean) {
   const formatted = formatPrice(price);
   const shown = privacyMode ? maskMoneyString(formatted) : formatted;
-  return `${shown} ${currency === "EUR" ? "€" : currency}`;
+  return `${shown} ${currencyMark(currency)}`;
 }
 
 export async function loadInvestmentSurface(
@@ -206,6 +207,7 @@ export async function loadInvestmentSurface(
     formatMoneyMinorPrivacy({ amountMinor, currency: baseCurrency }, privacyMode);
   const gainRatio = returnsView?.totalReturnRatio ?? null;
   const irrRate = returnsView?.irr?.rate ?? null;
+  const irrTone = signClass(irrRate);
   const figures: FichaFigure[] = [
     {
       detail: (
@@ -252,7 +254,8 @@ export async function loadInvestmentSurface(
       ),
     },
     {
-      // The board row's figure, by the same rule: no ratio, no claim (#551).
+      // The board row's figure, by its same rules: no ratio, no claim (#551), and a
+      // gain of zero reads as the board's ▲, not as a loss.
       ...(returnsView && gainRatio !== null
         ? {
             tone: gainRatio >= 0 ? ("pos" as const) : ("neg" as const),
@@ -273,7 +276,7 @@ export async function loadInvestmentSurface(
       label: "Ganancia total",
     },
     {
-      ...(signClass(irrRate) ? { tone: signClass(irrRate) as "pos" | "neg" } : {}),
+      ...(irrTone ? { tone: irrTone } : {}),
       key: "irr",
       label: (
         <>

@@ -14,9 +14,11 @@
  *   `?abrir=cobros` are what `holdingOperationsHref`/`holdingCobrosHref` build, and
  *   `?abrir=traspaso&archivar=1` is the Papelera's «Lo traspasé a…» exit (#1549).
  * - A refusal that came back in the URL (`?error=…&form=…`, the no-JS terminal and
- *   every action that still redirects) reopens the form that produced it, or its
- *   band would be sitting behind a closed panel. Which form lives where is the
- *   ficha's to say ({@link FichaViewSpec.errorTargets}).
+ *   every action that still redirects) lands where its band is printed — the panel
+ *   of the form that produced it, or the tab, when a `formId` is shared by forms in
+ *   both (Cobros: the one-off entry and a schedule's costs) — or the band would sit
+ *   behind a closed panel. Which form lives where is the ficha's to say
+ *   ({@link FichaViewSpec.errorTargets}).
  *
  * An explicit `?pestaña=`/`?accion=` always wins over what those imply, and every
  * write spells the view out explicitly and drops the doors that had implied it —
@@ -146,6 +148,6 @@ export function fichaTabUrl(
   tabs: readonly string[],
   tab: string,
 ): string {
-  const spec = { actions: [], errorTargets: {}, tabs };
-  return `${basePath}${writeFichaView("", spec, { action: null, tab })}`;
+  if (tab === (tabs[0] ?? "")) return basePath;
+  return `${basePath}?${new URLSearchParams({ [FICHA_TAB_PARAM]: tab })}`;
 }

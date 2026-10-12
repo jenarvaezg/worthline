@@ -253,12 +253,14 @@ async function renderedHtml(searchParams: Record<string, string> = {}): Promise<
   return renderToStaticMarkup(element);
 }
 
-/** The markup of the tab on show, the side panel, and the bar. */
-const tabBody = (html: string) =>
-  html.slice(
+/** The markup of the tab on show (up to the panel), and of the side panel. */
+const tabBody = (html: string) => {
+  const panelAt = html.indexOf('class="fichaPanel"');
+  return html.slice(
     html.indexOf('class="fichaTabBody"'),
-    html.indexOf('class="fichaPanel"') >>> 0,
+    panelAt === -1 ? undefined : panelAt,
   );
+};
 const panel = (html: string) => {
   const at = html.indexOf('class="fichaPanel"');
   return at === -1 ? "" : html.slice(at);
@@ -415,6 +417,19 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(panel(html)).toContain("<h3>Traer de otra entidad</h3>");
     // Its own band only: the page band used to print it a second time.
     expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("the header's gain folds the cobros the board's row folds (#657)", async () => {
+    // A 500 € dividend: the board's row counts it as realized gain, so the ficha has
+    // to as well — 2.000 € of price plus 500 € paid, against 10.000 € invested.
+    calls.readPayoutsForHolding.mockResolvedValueOnce([
+      { amountMinor: 500_00, dateISO: "2026-06-01", holdingId: ASSET_ID, id: "pay_1" },
+    ]);
+
+    const html = await renderedHtml();
+
+    expect(html).toMatch(/2\.?500\s€ · \+25,0 %/);
+    expect(html).toMatch(/Cobros<span class="fichaTabCount">1</);
   });
 
   test("the Rentabilidad tab measures what the header measures", async () => {

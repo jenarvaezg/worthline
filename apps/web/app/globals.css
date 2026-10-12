@@ -5347,7 +5347,8 @@ p.muted {
    en un rótulo gritado, y el guardián lo impide. */
 .contextLabel,
 .altaStep,
-.simpleOwnership legend {
+.simpleOwnership legend,
+.fichaFigures dt {
   color: var(--muted);
   font-size: 0.8rem;
   text-transform: uppercase;
@@ -6847,10 +6848,11 @@ td.rowActions > * {
   justify-content: flex-end;
 }
 
-/* La acción cuyo panel está abierto, dicho con el azul de la interacción. */
+/* La acción cuyo panel está abierto: un contorno de tinta, para que no se confunda
+   con el foco, que es azul (canon §5). */
 .fichaActions .btn[aria-expanded="true"],
 .fichaMoreActive {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -6899,15 +6901,6 @@ td.rowActions > * {
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
   margin: 0;
   padding-top: 12px;
-}
-
-/* Label pequeño real (canon §3): caja alta con tracking, y nada más la lleva. */
-.fichaFigures dt {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .fichaFigures abbr {

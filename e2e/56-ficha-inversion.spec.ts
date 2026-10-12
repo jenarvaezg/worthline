@@ -148,20 +148,25 @@ test("a cobro added from the panel lands on the Cobros tab", async ({ page }) =>
   await fundWithBuy(page, "Fondo Cobro E2E");
 
   const panel = await openFichaAction(page, "Añadir cobro");
-  await panel.getByLabel("Importe del cobro").fill("12,50");
+  // Exact: the recurring form beside it has «Importe del cobro recurrente».
+  await panel.getByLabel("Importe del cobro", { exact: true }).fill("12,50");
   await panel.getByRole("button", { name: "Añadir cobro" }).click();
 
   await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_saved/);
   await expect(page.getByRole("status")).toHaveText("Cobro registrado.");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Cobros" })).toContainText("12,50");
+  // The record rounds its strip to the euro, so the count is the exact signal.
+  await expect(page.getByRole("region", { name: "Cobros" })).toContainText("1 cobro.");
 });
 
 test("at 390 px the four tabs fit, nothing scrolls sideways, and the panel takes the screen", async ({
   page,
 }) => {
+  // The alta is not what this measures, so the fund is made at the default width.
+  const ficha = await fundWithBuy(page, "Fondo Móvil E2E");
   await page.setViewportSize({ height: 844, width: 390 });
-  await fundWithBuy(page, "Fondo Móvil E2E");
+  await page.goto(ficha);
+  await expect(page.getByRole("region", { name: "Estado del activo" })).toBeVisible();
 
   expect(await sidewaysOverflow(page)).toBeLessThanOrEqual(0);
   const tabs = page.getByRole("navigation", { name: "Secciones de la ficha" });
