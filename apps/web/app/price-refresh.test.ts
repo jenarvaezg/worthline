@@ -1,9 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  absoluteRefreshDate,
   boardRefreshHover,
-  detailRefreshCaption,
   priceOriginCaption,
   priceSourceLabel,
   relativeRefreshDate,
@@ -46,12 +44,6 @@ describe("relativeRefreshDate", () => {
   });
 });
 
-describe("absoluteRefreshDate", () => {
-  test("renders an es-ES day-month-year date", () => {
-    expect(absoluteRefreshDate("2026-06-08T09:30:00.000Z")).toBe("8 jun 2026");
-  });
-});
-
 describe("boardRefreshHover", () => {
   const now = "2026-06-10T12:00:00.000Z";
 
@@ -65,19 +57,6 @@ describe("boardRefreshHover", () => {
     expect(boardRefreshHover(null, "yahoo", now)).toBeNull();
     expect(boardRefreshHover("2026-06-08T08:00:00.000Z", null, now)).toBeNull();
     expect(boardRefreshHover(null, null, now)).toBeNull();
-  });
-});
-
-describe("detailRefreshCaption", () => {
-  test("builds the absolute caption with the source label", () => {
-    expect(detailRefreshCaption("2026-06-08T09:30:00.000Z", "yahoo")).toBe(
-      "Precio actualizado el 8 jun 2026 · Yahoo",
-    );
-  });
-
-  test("is null when metadata is missing", () => {
-    expect(detailRefreshCaption(null, "yahoo")).toBeNull();
-    expect(detailRefreshCaption("2026-06-08T09:30:00.000Z", null)).toBeNull();
   });
 });
 

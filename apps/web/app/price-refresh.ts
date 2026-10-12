@@ -5,8 +5,8 @@
  * refreshed and by WHICH source. Two surfaces share these pure formatters:
  *  - the /patrimonio balance board enriches the derived-value badge's native
  *    `title` hover with a RELATIVE date ("precio de hace 2 días, vía Yahoo");
- *  - the holding detail (/patrimonio/[id]/editar) shows a visible caption with an
- *    ABSOLUTE date ("Precio actualizado el 8 jun 2026 · Yahoo").
+ *  - the holding detail (/patrimonio/[id]/editar) says, under the price, where it
+ *    comes from and the day it is FROM ("cotización Yahoo · 11/10/2026", #1828).
  *
  * Dates render in es-ES; the raw source code maps to a short display label. Pure
  * functions only — no React, no DB — so both server components stay thin glue and
@@ -58,15 +58,6 @@ export function relativeRefreshDate(fetchedAtIso: string, nowIso: string): strin
   return `hace ${days} días`;
 }
 
-/** An absolute es-ES date for the detail caption: "8 jun 2026". */
-export function absoluteRefreshDate(fetchedAtIso: string): string {
-  return new Date(fetchedAtIso).toLocaleDateString("es-ES", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 /**
  * The board badge's `title` suffix: " · precio de hace 2 días, vía Yahoo". Appended
  * to the existing "Valor calculado (unidades × precio)" hover so one native tooltip
@@ -82,23 +73,12 @@ export function boardRefreshHover(
 }
 
 /**
- * The detail caption text: "Precio actualizado el 8 jun 2026 · Yahoo". Null when
- * there is no refresh metadata (a manual quote or an as-yet-unpriced investment).
- */
-export function detailRefreshCaption(
-  fetchedAtIso: string | null,
-  source: PriceSource | null,
-): string | null {
-  if (!fetchedAtIso || !source) return null;
-  return `Precio actualizado el ${absoluteRefreshDate(fetchedAtIso)} · ${priceSourceLabel(source)}`;
-}
-
-/**
  * The line under a holding's price on its ficha (#1828): where the price comes
  * from and of when — «cotización Yahoo · 11/10/2026», «precio a mano · 03/10/2026»,
  * «sin precio: se valora a lo que costó». It only words the origin the valuation
  * engine handed back with the price; it never infers one. A day nobody can vouch
- * for is left out rather than guessed.
+ * for is left out rather than guessed. It replaced the «Precio actualizado el …»
+ * caption, which dated a quote by its LAST FETCH — a failed refresh included.
  */
 export function priceOriginCaption(origin: InvestmentPriceOrigin): string {
   if (origin.kind === "cost") return "sin precio: se valora a lo que costó";
