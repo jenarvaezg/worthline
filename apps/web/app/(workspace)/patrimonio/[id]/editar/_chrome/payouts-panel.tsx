@@ -135,7 +135,9 @@ export async function loadPayoutsPanel(
       (row) => ({ amountMinor: row.amountMinor, date: row.dateISO }),
     ),
     entry: (returnUrl) => <CobrosEntry {...props(returnUrl)} />,
-    record: (returnUrl) => <CobrosRecord {...props(returnUrl)} />,
+    record: (returnUrl, addLink) => (
+      <CobrosRecord {...props(returnUrl)} addLink={addLink} />
+    ),
     section: <CobrosSection {...props(currentUrl)} />,
   };
 }

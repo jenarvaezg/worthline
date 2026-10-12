@@ -26,6 +26,7 @@ import {
   passiveIncomeTrailing,
 } from "@worthline/domain";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
 import { LeaseTermsRow } from "./lease-terms-row";
@@ -67,6 +68,12 @@ function scheduleSpec(
 export interface CobrosProps {
   /** «Es intencional» for the double-count cross (#1675) — the warnings' own door. */
   acknowledgeWarningAction: FormAction;
+  /**
+   * The door to add the first cobro, where the entry forms are NOT on the same
+   * surface (#1830): the tabbed ficha's Cobros tab, whose forms live in the
+   * «Añadir cobro» panel. Printed only while the holding has none.
+   */
+  addLink?: ReactNode;
   /**
    * The income declaration door with this holding bound (#1673): the same action,
    * parser and required provenance as the Rentas surface. Redirects on success and
@@ -139,7 +146,9 @@ export function CobrosRecord(props: CobrosProps) {
       <CobrosAlerts {...props} />
       <CobrosSummary {...props} />
       <CobrosSchedules {...props} />
-      <CobrosHonestNote />
+      {/* What a cobro is matters once there is one to read; the empty record is
+          one line (#1830), and the entry panel says it before its forms. */}
+      {hasNoCobros(props) ? null : <CobrosHonestNote />}
     </section>
   );
 }
@@ -211,8 +220,19 @@ function CobrosAlerts({
   );
 }
 
-/** Renta pasiva · trailing 12 months (server-rendered figure), then the month grid. */
+/** Nothing paid and nothing declared: there is no figure to sum, only a fact to say. */
+function hasNoCobros({ payouts, schedules }: Pick<CobrosProps, "payouts" | "schedules">) {
+  return payouts.length === 0 && schedules.length === 0;
+}
+
+/**
+ * Renta pasiva · trailing 12 months (server-rendered figure), then the month grid —
+ * or, for a holding that never paid anything, one line saying so (#1830): a strip at
+ * 0 €, a 0,0 % coverage and a year of empty months were a block of zeros that read
+ * as a measurement when it was an absence.
+ */
 function CobrosSummary({
+  addLink,
   currency,
   currentUrl,
   deletePayoutAction,
@@ -223,6 +243,15 @@ function CobrosSummary({
   today,
   updatePayoutScheduleAction,
 }: CobrosProps) {
+  if (hasNoCobros({ payouts, schedules })) {
+    return (
+      <p className="emptyLine cobrosEmpty">
+        Este activo no ha pagado nada todavía.
+        {addLink ? <> {addLink}</> : null}
+      </p>
+    );
+  }
+
   const fmt = moneyIn(currency, privacyMode);
   const rows = buildCobroRows(payouts, schedules, today);
   const passive = passiveIncomeTrailing(rows, today, 12);

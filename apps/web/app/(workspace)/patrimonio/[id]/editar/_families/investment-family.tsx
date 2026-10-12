@@ -26,7 +26,11 @@ import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 import { priceFreshnessLabel } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
-import { fichaTabUrl } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
+import { FichaActionLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-action-link";
+import {
+  fichaActionUrl,
+  fichaTabUrl,
+} from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
@@ -175,6 +179,13 @@ export async function loadInvestmentSurface(
         trackedIndex: exposureProfile.trackedIndex,
       })
     : null;
+  const benchmarkCard =
+    benchmarkResult && exposureProfile?.trackedIndex ? (
+      <HoldingBenchmarkComparisonCard
+        result={benchmarkResult}
+        trackedIndex={exposureProfile.trackedIndex}
+      />
+    ) : null;
 
   // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
   // with a provider symbol AND cost-basis history offers the explicit backfill
@@ -491,28 +502,35 @@ export async function loadInvestmentSurface(
           label: "Operaciones",
         },
         {
-          content: (
+          // «Tu dinero (TIR)» faced with «El fondo (TWR)», the index comparison on
+          // the fund's side — the TWR is what it compares (#551, ADR 0040, #1830).
+          content: returnsView ? (
+            <ReturnsPanel
+              benchmark={benchmarkCard}
+              privacyMode={privacyMode}
+              view={returnsView}
+            />
+          ) : (
             <>
-              {/* Three measures + realized/unrealized split + honest caveats
-                  (#551, ADR 0040). */}
-              {returnsView ? (
-                <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
-              ) : (
-                <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
-              )}
-              {benchmarkResult && exposureProfile?.trackedIndex ? (
-                <HoldingBenchmarkComparisonCard
-                  result={benchmarkResult}
-                  trackedIndex={exposureProfile.trackedIndex}
-                />
-              ) : null}
+              <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
+              {benchmarkCard}
             </>
           ),
           key: "rentabilidad",
           label: "Rentabilidad",
         },
         {
-          content: payoutsPanel.record(tabUrl("cobros")),
+          content: payoutsPanel.record(
+            tabUrl("cobros"),
+            // With none yet, the record is one line and this is its door (#1830):
+            // the «Añadir cobro» panel, opened over the tab.
+            <FichaActionLink
+              action="cobro"
+              href={fichaActionUrl(currentUrl, TABS, "cobros", "cobro")}
+            >
+              Añadir un cobro
+            </FichaActionLink>,
+          ),
           count: payoutsPanel.count,
           key: "cobros",
           label: "Cobros",

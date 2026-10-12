@@ -74,8 +74,12 @@ export interface FichaContext {
 export interface PayoutsPanel {
   /** The whole section, for a ficha that keeps it inside «Configuración avanzada». */
   section: ReactNode;
-  /** What it paid and is declared to pay: a tabbed ficha's «Cobros» tab. */
-  record: (currentUrl: string) => ReactNode;
+  /**
+   * What it paid and is declared to pay: a tabbed ficha's «Cobros» tab. `addLink` is
+   * the door to the entry panel, printed in the one line a holding with no cobros
+   * shows instead of a block of zeros (#1830).
+   */
+  record: (currentUrl: string, addLink?: ReactNode) => ReactNode;
   /** The two entry forms: a tabbed ficha's «Añadir cobro» panel. */
   entry: (currentUrl: string) => ReactNode;
   /** How many cobros it has, one-off or recurring — the tab's count. */
