@@ -33,6 +33,8 @@ import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
+import { prototypeVariantFor } from "./_prototype-1737/prototype-model";
+import { renderFichaPrototype } from "./_prototype-1737/render-prototype";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 
 /** The forms that render their own error band, next to the field that produced it. */
@@ -149,6 +151,66 @@ export default async function EditarPage({
     trashImpact: surface.trashImpact,
   });
 
+  const warningsBand = (
+    <WarningsBand
+      asset={asset}
+      currentUrl={currentUrl}
+      id={id}
+      operations={surface.operations}
+      overrides={overrides}
+    />
+  );
+
+  const basicsSection = (
+    <section className="editBasic" aria-labelledby="edit-basic-title">
+      <h3 id="edit-basic-title">Lo básico</h3>
+      {asset ? (
+        <AssetEditForm
+          asset={asset}
+          boardHref={boardHref}
+          currentUrl={currentUrl}
+          investment={surface.basics.investment}
+          isBinanceHolding={surface.basics.isBinanceHolding}
+          isCoinCollection={surface.basics.isCoinCollection}
+          members={activeMembers}
+          method={surface.basics.method}
+          privacyMode={privacyMode}
+          scopeMemberId={ownershipScopeMemberId}
+          updateInvestmentAction={boundUpdateInvestmentAction}
+          valueOnlyOpening={surface.basics.valueOnlyOpening}
+          values={formError?.formId === "edit" ? formError.values : {}}
+        />
+      ) : liability ? (
+        <LiabilityEditForm
+          assets={allAssets.filter((a) => a.type !== "investment")}
+          boardHref={boardHref}
+          currentUrl={currentUrl}
+          liability={liability}
+          members={activeMembers}
+          scopeMemberId={ownershipScopeMemberId}
+          showRawBalanceForm={surface.basics.showRawBalanceForm}
+          values={formError?.formId === "edit" ? formError.values : {}}
+        />
+      ) : null}
+    </section>
+  );
+
+  // PROTOTIPO #1737 — desechable: solo en desarrollo, solo inversión, solo con `?variante=`.
+  const prototypeVariant = prototypeVariantFor(resolvedSearchParams, surface.family);
+  if (prototypeVariant && asset) {
+    return renderFichaPrototype({
+      availability: availabilityPanel,
+      basics: basicsSection,
+      boardHref,
+      ctx: { ...ficha, asset, payoutsPanel },
+      danger: dangerPanel,
+      overrides,
+      searchParams: resolvedSearchParams,
+      variant: prototypeVariant,
+      warnings: warningsBand,
+    });
+  }
+
   return (
     <>
       {formOk ? (
@@ -163,13 +225,7 @@ export default async function EditarPage({
           <Link href={boardHref}>← Volver</Link>
         </div>
 
-        <WarningsBand
-          asset={asset}
-          currentUrl={currentUrl}
-          id={id}
-          operations={surface.operations}
-          overrides={overrides}
-        />
+        {warningsBand}
 
         {/* The page-level band carries only the errors NO section prints itself. The
             list is the seam: a section that grows its own band adds itself here, and
@@ -180,37 +236,7 @@ export default async function EditarPage({
           </p>
         ) : null}
 
-        <section className="editBasic" aria-labelledby="edit-basic-title">
-          <h3 id="edit-basic-title">Lo básico</h3>
-          {asset ? (
-            <AssetEditForm
-              asset={asset}
-              boardHref={boardHref}
-              currentUrl={currentUrl}
-              investment={surface.basics.investment}
-              isBinanceHolding={surface.basics.isBinanceHolding}
-              isCoinCollection={surface.basics.isCoinCollection}
-              members={activeMembers}
-              method={surface.basics.method}
-              privacyMode={privacyMode}
-              scopeMemberId={ownershipScopeMemberId}
-              updateInvestmentAction={boundUpdateInvestmentAction}
-              valueOnlyOpening={surface.basics.valueOnlyOpening}
-              values={formError?.formId === "edit" ? formError.values : {}}
-            />
-          ) : liability ? (
-            <LiabilityEditForm
-              assets={allAssets.filter((a) => a.type !== "investment")}
-              boardHref={boardHref}
-              currentUrl={currentUrl}
-              liability={liability}
-              members={activeMembers}
-              scopeMemberId={ownershipScopeMemberId}
-              showRawBalanceForm={surface.basics.showRawBalanceForm}
-              values={formError?.formId === "edit" ? formError.values : {}}
-            />
-          ) : null}
-        </section>
+        {basicsSection}
 
         {/* Fuera del plegable a propósito: cuando la fecha NO está declarada, esta
             superficie es lo único que lo dice, y un aviso escondido tras un
