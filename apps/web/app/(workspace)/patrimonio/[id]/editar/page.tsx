@@ -24,6 +24,7 @@ import {
   resolveHoldingRoute,
 } from "@web/holding-route";
 import { parseFormError, resolveOkMessage } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
 import Link from "next/link";
@@ -43,7 +44,7 @@ import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 /** The forms that render their own error band, next to the field that produced it. */
 const SECTIONS_WITH_OWN_ERROR_BAND = [
   "operation",
-  "payout",
+  ...Object.values(COBRO_FORM_ID),
   "transfer",
   TRASH_FORM_ID,
   // «Traer de otra entidad» prints its own band (#1518): without it here, its

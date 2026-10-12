@@ -7,9 +7,9 @@
  * a pure fact, NEVER a figure: it touches no snapshot, no ripple, no net-worth
  * path, only the `store.payouts` methods. These four actions mirror the exposure
  * surface: `guardDemoWrite` first (through the combinator), an optional `_store`
- * seam for tests, and a redirect-with-message. Validation errors render at the
- * "payout" section (its own formId), not on the holding-edit form at the top of
- * the page. Its own module since #1606.
+ * seam for tests, and a redirect-with-message. Validation errors render beside the
+ * Cobros form that posted them (its own formId, `cobro-form-ids.ts`), not on the
+ * holding-edit form at the top of the page. Its own module since #1606.
  *
  * Declaring a recurring income is NOT here any more (#1673): the ficha binds its
  * holding into `createIncomeAction`, the one declaration door it shares with the
@@ -21,13 +21,17 @@
 import { parseScheduleExpenses } from "@web/_income/income-recurrence";
 import { parseLeaseTerms } from "@web/_income/lease-terms-form";
 import { formAction } from "@web/form-action";
-import { errorRedirectUrl, successRedirectUrl } from "@web/intake";
+import { errorRedirectUrl, preserveFields, successRedirectUrl } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { currentUrlOf } from "@web/inversiones/return-url";
 import {
   buildPayoutResult,
   type PayoutFields,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+
+/** The one-off form's fields — what it reads, and what a refusal carries back. */
+const PAYOUT_FIELDS = ["amount", "dateISO", "note"] as const;
 
 /** Lift the one-off payout inputs off the FormData into the pure field map. */
 function parsePayoutFieldsFromForm(formData: FormData): PayoutFields {
@@ -41,23 +45,24 @@ export async function createPayoutAction(
   ..._testArgs: unknown[]
 ) {
   const returnUrl = currentUrlOf(formData);
+  // A refusal goes back to the one-off form itself, with what was typed (#1731
+  // review): the ficha reopens it in the «Añadir cobro» panel instead of a tab.
+  const refused = (message: string) =>
+    errorRedirectUrl(returnUrl, {
+      formId: COBRO_FORM_ID.oneOff,
+      message,
+      values: preserveFields(formData, [...PAYOUT_FIELDS]),
+    });
 
   return formAction({
     datedFact: false,
     guardUrl: () => returnUrl,
-    onError: ({ error }) =>
-      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
+    onError: ({ error }) => refused(error),
     onSuccess: () => successRedirectUrl(returnUrl, "payout_saved"),
     parse: () => {
       const result = buildPayoutResult(parsePayoutFieldsFromForm(formData));
       if (!result.ok) {
-        return {
-          ok: false,
-          redirect: errorRedirectUrl(returnUrl, {
-            formId: "payout",
-            message: result.error,
-          }),
-        };
+        return { ok: false, redirect: refused(result.error) };
       }
       return { ok: true, value: result.payout };
     },
@@ -115,10 +120,10 @@ export async function updatePayoutScheduleAction(
     guardUrl: () => returnUrl,
     missingId: "Cobro recurrente no encontrado.",
     missingIdUrl: () => returnUrl,
-    // formId "payout": an invalid expenses declaration belongs beside the Cobros
-    // section that posted it, not as a bare banner at the top of the ficha.
+    // The record's own id: an invalid expenses declaration belongs beside the
+    // Cobros record that posted it, not as a bare banner at the top of the ficha.
     onError: ({ error }) =>
-      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
+      errorRedirectUrl(returnUrl, { formId: COBRO_FORM_ID.record, message: error }),
     onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_updated"),
     requireId: false,
     run: async (store, { extra }) => {

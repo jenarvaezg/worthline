@@ -104,6 +104,25 @@ describe("createPayoutAction / deletePayoutAction", () => {
     expect(decodeURIComponent(digest)).toMatch(/mayor.que.cero/);
     expect(await store.payouts.readPayoutsForHolding(HOLDING)).toHaveLength(0);
   });
+
+  test("a refusal names its own form and carries what was typed back to it (#1731 review)", async () => {
+    // The one-off entry lives in the ficha's «Añadir cobro» panel: its refusal must
+    // reopen THAT form with the amount, the day and the note, not a tab with a band.
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+
+    const digest = await run(
+      createPayoutAction,
+      form({ amount: "0", dateISO: "2026-05-20", note: "Dividendo" }),
+      store,
+    );
+    const target = new URL(digest.split(";")[2] ?? "", "http://x").searchParams;
+
+    expect(target.get("form")).toBe("payoutOneOff");
+    expect(target.get("v_amount")).toBe("0");
+    expect(target.get("v_dateISO")).toBe("2026-05-20");
+    expect(target.get("v_note")).toBe("Dividendo");
+  });
 });
 
 describe("payout schedule actions", () => {

@@ -24,6 +24,7 @@ import { transferCounterpartByOperationId } from "@web/_components/transfer-coun
 import { currencyMark } from "@web/asistente/document-figures";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaActionLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-action-link";
@@ -267,9 +268,11 @@ export async function loadInvestmentSurface(
               <span aria-hidden="true">·</span>
               {/* Today's «Es intencional», by the same override: this fund is
                   quoted by hand on purpose. Its result is the server's redirect,
-                  so it shows an honest pending and cannot be sent twice (§4). */}
+                  so it shows an honest pending and cannot be sent twice (§4) —
+                  and it comes back HERE, with its notice, not to the board. */}
               <form action={acknowledgeWarningAction}>
                 <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="returnTo" type="hidden" value={currentUrl} />
                 <input name="code" type="hidden" value={SYMBOL_WARNING} />
                 <input name="entityId" type="hidden" value={id} />
                 <PendingSubmit disabled={isDemo} pendingLabel="Guardando…">
@@ -498,7 +501,11 @@ export async function loadInvestmentSurface(
         // The no-JS terminal of the record form; with JS its refusal comes back
         // as state and the panel never closed (#1311).
         operation: { action: "operacion" },
-        payout: { tab: "cobros" },
+        // The record's own controls print on the tab; an entry form's refusal
+        // reopens «Añadir cobro» over it, on the form that produced it (#1731 review).
+        [COBRO_FORM_ID.record]: { tab: "cobros" },
+        [COBRO_FORM_ID.oneOff]: { action: "cobro", tab: "cobros" },
+        [COBRO_FORM_ID.recurring]: { action: "cobro", tab: "cobros" },
         statement: { action: "extracto" },
         transfer: { action: "traspaso" },
       },

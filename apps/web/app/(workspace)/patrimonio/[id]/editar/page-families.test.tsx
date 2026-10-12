@@ -465,6 +465,22 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(html.split(message)).toHaveLength(2);
   });
 
+  test("a refused cobro reopens «Añadir cobro» over its tab, with what was typed (#1731 review)", async () => {
+    const message = "Introduce un importe mayor que cero.";
+    const html = await renderedHtml({
+      error: message,
+      form: "payoutOneOff",
+      v_amount: "0",
+      v_note: "Dividendo",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Añadir cobro</h3>');
+    expect(panel(html)).toContain('value="Dividendo"');
+    expect(tabBody(html)).toContain('id="cobros"');
+    // Once, in the form that produced it: not on the tab, not on the page band.
+    expect(html.split(message)).toHaveLength(2);
+  });
+
   test("the header's gain folds the cobros the board's row folds (#657)", async () => {
     // A 500 € dividend: the board's row counts it as realized gain, so the ficha has
     // to as well — 2.000 € of price plus 500 € paid, against 10.000 € invested.

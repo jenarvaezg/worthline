@@ -197,9 +197,11 @@ test("«Cotiza a mano» is today's «Es intencional»: the price stops asking fo
   const state = page.getByRole("region", { name: "Estado del activo" });
 
   await state.getByRole("button", { name: "Cotiza a mano" }).click();
-  await expect(page).toHaveURL(/ok=warning_acknowledged/);
 
-  await page.goto(ficha);
+  // It stays on the ficha (#1731 review): its own notice, beside the price that
+  // no longer asks for a symbol — not a trip to the board.
+  await expect(page).toHaveURL(new RegExp(`${ficha}\\?ok=warning_acknowledged$`));
+  await expect(page.getByRole("status")).toHaveText("Aviso marcado como intencional.");
   await expect(state).toContainText("precio a mano");
   await expect(state).not.toContainText("Sin cotización automática");
 });
@@ -215,8 +217,66 @@ test("a cobro added from the panel lands on the Cobros tab", async ({ page }) =>
   await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_saved/);
   await expect(page.getByRole("status")).toHaveText("Cobro registrado.");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  // The record rounds its strip to the euro, so the count is the exact signal.
-  await expect(page.getByRole("region", { name: "Cobros" })).toContainText("1 cobro.");
+  // The record rounds its strip to the euro, so the count is the exact signal. It
+  // ends the window's line, or comes before the coverage when the run's FIRE
+  // settings declare a spending (journey 37 does): the suite shares one database.
+  await expect(page.getByRole("region", { name: "Cobros" })).toContainText(
+    /· 1 cobro(?: ·|\.)/,
+  );
+});
+
+test("a refused cobro comes back to its form in the panel, with what was typed (#1731 review)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Cobro Rechazado E2E");
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByLabel("Importe del cobro", { exact: true }).fill("0");
+  await panel.getByLabel("Nota del cobro").fill("Dividendo");
+  await panel.getByRole("button", { name: "Añadir cobro" }).click();
+
+  // The panel is where the refusal is read, over the form that produced it: the
+  // refusal's own form id opens it, over the Cobros tab.
+  await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*form=payoutOneOff/);
+  const reopened = page.getByRole("dialog", { name: "Añadir cobro" });
+  await expect(reopened.getByRole("alert")).toHaveText(
+    "Introduce un importe mayor que cero.",
+  );
+  await expect(reopened.getByRole("radio", { name: "Un cobro suelto" })).toBeChecked();
+  await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(reopened.getByLabel("Nota del cobro")).toHaveValue("Dividendo");
+});
+
+test("with JavaScript off, a refused recurring cobro reopens on «Uno que se repite» (#1731 review)", async ({
+  browser,
+  page,
+}) => {
+  const ficha = await fundWithBuy(page, "Fondo Recurrente Sin JS E2E");
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  try {
+    const bare = await context.newPage();
+    await bare.goto(`${ficha}?accion=cobro`);
+    const panel = bare.getByRole("dialog", { name: "Añadir cobro" });
+    await panel.getByText("Uno que se repite").click();
+    // A concept and nothing else: the door asks where the figure comes from.
+    await panel.getByLabel("Concepto del cobro recurrente").fill("Cupón");
+    await panel.getByRole("button", { name: "Añadir recurrente" }).click();
+
+    await expect(bare).toHaveURL(/form=payoutRecurring/);
+    const reopened = bare.getByRole("dialog", { name: "Añadir cobro" });
+    await expect(
+      reopened.getByRole("radio", { name: "Uno que se repite" }),
+    ).toBeChecked();
+    await expect(reopened.getByRole("alert")).toBeVisible();
+    await expect(reopened.getByLabel("Concepto del cobro recurrente")).toHaveValue(
+      "Cupón",
+    );
+  } finally {
+    await context.close();
+  }
 });
 
 test("at 390 px the four tabs fit, nothing scrolls sideways, and the panel takes the screen", async ({
@@ -432,6 +492,26 @@ test("«Añadir cobro» asks which cobro first, shows that form only, and «Aña
   await expect(reopened.getByRole("radio", { name: "Un cobro suelto" })).toBeChecked();
   await expect(reopened.locator('input[name="dateISO"]')).toHaveValue("2026-03-15");
   await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue("");
+});
+
+test("when the notice and the new row do not fit together, «Añadir otro» stays on screen with the focus (#1731 review)", async ({
+  page,
+}) => {
+  // A short screen: the Cobros tab, its grid and the open month are taller than
+  // what is left under the notice. Focus never lands on something off screen.
+  const ficha = await fundWithBuy(page, "Fondo Pantalla Corta E2E");
+  await page.setViewportSize({ height: 520, width: 1280 });
+  await page.goto(ficha);
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByLabel("Importe del cobro", { exact: true }).fill("12,50");
+  await panel.getByRole("button", { name: "Añadir cobro" }).click();
+  await expect(page).toHaveURL(/ok=payout_saved/);
+
+  const again = page.getByRole("button", { name: "Añadir otro" });
+  await expect(again).toBeFocused();
+  await expect(again).toBeInViewport();
+  await expect(page.locator(".cobrosRow[data-fresh]")).toContainText("nuevo");
 });
 
 test("the ledger shows the 10 latest with their importe and unfolds the rest without a reload (#1827)", async ({

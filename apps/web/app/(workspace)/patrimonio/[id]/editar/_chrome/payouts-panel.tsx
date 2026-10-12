@@ -19,6 +19,7 @@
  */
 
 import { createIncomeAction } from "@web/_income/income-actions";
+import { isCobroFormId } from "@web/inversiones/cobro-form-ids";
 import {
   createPayoutAction,
   deletePayoutAction,
@@ -113,8 +114,6 @@ export async function loadPayoutsPanel(
     deletePayoutAction: boundDeletePayoutAction,
     deletePayoutScheduleAction: boundDeletePayoutScheduleAction,
     doubleCount,
-    error: formError?.formId === "payout" ? formError.message : null,
-    errorValues: formError?.formId === "payout" ? formError.values : {},
     holdingId: id,
     monthlySpendingMinor: scopeId
       ? (fireConfig?.[scopeId]?.monthlySpendingMinor ?? null)
@@ -122,6 +121,11 @@ export async function loadPayoutsPanel(
     payouts,
     privacyMode,
     readOnly: isDemo,
+    // Which Cobros form a refusal is from: each prints and refills its own.
+    refusal:
+      formError && isCobroFormId(formError.formId)
+        ? { form: formError.formId, message: formError.message, values: formError.values }
+        : null,
     schedules,
     showLeaseTerms: isHousingAsset(asset),
     today,

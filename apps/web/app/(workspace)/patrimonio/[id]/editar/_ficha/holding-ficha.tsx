@@ -238,17 +238,18 @@ export function HoldingFicha({
     );
   }, [searchKey]);
 
-  // It landed: bring the result into view — the notice, then the row the render
-  // added, which wins when both do not fit — and put focus where the next step is,
-  // «Añadir otra», if it is still on screen; never on something the view left.
-  // The page's scroll keeper leaves this terminal alone (`data-own-landing`).
+  // It landed: bring the result into view — the row the render added, then the
+  // notice — and put focus where the next step is, «Añadir otra». When both fit,
+  // the usual case, both are on screen. When they do not (a long Cobros tab), the
+  // notice wins: focus goes to its offer, and focus never lands on something the
+  // view left (§8) — the row stays marked for whoever scrolls to it. The page's
+  // scroll keeper leaves this terminal alone (`data-own-landing`).
   useEffect(() => {
     if (landed === null) return;
     const band = noticeRef.current;
-    band?.scrollIntoView({ block: "nearest" });
     rootRef.current?.querySelector("[data-fresh]")?.scrollIntoView({ block: "nearest" });
-    const next = againRef.current ?? band;
-    if (next && isOnScreen(next)) next.focus({ preventScroll: true });
+    band?.scrollIntoView({ block: "nearest" });
+    (againRef.current ?? band)?.focus({ preventScroll: true });
   }, [landed]);
 
   // A link to where something is fixed — «Indicar símbolo» beside the price, a
@@ -465,12 +466,6 @@ export function HoldingFicha({
   // Above the whole ficha, so the rows a terminal added are known to whichever
   // tab shows them — the «Cobros» grid mounts with the very landing (#1829).
   return <FreshRowsProvider rows={rows}>{ficha}</FreshRowsProvider>;
-}
-
-/** Whether the whole of `element` is inside the viewport right now. */
-function isOnScreen(element: HTMLElement): boolean {
-  const box = element.getBoundingClientRect();
-  return box.top >= 0 && box.bottom <= window.innerHeight;
 }
 
 /**
