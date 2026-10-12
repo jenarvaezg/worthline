@@ -103,7 +103,7 @@ export function selectInvestmentPrice(input: {
  * live rule never reads the ledger's prices, and a hand-set price that happens to
  * equal the last purchase is still a hand-set price. `asOf` is the day the price
  * is FROM, and null when nothing the app stored can say it — a hand-set price saved
- * before every change was stamped has none (the v72 rung cleared those stamps).
+ * before every change was stamped has none (the v73 rung cleared those stamps).
  *
  * `refreshFailed` says the provider's last refresh of this holding failed (#1731
  * review), whichever price was picked: a quote is then the one kept from before the

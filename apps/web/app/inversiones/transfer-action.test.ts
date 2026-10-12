@@ -17,7 +17,7 @@
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import type { Instrument } from "@worthline/domain";
-import { derivePosition, multiplyToMinor } from "@worthline/domain";
+import { derivePosition, fixedClock, multiplyToMinor } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { recordTransferAction } from "./transfer-action";
@@ -254,6 +254,32 @@ describe("recordTransferAction — a destination created on the way in", () => {
 
     const [incoming] = await store.operations.readOperations(created?.id ?? "");
     expect(incoming).toMatchObject({ kind: "transfer_in", units: "50.98069" });
+  });
+
+  test("the created holding's price is dated by the action's clock (ADR 0024)", async () => {
+    const store = await seed({ withDestination: false });
+    const clock = fixedClock("2026-08-14T09:30:00.000Z");
+
+    try {
+      await recordTransferAction(
+        ORIGIN,
+        transferForm({
+          destinationAssetId: "__new__",
+          newDestinationName: "Value PP",
+          newDestinationSecurityId: "n-5394",
+        }),
+        store,
+        clock,
+      );
+    } catch (err: unknown) {
+      if ((err as { message?: string }).message !== "NEXT_REDIRECT") throw err;
+    }
+
+    const created = (await store.assets.readAssets()).find(
+      (asset) => asset.name === "Value PP",
+    );
+    const investment = await store.assets.readInvestmentAssetById(created?.id ?? "");
+    expect(investment?.manualPricedAt).toBe("2026-08-14T09:30:00.000Z");
   });
 
   test("an ISIN typed where a plan's code belongs is refused, and creates nothing", async () => {

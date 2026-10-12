@@ -47,6 +47,23 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
 
 describe("seedPersona — familia", () => {
   it(
+    "dates a seeded hand-set price on the demo's day, never the wall clock's (ADR 0024)",
+    async () => {
+      // The demo is pinned: a price stamped with today would read «precio a mano»
+      // after the demo's own «hoy» (#1731 review).
+      const store = await createInMemoryStore();
+      await seedPersona(store, FAMILIA_SPEC, AS_OF);
+
+      const etf = await store.assets.readInvestmentAssetById("asset_familia_etf");
+      expect(etf?.manualPricePerUnit).toBe("137.20");
+      expect(etf?.manualPricedAt?.slice(0, 10)).toBe(AS_OF);
+
+      store.close();
+    },
+    PERSONA_TEST_TIMEOUT_MS,
+  );
+
+  it(
     "builds a two-member household with the full scope axis",
     async () => {
       const store = await createInMemoryStore();

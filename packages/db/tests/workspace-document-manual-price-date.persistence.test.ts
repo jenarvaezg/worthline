@@ -2,7 +2,7 @@
  * The day a hand-set price was set, across the workspace document's door (#1731
  * review, ADR 0104: one door, two readers).
  *
- * The v72 rung cleared every `manual_priced_at` already stored, because until #1828
+ * The v73 rung cleared every `manual_priced_at` already stored, because until #1828
  * it was stamped only at the alta and a stamp could not be told from the day the
  * price was typed. A restore must not bring those stamps back: a backup written
  * before the rung carries them under `manualPricedAt`, and the document has no

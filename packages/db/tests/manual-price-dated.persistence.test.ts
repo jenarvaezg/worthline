@@ -46,9 +46,11 @@ describe("the hand-set price keeps the day it was set (#1828)", () => {
         manualPricePerUnit: "100",
         name: "Fondo",
         ownership: own,
+        savedAt: "2026-06-20T08:00:00.000Z",
       });
+      // The alta's instant is the caller's (ADR 0024), to the millisecond.
       const atAlta = (await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt;
-      expect(atAlta).toEqual(expect.any(String));
+      expect(atAlta).toBe("2026-06-20T08:00:00.000Z");
 
       // «Lo básico» saved to rename it: the price rides along, the same figure.
       await store.assets.updateInvestmentAsset(
@@ -97,6 +99,48 @@ describe("the hand-set price keeps the day it was set (#1828)", () => {
       const cleared = await store.assets.readInvestmentAssetById("fund");
       expect(cleared?.manualPricePerUnit).toBeUndefined();
       expect(cleared?.manualPricedAt).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test("an alta that does not say when leaves its price undated: the store reads no clock", async () => {
+    // A pinned demo or a fixed test clock is the caller's «now»; the wall clock
+    // would date a 20/06 demo price with today (#1731 review, ADR 0024).
+    const store = await freshStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "fund",
+        liquidityTier: "market",
+        manualPricePerUnit: "100",
+        name: "Fondo",
+        ownership: own,
+      });
+
+      const created = await store.assets.readInvestmentAssetById("fund");
+      expect(created?.manualPricePerUnit).toBe("100");
+      expect(created?.manualPricedAt).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test("an alta with no price carries no stamp, whatever instant it is handed", async () => {
+    const store = await freshStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "fund",
+        liquidityTier: "market",
+        name: "Fondo",
+        ownership: own,
+        savedAt: "2026-06-20T08:00:00.000Z",
+      });
+
+      expect(
+        (await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt,
+      ).toBeUndefined();
     } finally {
       store.close();
     }

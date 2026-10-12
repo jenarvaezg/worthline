@@ -70,6 +70,13 @@ export interface CreateInvestmentAssetInput {
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
   /**
+   * When this alta happens, from the caller's clock (ADR 0024) — the day its
+   * hand-set price is stamped with (#1828). The store never reads the wall clock
+   * for it: a pinned demo or a fixed test clock would otherwise get today's date
+   * (#1731 review). A caller that does not say leaves the price undated.
+   */
+  savedAt?: string;
+  /**
    * What the investment is (ADR 0014, #149). The instrument-first add flow passes
    * the chosen instrument (etf/stock/index/crypto/pension_plan/fund); when absent
    * we fall back to the legacy provider-based guess so existing callers are
@@ -1087,7 +1094,8 @@ async function createInvestmentAsset(
     ownership: input.ownership,
     type: "investment",
   });
-  const pricedAt = input.manualPricePerUnit ? new Date().toISOString() : null;
+  // The caller's instant (ADR 0024), and only with a price to date.
+  const pricedAt = input.manualPricePerUnit ? (input.savedAt ?? null) : null;
 
   await ctx.transaction(async () => {
     await db

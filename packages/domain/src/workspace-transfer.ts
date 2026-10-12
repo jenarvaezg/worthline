@@ -444,7 +444,7 @@ const investmentMetaSchema = z.object({
   /**
    * The pre-#1731 field, accepted FOREVER so an old backup keeps restoring (ADR
    * 0104) but never restored: it was stamped only at the alta, so it may date a
-   * price with the day the holding was created. The v72 rung cleared the stamps in
+   * price with the day the holding was created. The v73 rung cleared the stamps in
    * every database for the same reason; a restore must not bring them back.
    */
   manualPricedAt: nonEmptyString.optional(),

@@ -53,6 +53,9 @@ async function seedInvestment(
     manualPricePerUnit: investment.manualPricePerUnit,
     name: investment.name,
     ownership: investment.ownership,
+    // The pinned demo's day, not the wall clock's (ADR 0024): its hand-set price is
+    // «precio a mano» of the demo's «hoy», never of a date after it.
+    savedAt: `${asOf}T00:00:00.000Z`,
     ...(investment.unitSymbol ? { unitSymbol: investment.unitSymbol } : {}),
     ...(investment.securityId ? { securityId: investment.securityId } : {}),
     ...(investment.liquidityTier ? { liquidityTier: investment.liquidityTier } : {}),

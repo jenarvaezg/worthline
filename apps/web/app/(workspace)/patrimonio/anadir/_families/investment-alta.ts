@@ -307,7 +307,9 @@ export async function runInvestmentAlta(
   // back together (#1599). Before this seam the two were separate calls, so a
   // refused entry answered with an error and left the fondo in the tablero at 0 €.
   const created = await ctx.store.command.createInvestmentHolding({
-    asset: { ...parsed.command, instrument: ctx.instrument },
+    // The alta's instant from the action's clock (ADR 0024): it dates a hand-set
+    // price, and the store reads no clock of its own.
+    asset: { ...parsed.command, instrument: ctx.instrument, savedAt: ctx.now },
     ...(entry ? { entry } : {}),
     today: ctx.today,
   });

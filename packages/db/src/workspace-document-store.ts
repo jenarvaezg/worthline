@@ -339,7 +339,7 @@ async function importWorkspace(
             securityIdKind: securityId?.kind ?? null,
             manualPricePerUnit: asset.investment?.manualPricePerUnit ?? null,
             // Only the stamp written since every price change rewrites it: the
-            // legacy `manualPricedAt` may be the alta's, and the v72 rung cleared
+            // legacy `manualPricedAt` may be the alta's, and the v73 rung cleared
             // those (#1731 review) — a restore must not bring them back.
             manualPricedAt: asset.investment?.manualPriceSetAt ?? null,
             priceProvider: asset.investment?.priceProvider ?? null,

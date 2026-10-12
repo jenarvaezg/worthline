@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 72;
+export const SCHEMA_VERSION = 73;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2322,19 +2322,71 @@ export async function migrate(client: Client): Promise<MigrateResult> {
   }
 
   if (version < 72) {
+    // #1812: the target retirement age of 65 that the FIRE form wrote before #1474
+    // leaves the stored config. Until then `parseFireConfigFormStrict` saved
+    // `targetRetirementAge: ?? 65` in every config and the form prefilled that 65, so
+    // nobody can tell a typed 65 from a filled-in one: `fire.config` is one JSON per
+    // scope with no per-field provenance, and `updated_at` belongs to the whole row.
+    // Read as a declaration, that 65 broke a pension's condition with «declaraste
+    // jubilarte a los 65», which ADR 0111 §6 promises never to say.
+    //
+    // Only the 65 goes. Any other age was typed (the old parser filled in nothing
+    // else), and the engine keeps computing with its `?? 65`, so no figure moves: what
+    // is lost is a declaration nobody can prove, recovered by typing it again.
+    //
+    // Compare-and-set on the value read: if a save lands between the read and the
+    // write, the update is a no-op and keeps what the user just saved.
+    // Only on a pre-existing DB: a fresh one has no config yet.
+    if (version >= 2) {
+      try {
+        const row = (
+          await client.execute("SELECT value FROM app_settings WHERE key = 'fire.config'")
+        ).rows[0];
+        if (row !== undefined) {
+          const stored = String(row.value);
+          const scopes = JSON.parse(stored) as Record<
+            string,
+            Record<string, unknown> | null
+          >;
+          const isPhantom = (config: Record<string, unknown> | null) =>
+            config?.targetRetirementAge === 65;
+          if (Object.values(scopes).some(isPhantom)) {
+            const cleaned = Object.fromEntries(
+              Object.entries(scopes).map(([scopeId, config]) => {
+                if (config === null || !isPhantom(config)) return [scopeId, config];
+                const { targetRetirementAge: _phantom, ...declared } = config;
+                return [scopeId, declared];
+              }),
+            );
+            await client.execute({
+              sql: "UPDATE app_settings SET value = ? WHERE key = 'fire.config' AND value = ?",
+              args: [JSON.stringify(cleaned), stored],
+            });
+          }
+        }
+      } catch (error) {
+        if (!String(error).includes("no such table")) throw error;
+      }
+    }
+    await writeSchemaVersion(client, 72);
+  }
+
+  if (version < 73) {
     // #1731 review: until #1828 `manual_priced_at` was written once, at the alta, and
     // never again — so a stamp already here may be the day the holding was created
     // rather than the day its price was typed, and the ficha prints that day beside
     // the price. The honest ones cannot be told apart, so they all go: the header
     // says «precio a mano» with no day until the next price change stamps one. The
-    // price itself is untouched. Tolerates a fixture without the table, as v70 does.
+    // price itself is untouched. Its own rung, after #1812's v72, so it also runs on
+    // a database that already took that one. Tolerates a fixture without the table,
+    // as v70 does.
     try {
       await client.execute("UPDATE investment_assets SET manual_priced_at = NULL");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/no such table/i.test(message)) throw error;
     }
-    await writeSchemaVersion(client, 72);
+    await writeSchemaVersion(client, 73);
   }
 
   return { ranV18Backfill, ranV33Backfill };
