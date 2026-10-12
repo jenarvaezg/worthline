@@ -1,6 +1,7 @@
 import {
   formatDateKeyEs,
   type HoldingReturnsView,
+  type IrrReason,
   type TwrReason,
 } from "@worthline/domain";
 
@@ -66,6 +67,26 @@ export function twrUnavailableReason(reason: TwrReason | null): string | null {
       return "no hay base sobre la que medirla";
     case "non_measurable_subperiod":
       return "un tramo con más movimiento que valor no es medible";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Why a TIR is an em dash, in plain words (#1830) — the TWR's rule (#1457) for
+ * the other measure: the ficha's «Tu dinero» side leads with this figure, and a
+ * bare dash where the headline should be reads as a bug.
+ */
+export function irrUnavailableReason(reason: IrrReason | null): string | null {
+  switch (reason) {
+    case "insufficient_cashflows":
+      return "hacen falta al menos una aportación y un valor";
+    case "single_sign":
+      return "todos los movimientos van en el mismo sentido";
+    case "zero_time_span":
+      return "todos los movimientos son del mismo día";
+    case "no_convergence":
+      return "el cálculo no converge con estos movimientos";
     default:
       return null;
   }

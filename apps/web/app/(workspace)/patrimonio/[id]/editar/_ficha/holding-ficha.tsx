@@ -36,6 +36,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { FichaActionOpener } from "./ficha-action-link";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import {
   type FichaTarget,
@@ -231,7 +232,12 @@ export function HoldingFicha({
       {/* A client toggle is not a document navigation, so it is not announced (§8). */}
       <p aria-live="polite" className="srOnly">{`Sección: ${activeTab?.label ?? ""}`}</p>
 
-      <div className="fichaTabBody">{activeTab?.content}</div>
+      <div className="fichaTabBody">
+        {/* A link inside a tab opens an action the way the bar does (#1830). */}
+        <FichaActionOpener.Provider value={openAction}>
+          {activeTab?.content}
+        </FichaActionOpener.Provider>
+      </div>
 
       {current ? (
         <section

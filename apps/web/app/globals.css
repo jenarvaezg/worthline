@@ -6957,10 +6957,48 @@ td.rowActions > * {
   min-width: 0;
 }
 
-/* «Datos del activo» guarda la medida que tenía la columna de la ficha; su
-   reparto en dos columnas es #1830. */
+/* «Datos del activo» guarda la medida que tenía la columna de la ficha. */
 .fichaDatos {
   max-width: 640px;
+}
+
+/* ── #1830 «Lo básico» en dos columnas: lo que el activo ES y cómo cotiza ─────
+   Un solo formulario; cada columna es un grupo con su rótulo de etiqueta pequeña.
+   En el teléfono vuelven a ser una. */
+.basicsColumns {
+  align-items: start;
+  display: grid;
+  gap: 18px 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.basicsGroup {
+  border: 0;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.basicsGroup legend {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  padding: 0 0 6px;
+  text-transform: uppercase;
+}
+
+/* Una fecha no necesita la medida de un párrafo. */
+.fichaDatos .holdingAvailability input[type="date"] {
+  max-width: 16rem;
+}
+
+@media (max-width: 760px) {
+  .basicsColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .fichaPanel {
@@ -11299,45 +11337,141 @@ td.rowActions > * {
   font-weight: 700;
 }
 
-/* The ficha's full three-measure returns panel. */
+/* ── #1830 La pestaña Rentabilidad: «Tu dinero (TIR)» frente a «El fondo (TWR)» ──
+   Dos secciones abiertas lado a lado, bajo una misma regla gruesa partida por un
+   filete: no son hojas (la única de la página es la cabecera). Cada lado abre con
+   su cifra —menor que el valor de la cabecera, que es la dominante— y debajo sus
+   líneas de libro: rótulo a la izquierda, cifra tabular a la derecha. */
 .returnsPanel {
-  margin-top: 18px;
-}
-.returnsPanel h3 {
-  margin: 0 0 10px;
-}
-.returnsMeasures,
-.returnsSplit {
   display: grid;
-  gap: 6px 18px;
-  margin: 0 0 10px;
+  gap: 14px;
+  margin-top: 4px;
 }
-.returnsSplit {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  padding-top: 10px;
-  border-top: 1px solid var(--hairline);
+
+.returnsFaceoff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.returnsMeasure {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0;
+
+.returnsSide {
+  align-content: start;
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 20px 0 0;
 }
-.returnsMeasure dt {
-  font-size: 0.72rem;
-  color: var(--muted);
+
+.returnsSide + .returnsSide {
+  border-left: 1px solid var(--line-soft);
+  padding: 12px 0 0 20px;
 }
-.returnsMeasure dd {
-  margin: 0;
-  font-weight: 600;
+
+.returnsSide abbr {
+  text-decoration: underline dotted;
+}
+
+.returnsHeadline {
+  font-family: var(--font-numeric);
+  font-size: 1.45rem;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 4px;
 }
+
+.returnsHeadline small {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.returnsLede {
+  color: var(--muted);
+  font-size: 0.82rem;
+  max-width: 44ch;
+}
+
+.returnsLines {
+  display: grid;
+  margin: 8px 0 0;
+}
+
+.returnsLine {
+  align-items: baseline;
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px 0;
+}
+
+.returnsLine dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.returnsLine dd {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin: 0;
+  text-align: right;
+}
+
+/* «Sin declarar» no es una cifra: no toma la voz numérica (#1505). */
+.returnsLine dd.contextUnknown {
+  font-family: var(--font-body);
+}
+
+/* La comparación con el índice, en el lado de la TWR que compara: una subsección
+   abierta bajo un filete, no una tarjeta encima de otra. */
+.returnsSide .benchmarkCard {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 10px;
+  padding: 12px 0 0;
+}
+
+@media (max-width: 760px) {
+  .returnsFaceoff {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 22px;
+  }
+
+  .returnsSide,
+  .returnsSide + .returnsSide {
+    border-left: 0;
+    padding: 12px 0 0;
+  }
+}
+
 .returnsCaveats {
   margin: 0;
   padding-left: 16px;
   font-size: 0.72rem;
   color: var(--muted);
   line-height: 1.5;
+}
+
+/* ── #1830 Cobros en la ficha con pestañas ───────────────────────────────────
+   En la pestaña, el registro es una sección abierta como las otras pestañas: la
+   hoja destacada de la página es la cabecera. Sin cobros, una línea con su enlace. */
+.fichaTabBody > .cobros {
+  background: transparent;
+  margin: 0;
+  padding: 0;
+}
+
+.cobrosEmpty {
+  margin: 4px 0 0;
+}
+
+.cobrosEmpty a {
+  color: var(--blue);
 }
 
 /* ── Cobros surface (PRD #652 S1, folded from S0 variant C2) ─────────────── */

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   type FichaViewSpec,
+  fichaActionUrl,
   fichaTabUrl,
   readFichaView,
   writeFichaView,
@@ -121,5 +122,29 @@ describe("fichaTabUrl", () => {
     expect(fichaTabUrl(base, INVESTMENT.tabs, "cobros")).toBe(
       `${base}?pesta%C3%B1a=cobros`,
     );
+  });
+});
+
+describe("fichaActionUrl", () => {
+  test("a link to an action opens its panel over the tab it was printed on (#1830)", () => {
+    const base = "/patrimonio/wl_hld_fondo/editar";
+
+    expect(fichaActionUrl(base, INVESTMENT.tabs, "cobros", "cobro")).toBe(
+      `${base}?pesta%C3%B1a=cobros&accion=cobro`,
+    );
+    // On the first tab the tab is the bare URL, as everywhere else.
+    expect(fichaActionUrl(base, INVESTMENT.tabs, "operaciones", "operacion")).toBe(
+      `${base}?accion=operacion`,
+    );
+    // What the island reads back is that very view.
+    expect(
+      readFichaView(
+        new URL(
+          fichaActionUrl(base, INVESTMENT.tabs, "cobros", "cobro"),
+          "https://worthline.test",
+        ).searchParams,
+        INVESTMENT,
+      ),
+    ).toEqual({ action: "cobro", tab: "cobros" });
   });
 });
