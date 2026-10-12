@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * «Corregir la declaración» of one income (#1673): nature, basis, provenance +
- * cut-off, condition — never the recurrence, whose amendments belong to the ficha's
- * affordances (end, exclusions) because they re-derive past payouts.
+ * The correction of one income (#1673): nature, basis, provenance + cut-off,
+ * condition. An income with no asset is corrected whole (#1813) — concept, amount,
+ * cadence, start and end too, which is how a life annuity is ended or a pension
+ * takes a new simulation's amount: it has no ficha, and no figure derives its past
+ * payouts. A linked income's recurrence stays with its ficha's affordances (end,
+ * exclusions), because its payouts are derived from it.
  *
  * Optimistic like the door, through the same pure `submitIncomeMutation`: the
  * row's declaration and counting status change the moment the correction leaves,
@@ -13,7 +16,8 @@
  */
 
 import { IncomeDeclarationInputs } from "@web/_income/income-declaration-inputs";
-import { declarationValuesOf } from "@web/_income/income-form";
+import { declarationValuesOf, recurrenceValuesOf } from "@web/_income/income-form";
+import { IncomeRecurrenceInputs } from "@web/_income/income-recurrence-inputs";
 import {
   type IncomeAction,
   type IncomeMutation,
@@ -41,6 +45,8 @@ export function IncomeDeclarationEditor({
   const [rejection, setRejection] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inFlight = useRef(false);
+  // No asset generates it: no ficha holds its recurrence, so this form does.
+  const standalone = income.holdingId === null;
 
   const onSubmit = readOnly
     ? undefined
@@ -71,8 +77,28 @@ export function IncomeDeclarationEditor({
           {rejection}
         </p>
       ) : null}
+      {standalone ? (
+        <>
+          {/* The marker that the recurrence travels: an emptied «Hasta» then reads
+              as «sin fin», never as a field the form did not carry. */}
+          <input name="saveRecurrence" type="hidden" value="1" />
+          <div className="cobrosFormGrid">
+            <IncomeRecurrenceInputs
+              accessibleSuffix={` de ${income.label}`}
+              linked={false}
+              today={today}
+              values={recurrenceValuesOf(income)}
+            />
+          </div>
+          <p className="incomeChoiceNote">
+            Para terminarla, pon en «Hasta» la fecha de su último cobro; vaciarlo la
+            reactiva. Si el importe cambia porque tienes una cifra nueva, cambia también
+            de dónde sale y su fecha de corte.
+          </p>
+        </>
+      ) : null}
       <IncomeDeclarationInputs
-        linked={income.holdingId !== null}
+        linked={!standalone}
         values={declarationValuesOf(income)}
       />
       <div className="formActions">
@@ -82,7 +108,11 @@ export function IncomeDeclarationEditor({
           disabled={isPending}
           type="submit"
         >
-          {isPending ? "Guardando…" : "Guardar declaración"}
+          {isPending
+            ? "Guardando…"
+            : standalone
+              ? "Guardar renta"
+              : "Guardar declaración"}
         </button>
       </div>
       {/* The saving state, announced (§8), like the door and the delete. */}

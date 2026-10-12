@@ -43,6 +43,66 @@ function isPayoutCadence(raw: string): raw is PayoutCadence {
 // ── payout schedule ─────────────────────────────────────────────────────────
 
 /**
+ * The recurrence proper — what, how much, how often, from when to when. It is what
+ * both doors ask, and all an income with no asset can have corrected (#1813): the
+ * costs and lease terms below belong to a holding's ficha.
+ */
+export interface RecurrenceCoreFields {
+  label: string;
+  amount: string;
+  cadence: string;
+  startISO: string;
+  /** Optional end date; "" means "no end". */
+  endISO: string;
+}
+
+/** A validated recurrence core. */
+export interface ParsedRecurrenceCore {
+  label: string;
+  amountMinor: number;
+  cadence: PayoutCadence;
+  startISO: string;
+  endISO?: string;
+}
+
+export type RecurrenceCoreResult =
+  | { ok: true; core: ParsedRecurrenceCore }
+  | { ok: false; error: string };
+
+/** Parse + validate the recurrence core: label, positive amount, cadence, dates. */
+export function parseRecurrenceCore(fields: RecurrenceCoreFields): RecurrenceCoreResult {
+  const label = fields.label.trim();
+  if (!label) {
+    return { ok: false, error: "Introduce un concepto para el cobro recurrente." };
+  }
+  const amountMinor = parseDecimalToMinor(fields.amount);
+  if (amountMinor <= 0) {
+    return { ok: false, error: "Introduce un importe mayor que cero." };
+  }
+  const cadence = fields.cadence.trim();
+  if (!isPayoutCadence(cadence)) {
+    return { ok: false, error: "Selecciona una cadencia válida." };
+  }
+  const startISO = fields.startISO.trim();
+  if (!isValidISODate(startISO)) {
+    return { ok: false, error: "Introduce una fecha de inicio válida." };
+  }
+  const endISO = fields.endISO.trim();
+  if (endISO) {
+    if (!isValidISODate(endISO)) {
+      return { ok: false, error: "Introduce una fecha de fin válida." };
+    }
+    if (endISO < startISO) {
+      return { ok: false, error: "La fecha de fin no puede ser anterior al inicio." };
+    }
+  }
+  return {
+    ok: true,
+    core: { label, amountMinor, cadence, startISO, ...(endISO ? { endISO } : {}) },
+  };
+}
+
+/**
  * The raw schedule fields lifted straight off the form.
  *
  * The lease terms ride along (#1521) and are optional in the same sense the expenses
@@ -50,13 +110,7 @@ function isPayoutCadence(raw: string): raw is PayoutCadence {
  * coupon, a dividend — anything that is not a rented property) parses to three nulls
  * and declares nothing.
  */
-export interface PayoutScheduleFields extends LeaseTermsFields {
-  label: string;
-  amount: string;
-  cadence: string;
-  startISO: string;
-  /** Optional end date; "" means "no end". */
-  endISO: string;
+export interface PayoutScheduleFields extends RecurrenceCoreFields, LeaseTermsFields {
   /**
    * What the income costs, same cadence as `amount` (#1448). "" means **not
    * declared** — and that is not the same as "0": with no declaration the FIRE
@@ -67,12 +121,7 @@ export interface PayoutScheduleFields extends LeaseTermsFields {
 }
 
 /** A validated schedule write — holdingId is added by the action. */
-export interface ParsedPayoutSchedule extends ParsedLeaseTerms {
-  label: string;
-  amountMinor: number;
-  cadence: PayoutCadence;
-  startISO: string;
-  endISO?: string;
+export interface ParsedPayoutSchedule extends ParsedRecurrenceCore, ParsedLeaseTerms {
   /** Present only when the user declared it; absent means "not declared". */
   expensesMinor?: number;
 }
@@ -109,30 +158,9 @@ export function parseScheduleExpenses(
 export function buildPayoutScheduleResult(
   fields: PayoutScheduleFields,
 ): PayoutScheduleResult {
-  const label = fields.label.trim();
-  if (!label) {
-    return { ok: false, error: "Introduce un concepto para el cobro recurrente." };
-  }
-  const amountMinor = parseDecimalToMinor(fields.amount);
-  if (amountMinor <= 0) {
-    return { ok: false, error: "Introduce un importe mayor que cero." };
-  }
-  const cadence = fields.cadence.trim();
-  if (!isPayoutCadence(cadence)) {
-    return { ok: false, error: "Selecciona una cadencia válida." };
-  }
-  const startISO = fields.startISO.trim();
-  if (!isValidISODate(startISO)) {
-    return { ok: false, error: "Introduce una fecha de inicio válida." };
-  }
-  const endISO = fields.endISO.trim();
-  if (endISO) {
-    if (!isValidISODate(endISO)) {
-      return { ok: false, error: "Introduce una fecha de fin válida." };
-    }
-    if (endISO < startISO) {
-      return { ok: false, error: "La fecha de fin no puede ser anterior al inicio." };
-    }
+  const recurrence = parseRecurrenceCore(fields);
+  if (!recurrence.ok) {
+    return recurrence;
   }
   const expenses = parseScheduleExpenses(fields.expenses);
   if (!expenses.ok) {
@@ -145,11 +173,7 @@ export function buildPayoutScheduleResult(
   return {
     ok: true,
     schedule: {
-      label,
-      amountMinor,
-      cadence,
-      startISO,
-      ...(endISO ? { endISO } : {}),
+      ...recurrence.core,
       ...(expenses.expensesMinor === null
         ? {}
         : { expensesMinor: expenses.expensesMinor }),
