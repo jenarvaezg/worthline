@@ -41,7 +41,6 @@ import {
 export function OperationsLedger({
   currentUrl,
   deleteAction,
-  freshIds,
   privacyMode = false,
   readOnly = false,
   transferCounterparts,
@@ -49,12 +48,6 @@ export function OperationsLedger({
   /** Where the delete's terminal returns: the ficha, on this tab. */
   currentUrl: string;
   deleteAction: (formData: FormData) => void | Promise<void>;
-  /**
-   * The ids of the rows just recorded (#1829): each is marked, and shows even when it
-   * sorts past the tenth. Absent, they are the ones the ficha's last render added
-   * (`useFreshRows`) — none outside a ficha.
-   */
-  freshIds?: ReadonlySet<string>;
   privacyMode?: boolean;
   /** Demo: skip optimistic state — the write-guard rejects, so optimism would flicker (§10). */
   readOnly?: boolean;
@@ -68,8 +61,9 @@ export function OperationsLedger({
   transferCounterparts?: Record<string, TransferRowCounterpart>;
 }) {
   const { addPending, operations } = useOperationsBook();
-  const fichaFresh = useFreshRows("operaciones");
-  const freshRows = freshIds ?? fichaFresh;
+  // The row the ficha's last render added (#1829): marked, and on show even when
+  // it sorts past the tenth. None outside a ficha.
+  const freshRows = useFreshRows("operaciones");
   const [isDeleting, startDeleting] = useTransition();
   // Unfolded or not is the URL's (`?libro=todas`), read from it and never held beside
   // it: a delete's terminal remounts the ledger, and it has to come back as it was.

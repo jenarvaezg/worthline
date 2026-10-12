@@ -14,7 +14,12 @@
  */
 
 import { createContext, type ReactNode, useContext, useState } from "react";
-import { type FreshRows, freshRowKeys, type RowKeys } from "./fresh-row-keys";
+import {
+  type FreshRows,
+  freshRowKeys,
+  type RowKeys,
+  type RowList,
+} from "./fresh-row-keys";
 
 const NONE: ReadonlySet<string> = new Set();
 
@@ -42,7 +47,60 @@ export function FreshRowsProvider({
   return <FreshRowsContext.Provider value={fresh}>{children}</FreshRowsContext.Provider>;
 }
 
+/**
+ * Fresh rows given outright instead of found between two renders: how a single
+ * static render — a test — puts a list on the real `useFreshRows` path.
+ */
+export function FixedFreshRows({
+  children,
+  fresh,
+}: {
+  children: ReactNode;
+  fresh: FreshRows;
+}) {
+  return <FreshRowsContext.Provider value={fresh}>{children}</FreshRowsContext.Provider>;
+}
+
 /** The keys of `list` the last server render added — empty when none or outside a ficha. */
-export function useFreshRows(list: string): ReadonlySet<string> {
+export function useFreshRows(list: RowList): ReadonlySet<string> {
   return useContext(FreshRowsContext)[list] ?? NONE;
+}
+
+/**
+ * A row of a server-rendered list, tinted (`data-fresh`) when the last render added
+ * it — the piece a server component drops in where a client hook cannot go.
+ */
+export function FreshRow({
+  children,
+  className,
+  list,
+  rowKey,
+}: {
+  children: ReactNode;
+  className: string;
+  list: RowList;
+  rowKey: string;
+}) {
+  const fresh = useFreshRows(list).has(rowKey);
+  return (
+    <div className={className} data-fresh={fresh ? "" : undefined}>
+      {children}
+    </div>
+  );
+}
+
+/** The same mark in words — the tint alone is not a reading (canon §8). */
+export function FreshMark({
+  list,
+  rowKey,
+  word,
+}: {
+  list: RowList;
+  rowKey: string;
+  /** «nueva» or «nuevo», agreeing with what the row is. */
+  word: string;
+}) {
+  return useFreshRows(list).has(rowKey) ? (
+    <small className="fichaFreshMark">{word}</small>
+  ) : null;
 }

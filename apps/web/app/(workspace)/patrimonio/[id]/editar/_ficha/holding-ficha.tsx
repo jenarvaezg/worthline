@@ -247,7 +247,10 @@ export function HoldingFicha({
   useEffect(() => {
     if (landed === null) return;
     const band = noticeRef.current;
-    rootRef.current?.querySelector("[data-fresh]")?.scrollIntoView({ block: "nearest" });
+    // The last one: a recurring cobro's first occurrence in the grid can be new
+    // too, and what was added is the declaration listed below it.
+    const marked = rootRef.current?.querySelectorAll("[data-fresh]") ?? [];
+    marked[marked.length - 1]?.scrollIntoView({ block: "nearest" });
     band?.scrollIntoView({ block: "nearest" });
     (againRef.current ?? band)?.focus({ preventScroll: true });
   }, [landed]);

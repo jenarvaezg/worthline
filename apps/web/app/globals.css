@@ -7297,7 +7297,8 @@ td.rowActions > * {
 /* La fila recién registrada: el tinte del aviso de éxito y la palabra «nueva» —
    el tinte solo no es una lectura (canon §8). */
 #operaciones [data-fresh],
-.cobrosRow[data-fresh] {
+.cobrosRow[data-fresh],
+.cobrosSchedule[data-fresh] {
   background: rgba(0, 111, 95, 0.1);
   scroll-margin: 128px 0 84px;
 }

@@ -14,6 +14,7 @@
  */
 
 import { SeededChoice, SeededInput } from "@web/_components/form-seed";
+import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
 import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
 import { PAYOUT_CADENCE_LABELS } from "@web/_income/income-recurrence";
@@ -481,10 +482,20 @@ function CobrosSchedules({
     <div className="cobrosSchedules">
       <h4>Cobros recurrentes declarados</h4>
       {schedules.map((schedule) => (
-        <div className="cobrosSchedule" key={schedule.id}>
+        // The one just declared is pointed at here (#1731 review): its occurrences
+        // in the grid are several, or none yet, so the declaration is the new row.
+        <FreshRow
+          className="cobrosSchedule"
+          key={schedule.id}
+          list="recurrentes"
+          rowKey={schedule.id}
+        >
           <div className="cobrosScheduleTop">
             <div className="cobrosScheduleMeta">
-              <strong>{schedule.label}</strong>
+              <strong>
+                {schedule.label}
+                <FreshMark list="recurrentes" rowKey={schedule.id} word="nuevo" />
+              </strong>
               <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
             </div>
             <div className="cobrosScheduleActions">
@@ -557,7 +568,7 @@ function CobrosSchedules({
               schedule={schedule}
             />
           ) : null}
-        </div>
+        </FreshRow>
       ))}
     </div>
   );

@@ -494,6 +494,35 @@ test("«Añadir cobro» asks which cobro first, shows that form only, and «Aña
   await expect(reopened.getByLabel("Importe del cobro", { exact: true })).toHaveValue("");
 });
 
+test("a recurring cobro just declared is pointed at in the declared list (#1731 review)", async ({
+  page,
+}) => {
+  await fundWithBuy(page, "Fondo Cupón E2E");
+
+  const panel = await openFichaAction(page, "Añadir cobro");
+  await panel.getByText("Uno que se repite").click();
+  await panel.getByLabel("Concepto del cobro recurrente").fill("Cupón semestral");
+  await panel.getByLabel("Importe del cobro recurrente").fill("40");
+  // It starts next year: no occurrence in the grid yet, so the grid has nothing
+  // new to point at — the declaration is the row that is new.
+  await panel
+    .locator('input[name="startISO"]')
+    .fill(`${new Date().getFullYear() + 1}-01-15`);
+  await panel
+    .getByRole("group", { name: "De dónde sale la cifra" })
+    .getByRole("radio")
+    .first()
+    .check();
+  await panel.getByLabel("Fecha de corte de la cifra").fill("2026-01-01");
+  await panel.getByRole("button", { name: "Añadir recurrente" }).click();
+
+  await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_schedule_saved/);
+  const fresh = page.locator(".cobrosSchedule[data-fresh]");
+  await expect(fresh).toHaveCount(1);
+  await expect(fresh).toContainText("Cupón semestral");
+  await expect(fresh).toContainText("nuevo");
+});
+
 test("when the notice and the new row do not fit together, «Añadir otro» stays on screen with the focus (#1731 review)", async ({
   page,
 }) => {

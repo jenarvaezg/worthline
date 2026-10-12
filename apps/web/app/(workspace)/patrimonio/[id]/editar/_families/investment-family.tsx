@@ -514,7 +514,7 @@ export async function loadInvestmentSurface(
       instrument: INSTRUMENT_LABELS_ES[instrument],
       // What each tab lists, so the row a terminal adds is pointed at (#1829).
       rows: {
-        cobros: payoutsPanel.rowKeys,
+        ...payoutsPanel.rows,
         operaciones: operations.map((operation) => operation.id),
       },
       tabs: [

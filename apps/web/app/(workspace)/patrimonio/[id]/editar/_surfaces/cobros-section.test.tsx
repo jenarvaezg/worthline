@@ -6,6 +6,7 @@
  * honest attribution note. Prior art: housing-valuation-section.test.tsx.
  */
 
+import { FixedFreshRows } from "@web/_components/fresh-rows";
 import {
   formatMoneyMinorPrivacy,
   type Payout,
@@ -521,5 +522,53 @@ describe("a refused cobro comes back to its own form, with what was typed (#1731
     expect(
       renderToStaticMarkup(<CobrosEntry {...props} refusal={refusal} />),
     ).not.toContain("Los gastos tienen que ser un importe.");
+  });
+});
+
+describe("a recurring cobro just declared is pointed at in the declared list (#1731 review)", () => {
+  // A schedule adds several occurrences to the grid, or none if it starts later, so
+  // the grid cannot single it out; the row that IS new is the declaration itself.
+  const OTHER: PayoutSchedule = { ...RENT, id: "sch-coupon", label: "Cupón" };
+
+  function renderRecord(fresh: ReadonlySet<string>) {
+    return renderToStaticMarkup(
+      <FixedFreshRows fresh={{ recurrentes: fresh }}>
+        <CobrosRecord
+          acknowledgeWarningAction={noop}
+          createIncomeAction={noop}
+          createPayoutAction={noop}
+          currency="EUR"
+          currentUrl="/patrimonio/h1/editar?pestaña=cobros"
+          deletePayoutAction={noop}
+          deletePayoutScheduleAction={noop}
+          doubleCount={null}
+          holdingId="h1"
+          monthlySpendingMinor={null}
+          payouts={[]}
+          privacyMode={false}
+          schedules={[RENT, OTHER]}
+          showLeaseTerms={false}
+          today={TODAY}
+          updatePayoutScheduleAction={noop}
+        />
+      </FixedFreshRows>,
+    );
+  }
+
+  test("the new one, and only it, is marked — in words as well as in tint", () => {
+    const markup = renderRecord(new Set(["sch-coupon"]));
+    const rows = markup.match(/<div class="cobrosSchedule"[^>]*>/g) ?? [];
+
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.includes('data-fresh=""'))).toHaveLength(1);
+    const fresh = markup.slice(markup.indexOf('data-fresh=""'));
+    expect(fresh).toMatch(/^[^]*?Cupón[^]*?<small class="fichaFreshMark">nuevo<\/small>/);
+  });
+
+  test("with nothing new, nothing is marked", () => {
+    const markup = renderRecord(new Set());
+
+    expect(markup).not.toContain("data-fresh");
+    expect(markup).not.toContain("fichaFreshMark");
   });
 });

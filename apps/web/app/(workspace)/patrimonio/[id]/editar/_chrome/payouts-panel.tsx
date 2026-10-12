@@ -143,9 +143,13 @@ export async function loadPayoutsPanel(
     record: (returnUrl, addLink) => (
       <CobrosRecord {...props(returnUrl)} addLink={addLink} />
     ),
-    // The grid's rows by the keys it renders them under, so a tabbed ficha can point
-    // at the one a terminal just added (#1829).
-    rowKeys: buildCobroRows(payouts, schedules, today).map((row) => row.key),
+    // The rows by the keys they render under, so a tabbed ficha can point at the one
+    // a terminal just added (#1829): the grid's, and the declarations' — a recurring
+    // cobro adds several occurrences to the grid, or none yet (#1731 review).
+    rows: {
+      cobros: buildCobroRows(payouts, schedules, today).map((row) => row.key),
+      recurrentes: schedules.map((schedule) => schedule.id),
+    },
     section: <CobrosSection {...props(currentUrl)} />,
   };
 }
