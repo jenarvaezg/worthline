@@ -10,9 +10,12 @@
  * command in `tool_input.command`. Exit 2 blocks the call and feeds stderr back to
  * the agent; exit 0 raises no objection.
  *
- * Not a sandbox. A path held in a variable (`> "$LOG"`, `perl -pi … "$LOG"`) cannot
- * be resolved statically, so it is allowed: that is how the agent writes and cleans
- * its log. A relative path counts as inside the repo.
+ * Not a sandbox. It reads the command line without running it (`shell-line.ts`). A
+ * path held in a variable (`> "$LOG"`, `perl -pi … "$LOG"`) cannot be resolved, so it
+ * is allowed: that is how the agent writes and cleans its log. A relative path, or
+ * one under `$PWD`, counts as inside the repo. A command that another program runs
+ * (`xargs rm`, `find -exec`, `sudo`) or that sits in a `$(…)` inside double quotes
+ * is not seen.
  *
  * Claude Code runs a project subagent's frontmatter hooks only once workspace
  * trust has been accepted for the folder the agent file came from, and a
@@ -20,7 +23,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { basename, isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
+import { invocation, operands, parseShellLine } from "./shell-line";
 
 const MUTATING_GIT_VERBS = [
   "add",
@@ -77,151 +81,8 @@ const RULES: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   },
 ];
 
-/** A command line as the guard reads it: no expansion, no globbing. */
-interface ShellLine {
-  /** Each simple command's words, quotes stripped and redirections taken out. */
-  readonly commands: ReadonlyArray<readonly string[]>;
-  /** Where `>`, `>>`, `>|` and `&>` send output. */
-  readonly outputs: readonly string[];
-}
-
-const SEPARATORS = new Set([";", "&", "|", "(", ")", "\n"]);
-
-function parseShell(command: string): ShellLine {
-  const commands: string[][] = [];
-  const outputs: string[] = [];
-  let words: string[] = [];
-  let word = "";
-  let inWord = false;
-  let quote: string | null = null;
-  // The next word is an argument, an output target, or an operand to drop (`< in`, `>&2`).
-  let next: "arg" | "output" | "drop" = "arg";
-
-  const endWord = () => {
-    if (!inWord) return;
-    if (next === "output") outputs.push(word);
-    else if (next === "arg") words.push(word);
-    next = "arg";
-    word = "";
-    inWord = false;
-  };
-  const endCommand = () => {
-    endWord();
-    next = "arg";
-    if (words.length > 0) commands.push(words);
-    words = [];
-  };
-
-  for (let i = 0; i < command.length; i++) {
-    const ch = command.charAt(i);
-    if (quote) {
-      if (ch === quote) quote = null;
-      else if (ch === "\\" && quote === '"' && /[$`"\\]/.test(command.charAt(i + 1))) {
-        word += command.charAt(++i);
-      } else word += ch;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      inWord = true;
-      continue;
-    }
-    if (ch === "\\") {
-      const escaped = command[++i];
-      if (escaped !== undefined && escaped !== "\n") {
-        word += escaped;
-        inWord = true;
-      }
-      continue;
-    }
-    if (ch === "#" && !inWord) {
-      while (i + 1 < command.length && command[i + 1] !== "\n") i++;
-      continue;
-    }
-    if (ch === ">" || ch === "<" || (ch === "&" && command[i + 1] === ">")) {
-      // An fd number glued to the operator (`2>`) belongs to it, not to the command.
-      if (inWord && /^\d+$/.test(word)) {
-        word = "";
-        inWord = false;
-      } else endWord();
-      let j = ch === "&" ? i + 2 : i + 1;
-      while (j < command.length && "<>|".includes(command.charAt(j))) j++;
-      if (command[j] === "&") {
-        // `2>&1`, `>&2`: fd duplication, the operand is a descriptor.
-        next = "drop";
-        i = j;
-      } else if (command[j] === "(") {
-        // `>(…)`: process substitution, the parenthesis opens a command.
-        i = j - 1;
-      } else {
-        next = ch === "<" ? "drop" : "output";
-        i = j - 1;
-      }
-      continue;
-    }
-    if (ch === " " || ch === "\t") endWord();
-    else if (SEPARATORS.has(ch)) endCommand();
-    else {
-      word += ch;
-      inWord = true;
-    }
-  }
-  endCommand();
-  return { commands, outputs };
-}
-
-// Words that run the word after them as the command.
-const COMMAND_PREFIXES = new Set([
-  "!",
-  "{",
-  "if",
-  "then",
-  "else",
-  "elif",
-  "while",
-  "until",
-  "do",
-  "time",
-  "command",
-  "builtin",
-  "exec",
-  "nohup",
-]);
-
-/** The command a simple command runs (`/bin/rm` reads as `rm`) and its arguments. */
-function invocation(words: readonly string[]): { name: string; args: string[] } | null {
-  const at = words.findIndex(
-    (w) => !COMMAND_PREFIXES.has(w) && !/^[A-Za-z_]\w*=/.test(w),
-  );
-  const name = words[at];
-  return name === undefined ? null : { name: basename(name), args: words.slice(at + 1) };
-}
-
-/** The arguments that are not options; everything after `--` is one. */
-function operands(args: readonly string[]): string[] {
-  const end = args.indexOf("--");
-  const head = end === -1 ? args : args.slice(0, end);
-  const tail = end === -1 ? [] : args.slice(end + 1);
-  return [...head.filter((arg) => !arg.startsWith("-")), ...tail];
-}
-
-function outputTargets(line: ShellLine): string[] {
-  const teed = line.commands.flatMap((words) => {
-    const call = invocation(words);
-    return call?.name === "tee" ? operands(call.args) : [];
-  });
-  return [...line.outputs, ...teed];
-}
-
-/** Paths a command writes to through `>`, `>>`, `>|`, `&>` or `tee`, quotes stripped. */
-export function writeTargets(command: string): string[] {
-  return outputTargets(parseShell(command));
-}
-
-const FILE_COMMANDS = new Set(["rm", "mv", "cp"]);
-
 // perl switches that take no value; the digits are the optional values of `-0` and `-l`.
-const PERL_FLAGS = /[0-9achlnpsStTuUvwWX]/;
+const PERL_VALUELESS_SWITCHES = /[0-9achlnpsStTuUvwWX]/;
 
 /** The files `perl` would edit in place: none without `-i`. */
 function perlInPlaceFiles(args: readonly string[]): string[] {
@@ -240,7 +101,7 @@ function perlInPlaceFiles(args: readonly string[]): string[] {
     // next argument.
     for (let k = 1; k < arg.length; k++) {
       const ch = arg.charAt(k);
-      if (PERL_FLAGS.test(ch)) continue;
+      if (PERL_VALUELESS_SWITCHES.test(ch)) continue;
       if (ch === "i") inPlace = true;
       if (ch === "e" || ch === "E") inlineCode = true;
       if ("eEI".includes(ch) && k === arg.length - 1) i++;
@@ -252,26 +113,46 @@ function perlInPlaceFiles(args: readonly string[]): string[] {
   return inlineCode ? args.slice(i) : args.slice(i + 1);
 }
 
-/** The paths that `rm`, `mv`, `cp` and `perl -i` would remove, move, copy or edit. */
-function fileOperands(line: ShellLine): Array<{ tool: string; path: string }> {
-  return line.commands.flatMap((words) => {
+const TARGET_DIRECTORY = "--target-directory=";
+
+/** What `cp` and `mv` touch: their operands, and a destination named by option. */
+function copyOperands(args: readonly string[]): string[] {
+  const named = args
+    .filter((arg) => arg.startsWith(TARGET_DIRECTORY))
+    .map((arg) => arg.slice(TARGET_DIRECTORY.length));
+  return [...operands(args), ...named];
+}
+
+// The commands that change the files they name, and how each one names them.
+const PATH_READERS = new Map<string, (args: readonly string[]) => string[]>([
+  ["tee", operands],
+  ["rm", operands],
+  ["mv", copyOperands],
+  ["cp", copyOperands],
+  ["perl", perlInPlaceFiles],
+]);
+
+/** Every path `command` would write, remove, move, copy or edit in place, and how. */
+export function touchedPaths(command: string): Array<{ by: string; path: string }> {
+  const line = parseShellLine(command);
+  const named = line.commands.flatMap((words) => {
     const call = invocation(words);
-    if (call === null) return [];
-    const [tool, paths]: [string, string[]] =
-      call.name === "perl"
-        ? ["perl -i", perlInPlaceFiles(call.args)]
-        : [call.name, FILE_COMMANDS.has(call.name) ? operands(call.args) : []];
-    return paths.map((path) => ({ tool, path }));
+    const read = call === null ? undefined : PATH_READERS.get(call.name);
+    if (call === null || read === undefined) return [];
+    const by = call.name === "perl" ? "perl -i" : call.name;
+    return read(call.args).map((path) => ({ by, path }));
   });
+  return [...line.outputs.map((path) => ({ by: ">", path })), ...named];
 }
 
 function insideRepo(path: string, repoRoots: readonly string[]): boolean {
-  // A variable or a command substitution cannot be resolved here (see header).
+  // Relative to the tree the agent cd'd into: inside the repo by construction.
+  if (/^\$(?:PWD|\{PWD\})(?:\/|$)/.test(path)) return true;
+  // Any other variable or command substitution cannot be resolved here (see header).
   if (path.startsWith("$") || path.startsWith("`")) return false;
   if (path.startsWith("/dev/")) return false;
   const expanded =
     path === "~" || path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path;
-  // Relative to the tree the agent cd'd into: inside the repo by construction.
   if (!isAbsolute(expanded)) return true;
   const resolved = resolve(expanded);
   return repoRoots.some(
@@ -284,14 +165,10 @@ export function denyReason(command: string, repoRoots: readonly string[]): strin
   for (const rule of RULES) {
     if (rule.pattern.test(command)) return rule.reason;
   }
-  const line = parseShell(command);
-  const written = outputTargets(line).find((target) => insideRepo(target, repoRoots));
-  if (written !== undefined) {
-    return `writing to \`${written}\` would touch the repo; logs go under $TMPDIR`;
-  }
-  const touched = fileOperands(line).find(({ path }) => insideRepo(path, repoRoots));
+  const touched = touchedPaths(command).find(({ path }) => insideRepo(path, repoRoots));
   if (touched !== undefined) {
-    return `\`${touched.tool}\` on \`${touched.path}\` would touch the repo; only your logs under $TMPDIR are yours to remove or edit`;
+    const action = touched.by === ">" ? "writing to" : `\`${touched.by}\` on`;
+    return `${action} \`${touched.path}\` would touch the repo; logs go under $TMPDIR`;
   }
   return null;
 }
