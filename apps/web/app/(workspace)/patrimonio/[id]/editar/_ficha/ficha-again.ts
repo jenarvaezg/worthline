@@ -102,3 +102,35 @@ export function landedOk(submission: PanelSubmission, landing: Landing): string 
     ? ok
     : null;
 }
+
+/** A panel submit whose success the URL landed on, and the `ok` it landed with. */
+export interface LandedSubmission {
+  ok: string;
+  submission: PanelSubmission;
+}
+
+/**
+ * The landing still standing once the URL reports `ok`: the same while it keeps
+ * reporting the same success (a tab toggled, a panel opened), over for good once it
+ * reports another or none. Over for good on purpose: «Lo básico» lands with the
+ * same `ok=saved` an operation does, and its notice must not offer an operation.
+ * (A submit from outside the panel also ends it — the island does that as it leaves.)
+ */
+export function stillLanded(
+  landed: LandedSubmission | null,
+  ok: string | null,
+): LandedSubmission | null {
+  return landed !== null && landed.ok === ok ? landed : null;
+}
+
+/**
+ * The action whose «Añadir otra» the notice offers right now, or null: the one that
+ * landed, while its success is what the URL reports and no panel is open over it.
+ */
+export function againFor(
+  landed: LandedSubmission | null,
+  view: { ok: string | null; panelOpen: boolean },
+): string | null {
+  if (view.panelOpen) return null;
+  return stillLanded(landed, view.ok)?.submission.action ?? null;
+}

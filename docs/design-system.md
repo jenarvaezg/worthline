@@ -135,7 +135,7 @@ habitual en una franja fija (`.fichaStrip`): en escritorio es su cabecera conden
 cerrada por regla gruesa y sin sombra; en el teléfono es un solo botón abajo, a la
 izquierda del lanzador del asistente y a su altura. Se aparta mientras hay un panel
 abierto. La fila que un registro acaba de añadir lleva el tinte del aviso de éxito y la
-palabra «nueva» (`.fichaFreshMark`): el tinte solo no es una lectura.
+palabra «nueva» («nuevo» en un cobro, `.fichaFreshMark`): el tinte solo no es una lectura.
 
 Dentro de una propuesta, elegir el destino de una fila (#1373) no es un commit: son
 alternativas, y llevan `.assistantRowChoice` —radios nativos con marca de selección

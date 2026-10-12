@@ -56,7 +56,14 @@ import {
   useState,
 } from "react";
 import { FichaActionOpener } from "./ficha-action-link";
-import { landedOk, type PanelSubmission, panelSubmission } from "./ficha-again";
+import {
+  againFor,
+  type LandedSubmission,
+  landedOk,
+  type PanelSubmission,
+  panelSubmission,
+  stillLanded,
+} from "./ficha-again";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import { FichaStrip } from "./ficha-strip";
 import {
@@ -88,12 +95,7 @@ export interface HoldingFichaProps {
 }
 
 const PANEL_TITLE_ID = "ficha-panel-title";
-
-/** A panel submit whose success the URL has just landed on. */
-interface Landed {
-  ok: string;
-  submission: PanelSubmission;
-}
+const NOTICE_ID = "ficha-notice";
 
 export function HoldingFicha({
   actions,
@@ -131,7 +133,7 @@ export function HoldingFicha({
   const opener = useRef<HTMLElement | null>(null);
   // The panel submit still waiting for its terminal, and the one that landed.
   const pending = useRef<PanelSubmission | null>(null);
-  const [landed, setLanded] = useState<Landed | null>(null);
+  const [landed, setLanded] = useState<LandedSubmission | null>(null);
   // What «Añadir otra» re-opens its form with, for as long as that panel is open.
   const [seedFor, setSeedFor] = useState<{ action: string; seed: FormSeed } | null>(null);
 
@@ -206,6 +208,8 @@ export function HoldingFicha({
     if (!(form instanceof HTMLFormElement)) return;
     if (current === null || !panelRef.current?.contains(form)) {
       pending.current = null;
+      // The person moved on: this submit's own success is not the panel's.
+      setLanded(null);
       return;
     }
     const choice = form
@@ -214,28 +218,34 @@ export function HoldingFicha({
     pending.current = panelSubmission(current.key, new FormData(form), choice);
   }
 
-  // The URL moved: if it is the success of what the panel sent, that submit landed.
+  // The URL moved: if it is the success of what the panel sent, that submit landed;
+  // otherwise whatever had landed lasts only while the URL still reports it.
   useEffect(() => {
     const submitted = pending.current;
-    if (submitted === null) return;
-    const ok = landedOk(submitted, {
-      pathname: window.location.pathname,
-      search: searchKey,
-    });
-    if (ok === null) return;
-    pending.current = null;
-    setLanded({ ok, submission: submitted });
+    const ok = submitted
+      ? landedOk(submitted, { pathname: window.location.pathname, search: searchKey })
+      : null;
+    if (submitted !== null && ok !== null) {
+      pending.current = null;
+      setLanded({ ok, submission: submitted });
+      return;
+    }
+    setLanded((previous) =>
+      stillLanded(previous, new URLSearchParams(searchKey).get("ok")),
+    );
   }, [searchKey]);
 
   // It landed: bring the result into view — the notice, then the row the render
-  // added — and put focus where the next step is, «Añadir otra» when there is one.
+  // added, which wins when both do not fit — and put focus where the next step is,
+  // «Añadir otra», if it is still on screen; never on something the view left.
   // The page's scroll keeper leaves this terminal alone (`data-own-landing`).
   useEffect(() => {
     if (landed === null) return;
     const band = noticeRef.current;
     band?.scrollIntoView({ block: "nearest" });
     rootRef.current?.querySelector("[data-fresh]")?.scrollIntoView({ block: "nearest" });
-    (againRef.current ?? band)?.focus({ preventScroll: true });
+    const next = againRef.current ?? band;
+    if (next && isOnScreen(next)) next.focus({ preventScroll: true });
   }, [landed]);
 
   const panelTop = usePanelTop(openKey !== null);
@@ -246,13 +256,12 @@ export function HoldingFicha({
   const more = actions.filter((action) => action.tier === "more");
 
   // «Añadir otra»: offered while the URL still reports the success that landed, by
-  // an action that offers it, and with no panel open.
-  const again =
-    landed !== null && openKey === null && params.get("ok") === landed.ok
-      ? (actions.find(
-          (action) => action.key === landed.submission.action && action.again,
-        ) ?? null)
-      : null;
+  // an action that offers it, and with no panel open (`againFor`).
+  const againKey = againFor(landed, {
+    ok: params.get("ok"),
+    panelOpen: openKey !== null,
+  });
+  const again = actions.find((action) => action.key === againKey && action.again) ?? null;
 
   const ficha = (
     <div className="ficha" onSubmitCapture={onSubmitCapture} ref={rootRef}>
@@ -310,26 +319,34 @@ export function HoldingFicha({
         </dl>
       </section>
 
-      {notice ? (
-        // Beside the tabs, where the result landed. `role="status"` on the words
-        // only, so the offer is a control and not part of the announcement.
-        <div className="successBand fichaNotice" ref={noticeRef} tabIndex={-1}>
-          <p role="status">{notice}</p>
-          {again && landed ? (
-            <button
-              className="btn btnSecondary fichaNoticeAgain"
-              onClick={(event) => {
-                setSeedFor({ action: again.key, seed: landed.submission.seed });
-                openAction(again.key, event.currentTarget);
-              }}
-              ref={againRef}
-              type="button"
-            >
-              {again.again}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      {/* Beside the tabs, where the result landed. The live region is always in the
+          document — empty and out of sight until a terminal brings words — because
+          one inserted together with its text is not reliably announced (§8). Its
+          `role="status"` holds the words only, so the offer is a control and not
+          part of the announcement; the offer names it as its description. */}
+      <div
+        className={notice ? "successBand fichaNotice" : "srOnly"}
+        ref={noticeRef}
+        tabIndex={notice ? -1 : undefined}
+      >
+        <p id={NOTICE_ID} role="status">
+          {notice}
+        </p>
+        {notice && again && landed ? (
+          <button
+            aria-describedby={NOTICE_ID}
+            className="btn btnSecondary fichaNoticeAgain"
+            onClick={(event) => {
+              setSeedFor({ action: again.key, seed: landed.submission.seed });
+              openAction(again.key, event.currentTarget);
+            }}
+            ref={againRef}
+            type="button"
+          >
+            {again.again}
+          </button>
+        ) : null}
+      </div>
 
       <nav aria-label="Secciones de la ficha" className="fichaTabs">
         {tabs.map((tab) => {
@@ -417,6 +434,12 @@ export function HoldingFicha({
   // Above the whole ficha, so the rows a terminal added are known to whichever
   // tab shows them — the «Cobros» grid mounts with the very landing (#1829).
   return <FreshRowsProvider rows={rows}>{ficha}</FreshRowsProvider>;
+}
+
+/** Whether the whole of `element` is inside the viewport right now. */
+function isOnScreen(element: HTMLElement): boolean {
+  const box = element.getBoundingClientRect();
+  return box.top >= 0 && box.bottom <= window.innerHeight;
 }
 
 /**

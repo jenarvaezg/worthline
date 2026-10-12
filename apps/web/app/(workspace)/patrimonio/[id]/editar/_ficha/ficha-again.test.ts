@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { landedOk, panelSubmission } from "./ficha-again";
+import { againFor, landedOk, panelSubmission, stillLanded } from "./ficha-again";
 
 /**
  * «Añadir otra» (#1829): after registering from the side panel, the success notice
@@ -102,5 +102,33 @@ describe("landedOk", () => {
       landedOk(submitted, { pathname: FICHA, search: "?accion=operacion" }),
     ).toBeNull();
     expect(landedOk(submitted, { pathname: FICHA, search: "" })).toBeNull();
+  });
+});
+
+describe("againFor / stillLanded", () => {
+  const submission = panelSubmission("operacion", OPERATION);
+  if (!submission) throw new Error("fixture must be a submission");
+  const landed = { ok: "saved", submission };
+
+  test("the notice offers the landed action while the URL reports its success", () => {
+    expect(againFor(landed, { ok: "saved", panelOpen: false })).toBe("operacion");
+    // Toggling a tab keeps the `ok`, so the offer stays.
+    expect(
+      againFor(stillLanded(landed, "saved"), { ok: "saved", panelOpen: false }),
+    ).toBe("operacion");
+  });
+
+  test("no offer over an open panel, nor with nothing landed", () => {
+    expect(againFor(landed, { ok: "saved", panelOpen: true })).toBeNull();
+    expect(againFor(null, { ok: "saved", panelOpen: false })).toBeNull();
+  });
+
+  test("once the URL reports another success, or none, the landing is over for good", () => {
+    expect(stillLanded(landed, "payout_saved")).toBeNull();
+    expect(stillLanded(landed, null)).toBeNull();
+    // Gone, it does not come back when a later success happens to share the key.
+    expect(
+      againFor(stillLanded(landed, null), { ok: "saved", panelOpen: false }),
+    ).toBeNull();
   });
 });

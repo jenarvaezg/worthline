@@ -7160,9 +7160,16 @@ td.rowActions > * {
   scroll-margin: 128px 0 84px;
 }
 
+/* En tinta: sobre el verde del mapa de calor, un contorno verde no llega al 3:1. */
 .cobrosCell[data-fresh-month] {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--ink);
   outline-offset: -2px;
+}
+
+/* Mientras la franja se ve, lo que se enfoca con el teclado no queda debajo de
+   ella: arriba en escritorio (riel de ámbitos + franja), abajo en el teléfono. */
+:root:has(.fichaStrip:not([hidden])) {
+  scroll-padding-top: 128px;
 }
 
 .fichaFreshMark {
@@ -7217,6 +7224,11 @@ td.rowActions > * {
   /* El final de la ficha no se queda debajo del botón fijo. */
   .ficha {
     padding-bottom: 72px;
+  }
+
+  :root:has(.fichaStrip:not([hidden])) {
+    scroll-padding-bottom: 84px;
+    scroll-padding-top: 0;
   }
 }
 

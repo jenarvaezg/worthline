@@ -310,6 +310,15 @@ test("a registration lands on its row, marked, and «Añadir otra» keeps its da
   await page.keyboard.press("Escape");
   const fromBar = await openFichaAction(page, "Registrar operación");
   await expect(fromBar.getByLabel("Fecha de ejecución")).not.toHaveValue("2026-09-12");
+
+  // Another form's success with the same `ok` is not the panel's: «Lo básico»
+  // lands on `?pestaña=datos&ok=saved` and its notice offers nothing.
+  await page.keyboard.press("Escape");
+  await openFichaTab(page, "Datos del activo");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page).toHaveURL(/editar\?pesta%C3%B1a=datos&ok=saved$/);
+  await expect(page.getByRole("status")).toHaveText("Guardado.");
+  await expect(page.getByRole("button", { name: "Añadir otra" })).toHaveCount(0);
 });
 
 test("«Añadir cobro» asks which cobro first, shows that form only, and «Añadir otro» keeps its day (#1829)", async ({
