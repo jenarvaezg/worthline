@@ -162,7 +162,7 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
 
   // 4. Nothing was realized: a traspaso is not a sale (ADR 0082).
   await openFichaTab(page, "Rentabilidad");
-  await expect(page.locator(".returnsPanel")).toContainText("P/L realizado");
+  await expect(page.locator(".returnsPanel")).toContainText("Realizada (lo ya vendido)");
   expect(
     await page
       .locator(".returnsPanel")

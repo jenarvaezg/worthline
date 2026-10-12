@@ -403,3 +403,61 @@ describe("LiabilityEditForm — raw balance door (#1290)", () => {
     expect(render(true)).toContain("5879,18");
   });
 });
+
+describe("AssetEditForm — «Datos del activo» en dos columnas (#1830)", () => {
+  test("an investment groups what it IS apart from how it is PRICED", () => {
+    const markup = renderToStaticMarkup(
+      <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar?pestaña=datos"
+        asset={
+          {
+            currency: "EUR",
+            currentValue: { amountMinor: 12_000_00, currency: "EUR" },
+            id: "asset_fund",
+            instrument: "fund",
+            isPrimaryResidence: false,
+            liquidityTier: "market",
+            name: "Fondo Azul",
+            ownership: [{ memberId: "m1", shareBps: 10_000 }],
+            type: "investment",
+          } as const
+        }
+        investment={
+          {
+            currency: "EUR",
+            id: "asset_fund",
+            liquidityTier: "market",
+            name: "Fondo Azul",
+            ownership: [{ memberId: "m1", shareBps: 10_000 }],
+            priceProvider: "yahoo",
+            providerSymbol: "IWDA.AS",
+            securityId: { kind: "isin", value: "IE00B4L5Y983" },
+          } as never
+        }
+        members={[{ id: "m1", name: "Jose" }]}
+        method="derived"
+        privacyMode={false}
+        scopeMemberId="m1"
+        updateInvestmentAction={() => undefined}
+        values={{}}
+      />,
+    );
+
+    const identityAt = markup.indexOf("<legend>Identidad</legend>");
+    const priceAt = markup.indexOf("<legend>Precio</legend>");
+    expect(identityAt).toBeGreaterThan(-1);
+    expect(priceAt).toBeGreaterThan(identityAt);
+    const identity = markup.slice(identityAt, priceAt);
+    const price = markup.slice(priceAt, markup.indexOf("Guardar cambios"));
+
+    for (const field of ["name", "instrument", "liquidityTier", "securityId"]) {
+      expect(identity).toContain(`name="${field}"`);
+    }
+    for (const field of ["priceProvider", "providerSymbol", "manualPricePerUnit"]) {
+      expect(price).toContain(`name="${field}"`);
+    }
+    // One form still: a single save posts both columns.
+    expect(markup.match(/<form/g)).toHaveLength(1);
+  });
+});
