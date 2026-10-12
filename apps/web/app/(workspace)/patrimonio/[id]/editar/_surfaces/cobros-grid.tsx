@@ -88,9 +88,9 @@ export function CobrosGrid({
   const [year, setYear] = useState(currentYear);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
 
-  // The rows the last render added (#1829). The newest of them — the cobro just
-  // registered, or the latest month of an income just declared — opens its month,
-  // whether the grid was already on screen or mounts with the landing. Adjusted
+  // The row the last render added (#1829) — the cobro just registered — opens its
+  // year and its month, whether the grid was already on screen or mounts with the
+  // landing. Adjusted
   // during render (React's recipe for a changed input), not in an effect, so the
   // drawer is open in the same paint as the row.
   const fresh = useFreshRows("cobros");

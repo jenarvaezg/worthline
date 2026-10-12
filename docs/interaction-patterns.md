@@ -150,8 +150,9 @@ patrón ya está probado.
 ficha aterriza en la pestaña del resultado, señala la fila nueva y ofrece «Añadir otra»
 sin empujar ninguna URL mientras el envío vuela: recuerda lo que salió del panel y
 reconoce su éxito cuando la URL aterriza en su `currentUrl` más su `ok`
-(`_ficha/ficha-again.ts`). La fila nueva sale de los datos —lo que este render lista y
-el anterior no (`fresh-row-keys.ts`)—, no de adivinar qué formulario escribió qué. Y
+(`_ficha/ficha-again.ts`). La fila nueva sale de los datos —la única que este render
+lista y el anterior no; varias a la vez son una carga, no «la fila nueva»
+(`fresh-row-keys.ts`)—, no de adivinar qué formulario escribió qué. Y
 como el panel se superpone a la página, su envío no guarda el scroll de detrás: una
 superficie que decide dónde aterriza lo dice con `data-own-landing` y el guardián de
 scroll de #1296 la deja en paz.

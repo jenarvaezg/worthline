@@ -2,11 +2,13 @@
  * Which rows a render brought that the previous one did not (#1829).
  *
  * After registering something, the ficha lands on the tab where it shows and points
- * at the row it added. The row is found by the data, not by the form: whatever key
- * the server lists now and did not list on the previous render is new — the
- * operation a buy wrote, the half of a traspaso this ledger keeps, every row a
- * statement loaded. A delete, a price refresh or a «Lo básico» save
- * brings none, so the mark clears on the next render that adds nothing.
+ * at the row it added. The row is found by the data, not by the form: the one key
+ * the server lists now and did not list on the previous render — the operation a
+ * buy wrote, the half of a traspaso this ledger keeps, the cobro just added. It is
+ * ONE row: a render that adds several to a list is a load (a statement's eleven
+ * movements), not «la fila nueva», and marking them all would unfold the compact
+ * ledger past its ten latest — so it singles none out. A delete, a price refresh or
+ * a «Lo básico» save adds none, so the mark clears on the next render.
  *
  * Pure (interaction-patterns §7): the client provider keeps the previous render's
  * keys and asks this; the rule is the test.
@@ -19,9 +21,9 @@ export type RowKeys = Readonly<Record<string, readonly string[]>>;
 export type FreshRows = Readonly<Record<string, ReadonlySet<string>>>;
 
 /**
- * The keys of `after` that `before` did not hold, list by list. A list `before` did
- * not carry has nothing to compare against, so none of its rows is fresh — the
- * first render of a list would otherwise mark all of it.
+ * The key of `after` that `before` did not hold, list by list, when it is exactly one.
+ * A list `before` did not carry has nothing to compare against, so none of its rows
+ * is fresh — the first render of a list would otherwise mark all of it.
  */
 export function freshRowKeys(before: RowKeys, after: RowKeys): FreshRows {
   return Object.fromEntries(
@@ -29,7 +31,8 @@ export function freshRowKeys(before: RowKeys, after: RowKeys): FreshRows {
       const previous = before[list];
       if (previous === undefined) return [list, new Set<string>()];
       const known = new Set(previous);
-      return [list, new Set(keys.filter((key) => !known.has(key)))];
+      const added = keys.filter((key) => !known.has(key));
+      return [list, new Set(added.length === 1 ? added : [])];
     }),
   );
 }

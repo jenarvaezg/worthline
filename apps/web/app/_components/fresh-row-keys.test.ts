@@ -42,6 +42,17 @@ describe("freshRowKeys", () => {
     expect(fresh["operaciones"]?.size).toBe(0);
   });
 
+  test("a render that adds several rows is a load, not a registration, and singles none out", () => {
+    // Eleven movements from a statement: marking all of them would unfold the
+    // compact ledger past its ten latest, and «la fila nueva» is one row.
+    const fresh = freshRowKeys(
+      { operaciones: ["op_1"] },
+      { operaciones: ["op_1", "op_2", "op_3"] },
+    );
+
+    expect(fresh["operaciones"]?.size).toBe(0);
+  });
+
   test("a list with no previous render has nothing to compare against, so nothing is fresh", () => {
     // Otherwise the first render of a list would mark every row in it.
     expect(freshRowKeys({}, { cobros: ["oneoff:p1"] })["cobros"]?.size).toBe(0);
