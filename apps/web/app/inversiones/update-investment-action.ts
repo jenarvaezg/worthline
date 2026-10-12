@@ -152,7 +152,8 @@ export async function updateInvestmentAction(
   }
 
   await runActionWithStore(async (store) => {
-    await store.assets.updateInvestmentAsset(command);
+    // The save's instant dates a hand-set price that changed (#1828, ADR 0024).
+    await store.assets.updateInvestmentAsset({ ...command, savedAt: _clock.now() });
     if (priceConfigChanged) {
       await store.operations.clearPriceCache(routeAssetId);
     }

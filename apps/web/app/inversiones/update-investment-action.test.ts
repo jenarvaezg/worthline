@@ -139,6 +139,29 @@ describe("el campo de identidad de la ficha es el del instrumento (#1746)", () =
   });
 });
 
+/**
+ * El precio puesto a mano lleva el día en que se puso (#1828): la cabecera lo dice
+ * como «precio a mano · 03/10/2026». Ese día es el del reloj de la acción (ADR
+ * 0024), no uno que el store lea por su cuenta.
+ */
+describe("el precio a mano se fecha con el reloj de la acción (#1828)", () => {
+  let store: WorthlineStore;
+
+  beforeEach(async () => {
+    seed.resolvePlanSymbolFromDgs.mockReset();
+    store = await createInMemoryStore();
+    await seedPlan(store);
+  });
+
+  test("un precio nuevo lleva el instante del guardado", async () => {
+    await run(store, fichaForm({ manualPricePerUnit: "118.75", securityId: "" }));
+
+    const saved = await store.assets.readInvestmentAssetById(PLAN_ID);
+    expect(saved?.manualPricePerUnit).toBe("118.75");
+    expect(saved?.manualPricedAt).toBe(NOW);
+  });
+});
+
 describe("guardar la ficha no borra el identificador que no enseñó", () => {
   let store: WorthlineStore;
 

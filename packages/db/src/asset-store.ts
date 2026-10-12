@@ -143,6 +143,12 @@ export interface UpdateInvestmentAssetInput {
   priceProvider?: InvestmentPriceProvider;
   providerSymbol?: string;
   manualPricePerUnit?: DecimalString;
+  /**
+   * When this save happens, from the caller's clock (ADR 0024) — the day a CHANGED
+   * hand-set price is stamped with (#1828). A caller that does not say leaves a
+   * changed price undated rather than letting the store read the wall clock.
+   */
+  savedAt?: string;
   benchmarkDistributing?: boolean;
 }
 
@@ -1404,15 +1410,20 @@ function storedSecurityIdField(row: {
 }
 
 /**
- * The day a hand-set price is FROM, as an UPDATE writes it (#1828): today when the
- * figure changes, the day it already had when the same figure comes back — «Lo
- * básico» re-submits the price on every save, and renaming the fund is not a new
- * quote — and none once there is no price. One expression over the row's own
- * columns, so it costs no read: in an UPDATE the right-hand side sees the OLD row.
+ * The day a hand-set price is FROM, as an UPDATE writes it (#1828): the save's
+ * instant when the figure changes, the day it already had when the same figure
+ * comes back — «Lo básico» re-submits the price on every save, and renaming the
+ * fund is not a new quote — and none once there is no price. The instant is the
+ * caller's (ADR 0024); without one a changed price is left undated. One
+ * expression over the row's own columns, so it costs no read: in an UPDATE the
+ * right-hand side sees the OLD row.
  */
-function manualPricedAtOnSave(price: DecimalString | undefined) {
+function manualPricedAtOnSave(
+  price: DecimalString | undefined,
+  savedAt: string | undefined,
+) {
   if (price === undefined) return null;
-  return sql`CASE WHEN ${investmentAssets.manualPricePerUnit} IS ${price} THEN ${investmentAssets.manualPricedAt} ELSE ${new Date().toISOString()} END`;
+  return sql`CASE WHEN ${investmentAssets.manualPricePerUnit} IS ${price} THEN ${investmentAssets.manualPricedAt} ELSE ${savedAt ?? null} END`;
 }
 
 async function updateInvestmentAsset(
@@ -1448,7 +1459,7 @@ async function updateInvestmentAsset(
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
-        manualPricedAt: manualPricedAtOnSave(input.manualPricePerUnit),
+        manualPricedAt: manualPricedAtOnSave(input.manualPricePerUnit, input.savedAt),
         ...(input.benchmarkDistributing === undefined
           ? {}
           : { benchmarkDistributing: input.benchmarkDistributing ? 1 : 0 }),

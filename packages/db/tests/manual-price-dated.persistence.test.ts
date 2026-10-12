@@ -6,11 +6,12 @@
  * be stamped once, at the alta, and never again: change the price a month later and
  * the header would have dated the new figure with the old day. Saving «Lo básico»
  * re-submits the price every time, so an unchanged price must keep its day — or
- * renaming the fund would pass for a fresh quote.
+ * renaming the fund would pass for a fresh quote. The instant is the caller's
+ * (`savedAt`, ADR 0024): the store never reads the wall clock for it.
  */
 
 import { createInMemoryStore } from "@db/testing";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 const own = [{ memberId: "m", shareBps: 10_000 }];
 
@@ -23,27 +24,21 @@ async function freshStore() {
   return store;
 }
 
-/** Pin the clock — only `Date`, so the database driver's timers are left alone. */
-function at(instant: string) {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(instant));
-}
-
-const edit = (manualPricePerUnit: string | undefined, name = "Fondo") => ({
+const save = (
+  manualPricePerUnit: string | undefined,
+  savedAt: string | undefined,
+  name = "Fondo",
+) => ({
   id: "fund",
   name,
   ...(manualPricePerUnit === undefined ? {} : { manualPricePerUnit }),
-});
-
-afterEach(() => {
-  vi.useRealTimers();
+  ...(savedAt === undefined ? {} : { savedAt }),
 });
 
 describe("the hand-set price keeps the day it was set (#1828)", () => {
-  test("a new price is dated the day it is saved; an unchanged one keeps its day", async () => {
+  test("a new price is dated by its save; an unchanged one keeps its day", async () => {
     const store = await freshStore();
     try {
-      at("2026-09-01T10:00:00.000Z");
       await store.assets.createInvestmentAsset({
         currency: "EUR",
         id: "fund",
@@ -52,20 +47,21 @@ describe("the hand-set price keeps the day it was set (#1828)", () => {
         name: "Fondo",
         ownership: own,
       });
-      expect((await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt).toBe(
-        "2026-09-01T10:00:00.000Z",
-      );
+      const atAlta = (await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt;
+      expect(atAlta).toEqual(expect.any(String));
 
       // «Lo básico» saved to rename it: the price rides along, the same figure.
-      at("2026-09-20T10:00:00.000Z");
-      await store.assets.updateInvestmentAsset(edit("100", "Fondo Azul"));
+      await store.assets.updateInvestmentAsset(
+        save("100", "2026-09-20T10:00:00.000Z", "Fondo Azul"),
+      );
       expect((await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt).toBe(
-        "2026-09-01T10:00:00.000Z",
+        atAlta,
       );
 
-      // A new figure: the day it was typed.
-      at("2026-10-03T09:15:00.000Z");
-      await store.assets.updateInvestmentAsset(edit("118.75", "Fondo Azul"));
+      // A new figure: the instant of the save that typed it.
+      await store.assets.updateInvestmentAsset(
+        save("118.75", "2026-10-03T09:15:00.000Z", "Fondo Azul"),
+      );
       const repriced = await store.assets.readInvestmentAssetById("fund");
       expect(repriced?.manualPricePerUnit).toBe("118.75");
       expect(repriced?.manualPricedAt).toBe("2026-10-03T09:15:00.000Z");
@@ -77,7 +73,6 @@ describe("the hand-set price keeps the day it was set (#1828)", () => {
   test("a price set after the alta is dated then, and clearing it clears its day", async () => {
     const store = await freshStore();
     try {
-      at("2026-09-01T10:00:00.000Z");
       await store.assets.createInvestmentAsset({
         currency: "EUR",
         id: "fund",
@@ -89,16 +84,42 @@ describe("the hand-set price keeps the day it was set (#1828)", () => {
         (await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt,
       ).toBeUndefined();
 
-      at("2026-10-03T09:15:00.000Z");
-      await store.assets.updateInvestmentAsset(edit("118.75"));
+      await store.assets.updateInvestmentAsset(
+        save("118.75", "2026-10-03T09:15:00.000Z"),
+      );
       expect((await store.assets.readInvestmentAssetById("fund"))?.manualPricedAt).toBe(
         "2026-10-03T09:15:00.000Z",
       );
 
-      await store.assets.updateInvestmentAsset(edit(undefined));
+      await store.assets.updateInvestmentAsset(
+        save(undefined, "2026-10-04T09:15:00.000Z"),
+      );
       const cleared = await store.assets.readInvestmentAssetById("fund");
       expect(cleared?.manualPricePerUnit).toBeUndefined();
       expect(cleared?.manualPricedAt).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test("a caller that does not say when leaves a changed price undated", async () => {
+    const store = await freshStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "fund",
+        liquidityTier: "market",
+        manualPricePerUnit: "100",
+        name: "Fondo",
+        ownership: own,
+      });
+
+      await store.assets.updateInvestmentAsset(save("118.75", undefined));
+
+      // Not the alta's day — that dated another figure — and not a guessed one.
+      const repriced = await store.assets.readInvestmentAssetById("fund");
+      expect(repriced?.manualPricePerUnit).toBe("118.75");
+      expect(repriced?.manualPricedAt).toBeUndefined();
     } finally {
       store.close();
     }

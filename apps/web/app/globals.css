@@ -7053,15 +7053,12 @@ td.rowActions > * {
 }
 
 /* ── La cabecera honesta (#1828) ────────────────────────────────────────────
-   Bajo el precio, de dónde sale y de cuándo: un pie de cifra en gris. El aviso
-   del símbolo va justo debajo, en el oro de aviso, y sus dos salidas —arreglarlo
-   o declararlo intencional— son controles de texto en el azul de interacción:
-   la hoja destacada no se llena de botones por un aviso. */
-.fichaPriceOrigin {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
+   Bajo el precio, de dónde sale y de cuándo, con el pie de cifra de siempre
+   (`.priceRefreshCaption`). El aviso del símbolo va justo debajo, en el oro de
+   aviso, y sus dos salidas —arreglarlo o declararlo intencional— son controles de
+   texto: la receta de `.lotRow button` y `.assistantRowAside button`, en el azul
+   de interacción y las dos iguales al pasar por encima. La hoja destacada no se
+   llena de botones por un aviso. */
 .fichaPriceNotice {
   align-items: baseline;
   color: var(--gold);
@@ -7090,7 +7087,8 @@ td.rowActions > * {
   text-underline-offset: 2px;
 }
 
-.fichaPriceNotice button:hover {
+.fichaPriceNotice a:hover,
+.fichaPriceNotice button:hover:not(:disabled) {
   background: transparent;
   color: var(--ink);
 }

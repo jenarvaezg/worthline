@@ -40,6 +40,7 @@ import { transferDestinationOptions } from "@web/patrimonio/[id]/editar/_surface
 import TransferSection from "@web/patrimonio/[id]/editar/_surfaces/transfer-section";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
+import { PendingSubmit } from "@web/pending-submit";
 import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
@@ -237,7 +238,7 @@ export async function loadInvestmentSurface(
         <>
           {/* Where the price comes from and of when (#1828) — worded from the
               origin the valuation handed back with the price, never inferred. */}
-          <small className="fichaPriceOrigin">
+          <small className="priceRefreshCaption">
             {priceOriginCaption(valuation.priceOrigin)}
           </small>
           {missingSymbol ? (
@@ -256,12 +257,15 @@ export async function loadInvestmentSurface(
               </FichaTabLink>
               <span aria-hidden="true">·</span>
               {/* Today's «Es intencional», by the same override: this fund is
-                  quoted by hand on purpose. */}
+                  quoted by hand on purpose. Its result is the server's redirect,
+                  so it shows an honest pending and cannot be sent twice (§4). */}
               <form action={acknowledgeWarningAction}>
                 <input name="currentUrl" type="hidden" value={currentUrl} />
                 <input name="code" type="hidden" value={SYMBOL_WARNING} />
                 <input name="entityId" type="hidden" value={id} />
-                <button type="submit">Cotiza a mano</button>
+                <PendingSubmit disabled={isDemo} pendingLabel="Guardando…">
+                  Cotiza a mano
+                </PendingSubmit>
               </form>
             </div>
           ) : null}
