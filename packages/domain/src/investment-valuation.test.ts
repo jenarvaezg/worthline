@@ -521,6 +521,7 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
       asOf: "2026-10-11",
       kind: "quote",
       provider: "yahoo",
+      refreshFailed: false,
     });
   });
 
@@ -540,6 +541,7 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
       asOf: "2026-10-12",
       kind: "quote",
       provider: "coingecko",
+      refreshFailed: false,
     });
   });
 
@@ -557,7 +559,34 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
       manualPrice: undefined,
     });
 
-    expect(result.priceOrigin).toEqual({ asOf: null, kind: "quote", provider: "yahoo" });
+    // …and says the refresh failed, which is what the missing day means (#1731 review).
+    expect(result.priceOrigin).toEqual({
+      asOf: null,
+      kind: "quote",
+      provider: "yahoo",
+      refreshFailed: true,
+    });
+  });
+
+  test("a quote kept after a failed refresh keeps its market day, and says it is not up to date", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "118.75",
+      cachedQuote: {
+        fetchedAt: "2026-10-12T06:00:00.000Z",
+        freshnessState: "stale",
+        priceDate: "2026-10-08",
+        source: "yahoo",
+      },
+      manualPrice: undefined,
+    });
+
+    expect(result.priceOrigin).toEqual({
+      asOf: "2026-10-08",
+      kind: "quote",
+      provider: "yahoo",
+      refreshFailed: true,
+    });
   });
 
   test("a hand-set price is said as such, dated by when it was set", () => {
@@ -569,7 +598,47 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
     });
 
     expect(result.valueMinor).toBe(1_187_50);
-    expect(result.priceOrigin).toEqual({ asOf: "2026-10-03", kind: "manual" });
+    expect(result.priceOrigin).toEqual({
+      asOf: "2026-10-03",
+      kind: "manual",
+      refreshFailed: false,
+    });
+  });
+
+  test("a hand-set price nobody stamped says no day, never one taken from elsewhere", () => {
+    // Every stamp from before the migration that cleared them may be only the
+    // alta's, so those rows carry none (#1731 review); nothing fills the gap in.
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: undefined,
+      manualPrice: "118.75",
+    });
+
+    expect(result.priceOrigin).toEqual({
+      asOf: null,
+      kind: "manual",
+      refreshFailed: false,
+    });
+  });
+
+  test("a hand-set price standing in for a quote that failed says the quote failed", () => {
+    const result = deriveInvestmentValuation({
+      ...base,
+      cachedPrice: "0",
+      cachedQuote: {
+        fetchedAt: "2026-10-12T06:00:00.000Z",
+        freshnessState: "failed",
+        source: "yahoo",
+      },
+      manualPrice: "118.75",
+      manualPricedAt: "2026-10-03T09:15:00.000Z",
+    });
+
+    expect(result.priceOrigin).toEqual({
+      asOf: "2026-10-03",
+      kind: "manual",
+      refreshFailed: true,
+    });
   });
 
   test("a hand-set price that equals the last operation's is still a hand-set price", () => {
@@ -582,7 +651,11 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
       manualPrice: "100",
     });
 
-    expect(result.priceOrigin).toEqual({ asOf: null, kind: "manual" });
+    expect(result.priceOrigin).toEqual({
+      asOf: null,
+      kind: "manual",
+      refreshFailed: false,
+    });
   });
 
   test("a quote beats a hand-set price, and the origin follows the price it picked", () => {
@@ -606,7 +679,7 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
     });
 
     expect(result.valueMinor).toBe(1_000_00);
-    expect(result.priceOrigin).toEqual({ kind: "cost" });
+    expect(result.priceOrigin).toEqual({ kind: "cost", refreshFailed: false });
   });
 
   test("a failed fetch's zero is not a quote: the provider is not credited with it (#1330)", () => {
@@ -622,6 +695,7 @@ describe("deriveInvestmentValuation — the price says where it comes from and o
     });
 
     expect(result.valueMinor).toBe(1_000_00);
-    expect(result.priceOrigin).toEqual({ kind: "cost" });
+    // …but the failure is said: valued at its cost because the quote failed.
+    expect(result.priceOrigin).toEqual({ kind: "cost", refreshFailed: true });
   });
 });
