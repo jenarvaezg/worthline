@@ -136,7 +136,9 @@ export async function loadPayoutsPanel(
       (row) => ({ amountMinor: row.amountMinor, date: row.dateISO }),
     ),
     entry: (returnUrl) => <CobrosEntry {...props(returnUrl)} />,
-    record: (returnUrl) => <CobrosRecord {...props(returnUrl)} />,
+    record: (returnUrl, addLink) => (
+      <CobrosRecord {...props(returnUrl)} addLink={addLink} />
+    ),
     // The grid's rows by the keys it renders them under, so a tabbed ficha can point
     // at the one a terminal just added (#1829).
     rowKeys: buildCobroRows(payouts, schedules, today).map((row) => row.key),

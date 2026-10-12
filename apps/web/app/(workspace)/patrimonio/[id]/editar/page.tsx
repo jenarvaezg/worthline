@@ -37,8 +37,6 @@ import { loadHoldingSurface } from "./_families/holding-surface";
 import type { FichaTarget } from "./_ficha/ficha-view";
 import { fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
-import { prototypeVariantFor } from "./_prototype-1737/prototype-model";
-import { renderFichaPrototype } from "./_prototype-1737/render-prototype";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 
@@ -244,26 +242,6 @@ export default async function EditarPage({
       ) : null}
     </section>
   );
-
-  // PROTOTIPO #1737 — desechable: solo en desarrollo, solo inversión, solo con `?variante=`.
-  const prototypeVariant = prototypeVariantFor(resolvedSearchParams, surface.family);
-  if (prototypeVariant && assetWithPanel) {
-    return renderFichaPrototype({
-      availability: availabilityPanel,
-      basics: basicsSection,
-      boardHref,
-      ctx: {
-        ...ficha,
-        asset: assetWithPanel.row,
-        payoutsPanel: assetWithPanel.payoutsPanel,
-      },
-      danger: dangerPanel,
-      overrides,
-      searchParams: resolvedSearchParams,
-      variant: prototypeVariant,
-      warnings: warningsBand,
-    });
-  }
 
   const okBand = formOk ? (
     <p className="successBand" role="status">

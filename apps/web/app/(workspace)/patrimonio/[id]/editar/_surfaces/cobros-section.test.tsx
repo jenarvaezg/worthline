@@ -14,7 +14,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { CobrosSection } from "./cobros-section";
+import { type CobrosProps, CobrosRecord, CobrosSection } from "./cobros-section";
 
 const TODAY = "2026-07-06";
 
@@ -48,6 +48,7 @@ function renderSection(
   over: {
     doubleCount?: string | null;
     monthlySpendingMinor?: number | null;
+    payouts?: Payout[];
     schedules?: PayoutSchedule[];
     showLeaseTerms?: boolean;
   } = {},
@@ -64,7 +65,7 @@ function renderSection(
       doubleCount={over.doubleCount ?? null}
       holdingId="h1"
       monthlySpendingMinor={over.monthlySpendingMinor ?? null}
-      payouts={[DIVIDEND]}
+      payouts={over.payouts ?? [DIVIDEND]}
       privacyMode={false}
       schedules={over.schedules ?? [RENT]}
       showLeaseTerms={over.showLeaseTerms ?? false}
@@ -351,5 +352,73 @@ describe("CobrosSection — el doble conteo de una renta ligada (#1675)", () => 
 
     expect(markup).not.toContain("INCOME_DOUBLE_COUNT");
     expect(markup).not.toContain("Es intencional");
+  });
+});
+
+describe("Cobros — a holding that never paid anything (#1830)", () => {
+  const EMPTY_LINE = "Este activo no ha pagado nada todavía.";
+
+  function renderRecord(over: Partial<CobrosProps> = {}) {
+    return renderToStaticMarkup(
+      <CobrosRecord
+        acknowledgeWarningAction={noop}
+        createIncomeAction={noop}
+        createPayoutAction={noop}
+        currency="EUR"
+        currentUrl="/patrimonio/h1/editar?pestaña=cobros"
+        deletePayoutAction={noop}
+        deletePayoutScheduleAction={noop}
+        doubleCount={null}
+        holdingId="h1"
+        monthlySpendingMinor={220000}
+        payouts={[]}
+        privacyMode={false}
+        schedules={[]}
+        showLeaseTerms={false}
+        today={TODAY}
+        updatePayoutScheduleAction={noop}
+        {...over}
+      />,
+    );
+  }
+
+  test("the record says so in one line, with the door to add one, instead of a block of zeros", () => {
+    const markup = renderRecord({
+      addLink: <a href="/patrimonio/h1/editar?accion=cobro">Añadir un cobro</a>,
+    });
+
+    expect(markup).toContain(EMPTY_LINE);
+    expect(markup).toContain('href="/patrimonio/h1/editar?accion=cobro"');
+    // Not the renta-pasiva strip at 0 €, nor a 0,0 % coverage of the spending, nor
+    // a year of empty months.
+    expect(markup).not.toContain("Renta pasiva");
+    expect(markup).not.toContain("de tu gasto declarado");
+    expect(markup).not.toContain("cobrosPasiva");
+    expect(markup).not.toContain("0,00 €");
+    // Still the `#cobros` fragment `holdingCobrosHref` lands on.
+    expect(markup).toContain('id="cobros"');
+  });
+
+  test("a refusal of the entry form still prints on the empty record", () => {
+    const markup = renderRecord({ error: "El importe tiene que ser positivo." });
+
+    expect(markup).toContain("El importe tiene que ser positivo.");
+    expect(markup).toContain(EMPTY_LINE);
+  });
+
+  test("on the accordion ficha the line stands alone: the entry forms are right below", () => {
+    const markup = renderSection({ payouts: [], schedules: [] });
+
+    expect(markup).toContain(EMPTY_LINE);
+    expect(markup).not.toContain("Renta pasiva");
+    expect(markup).toContain("Registrar un cobro puntual");
+  });
+
+  test("a declared recurring income is not «nothing»: the record keeps its strip", () => {
+    const markup = renderRecord({ schedules: [RENT] });
+
+    expect(markup).not.toContain(EMPTY_LINE);
+    expect(markup).toContain("Renta pasiva");
+    expect(markup).toContain("Alquiler piso");
   });
 });

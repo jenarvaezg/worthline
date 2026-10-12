@@ -121,6 +121,14 @@ Su cabecera de estado (`.fichaHero`) es la `.heroPanel` de la página —la úni
 destacada—; las pestañas son `.navTab` con el recuento en gris, y la acción cuyo panel
 está abierto se marca con contorno de tinta, nunca con el azul del foco.
 
+Lo que hay bajo las pestañas son secciones abiertas, nunca otra hoja (#1830). La
+pestaña Rentabilidad enfrenta dos lados bajo una misma regla gruesa partida por un
+filete: «Tu dinero (TIR)» y «El fondo (TWR)», cada uno abierto por su cifra (menor que
+el valor de la cabecera) y seguido de líneas de libro, con rótulo a la izquierda y
+cifra tabular a la derecha. La comparación con el índice va en el lado de la TWR,
+bajo un filete y no como tarjeta. Una medida que falta dice por qué. Un registro vacío
+es una línea con su enlace, no un bloque de ceros.
+
 Cuando la barra de acciones sale de la pantalla (#1829), la ficha conserva su acción
 habitual en una franja fija (`.fichaStrip`): en escritorio es su cabecera condensada
 —nombre, valor, el primario y «Más»— sobre su misma columna y bajo el riel de ámbitos,
