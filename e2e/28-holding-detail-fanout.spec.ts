@@ -85,8 +85,9 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(2);
 
-  // 8. Delete the sell operation (two-step confirm in its row).
+  // 8. Delete the sell operation (its «⋯», then the two-step confirm, #1827).
   const sellRow = opsPanel.locator("tbody tr").filter({ hasText: "Venta" });
+  await sellRow.getByLabel(/^Acciones de la operación del /).click();
   await sellRow.locator("details.confirmDelete summary").click();
   await sellRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
