@@ -33,7 +33,7 @@ export async function loadHousingSurface(
         {/* Cobros goes FIRST here, above the valuation sections: a rented flat's
             payouts are what the user comes to this ficha for, and the curve below
             is the slower conversation. */}
-        {payoutsPanel}
+        {payoutsPanel.section}
         <HousingValuationSection
           anchors={anchors}
           appreciationRate={appreciationRate}

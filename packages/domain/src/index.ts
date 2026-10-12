@@ -1134,6 +1134,7 @@ export {
 export type {
   AssetClassReturnsView,
   AssetClassReturnsViewResult,
+  HoldingReturnsReads,
   HoldingReturnsView,
   HoldingReturnsViewInput,
   InvestmentReturnsContext,
@@ -1145,6 +1146,7 @@ export {
   buildHoldingReturnsView,
   buildPortfolioReturnsView,
   CLASS_ATTRIBUTION_CAVEAT,
+  holdingReturns,
   investmentReturnsById,
   MARKET_CAVEAT,
   MARKET_PAYOUTS_CAVEAT,

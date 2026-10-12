@@ -5339,17 +5339,6 @@ p.muted {
   margin-top: 2px;
 }
 
-.operacionContext {
-  background: var(--paper-strong);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  display: grid;
-  gap: 4px 16px;
-  grid-template-columns: max-content 1fr;
-  margin-bottom: 20px;
-  padding: 12px 16px;
-}
-
 /* El registro de folio (canon §3): label pequeño real en caja alta con tracking,
    el único uso que el canon autoriza para las mayúsculas. UNA receta, la
    consuman quienes la consuman — los rótulos de tramo del alta (#1732) nacieron
@@ -5366,10 +5355,11 @@ p.muted {
 }
 
 /* A figure that CANNOT be stated, in the slot where a figure would go (#1505):
-   «sin coste real» where the P/L latente lives. Muted and non-numeric on purpose —
-   it must not read as a value, and it must not borrow the +/- sign colors, which
-   in this grid mean «ganas» and «pierdes». Same muted token as .contextLabel, one
-   step larger so it reads as the cell's content and not as its heading. */
+   «sin coste real» where the P/L latente lives in the returns panel. Muted and
+   non-numeric on purpose — it must not read as a value, and it must not borrow the
+   +/- sign colors, which there mean «ganas» and «pierdes». Same muted token as
+   .contextLabel, one step larger so it reads as the cell's content and not as its
+   heading. */
 .contextUnknown {
   color: var(--muted);
   font-size: 0.9rem;
@@ -5387,14 +5377,7 @@ p.muted {
 }
 
 .recentOpsPanel {
-  margin-top: 24px;
-}
-
-.recentOpsPanel summary {
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 600;
-  padding: 8px 0;
+  margin-top: 8px;
 }
 
 .dangerZone {
@@ -6781,6 +6764,299 @@ td.rowActions > * {
   display: grid;
   gap: 16px;
   margin-top: 16px;
+}
+
+/* ── La ficha con pestañas (#1826, variante B2 de #1737) ─────────────────────
+   Cabecera de estado —la única hoja destacada de la página— con la barra de
+   acciones a su derecha; pestañas de regla bajo ella; y una acción cada vez en una
+   hoja lateral ligada por su lomo (regla gruesa, como el asistente), que se
+   superpone sin recolocar la página. El único relleno de tinta es el primario. */
+.fichaPage {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* minmax(0, 1fr): una pista `auto` crece hasta la tabla del libro y saca la página
+   del ancho del móvil (#1826, ver la memoria del `1fr` que desborda). */
+.ficha {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.fichaHero {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.fichaHeroTop {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  justify-content: space-between;
+}
+
+.fichaIdentity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fichaIdentity h2 {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fichaBack {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.fichaBack:hover {
+  color: var(--ink);
+}
+
+.fichaInstrument {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+/* La cifra dominante de la página (canon §3): Iosevka tabular. */
+.fichaValue {
+  font-family: var(--font-numeric);
+  font-size: 1.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 6px 0 0;
+}
+
+.fichaActions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* La acción cuyo panel está abierto, dicho con el azul de la interacción. */
+.fichaActions .btn[aria-expanded="true"],
+.fichaMoreActive {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.fichaMore {
+  position: relative;
+}
+
+.fichaMoreList {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  border-top: var(--rule-heavy);
+  list-style: none;
+  margin: 0;
+  min-width: 250px;
+  padding: 4px 0;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+}
+
+.fichaMoreItem {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink);
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-height: 0;
+  padding: 10px 14px;
+  text-align: left;
+  width: 100%;
+}
+
+.fichaMoreItem:hover {
+  background: var(--band);
+  color: var(--ink);
+}
+
+.fichaFigures {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 10px 36px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+  margin: 0;
+  padding-top: 12px;
+}
+
+/* Label pequeño real (canon §3): caja alta con tracking, y nada más la lleva. */
+.fichaFigures dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fichaFigures abbr {
+  letter-spacing: 0;
+  text-decoration: underline dotted;
+  text-transform: none;
+}
+
+.fichaFigures dd {
+  margin: 4px 0 0;
+}
+
+.fichaFigure {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.fichaFigureDetail {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  margin-top: 4px;
+}
+
+.fichaTabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fichaTabs .navTab {
+  font-size: 0.92rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* El recuento va en la pestaña, en gris: dice cuánto hay sin competir con el rótulo. */
+.fichaTabCount {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+
+.fichaTabNarrow {
+  display: none;
+}
+
+.fichaTabBody {
+  min-width: 0;
+}
+
+/* «Datos del activo» guarda la medida que tenía la columna de la ficha; su
+   reparto en dos columnas es #1830. */
+.fichaDatos {
+  max-width: 640px;
+}
+
+.fichaPanel {
+  background: var(--panel);
+  border-left: var(--rule-heavy);
+  bottom: 0;
+  overflow-y: auto;
+  position: fixed;
+  right: 0;
+  top: var(--ficha-panel-top, 0px);
+  width: min(36rem, 100vw);
+  z-index: 70;
+}
+
+.fichaPanel:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+}
+
+.fichaPanelHead {
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.fichaPanelHead h3 {
+  margin: 0;
+}
+
+.fichaPanelBody {
+  padding: 12px 18px 24px;
+}
+
+/* La hoja ya nombra la acción en su cabecera fija: el h3 propio del formulario
+   sobra. */
+.fichaPanelBody > section > h3:first-child {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .fichaActions {
+    justify-content: flex-start;
+  }
+
+  .fichaActions > .btn:first-child {
+    flex: 1 1 100%;
+  }
+
+  .fichaMoreList {
+    left: 0;
+    right: auto;
+  }
+
+  /* Las cifras en rejilla; las participaciones, con su precio, a todo lo ancho. */
+  .fichaFigures {
+    gap: 10px 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fichaFigures > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Las cuatro pestañas caben a 390 px sin desplazarse. */
+  .fichaTabs {
+    gap: 16px;
+  }
+
+  .fichaTabWide {
+    display: none;
+  }
+
+  .fichaTabNarrow {
+    display: inline;
+  }
+
+  /* En el teléfono la hoja ocupa la pantalla, con su cabecera fija arriba. */
+  .fichaPanel {
+    border-left: 0;
+    top: 0;
+    width: 100vw;
+  }
 }
 
 .infoNote {

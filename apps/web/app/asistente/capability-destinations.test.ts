@@ -32,9 +32,10 @@ describe("capability destinations (#1524)", () => {
     expect(rent?.where).toMatch(/cobros/i);
     expect(rent?.where).toMatch(/campo\s+Gastos/i);
     expect(rent?.where).toMatch(/misma cadencia/i);
-    // And the accordion it hides behind. `CobrosSection` renders inside the
-    // «Configuración avanzada» `<details>`, which is closed unless ?abrir=operaciones
-    // — so an answer that stops at «en Cobros» still leaves the user hunting.
+    // And the accordion it hides behind. On a property's ficha `CobrosSection`
+    // renders inside the «Configuración avanzada» `<details>`, which is closed unless
+    // ?abrir=cobros — so an answer that stops at «en Cobros» still leaves the user
+    // hunting. (The investment ficha has tabs since #1826; the property's, not yet.)
     expect(rent?.where).toMatch(/configuración avanzada/i);
   });
 
@@ -191,9 +192,10 @@ describe("capability destinations (#1524)", () => {
     // pointing at the UI instead of at a sibling module. Anchored by reading the UI.
     //
     // Since #1607 those are two files: the ficha owns the accordion, and the shared
-    // Cobros panel mounts the section its families place inside it. That the panel
-    // really lands in the accordion is pinned by rendering, in the ficha's own
-    // `page-families.test.tsx` — here it is the WORDS that must still match.
+    // Cobros panel mounts the section its families place inside it. That a
+    // PROPERTY's panel really lands in the accordion — the investment ficha has tabs
+    // since #1826 — is pinned by rendering, in the ficha's own
+    // `page-families.test.tsx`; here it is the WORDS that must still match.
     const page = source("(workspace)/patrimonio/[id]/editar/page.tsx");
     const panel = source("(workspace)/patrimonio/[id]/editar/_chrome/payouts-panel.tsx");
     const rent = CAPABILITY_DESTINATIONS.find((entry) => entry.id === "rent-expenses");

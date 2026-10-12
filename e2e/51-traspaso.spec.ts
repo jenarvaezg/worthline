@@ -30,20 +30,26 @@
  * then 400 € the same way (4 out, 8 in). 400 € + 200 € + 400 € = 1.000 €.
  */
 
-import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
+import {
+  addHolding,
+  expect,
+  holdingRow,
+  openFichaAction,
+  openFichaTab,
+  test,
+} from "./fixtures";
 
 const ORIGIN = "Origen Traspaso E2E";
 const EXISTING = "Destino Existente E2E";
 const CREATED = "Destino Nuevo E2E";
 
-/** Open a holding's ficha from the unified Patrimonio list, advanced block open. */
+/** Open a holding's ficha from the unified Patrimonio list. */
 async function openFicha(page: import("@playwright/test").Page, name: string) {
   await page.goto("/patrimonio");
   const row = holdingRow(page, name);
   await expect(row).toBeVisible();
   await row.getByRole("link", { name }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
 }
 
 /** The Patrimonio ledger's net-worth figure, as printed. */
@@ -54,7 +60,7 @@ async function netWorth(page: import("@playwright/test").Page): Promise<string> 
   return (await net.textContent()) ?? "";
 }
 
-/** The «Traspasar» form on the origin's ficha, once the advanced block is open. */
+/** The «Traspasar» form on the origin's ficha, once its side panel is open (#1826). */
 function transferForm(page: import("@playwright/test").Page) {
   return page.getByRole("form", { name: "Traspasar a otra inversión" });
 }
@@ -80,7 +86,10 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   await expect(page.getByRole("status")).toHaveText("Inversión añadida.");
 
   await openFicha(page, ORIGIN);
-  const operationForm = page.getByRole("form", { name: "Registrar operación" });
+  const operationForm = (await openFichaAction(page, "Registrar operación")).getByRole(
+    "form",
+    { name: "Registrar operación" },
+  );
   await operationForm.getByLabel("Unidades").fill("10");
   await operationForm.getByLabel("Precio por unidad en EUR").fill("100");
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
@@ -92,6 +101,7 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   //    in the DOM but hidden. If anything in that pane ever blocks native validation,
   //    this submit never reaches the server and the URL assertion below fails.
   await openFicha(page, ORIGIN);
+  await openFichaAction(page, "Traspasar");
   let form = transferForm(page);
   await expect(form).toBeVisible();
 
@@ -122,17 +132,18 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   await expect(page.getByRole("status")).toHaveText("Traspaso registrado.");
 
   // The origin's ledger says what happened, in its own words — not "Venta".
-  await openAdvancedSettings(page);
   await expect(page.locator(".recentOpsPanel")).toContainText("Traspaso (salida)");
-  // 8 of the 10 participaciones are left, worth 800 € — the context panel prints a
-  // round figure without decimals, so this asserts the figure and not its padding.
-  await expect(page.locator(".operacionContext")).toContainText("Unidades actuales8");
-  await expect(page.locator(".operacionContext")).toContainText("800 €");
+  // 8 of the 10 participaciones are left, worth 800 € — the header prints a round
+  // figure without decimals, so this asserts the figure and not its padding.
+  const state = page.getByRole("region", { name: "Estado del activo" });
+  await expect(state.locator(".fichaFigures")).toContainText("8 × 100 €");
+  await expect(state.locator(".fichaValue")).toHaveText(/^800\s€$/);
   expect(await netWorth(page)).toBe(netAfterBuy);
 
   // 3. Traspaso to a destination CREATED on the way in, stated the other way — one
   //    screen, one submit, and the VL pane reached through the toggle.
   await openFicha(page, ORIGIN);
+  await openFichaAction(page, "Traspasar");
   form = transferForm(page);
   await destinationPicker(page).selectOption("__new__");
   // The pane is disclosed by CSS `:has()`, so it is reachable with or without JS.
@@ -150,7 +161,7 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   await expect(page.getByRole("status")).toHaveText("Traspaso registrado.");
 
   // 4. Nothing was realized: a traspaso is not a sale (ADR 0082).
-  await openAdvancedSettings(page);
+  await openFichaTab(page, "Rentabilidad");
   await expect(page.locator(".returnsPanel")).toContainText("P/L realizado");
   expect(
     await page

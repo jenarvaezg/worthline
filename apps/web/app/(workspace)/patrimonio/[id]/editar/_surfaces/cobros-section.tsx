@@ -63,27 +63,8 @@ function scheduleSpec(
   return `${fmt(schedule.amountMinor)} · ${cadence} · ${window} · ${costs}`;
 }
 
-export function CobrosSection({
-  acknowledgeWarningAction,
-  createIncomeAction,
-  createPayoutAction,
-  currency,
-  currentUrl,
-  deletePayoutAction,
-  deletePayoutScheduleAction,
-  doubleCount,
-  error,
-  errorValues = {},
-  holdingId,
-  monthlySpendingMinor,
-  payouts,
-  privacyMode,
-  readOnly = false,
-  schedules,
-  showLeaseTerms,
-  today,
-  updatePayoutScheduleAction,
-}: {
+/** Everything the Cobros pieces take — one bag, so the three cuts cannot drift apart. */
+export interface CobrosProps {
   /** «Es intencional» for the double-count cross (#1675) — the warnings' own door. */
   acknowledgeWarningAction: FormAction;
   /**
@@ -124,27 +105,84 @@ export function CobrosSection({
   showLeaseTerms: boolean;
   today: string;
   updatePayoutScheduleAction: FormAction;
-}) {
-  const fmt = (amountMinor: number) =>
-    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
+}
 
-  const rows = buildCobroRows(payouts, schedules, today);
-  const passive = passiveIncomeTrailing(rows, today, 12);
-  const annualSpending =
-    monthlySpendingMinor != null && monthlySpendingMinor > 0
-      ? monthlySpendingMinor * 12
-      : null;
-  // Coverage decides something — it runs on NET (#1463), same rule as /objetivos.
-  const coverage = annualSpending ? passive.netMinor / annualSpending : null;
-
+/**
+ * The whole Cobros surface, in the order every ficha that still keeps it inside
+ * «Configuración avanzada» has always had: what it paid, the two entry forms, the
+ * declared schedules.
+ */
+export function CobrosSection(props: CobrosProps) {
   return (
     <section className="cobros" aria-label="Cobros" id="cobros" tabIndex={-1}>
       <h3>Cobros</h3>
-      <p className="infoNote">
-        Dividendos, intereses o alquileres que este activo te paga. Regístralos uno a uno
-        o declara un cobro recurrente.
-      </p>
+      <CobrosIntro />
+      <CobrosAlerts {...props} />
+      <CobrosSummary {...props} />
+      <CobrosOneOffForm {...props} />
+      <CobrosRecurringForm {...props} />
+      <CobrosSchedules {...props} />
+      <CobrosHonestNote />
+    </section>
+  );
+}
 
+/**
+ * The record half (#1826): what this holding has paid and what it is declared to
+ * pay — the ficha's «Cobros» tab. It is the `#cobros` fragment `holdingCobrosHref`
+ * lands on, and where a refusal of any Cobros form is printed: the ficha opens on
+ * this tab when one comes back.
+ */
+export function CobrosRecord(props: CobrosProps) {
+  return (
+    <section className="cobros" aria-label="Cobros" id="cobros" tabIndex={-1}>
+      <CobrosAlerts {...props} />
+      <CobrosSummary {...props} />
+      <CobrosSchedules {...props} />
+      <CobrosHonestNote />
+    </section>
+  );
+}
+
+/**
+ * The entry half (#1826): the two ways to add one — a one-off payment or a
+ * recurring income — for the ficha's «Añadir cobro» panel.
+ */
+export function CobrosEntry(props: CobrosProps) {
+  return (
+    <section className="cobros" aria-label="Añadir cobro">
+      <CobrosIntro />
+      <CobrosOneOffForm {...props} />
+      <CobrosRecurringForm {...props} />
+    </section>
+  );
+}
+
+function CobrosIntro() {
+  return (
+    <p className="infoNote">
+      Dividendos, intereses o alquileres que este activo te paga. Regístralos uno a uno o
+      declara un cobro recurrente.
+    </p>
+  );
+}
+
+function moneyIn(currency: CurrencyCode, privacyMode: boolean) {
+  return (amountMinor: number) =>
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
+}
+
+/** A refusal of any Cobros form, and the double-count cross (#1675). */
+function CobrosAlerts({
+  acknowledgeWarningAction,
+  currentUrl,
+  doubleCount,
+  error,
+  holdingId,
+  readOnly = false,
+}: CobrosProps) {
+  return (
+    <>
       {error ? (
         <p className="errorBand" role="alert">
           {error}
@@ -169,8 +207,34 @@ export function CobrosSection({
           </div>
         </div>
       ) : null}
+    </>
+  );
+}
 
-      {/* Renta pasiva · trailing 12 months (server-rendered figure). */}
+/** Renta pasiva · trailing 12 months (server-rendered figure), then the month grid. */
+function CobrosSummary({
+  currency,
+  currentUrl,
+  deletePayoutAction,
+  monthlySpendingMinor,
+  payouts,
+  privacyMode,
+  schedules,
+  today,
+  updatePayoutScheduleAction,
+}: CobrosProps) {
+  const fmt = moneyIn(currency, privacyMode);
+  const rows = buildCobroRows(payouts, schedules, today);
+  const passive = passiveIncomeTrailing(rows, today, 12);
+  const annualSpending =
+    monthlySpendingMinor != null && monthlySpendingMinor > 0
+      ? monthlySpendingMinor * 12
+      : null;
+  // Coverage decides something — it runs on NET (#1463), same rule as /objetivos.
+  const coverage = annualSpending ? passive.netMinor / annualSpending : null;
+
+  return (
+    <>
       <div className="cobrosPasiva">
         <div className="cobrosPasivaTop">
           <div>
@@ -218,157 +282,191 @@ export function CobrosSection({
         today={today}
         updatePayoutScheduleAction={updatePayoutScheduleAction}
       />
+    </>
+  );
+}
 
-      {/* One-off entry (a variable dividend, an extraordinary distribution). */}
-      <form action={createPayoutAction} className="stackForm cobrosForm">
-        <input name="currentUrl" type="hidden" value={currentUrl} />
-        <h4>Registrar un cobro puntual</h4>
-        <div className="cobrosFormGrid">
-          <label>
-            Importe
-            <input
-              aria-label="Importe del cobro"
-              defaultValue=""
-              inputMode="decimal"
-              name="amount"
-              placeholder="0,00"
-            />
-          </label>
-          <label>
-            Fecha
-            <input defaultValue={today} name="dateISO" type="date" />
-          </label>
-          <label>
-            Nota
-            <input
-              aria-label="Nota del cobro"
-              autoComplete="off"
-              defaultValue=""
-              name="note"
-              placeholder="opcional"
-            />
-          </label>
-        </div>
-        <div className="formActions">
-          <PendingSubmit pendingLabel="Guardando…">Añadir cobro</PendingSubmit>
-        </div>
-      </form>
-
-      {/* Recurring income (a fixed rent, a fixed coupon) — the same declaration
-          door as the Rentas surface, with this holding already linked (#1673): same
-          parser, same required provenance, nature and basis opening on «Sin
-          declarar». The lease terms appear only where a lease is what this income is
-          (#1521). */}
-      <div className="cobrosForm">
-        <IncomeDeclarationForm
-          accessibleSuffix=" del cobro recurrente"
-          action={createIncomeAction}
-          currentUrl={currentUrl}
-          holdingId={holdingId}
-          initialError={null}
-          initialValues={errorValues}
-          readOnly={readOnly}
-          showLeaseTerms={showLeaseTerms}
-          submitLabel="Añadir recurrente"
-          title="Declarar un cobro recurrente"
-          today={today}
-        />
+/** One-off entry (a variable dividend, an extraordinary distribution). */
+function CobrosOneOffForm({ createPayoutAction, currentUrl, today }: CobrosProps) {
+  return (
+    <form action={createPayoutAction} className="stackForm cobrosForm">
+      <input name="currentUrl" type="hidden" value={currentUrl} />
+      <h4>Registrar un cobro puntual</h4>
+      <div className="cobrosFormGrid">
+        <label>
+          Importe
+          <input
+            aria-label="Importe del cobro"
+            defaultValue=""
+            inputMode="decimal"
+            name="amount"
+            placeholder="0,00"
+          />
+        </label>
+        <label>
+          Fecha
+          <input defaultValue={today} name="dateISO" type="date" />
+        </label>
+        <label>
+          Nota
+          <input
+            aria-label="Nota del cobro"
+            autoComplete="off"
+            defaultValue=""
+            name="note"
+            placeholder="opcional"
+          />
+        </label>
       </div>
+      <div className="formActions">
+        <PendingSubmit pendingLabel="Guardando…">Añadir cobro</PendingSubmit>
+      </div>
+    </form>
+  );
+}
 
-      {/* Declared schedules — end ("terminar hoy") or delete, per row. */}
-      {schedules.length > 0 ? (
-        <div className="cobrosSchedules">
-          <h4>Cobros recurrentes declarados</h4>
-          {schedules.map((schedule) => (
-            <div className="cobrosSchedule" key={schedule.id}>
-              <div className="cobrosScheduleTop">
-                <div className="cobrosScheduleMeta">
-                  <strong>{schedule.label}</strong>
-                  <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
-                </div>
-                <div className="cobrosScheduleActions">
-                  {/* Declare (or correct) the costs of an existing rent without
-                      re-entering it: the four rents Jorge already had were declared
-                      before this field existed. */}
-                  <form
-                    action={updatePayoutScheduleAction}
-                    className="cobrosExpensesForm"
-                  >
-                    <input name="currentUrl" type="hidden" value={currentUrl} />
-                    <input name="scheduleId" type="hidden" value={schedule.id} />
-                    <input name="saveExpenses" type="hidden" value="1" />
-                    <label>
-                      Gastos
-                      <input
-                        aria-label={`Gastos de ${schedule.label}`}
-                        defaultValue={
-                          schedule.expensesMinor == null
-                            ? ""
-                            : formatMoneyInput(schedule.expensesMinor)
-                        }
-                        inputMode="decimal"
-                        name="expenses"
-                      />
-                    </label>
-                    <button className="btnSmall" type="submit">
-                      Guardar gastos
-                    </button>
-                  </form>
-                  {schedule.endISO ? (
-                    <form action={updatePayoutScheduleAction}>
-                      <input name="currentUrl" type="hidden" value={currentUrl} />
-                      <input name="scheduleId" type="hidden" value={schedule.id} />
-                      <input name="clearEnd" type="hidden" value="1" />
-                      <button className="btnSmall" type="submit">
-                        Reactivar
-                      </button>
-                    </form>
-                  ) : (
-                    <form action={updatePayoutScheduleAction}>
-                      <input name="currentUrl" type="hidden" value={currentUrl} />
-                      <input name="scheduleId" type="hidden" value={schedule.id} />
-                      <input name="endISO" type="hidden" value={today} />
-                      <button className="btnSmall" type="submit">
-                        Terminar hoy
-                      </button>
-                    </form>
-                  )}
-                  <form action={deletePayoutScheduleAction}>
-                    <input name="currentUrl" type="hidden" value={currentUrl} />
-                    <input name="scheduleId" type="hidden" value={schedule.id} />
-                    <button className="btnSmall btnWarning" type="submit">
-                      Eliminar
-                    </button>
-                  </form>
-                </div>
-              </div>
-              {/* Whether it counts and why not, what it declares and where its figure
-                  comes from — the same summary the Rentas list prints (#1673). The
-                  declaration is corrected there. */}
-              <IncomeDeclarationSummary income={schedule} today={today}>
-                {" · "}
-                <Link href="/objetivos/rentas">Corregir su declaración en Rentas</Link>
-              </IncomeDeclarationSummary>
-              {/* What the end date MEANS, and what happens after it (#1521). Below
-                  the row rather than inside it: the sentence it prints is about the
-                  rent's future, not another button. */}
-              {showLeaseTerms ? (
-                <LeaseTermsRow
-                  action={updatePayoutScheduleAction}
-                  currentUrl={currentUrl}
-                  schedule={schedule}
-                />
-              ) : null}
+/**
+ * Recurring income (a fixed rent, a fixed coupon) — the same declaration door as
+ * the Rentas surface, with this holding already linked (#1673): same parser, same
+ * required provenance, nature and basis opening on «Sin declarar». The lease terms
+ * appear only where a lease is what this income is (#1521).
+ */
+function CobrosRecurringForm({
+  createIncomeAction,
+  currentUrl,
+  errorValues = {},
+  holdingId,
+  readOnly = false,
+  showLeaseTerms,
+  today,
+}: CobrosProps) {
+  return (
+    <div className="cobrosForm">
+      <IncomeDeclarationForm
+        accessibleSuffix=" del cobro recurrente"
+        action={createIncomeAction}
+        currentUrl={currentUrl}
+        holdingId={holdingId}
+        initialError={null}
+        initialValues={errorValues}
+        readOnly={readOnly}
+        showLeaseTerms={showLeaseTerms}
+        submitLabel="Añadir recurrente"
+        title="Declarar un cobro recurrente"
+        today={today}
+      />
+    </div>
+  );
+}
+
+/** Declared schedules — end ("terminar hoy") or delete, per row. */
+function CobrosSchedules({
+  currency,
+  currentUrl,
+  deletePayoutScheduleAction,
+  privacyMode,
+  schedules,
+  showLeaseTerms,
+  today,
+  updatePayoutScheduleAction,
+}: CobrosProps) {
+  if (schedules.length === 0) {
+    return null;
+  }
+  const fmt = moneyIn(currency, privacyMode);
+
+  return (
+    <div className="cobrosSchedules">
+      <h4>Cobros recurrentes declarados</h4>
+      {schedules.map((schedule) => (
+        <div className="cobrosSchedule" key={schedule.id}>
+          <div className="cobrosScheduleTop">
+            <div className="cobrosScheduleMeta">
+              <strong>{schedule.label}</strong>
+              <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
             </div>
-          ))}
+            <div className="cobrosScheduleActions">
+              {/* Declare (or correct) the costs of an existing rent without
+                  re-entering it: the four rents Jorge already had were declared
+                  before this field existed. */}
+              <form action={updatePayoutScheduleAction} className="cobrosExpensesForm">
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="scheduleId" type="hidden" value={schedule.id} />
+                <input name="saveExpenses" type="hidden" value="1" />
+                <label>
+                  Gastos
+                  <input
+                    aria-label={`Gastos de ${schedule.label}`}
+                    defaultValue={
+                      schedule.expensesMinor == null
+                        ? ""
+                        : formatMoneyInput(schedule.expensesMinor)
+                    }
+                    inputMode="decimal"
+                    name="expenses"
+                  />
+                </label>
+                <button className="btnSmall" type="submit">
+                  Guardar gastos
+                </button>
+              </form>
+              {schedule.endISO ? (
+                <form action={updatePayoutScheduleAction}>
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="scheduleId" type="hidden" value={schedule.id} />
+                  <input name="clearEnd" type="hidden" value="1" />
+                  <button className="btnSmall" type="submit">
+                    Reactivar
+                  </button>
+                </form>
+              ) : (
+                <form action={updatePayoutScheduleAction}>
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="scheduleId" type="hidden" value={schedule.id} />
+                  <input name="endISO" type="hidden" value={today} />
+                  <button className="btnSmall" type="submit">
+                    Terminar hoy
+                  </button>
+                </form>
+              )}
+              <form action={deletePayoutScheduleAction}>
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="scheduleId" type="hidden" value={schedule.id} />
+                <button className="btnSmall btnWarning" type="submit">
+                  Eliminar
+                </button>
+              </form>
+            </div>
+          </div>
+          {/* Whether it counts and why not, what it declares and where its figure
+              comes from — the same summary the Rentas list prints (#1673). The
+              declaration is corrected there. */}
+          <IncomeDeclarationSummary income={schedule} today={today}>
+            {" · "}
+            <Link href="/objetivos/rentas">Corregir su declaración en Rentas</Link>
+          </IncomeDeclarationSummary>
+          {/* What the end date MEANS, and what happens after it (#1521). Below
+              the row rather than inside it: the sentence it prints is about the
+              rent's future, not another button. */}
+          {showLeaseTerms ? (
+            <LeaseTermsRow
+              action={updatePayoutScheduleAction}
+              currentUrl={currentUrl}
+              schedule={schedule}
+            />
+          ) : null}
         </div>
-      ) : null}
+      ))}
+    </div>
+  );
+}
 
-      <p className="cobrosHonestNote">
-        Un cobro es <strong>atribución, no contabilidad</strong>: no cambia tu patrimonio,
-        ni el valor del holding, ni ningún cierre. Si el dinero nunca se reflejó en una
-        cuenta, tu patrimonio no lo cuenta — el cobro solo explica de dónde viene.
-      </p>
-    </section>
+function CobrosHonestNote() {
+  return (
+    <p className="cobrosHonestNote">
+      Un cobro es <strong>atribución, no contabilidad</strong>: no cambia tu patrimonio,
+      ni el valor del holding, ni ningún cierre. Si el dinero nunca se reflejó en una
+      cuenta, tu patrimonio no lo cuenta — el cobro solo explica de dónde viene.
+    </p>
   );
 }

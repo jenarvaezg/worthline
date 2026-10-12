@@ -171,7 +171,42 @@ export async function clickSectionTab(
     .click();
 }
 
-/** Expand the edit page's progressive-disclosure block before using advanced forms. */
+/**
+ * Open one of the tabbed ficha's actions in its side panel (#1826): its button in
+ * the bar, or the same button inside «Más». Returns the panel, named by the action.
+ */
+export async function openFichaAction(
+  page: import("@playwright/test").Page,
+  label: string,
+) {
+  const bar = page.getByRole("group", { name: "Acciones del activo" });
+  await expect(bar).toBeVisible();
+  await waitForHydration(bar);
+  const direct = bar.getByRole("button", { exact: true, name: label });
+  if ((await direct.count()) === 0) {
+    await bar.getByRole("button", { name: "Más" }).click();
+  }
+  await bar.getByRole("button", { exact: true, name: label }).click();
+  const panel = page.getByRole("dialog", { name: label });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/** Switch the tabbed ficha to one of its tabs (#1826) — a client toggle, no reload. */
+export async function openFichaTab(page: import("@playwright/test").Page, label: string) {
+  const tabs = page.getByRole("navigation", { name: "Secciones de la ficha" });
+  await expect(tabs).toBeVisible();
+  await waitForHydration(tabs);
+  const tab = tabs.getByRole("link", { name: label });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-current", "true");
+}
+
+/**
+ * Expand the edit page's progressive-disclosure block before using advanced forms.
+ * Only the fichas that still keep «Configuración avanzada» — a property, a debt, a
+ * connected source; an investment's ficha has tabs and a side panel since #1826.
+ */
 export async function openAdvancedSettings(page: import("@playwright/test").Page) {
   const advanced = page.locator("details.editAdvanced");
   await expect(advanced).toBeVisible();

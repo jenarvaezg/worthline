@@ -9,14 +9,7 @@
  * instrument — all server-rendered via the `?group=` query param (ADR 0009).
  */
 
-import {
-  addHolding,
-  expect,
-  holdingRow,
-  openAdvancedSettings,
-  openHoldingMenu,
-  test,
-} from "./fixtures";
+import { addHolding, expect, holdingRow, openHoldingMenu, test } from "./fixtures";
 
 test("unified list: investment row is actionable (not a ghost) + grouping by direction/rung/instrument", async ({
   page,
@@ -55,7 +48,7 @@ test("unified list: investment row is actionable (not a ghost) + grouping by dir
   //    there (the derived operations surface, not a ghost dead-end).
   await invRow.getByRole("link", { name: "Editar" }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
+  // The ledger is the ficha's default tab (#1826): on show without a click.
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();

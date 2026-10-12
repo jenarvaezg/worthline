@@ -58,11 +58,13 @@ export const CAPABILITY_DESTINATIONS: CapabilityDestination[] = [
   {
     id: "rent-expenses",
     // The entry that was missing (#1524). Three things a usable answer needs and the
-    // transcript had none of: «Configuración avanzada», because the Cobros section is
-    // inside that collapsed `<details>` and an answer that omits it sends the user
-    // hunting (which is #1510, the sibling failure, seen from this side); the field's
-    // own name; and the cadence — a monthly rent with an annual IBI typed in raw
-    // would net out to nonsense.
+    // transcript had none of: «Configuración avanzada», because on a property's ficha
+    // the Cobros section is inside that collapsed `<details>` and an answer that omits
+    // it sends the user hunting (which is #1510, the sibling failure, seen from this
+    // side); the field's own name; and the cadence — a monthly rent with an annual IBI
+    // typed in raw would net out to nonsense. The investment ficha moved to tabs
+    // (#1826) and the property's has not yet (#1824): when it does, this becomes its
+    // «Cobros» tab, and `page-families.test.tsx` is what turns red to say so.
     where:
       "los gastos de un alquiler (IBI, comunidad, seguro) se declaran en la ficha del " +
       "inmueble, desplegando «Configuración avanzada» → «Cobros», campo Gastos del " +

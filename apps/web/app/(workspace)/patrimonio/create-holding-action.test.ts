@@ -1054,8 +1054,10 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(await store.operations.readOperations(meta[0]!.id)).toHaveLength(0);
 
     // Routed to the holding's edit page, where «Cargar movimientos» lives (#173),
-    // addressed by its public `wl_hld_…` id (#1318).
+    // addressed by its public `wl_hld_…` id (#1318) — with that action's panel
+    // already open (#1826).
     expect(url).toContain(`/patrimonio/${await publicIdOf(store, meta[0]!.id)}/editar`);
+    expect(url).toContain("accion=extracto");
     expect(url).toContain("ok=investment_import_ready");
   });
 

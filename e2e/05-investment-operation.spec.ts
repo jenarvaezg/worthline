@@ -11,6 +11,10 @@
  * unrealized-P/L column lived only on the removed /inversiones list; its sole
  * surface is gone, so this asserts the derived market value (units × price) that
  * the ficha now shows — re-surfacing P/L in the Patrimonio list is S8 (#154).
+ *
+ * Since #1826 the ficha is the tabbed one: the record form opens in the side panel
+ * (`?accion=operacion`), the ledger is the «Operaciones» tab under it, and the
+ * derived units and value are on the state header.
  */
 
 import {
@@ -18,7 +22,7 @@ import {
   delayServerActions,
   expect,
   holdingRow,
-  openAdvancedSettings,
+  openFichaAction,
   test,
 } from "./fixtures";
 
@@ -39,7 +43,6 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(investmentRow).toBeVisible();
   await investmentRow.getByRole("link", { name: "Fondo Test E2E" }).first().click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
 
   // 5. The ficha shows the DERIVED operations surface (units × price), not a
   //    manual value field (ADR 0006: an investment's value is never edited).
@@ -48,7 +51,10 @@ test("investment: create with manual price → buy operation → derived value v
   ).toBeVisible();
   await expect(page.getByLabel("Valor actual en EUR")).toHaveCount(0);
 
-  const operationForm = page.getByRole("form", { name: "Registrar operación" });
+  // The habitual action is one click away, in the bar of the header (#1826).
+  const panel = await openFichaAction(page, "Registrar operación");
+  await expect(page).toHaveURL(/accion=operacion/);
+  const operationForm = panel.getByRole("form", { name: "Registrar operación" });
 
   // 6. Trigger a validation error: submit with units left empty. The server
   //    rejects the empty units field and the refusal comes BACK to the form as
@@ -66,11 +72,11 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(errorBand).toBeVisible();
   await expect(errorBand).toHaveText("Las unidades son obligatorias.");
   // What the absence of a navigation buys, asserted rather than assumed: the URL
-  // is untouched (the typed amounts never ride the address bar), the advanced
-  // block the user opened is still open (nothing remounted it shut), and the
-  // typed price is still in the field it was typed into.
+  // is untouched (the typed amounts never ride the address bar), the panel the
+  // user opened is still open (nothing navigated it shut), and the typed price is
+  // still in the field it was typed into.
   await expect(page).not.toHaveURL(/error=/);
-  await expect(page.locator("details.editAdvanced")).toHaveJSProperty("open", true);
+  await expect(panel).toBeVisible();
   await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
     "105,50",
   );
@@ -88,7 +94,9 @@ test("investment: create with manual price → buy operation → derived value v
   // 8b. Recording is OPTIMISTIC (#521, interaction-patterns §4): with the Server
   //     Action held, the operation row must appear in the list BEFORE the action
   //     resolves — without a document reload (a window sentinel a full reload wipes).
-  //     Only the row is faked; the derived context (units/value) settles on redirect.
+  //     Only the row is faked; the derived header (units/value) settles on redirect.
+  //     The ledger is in the tab under the panel, a separate piece from the form
+  //     (#1826): the row crossing from one to the other is the shared book at work.
   await page.evaluate(() => {
     (window as Window & { __wlNoReload?: boolean }).__wlNoReload = true;
   });
@@ -111,15 +119,22 @@ test("investment: create with manual price → buy operation → derived value v
   //    persisted), then assert the status banner.
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
-  await openAdvancedSettings(page);
+  // The terminal lands on the bare ficha, which names no action: the panel closes
+  // by itself, and focus is back on the button that opened it (§8).
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("group", { name: "Acciones del activo" })
+      .getByRole("button", { exact: true, name: "Registrar operación" }),
+  ).toBeFocused();
 
-  // 10. The ficha's derived context now reports 10 units and the derived market
-  //     value (10 × 100 EUR manual price = 1.000 €). The manual price is 100 even
-  //     though the buy was at 105,50 — value is units × current price (ADR 0006),
-  //     not cost basis; this is the same figure the Patrimonio list shows.
-  const ctx = page.locator(".operacionContext");
-  await expect(ctx.getByText("10", { exact: true })).toBeVisible();
-  await expect(ctx.getByText(/1\.?000\s*€/)).toBeVisible();
+  // 10. The ficha's header now reports 10 units and the derived market value
+  //     (10 × 100 EUR manual price = 1.000 €). The manual price is 100 even though
+  //     the buy was at 105,50 — value is units × current price (ADR 0006), not
+  //     cost basis; this is the same figure the Patrimonio list shows.
+  const state = page.getByRole("region", { name: "Estado del activo" });
+  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
+  await expect(state.locator(".fichaValue")).toHaveText(/1\.?000\s*€/);
 
   // 11. The unified Patrimonio list shows the same derived value for the holding.
   //     Assert against the row's full text (not a positional cell) so the check

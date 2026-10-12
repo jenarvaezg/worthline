@@ -7,7 +7,8 @@
  *
  * #153 collapsed the /inversiones management section: add happens on the kept
  * /patrimonio/anadir route, and operations (record + delete) are managed on the
- * holding's own ficha (/patrimonio/[id]/editar).
+ * holding's own ficha (/patrimonio/[id]/editar) — since #1826 the record form in
+ * its side panel and the ledger in its «Operaciones» tab.
  */
 
 import {
@@ -15,7 +16,7 @@ import {
   delayServerActions,
   expect,
   holdingRow,
-  openAdvancedSettings,
+  openFichaAction,
   test,
   wholeDocument,
 } from "./fixtures";
@@ -36,22 +37,23 @@ test("record an operation, then delete it", async ({ page }) => {
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
+
+  // 3. Record a buy from the ficha's side panel.
+  const panel = await openFichaAction(page, "Registrar operación");
+  const opForm = panel.getByRole("form", { name: "Registrar operación" });
+  await opForm.getByLabel("Unidades").fill("10");
+  await opForm.getByLabel("Precio por unidad en EUR").fill("50");
+  await opForm.getByRole("button", { name: "Registrar operación" }).click();
+  await expect(page).toHaveURL(/ok=saved/);
+  await expect(page.getByRole("status")).toBeVisible();
+  // The terminal lands on the bare ficha, which names no action: the panel is gone.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // 4. The «Operaciones» tab, on show by default, lists exactly one row.
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();
-
-  // 3. Record a buy from the ficha's operations editor.
-  const opForm = page.getByRole("form", { name: "Registrar operación" });
-  await opForm.getByLabel("Unidades").fill("10");
-  await opForm.getByLabel("Precio por unidad en EUR").fill("50");
-  await page.getByRole("button", { name: "Registrar operación" }).click();
-  await expect(page).toHaveURL(/ok=saved/);
-  await expect(page.getByRole("status")).toBeVisible();
-  await openAdvancedSettings(page);
-
-  // 4. The recent-operations panel lists exactly one row.
-  const opsPanel = page.locator("details.recentOpsPanel");
+  const opsPanel = page.locator(".recentOpsPanel");
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(1);
 
@@ -68,11 +70,10 @@ test("record an operation, then delete it", async ({ page }) => {
   await opDelete.locator("summary").click();
   await opDelete.getByRole("button", { name: "Confirmar" }).click();
 
-  // «Not rendered» is a claim about the DOCUMENT, not about the screen: the
-  // panel lives inside the advanced block, which the success redirect folds shut
-  // again — so a screen-scoped count would pass even if the panel came back
+  // «Not rendered» is a claim about the DOCUMENT, not about the screen: a
+  // screen-scoped count would pass for a table that came back somewhere hidden
   // (#1351).
-  await expect(wholeDocument(page).locator("details.recentOpsPanel")).toHaveCount(0);
+  await expect(wholeDocument(page).locator(".recentOpsPanel")).toHaveCount(0);
   expect(
     await page.evaluate(
       () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
@@ -83,5 +84,6 @@ test("record an operation, then delete it", async ({ page }) => {
 
   // 6. Success banner and the operation stays gone (panel not rendered).
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
-  await expect(wholeDocument(page).locator("details.recentOpsPanel")).toHaveCount(0);
+  await expect(wholeDocument(page).locator(".recentOpsPanel")).toHaveCount(0);
+  await expect(page.getByText("Todavía no hay operaciones.")).toBeVisible();
 });

@@ -10,6 +10,10 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
  * the refactor is about: what renders, and what is NOT read to render it. Every
  * store method is a spy, so "cada familia carga solo lo que pinta" is an
  * assertion here rather than a claim in a comment.
+ *
+ * The investment family is also the first on the tabbed ficha (#1826): its block
+ * pins what that skeleton promises — the state header and its bar, the tabs, one
+ * action at a time — and that the links that already exist land where they did.
  */
 
 const ASSET_ID = "asset_fondo";
@@ -101,6 +105,16 @@ const OPERATION = {
   units: "100",
 };
 
+/** A fresh Yahoo quote: 100 participaciones at 120 € are worth 12.000 €. */
+const PRICE = {
+  assetId: ASSET_ID,
+  currency: "EUR",
+  fetchedAt: "2026-08-28T08:00:00.000Z",
+  freshnessState: "fresh",
+  price: "120.00",
+  source: "yahoo",
+};
+
 const POSITION = {
   assetId: ASSET_ID,
   averageUnitCost: "100.00",
@@ -114,6 +128,9 @@ const POSITION = {
   unrealizedPnl: { amountMinor: 2_000_00, currency: "EUR" },
   warnings: [],
 };
+
+/** The URL the island reads through `useSearchParams` — set per render. */
+const url = vi.hoisted(() => ({ search: new URLSearchParams() }));
 
 const calls = vi.hoisted(() => ({
   // Asset-side reads
@@ -209,9 +226,10 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("not found");
   },
-  redirect: (url: string) => {
-    throw new Error(`redirected to ${url}`);
+  redirect: (to: string) => {
+    throw new Error(`redirected to ${to}`);
   },
+  useSearchParams: () => url.search,
 }));
 vi.mock("@web/pending-submit", () => ({
   PendingSubmit: ({ children }: { children: ReactNode }) => (
@@ -226,13 +244,25 @@ vi.mock("@web/read-exposure-catalog", () => ({
 
 import EditarPage from "./page";
 
-async function renderedHtml(): Promise<string> {
+async function renderedHtml(searchParams: Record<string, string> = {}): Promise<string> {
+  url.search = new URLSearchParams(searchParams);
   const element = (await EditarPage({
     params: Promise.resolve({ id: PUBLIC_ID }),
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
 }
+
+/** The markup of the tab on show, the side panel, and the bar. */
+const tabBody = (html: string) =>
+  html.slice(
+    html.indexOf('class="fichaTabBody"'),
+    html.indexOf('class="fichaPanel"') >>> 0,
+  );
+const panel = (html: string) => {
+  const at = html.indexOf('class="fichaPanel"');
+  return at === -1 ? "" : html.slice(at);
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -247,35 +277,7 @@ describe("EditarPage — the investment family (#1607)", () => {
     calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
     calls.readOperations.mockResolvedValue([OPERATION]);
     calls.readPositions.mockResolvedValue([POSITION]);
-  });
-
-  test("renders every surface a market investment owns, in its own order", async () => {
-    const html = await renderedHtml();
-
-    // The ledger and everything downstream of it.
-    expect(html).toContain("Rentabilidad");
-    expect(html).toContain("<h3>Operaciones</h3>");
-    expect(html).toContain("<h3>Traspasar</h3>");
-    expect(html).toContain("<h3>Cargar movimientos</h3>");
-    expect(html).toContain("<h3>Corregir precio de un día</h3>");
-    // The per-holding provider refresh (#406) — only offered with a symbol.
-    expect(html).toContain("Actualizar precio");
-    // Cobros rides on every asset, and sits AFTER the ledger surfaces.
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(
-      html.indexOf("<h3>Operaciones</h3>"),
-    );
-    // …and the shared chrome is still around it.
-    expect(html).toContain("Lo básico");
-    expect(html).toContain("Zona de peligro");
-  });
-
-  test("the record and delete actions are still bound to this holding", async () => {
-    const html = await renderedHtml();
-
-    // Every form posts the return-here URL built from the PUBLIC id (#1318), and
-    // the delete carries the operation's own id.
-    expect(html).toContain(`value="/patrimonio/${PUBLIC_ID}/editar"`);
-    expect(html).toContain('value="op_1"');
+    calls.readPriceCache.mockResolvedValue(PRICE);
   });
 
   test("it reads no other family's rows", async () => {
@@ -292,6 +294,134 @@ describe("EditarPage — the investment family (#1607)", () => {
     expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
     // …and an investment holding cannot be a portfolio's cash casilla (ADR 0085).
     expect(calls.readCashContainerName).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditarPage — the investment ficha is a state header with tabs (#1826)", () => {
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([FUND]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readOperations.mockResolvedValue([OPERATION]);
+    calls.readPositions.mockResolvedValue([POSITION]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+  });
+
+  test("it opens on its state and its bar, and there is no «Configuración avanzada»", async () => {
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Configuración avanzada");
+    expect(html).toContain('aria-label="Estado del activo"');
+    expect(html).toContain("<h2>Fondo Azul</h2>");
+    expect(html).toContain("← Patrimonio");
+    expect(html).toContain(`href="/patrimonio#${PUBLIC_ID}"`);
+    // The value, then units at the price that valued them.
+    expect(html).toMatch(/class="fichaValue">12\.?000\s€/);
+    expect(html).toContain("100 × 120 €");
+    expect(html).toContain("Actualizar precio");
+    // The board row's figure (#551): 12.000 € against a 10.000 € cost.
+    expect(html).toContain("Ganancia total");
+    expect(html).toMatch(/2\.?000\s€ · \+20,0 %/);
+    expect(html).toContain("Rentabilidad anual");
+    expect(html).toContain(">TIR</abbr>");
+  });
+
+  test("the bar puts the habitual action first, two at hand and the rest in «Más»", async () => {
+    const html = await renderedHtml();
+    const bar = html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+
+    // The only ink-filled button is the habitual one (#1732).
+    expect(bar).toContain('class="btn" data-ficha-action="operacion"');
+    expect(bar).toContain('class="btn btnSecondary" data-ficha-action="traspaso"');
+    expect(bar).toContain('class="btn btnSecondary" data-ficha-action="cobro"');
+    expect(bar).toContain("Más");
+    // The rarer ones are behind «Más», not in the bar.
+    expect(bar).not.toContain('data-ficha-action="extracto"');
+    expect(bar).not.toContain('data-ficha-action="correccion"');
+  });
+
+  test("four tabs with their counts, and the ledger on show by default", async () => {
+    const html = await renderedHtml();
+    const tabs = html.slice(html.indexOf('aria-label="Secciones de la ficha"'));
+
+    expect(tabs).toMatch(/Operaciones<span class="fichaTabCount">1</);
+    expect(tabs).toContain("Rentabilidad");
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">0</);
+    expect(tabs).toContain('<span class="fichaTabWide">Datos del activo</span>');
+    expect(tabs).toContain('<span class="fichaTabNarrow">Datos</span>');
+    expect(html).toContain('aria-current="true" class="navTab active"');
+
+    const body = tabBody(html);
+    expect(body).toContain('id="operaciones"');
+    // The delete posts the operation and returns to this tab, by the PUBLIC id.
+    expect(body).toContain('value="op_1"');
+    expect(body).toContain(`value="/patrimonio/${PUBLIC_ID}/editar"`);
+    // No panel is open, and no form is rendered twice to be hidden by CSS.
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('aria-label="Registrar operación"');
+  });
+
+  test("«Datos del activo» holds «Lo básico», the availability and the Zona de peligro last", async () => {
+    const html = await renderedHtml({ pestaña: "datos" });
+    const body = tabBody(html);
+
+    expect(body).toContain("Lo básico");
+    expect(body.indexOf("Zona de peligro")).toBeGreaterThan(body.indexOf("Lo básico"));
+    // Its forms return to this tab, not to the ledger.
+    expect(body).toContain(`value="/patrimonio/${PUBLIC_ID}/editar?pesta%C3%B1a=datos"`);
+    expect(body).not.toContain('id="operaciones"');
+  });
+
+  test("each action opens alone in the side panel, returning to the tab its result shows on", async () => {
+    const record = panel(await renderedHtml({ accion: "operacion" }));
+    expect(record).toContain('role="dialog"');
+    expect(record).toContain('<h3 id="ficha-panel-title">Registrar operación</h3>');
+    expect(record).toContain('aria-label="Registrar operación"');
+    expect(record).toContain(`value="/patrimonio/${PUBLIC_ID}/editar"`);
+
+    const cobro = panel(await renderedHtml({ accion: "cobro" }));
+    expect(cobro).toContain("Registrar un cobro puntual");
+    expect(cobro).toContain(
+      `value="/patrimonio/${PUBLIC_ID}/editar?pesta%C3%B1a=cobros"`,
+    );
+
+    const correction = panel(await renderedHtml({ accion: "correccion" }));
+    expect(correction).toContain("<h3>Corregir precio de un día</h3>");
+    expect(correction).toContain(
+      `value="/patrimonio/${PUBLIC_ID}/editar?pesta%C3%B1a=rentabilidad"`,
+    );
+  });
+
+  test("the three ?abrir= links land where they promised", async () => {
+    // `holdingOperationsHref`: the ledger.
+    expect(tabBody(await renderedHtml({ abrir: "operaciones" }))).toContain(
+      'id="operaciones"',
+    );
+    // `holdingCobrosHref`: the Cobros tab, its `#cobros` fragment on screen.
+    const cobros = tabBody(await renderedHtml({ abrir: "cobros" }));
+    expect(cobros).toContain('id="cobros"');
+    expect(cobros).toContain("Renta pasiva");
+    // The Papelera's «Lo traspasé a…» exit (#1549): the traspaso, with its intent.
+    const traspaso = panel(await renderedHtml({ abrir: "traspaso", archivar: "1" }));
+    expect(traspaso).toContain("<h3>Traspasar</h3>");
+  });
+
+  test("a refusal reopens its form, and «Traer de otra entidad» prints it once", async () => {
+    const message = "La fecha no puede ser futura.";
+    const html = await renderedHtml({ error: message, form: "externalEntry" });
+
+    expect(panel(html)).toContain("<h3>Traer de otra entidad</h3>");
+    // Its own band only: the page band used to print it a second time.
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("the Rentabilidad tab measures what the header measures", async () => {
+    const html = await renderedHtml({ pestaña: "rentabilidad" });
+
+    // The same fold, the same 2.000 €: the panel and the header cannot disagree.
+    expect(tabBody(html)).toMatch(/2\.?000\s€/);
   });
 });
 
@@ -312,7 +442,7 @@ describe("EditarPage — the stored family (#1607)", () => {
     expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(body);
     expect(html.indexOf("<h3>Cobros</h3>")).toBeLessThan(html.indexOf("</details>"));
     // No ledger, no valuation curve, no debt model.
-    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain('id="operaciones"');
     expect(html).not.toContain("<h3>Traspasar</h3>");
     expect(html).not.toContain("<h3>Valoración del inmueble</h3>");
     expect(html).not.toContain("<h3>Modelo de deuda</h3>");
@@ -352,7 +482,20 @@ describe("EditarPage — the housing family (#1607)", () => {
     expect(html.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
       html.indexOf("<h3>Valoración del inmueble</h3>"),
     );
-    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain('id="operaciones"');
+  });
+
+  test("Cobros is still where the assistant sends a rent's expenses (#1524)", async () => {
+    const html = await renderedHtml();
+
+    // «la ficha del inmueble, desplegando «Configuración avanzada» → «Cobros»»: the
+    // property keeps the accordion until #1824 moves it to tabs, as the investment
+    // ficha moved in #1826. When it does, this and the destination change together.
+    const body = html.indexOf('<div class="editAdvancedBody">');
+    expect(body).toBeGreaterThan(-1);
+    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(body);
+    expect(html.indexOf("<h3>Cobros</h3>")).toBeLessThan(html.indexOf("</details>"));
+    expect(html).toContain("Gastos");
   });
 
   test("it reads the four housing rows and no ledger", async () => {
@@ -386,7 +529,7 @@ describe("EditarPage — the coin-collection family (#1607)", () => {
     expect(coins).toBeGreaterThan(-1);
     expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(coins);
     // A collection mirrors positions, not operations (ADR 0016): no ledger.
-    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain('id="operaciones"');
     expect(html).not.toContain("<h3>Traspasar</h3>");
   });
 
@@ -411,7 +554,7 @@ describe("EditarPage — the coin-collection family (#1607)", () => {
     const html = await renderedHtml();
 
     expect(html).toContain("Sincronizar Numista");
-    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain('id="operaciones"');
     // The identity is the source's, so nothing here offers to reclassify it.
     expect(html).not.toContain('name="instrument"');
   });
@@ -437,7 +580,7 @@ describe("EditarPage — the binance family (#1607)", () => {
     const tokens = html.indexOf("Sincronizar Binance");
     expect(tokens).toBeGreaterThan(-1);
     expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(tokens);
-    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain('id="operaciones"');
     // The back-link is the asset's OWN `connected_source_id`, not the source's
     // `asset_id` — a source materializes one asset per rung (#248), and this asset
     // is not the one the source row names. It travels on the row the page already
@@ -455,7 +598,7 @@ describe("EditarPage — the binance family (#1607)", () => {
 
     const html = await renderedHtml();
 
-    expect(html).toContain("<h3>Operaciones</h3>");
+    expect(html).toContain('id="operaciones"');
     expect(html).not.toContain("Sincronizar Binance");
   });
 });

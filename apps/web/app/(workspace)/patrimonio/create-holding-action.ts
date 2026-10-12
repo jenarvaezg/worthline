@@ -7,7 +7,7 @@ import {
 } from "@web/ensure-exposure-catalog-stubs";
 import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { formAction } from "@web/form-action";
-import { holdingDetailHref } from "@web/holding-route";
+import { holdingStatementHref } from "@web/holding-route";
 import {
   appendParam,
   errorRedirectUrl,
@@ -91,12 +91,12 @@ async function altaSuccessUrl(
 ): Promise<string> {
   const publicId = await holdingBoardAnchor(store, created.holdingId);
 
-  // «Importar extracto» routes straight to the ficha, so there the public id IS
-  // the destination; without it there is no ficha URL to send anyone to and the
-  // board is the honest landing.
+  // «Importar extracto» routes straight to the ficha, with «Cargar movimientos»
+  // open (#1826), so there the public id IS the destination; without it there is
+  // no ficha URL to send anyone to and the board is the honest landing.
   if (created.landing === "holding-ficha") {
     return successRedirectUrl(
-      publicId ? holdingDetailHref(publicId) : "/patrimonio",
+      publicId ? holdingStatementHref(publicId) : "/patrimonio",
       created.okKey,
     );
   }
