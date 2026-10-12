@@ -64,7 +64,7 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await expect(page.getByRole("status")).toHaveText("Guardado.");
 
   // 5. The state header now reports the units held and the derived value.
-  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
+  await expect(state.locator(".fichaFigures")).toContainText("10 a 100 €");
   await expect(state.locator(".fichaValue")).toHaveText(/1\.?000\s*€/); // 10 × 100
 
   // 6. Record a SELL of 4 units @ 120 from the same panel.
@@ -77,7 +77,7 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   // Waiting on the URL is no signal here: this redirect lands on the SAME
   // `?ok=saved` URL step 4 already produced. The honest signal is the settled
   // figure the server re-rendered, on the header that is always on screen.
-  await expect(state.locator(".fichaFigures")).toContainText("6 × 100 €");
+  await expect(state.locator(".fichaFigures")).toContainText("6 a 100 €");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // 7. Both operations are listed in the «Operaciones» tab.
@@ -85,15 +85,16 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await expect(opsPanel).toBeVisible();
   await expect(opsPanel.locator("tbody tr")).toHaveCount(2);
 
-  // 8. Delete the sell operation (two-step confirm in its row).
+  // 8. Delete the sell operation (its «⋯», then the two-step confirm, #1827).
   const sellRow = opsPanel.locator("tbody tr").filter({ hasText: "Venta" });
+  await sellRow.getByLabel(/^Acciones de la operación del /).click();
   await sellRow.locator("details.confirmDelete summary").click();
   await sellRow.getByRole("button", { name: "Confirmar" }).click();
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
 
   // 9. Only the buy remains; units back to 10.
   await expect(operationsRegion.locator(".recentOpsPanel tbody tr")).toHaveCount(1);
-  await expect(state.locator(".fichaFigures")).toContainText("10 × 100 €");
+  await expect(state.locator(".fichaFigures")).toContainText("10 a 100 €");
 });
 
 test("stored: a cash asset edits its current value from the detail page", async ({

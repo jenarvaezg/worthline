@@ -366,6 +366,77 @@ describe("holdingReturns", () => {
     expect(valuation.priceSource).toBe("manual");
   });
 
+  test("the valuation says where its price comes from and of when (#1828)", () => {
+    const quoted = holdingReturns({
+      assetId: "a1",
+      cachedPrice: "150",
+      cachedQuote: {
+        fetchedAt: "2026-07-04T06:00:00.000Z",
+        freshnessState: "fresh",
+        priceDate: "2026-07-03",
+        source: "finect",
+      },
+      currency,
+      instrument: "pension_plan",
+      manualPrice: "120",
+      manualPricedAt: "2026-06-01T10:00:00.000Z",
+      operations: [buy],
+      valuationDate,
+    });
+    const handSet = holdingReturns({
+      assetId: "a1",
+      cachedPrice: undefined,
+      currency,
+      instrument: "fund",
+      manualPrice: "120",
+      manualPricedAt: "2026-06-01T10:00:00.000Z",
+      operations: [buy],
+      valuationDate,
+    });
+
+    // The quote valued it, so the quote is what the header names — with the
+    // market day it closed, not the day it was fetched.
+    expect(quoted.valuation.valueMinor).toBe(1_500_00);
+    expect(quoted.valuation.priceOrigin).toEqual({
+      asOf: "2026-07-03",
+      kind: "quote",
+      provider: "finect",
+      refreshFailed: false,
+    });
+    expect(handSet.valuation.priceOrigin).toEqual({
+      asOf: "2026-06-01",
+      kind: "manual",
+      refreshFailed: false,
+    });
+  });
+
+  test("the provenance names the price and never moves a figure (#1828)", () => {
+    // The board's row passes no provenance and the ficha's header does: the gain
+    // they print must still be one figure.
+    const reads = {
+      assetId: "a1",
+      cachedPrice: "150",
+      currency,
+      instrument: "fund" as const,
+      manualPrice: "120",
+      operations: [buy],
+      valuationDate,
+    };
+    const named = holdingReturns({
+      ...reads,
+      cachedQuote: {
+        fetchedAt: "2026-07-04T06:00:00.000Z",
+        freshnessState: "fresh",
+        source: "yahoo",
+      },
+      manualPricedAt: "2026-06-01T10:00:00.000Z",
+    });
+    const bare = holdingReturns(reads);
+
+    expect(named.view).toEqual(bare.view);
+    expect(named.valuation.valueMinor).toBe(bare.valuation.valueMinor);
+  });
+
   test("the realized/unrealized split adds lines, never moves the measures", () => {
     const input = {
       assetId: "a1",

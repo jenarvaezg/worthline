@@ -23,6 +23,7 @@ import { operationKindLabel } from "@web/operation-kind-copy";
 import type { CaptureCurrency } from "@worthline/domain";
 import { BASE_CURRENCY, CAPTURE_CURRENCIES, isCaptureCurrency } from "@worthline/domain";
 import { type FormEvent, useRef, useState, useTransition } from "react";
+import { useFormSeed } from "./form-seed";
 import { useOperationsBook } from "./operations-book";
 import {
   type OperationRejection,
@@ -81,6 +82,9 @@ export function OperationRecordForm({
   today: string;
 }) {
   const { addPending } = useOperationsBook();
+  // «Añadir otra» (#1829): the date and currency of the operation just recorded,
+  // when that is what re-opened this form. A refusal's own values still win.
+  const { values: seeded } = useFormSeed();
 
   // The refusal the LAST submit handed back (#1311). It supersedes the one read
   // off the URL the moment it exists, because it is this submit's: the action no
@@ -112,7 +116,7 @@ export function OperationRecordForm({
   // Narrowed, not trusted: `operationValues` can come back off a URL, so a hand-edited
   // `v_currency=JPY` would otherwise sit in the picker with no matching option (and the
   // server would refuse the submit for a reason the form never showed).
-  const roundTripped = operationValues["currency"];
+  const roundTripped = operationValues["currency"] ?? seeded["currency"];
   const [captureCurrency, setCaptureCurrency] = useState<CaptureCurrency>(
     roundTripped !== undefined && isCaptureCurrency(roundTripped)
       ? roundTripped
@@ -228,7 +232,7 @@ export function OperationRecordForm({
           Fecha
           <input
             aria-label="Fecha de ejecución"
-            defaultValue={operationValues["executedAt"] ?? today}
+            defaultValue={operationValues["executedAt"] ?? seeded["executedAt"] ?? today}
             name="executedAt"
             type="date"
           />

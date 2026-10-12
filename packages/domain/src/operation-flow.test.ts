@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import type { InvestmentOperation } from "./investment-types";
-import { isDeclaredOpening, signedInvestedMinor } from "./operation-flow";
+import {
+  isDeclaredOpening,
+  operationAmountMinor,
+  signedInvestedMinor,
+} from "./operation-flow";
 
 function op(
   kind: InvestmentOperation["kind"],
@@ -45,6 +49,70 @@ describe("signedInvestedMinor", () => {
     const incoming = signedInvestedMinor(op("transfer_in", { transferId: "t" }), "flow");
 
     expect(out + incoming).toBe(0);
+  });
+});
+
+describe("operationAmountMinor: el importe de un apunte en el libro (#1827)", () => {
+  test("una compra cuesta participaciones × precio MÁS la comisión", () => {
+    // 5 × 106,65 € + 1 € de comisión = 534,25 €.
+    expect(
+      operationAmountMinor(
+        op("buy", { feesMinor: 100, pricePerUnit: "106.65", units: "5" }),
+      ),
+    ).toBe(53_425);
+  });
+
+  test("una venta devuelve participaciones × precio MENOS la comisión", () => {
+    // 5 × 106,65 € − 1 € = 532,25 €.
+    expect(
+      operationAmountMinor(
+        op("sell", { feesMinor: 100, pricePerUnit: "106.65", units: "5" }),
+      ),
+    ).toBe(53_225);
+  });
+
+  test("la entrada de un traspaso capitaliza su comisión, como una compra", () => {
+    // La comisión del traspaso vive en la mitad de entrada (#1393): 5 × 150 € + 2 €.
+    expect(
+      operationAmountMinor(
+        op("transfer_in", {
+          feesMinor: 200,
+          pricePerUnit: "150",
+          transferId: "t",
+          units: "5",
+        }),
+      ),
+    ).toBe(75_200);
+  });
+
+  test("la salida de un traspaso es lo que salió a su valor de ese día", () => {
+    expect(
+      operationAmountMinor(
+        op("transfer_out", { pricePerUnit: "150", transferId: "t", units: "5" }),
+      ),
+    ).toBe(75_000);
+  });
+
+  test("redondea al céntimo a la mitad hacia arriba, sin la deriva de un Number", () => {
+    // 1 × 1,005 € = 1,005 € → 1,01 €. Con Number, 1.005 × 100 = 100.49999… → 1,00 €.
+    expect(operationAmountMinor(op("buy", { pricePerUnit: "1.005", units: "1" }))).toBe(
+      101,
+    );
+    // Un VL con 20 decimales que dejó una conversión (#1467): 6 × 52,0916… = 312,55 €.
+    expect(
+      operationAmountMinor(
+        op("buy", { pricePerUnit: "52.09166666666666667", units: "6" }),
+      ),
+    ).toBe(31_255);
+  });
+
+  test("una venta que cobra más comisión de lo que ingresa no se disfraza de cobro", () => {
+    // 0,001 × 100 € = 0,10 €, menos 1 € de comisión: la venta costó 0,90 €.
+    expect(
+      operationAmountMinor(
+        op("sell", { feesMinor: 100, pricePerUnit: "100", units: "0.001" }),
+      ),
+    ).toBe(-90);
   });
 });
 

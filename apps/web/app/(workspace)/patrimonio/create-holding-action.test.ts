@@ -749,6 +749,27 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(asset?.currentValue.amountMinor).toBe(100_000);
   });
 
+  test("the hand-set price of an alta is dated by the action's clock, not the wall clock (ADR 0024)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "Fondo con precio a mano",
+        price_fund: "217,25",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const full = await store.assets.readInvestmentAssetById(meta.id);
+    expect(full?.manualPricePerUnit).toBe("217.25");
+    expect(full?.manualPricedAt).toBe(CLOCK.now());
+  });
+
   test("a blank «Fecha del saldo» keeps the opening dated today (#1395, unchanged path)", async () => {
     const store = await seedStore();
 

@@ -73,7 +73,7 @@ async function seedV71(config?: Record<string, FireScopeConfig>): Promise<Client
 
 describe("schema migration v72 (el 65 fantasma de la edad objetivo)", () => {
   test("pins the current schema version", () => {
-    expect(SCHEMA_VERSION).toBe(72);
+    expect(SCHEMA_VERSION).toBe(73);
   });
 
   test("quita el 65 de cada ámbito y conserva intacto todo lo demás", async () => {

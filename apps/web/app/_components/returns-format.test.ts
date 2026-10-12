@@ -2,7 +2,12 @@ import type { HoldingReturnsView } from "@worthline/domain";
 import { APPRECIATING_CAVEAT, MARKET_CAVEAT, money } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { formatMeasurePct, formatRatioPct, returnsTooltipLines } from "./returns-format";
+import {
+  formatMeasurePct,
+  formatRatioPct,
+  irrUnavailableReason,
+  returnsTooltipLines,
+} from "./returns-format";
 
 function marketView(overrides: Partial<HoldingReturnsView> = {}): HoldingReturnsView {
   return {
@@ -130,5 +135,23 @@ describe("una TWR ausente dice por qué (#1457)", () => {
 
   test("una TWR medida no arrastra ninguna coletilla", () => {
     expect(returnsTooltipLines(marketView())).toContain("TWR desde 31/01/2024: +7,4 %");
+  });
+});
+
+describe("una TIR ausente dice por qué (#1830)", () => {
+  test("cada motivo del motor se dice con palabras", () => {
+    expect(irrUnavailableReason("zero_time_span")).toBe(
+      "todos los movimientos son del mismo día",
+    );
+    expect(irrUnavailableReason("single_sign")).toBe(
+      "todos los movimientos van en el mismo sentido",
+    );
+    expect(irrUnavailableReason("insufficient_cashflows")).toBe(
+      "hacen falta al menos una aportación y un valor",
+    );
+    expect(irrUnavailableReason("no_convergence")).toBe(
+      "el cálculo no converge con estos movimientos",
+    );
+    expect(irrUnavailableReason(null)).toBeNull();
   });
 });

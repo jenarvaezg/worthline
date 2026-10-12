@@ -19,6 +19,7 @@
 
 import { formAction, formActionInlineError } from "@web/form-action";
 import { errorRedirectUrl, preserveFields, successRedirectUrl } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { currentUrlOf } from "@web/inversiones/return-url";
 import type { Income } from "@worthline/domain";
 import {
@@ -49,8 +50,9 @@ async function findIncome(
  * ficha it was declared on — or null for an income with no asset.
  *
  * The confirmation and the error's section follow the door: the ficha's Cobros
- * section keeps its own words («Cobro recurrente», formId `payout`), the Rentas
- * surface says «Renta» (formId `income`).
+ * entry keeps its own words («Cobro recurrente», the recurring form's own formId, so
+ * a no-JS refusal reopens that form — #1731 review), the Rentas surface says
+ * «Renta» (formId `income`).
  */
 export async function createIncomeAction(
   holdingId: string | null,
@@ -58,7 +60,7 @@ export async function createIncomeAction(
   ..._testArgs: unknown[]
 ) {
   const returnUrl = currentUrlOf(formData);
-  const formId = holdingId === null ? "income" : "payout";
+  const formId = holdingId === null ? "income" : COBRO_FORM_ID.recurring;
 
   return formActionInlineError({
     datedFact: false,

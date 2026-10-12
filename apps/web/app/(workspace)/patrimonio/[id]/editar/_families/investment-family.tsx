@@ -24,9 +24,15 @@ import { transferCounterpartByOperationId } from "@web/_components/transfer-coun
 import { currencyMark } from "@web/asistente/document-figures";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
-import { priceFreshnessLabel } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
-import { fichaTabUrl } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
+import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
+import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
+import {
+  FICHA_DATOS_TAB,
+  fichaActionUrl,
+  fichaTabUrl,
+} from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
@@ -34,11 +40,13 @@ import { SnapshotPriceCorrectionSection } from "@web/patrimonio/[id]/editar/_sur
 import { StatementUploadSection } from "@web/patrimonio/[id]/editar/_surfaces/statement-upload-section";
 import { transferDestinationOptions } from "@web/patrimonio/[id]/editar/_surfaces/transfer-form";
 import TransferSection from "@web/patrimonio/[id]/editar/_surfaces/transfer-section";
+import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
-import { detailRefreshCaption } from "@web/price-refresh";
+import { PendingSubmit } from "@web/pending-submit";
+import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { CurrencyCode, DecimalString } from "@worthline/domain";
+import type { CurrencyCode, DecimalString, HoldingWarningCode } from "@worthline/domain";
 import {
   costBasisGradeMark,
   declaredSecurityId,
@@ -48,7 +56,6 @@ import {
   formatMoneyMinorPrivacy,
   formatPrice,
   formatUnits,
-  getPriceFreshness,
   holdingReturns,
   holdingTrashImpact,
   INSTRUMENT_LABELS_ES,
@@ -71,6 +78,22 @@ import { bindInvestmentActions } from "./investment-actions";
 /** The investment's own tabs; the page appends «Datos del activo». */
 const TABS = ["operaciones", "rentabilidad", "cobros"] as const;
 
+/**
+ * Every tab the ficha ends up with, in order — the list each URL here is built
+ * against, so a link into «Datos del activo» and a form's return read the same one.
+ */
+const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
+
+/**
+ * The warning about the price itself: printed beside the price, not in the band
+ * (#1828), because what it says — nothing quotes this automatically — is about the
+ * figure right there.
+ */
+const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL" satisfies HoldingWarningCode;
+
+/** The ledger is where a sale or a traspaso past the units held gets fixed. */
+const LEDGER_FIX = { label: "Ver operaciones", tab: "operaciones" } as const;
+
 /** A unit price as the ficha prints it: the ledger's price voice, then the currency. */
 function unitPrice(price: DecimalString, currency: CurrencyCode, privacyMode: boolean) {
   const formatted = formatPrice(price);
@@ -86,11 +109,11 @@ export async function loadInvestmentSurface(
     archiveOriginAfterTransfer,
     asset,
     baseCurrency,
-    checkedAt,
     currentUrl,
     formError,
     id,
     isDemo,
+    overrides,
     payoutsPanel,
     privacyMode,
     store,
@@ -138,7 +161,6 @@ export async function loadInvestmentSurface(
       ) ?? null)
     : null;
 
-  const freshness = priceCache ? getPriceFreshness(priceCache, checkedAt) : null;
   // The cached row's price when it IS a price: a `failed` row carries "0" as the
   // marker for "no price known" (#1330), and offering that zero as the correction's
   // starting figure contradicts the cost-basis value beside it.
@@ -150,12 +172,17 @@ export async function loadInvestmentSurface(
   // it (#1826, #1422). The value and the price on the header come out of the same
   // call: an unpriced holding is valued at its cost, never a fabricated −100%
   // (#1314). The realized/unrealized split only adds lines for «Rentabilidad».
+  // Where the price comes from and of when rides the same call (#1828): the cache
+  // row's provenance and the day the hand-set price was set go IN with the prices,
+  // and the origin comes OUT with the valuation that picked one.
   const { valuation, view: returnsView } = holdingReturns({
     assetId: id,
     cachedPrice: priceCache?.price,
     currency: baseCurrency,
     instrument,
     manualPrice: investment?.manualPricePerUnit,
+    ...(priceCache ? { cachedQuote: priceCache } : {}),
+    ...(investment?.manualPricedAt ? { manualPricedAt: investment.manualPricedAt } : {}),
     operations,
     payouts: payoutsPanel.datedPayouts,
     split: {
@@ -175,6 +202,13 @@ export async function loadInvestmentSurface(
         trackedIndex: exposureProfile.trackedIndex,
       })
     : null;
+  const benchmarkCard =
+    benchmarkResult && exposureProfile?.trackedIndex ? (
+      <HoldingBenchmarkComparisonCard
+        result={benchmarkResult}
+        trackedIndex={exposureProfile.trackedIndex}
+      />
+    ) : null;
 
   // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
   // with a provider symbol AND cost-basis history offers the explicit backfill
@@ -200,7 +234,8 @@ export async function loadInvestmentSurface(
 
   const action = bindInvestmentActions(id);
   // Where each form returns: the tab its result shows on (#1826).
-  const tabUrl = (tab: (typeof TABS)[number]) => fichaTabUrl(currentUrl, TABS, tab);
+  const tabUrl = (tab: (typeof FICHA_TABS)[number]) =>
+    fichaTabUrl(currentUrl, FICHA_TABS, tab);
 
   // ── The state header ────────────────────────────────────────────────────────
   const money = (amountMinor: number) =>
@@ -208,26 +243,45 @@ export async function loadInvestmentSurface(
   const gainRatio = returnsView?.totalReturnRatio ?? null;
   const irrRate = returnsView?.irr?.rate ?? null;
   const irrTone = signClass(irrRate);
+  // The holding's active warnings, read once: whether the one about the price is
+  // active decides the notice beside it, and the page hands the same list to the
+  // band, which leaves out what this ficha prints here (#1828, #1731 review).
+  const warnings = holdingWarnings({ asset, id, operations, overrides });
+  const missingSymbol = warnings.some((warning) => warning.code === SYMBOL_WARNING);
   const figures: FichaFigure[] = [
     {
       detail: (
         <>
-          {/* Where the price comes from and how fresh it is, as the editor said it;
-              the engine's own origin and date are #1828. */}
-          {priceCache ? (
-            <small className={`priceStatus ${freshness ?? "unknown"}`}>
-              {priceFreshnessLabel(freshness)}
-            </small>
-          ) : null}
-          {priceCache && priceCache.source !== "manual" ? (
-            <small className="priceRefreshCaption">
-              {detailRefreshCaption(priceCache.fetchedAt, priceCache.source)}
-            </small>
-          ) : null}
-          {valuation.pricePerUnit === undefined ? (
-            <small className="priceRefreshCaption">
-              Sin precio: se valora a lo que costó.
-            </small>
+          {/* Where the price comes from and of when (#1828) — worded from the
+              origin the valuation handed back with the price, never inferred. */}
+          <small className="priceRefreshCaption">
+            {priceOriginCaption(valuation.priceOrigin)}
+          </small>
+          {missingSymbol ? (
+            <div className="fichaPriceNotice">
+              <span>⚠ Sin cotización automática.</span>
+              <FichaLink
+                field="providerSymbol"
+                href={tabUrl(FICHA_DATOS_TAB)}
+                tab={FICHA_DATOS_TAB}
+              >
+                Indicar símbolo
+              </FichaLink>
+              <span aria-hidden="true">·</span>
+              {/* Today's «Es intencional», by the same override: this fund is
+                  quoted by hand on purpose. Its result is the server's redirect,
+                  so it shows an honest pending and cannot be sent twice (§4) —
+                  and it comes back HERE, with its notice, not to the board. */}
+              <form action={acknowledgeWarningAction}>
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="returnTo" type="hidden" value={currentUrl} />
+                <input name="code" type="hidden" value={SYMBOL_WARNING} />
+                <input name="entityId" type="hidden" value={id} />
+                <PendingSubmit disabled={isDemo} pendingLabel="Guardando…">
+                  Cotiza a mano
+                </PendingSubmit>
+              </form>
+            </div>
           ) : null}
           {/* On-demand provider refresh for just this holding (#406) — the narrow
               counterpart to the global /patrimonio trigger. Only with a symbol. */}
@@ -248,7 +302,7 @@ export async function loadInvestmentSurface(
         <>
           {formatUnits(position?.currentUnits ?? "0")}
           {valuation.pricePerUnit !== undefined
-            ? ` × ${unitPrice(valuation.pricePerUnit, baseCurrency, privacyMode)}`
+            ? ` a ${unitPrice(valuation.pricePerUnit, baseCurrency, privacyMode)}`
             : null}
         </>
       ),
@@ -308,6 +362,8 @@ export async function loadInvestmentSurface(
           today={today}
         />
       ),
+      // A run of buys typed off one statement shares its day and its currency.
+      again: "Añadir otra",
       key: "operacion",
       label: "Registrar operación",
       tier: "primary",
@@ -354,10 +410,13 @@ export async function loadInvestmentSurface(
     });
   }
   actions.push({
+    again: "Añadir otro",
     content: payoutsPanel.entry(tabUrl("cobros")),
     key: "cobro",
     label: "Añadir cobro",
-    tier: "secondary",
+    // At hand once the holding has paid something; a fund that never has does not
+    // need the button in view, so it waits in «Más» (#1829).
+    tier: payoutsPanel.count > 0 ? "secondary" : "more",
   });
   if (hasManualLedger) {
     // «Traer de otra entidad» (#1518): the movilización that arrives at a holding
@@ -444,12 +503,22 @@ export async function loadInvestmentSurface(
         // The no-JS terminal of the record form; with JS its refusal comes back
         // as state and the panel never closed (#1311).
         operation: { action: "operacion" },
-        payout: { tab: "cobros" },
+        // The record's own controls print on the tab; an entry form's refusal
+        // reopens «Añadir cobro» over it, on the form that produced it (#1731 review).
+        [COBRO_FORM_ID.record]: { tab: "cobros" },
+        [COBRO_FORM_ID.oneOff]: { action: "cobro", tab: "cobros" },
+        [COBRO_FORM_ID.recurring]: { action: "cobro", tab: "cobros" },
         statement: { action: "extracto" },
         transfer: { action: "traspaso" },
       },
       figures,
+      inlineWarnings: [SYMBOL_WARNING],
       instrument: INSTRUMENT_LABELS_ES[instrument],
+      // What each tab lists, so the row a terminal adds is pointed at (#1829).
+      rows: {
+        ...payoutsPanel.rows,
+        operaciones: operations.map((operation) => operation.id),
+      },
       tabs: [
         {
           content: (
@@ -491,34 +560,44 @@ export async function loadInvestmentSurface(
           label: "Operaciones",
         },
         {
-          content: (
+          // «Tu dinero (TIR)» faced with «El fondo (TWR)», the index comparison on
+          // the fund's side — the TWR is what it compares (#551, ADR 0040, #1830).
+          content: returnsView ? (
+            <ReturnsPanel
+              benchmark={benchmarkCard}
+              privacyMode={privacyMode}
+              view={returnsView}
+            />
+          ) : (
             <>
-              {/* Three measures + realized/unrealized split + honest caveats
-                  (#551, ADR 0040). */}
-              {returnsView ? (
-                <ReturnsPanel privacyMode={privacyMode} view={returnsView} />
-              ) : (
-                <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
-              )}
-              {benchmarkResult && exposureProfile?.trackedIndex ? (
-                <HoldingBenchmarkComparisonCard
-                  result={benchmarkResult}
-                  trackedIndex={exposureProfile.trackedIndex}
-                />
-              ) : null}
+              <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
+              {benchmarkCard}
             </>
           ),
           key: "rentabilidad",
           label: "Rentabilidad",
         },
         {
-          content: payoutsPanel.record(tabUrl("cobros")),
+          content: payoutsPanel.record(
+            tabUrl("cobros"),
+            // With none yet, the record is one line and this is its door (#1830):
+            // the «Añadir cobro» panel, opened over the tab.
+            <FichaLink
+              action="cobro"
+              href={fichaActionUrl(currentUrl, FICHA_TABS, "cobros", "cobro")}
+              tab="cobros"
+            >
+              Añadir un cobro
+            </FichaLink>,
+          ),
           count: payoutsPanel.count,
           key: "cobros",
           label: "Cobros",
         },
       ],
       value: money(valuation.valueMinor),
+      warnings,
+      warningFixes: { OVERSELL: LEDGER_FIX, OVER_TRANSFER: LEDGER_FIX },
       // The record form and the ledger are in different places now and still one
       // list: the row being recorded shows in the tab before its action resolves.
       wrap: (ficha) => (

@@ -19,6 +19,7 @@
  */
 
 import { createIncomeAction } from "@web/_income/income-actions";
+import { isCobroFormId } from "@web/inversiones/cobro-form-ids";
 import {
   createPayoutAction,
   deletePayoutAction,
@@ -35,6 +36,7 @@ import {
   CobrosRecord,
   CobrosSection,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
+import { buildCobroRows } from "@web/patrimonio/[id]/editar/_surfaces/cobros-view";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import type { ManualAsset, WarningOverride } from "@worthline/domain";
 import { collectHoldingPayouts, isHousingAsset } from "@worthline/domain";
@@ -112,8 +114,6 @@ export async function loadPayoutsPanel(
     deletePayoutAction: boundDeletePayoutAction,
     deletePayoutScheduleAction: boundDeletePayoutScheduleAction,
     doubleCount,
-    error: formError?.formId === "payout" ? formError.message : null,
-    errorValues: formError?.formId === "payout" ? formError.values : {},
     holdingId: id,
     monthlySpendingMinor: scopeId
       ? (fireConfig?.[scopeId]?.monthlySpendingMinor ?? null)
@@ -121,6 +121,11 @@ export async function loadPayoutsPanel(
     payouts,
     privacyMode,
     readOnly: isDemo,
+    // Which Cobros form a refusal is from: each prints and refills its own.
+    refusal:
+      formError && isCobroFormId(formError.formId)
+        ? { form: formError.formId, message: formError.message, values: formError.values }
+        : null,
     schedules,
     showLeaseTerms: isHousingAsset(asset),
     today,
@@ -135,7 +140,16 @@ export async function loadPayoutsPanel(
       (row) => ({ amountMinor: row.amountMinor, date: row.dateISO }),
     ),
     entry: (returnUrl) => <CobrosEntry {...props(returnUrl)} />,
-    record: (returnUrl) => <CobrosRecord {...props(returnUrl)} />,
+    record: (returnUrl, addLink) => (
+      <CobrosRecord {...props(returnUrl)} addLink={addLink} />
+    ),
+    // The rows by the keys they render under, so a tabbed ficha can point at the one
+    // a terminal just added (#1829): the grid's, and the declarations' — a recurring
+    // cobro adds several occurrences to the grid, or none yet (#1731 review).
+    rows: {
+      cobros: buildCobroRows(payouts, schedules, today).map((row) => row.key),
+      recurrentes: schedules.map((schedule) => schedule.id),
+    },
     section: <CobrosSection {...props(currentUrl)} />,
   };
 }

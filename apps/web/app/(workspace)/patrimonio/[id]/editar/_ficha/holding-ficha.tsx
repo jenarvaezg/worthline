@@ -16,9 +16,20 @@
  *
  * The panel overlays the page without moving it, starting under the top bar while
  * the bar is on screen; on a phone it takes the whole screen. It closes with
- * «Cerrar» or Esc, and focus goes back to the control that opened it (§8).
+ * «Cerrar» or Esc, and focus goes back to the control that opened it (§8). A link
+ * anywhere on the page (`FichaLink`) can ask for a tab, a field or a panel too.
+ *
+ * Adding never needs a search (#1829). Once the action bar scrolls away, a strip
+ * keeps the habitual action at hand (`ficha-strip.tsx`). And a registration from
+ * the panel lands where its result shows (`ficha-landing.ts`): the notice beside
+ * the tabs, the row the render added marked (`FreshRowsProvider`), and «Añadir otra»
+ * re-opening the same form with its date and currency (`FormSeedProvider`).
  */
 
+import { type FormSeed, FormSeedProvider } from "@web/_components/form-seed";
+import type { RowKeys } from "@web/_components/fresh-row-keys";
+import { FreshRowsProvider } from "@web/_components/fresh-rows";
+import { OWN_LANDING_ATTRIBUTE } from "@web/form-submit-scroll";
 import type {
   FichaAction,
   FichaFigure,
@@ -36,8 +47,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { useFichaLanding } from "./ficha-landing";
+import type { FichaOpenDetail } from "./ficha-link";
 import { FichaMoreMenu } from "./ficha-more-menu";
+import { FichaStrip } from "./ficha-strip";
 import {
+  claimFichaOpen,
+  FICHA_OPEN_EVENT,
   type FichaTarget,
   type FichaView,
   type FichaViewSpec,
@@ -59,9 +75,17 @@ export interface HoldingFichaProps {
   actions: readonly FichaAction[];
   tabs: readonly FichaTab[];
   errorTargets: Readonly<Record<string, FichaTarget>>;
+  /** The success the URL reports (`?ok=`), in words — null when there is none. */
+  notice: string | null;
+  /** The keys of the rows each tab lists, to point at the ones a terminal added. */
+  rows: RowKeys;
 }
 
 const PANEL_TITLE_ID = "ficha-panel-title";
+const NOTICE_ID = "ficha-notice";
+
+/** Its forms' terminals land where the ficha says (#1829), not where the page was. */
+const OWN_LANDING = { [OWN_LANDING_ATTRIBUTE]: "" };
 
 export function HoldingFicha({
   actions,
@@ -71,6 +95,8 @@ export function HoldingFicha({
   figures,
   instrument,
   name,
+  notice,
+  rows,
   tabs,
   value,
 }: HoldingFichaProps) {
@@ -82,14 +108,27 @@ export function HoldingFicha({
     }),
     [actions, errorTargets, tabs],
   );
-  const view = readFichaView(useSearchParams(), spec);
+  const params = useSearchParams();
+  const view = readFichaView(params, spec);
   const current = actions.find((action) => action.key === view.action) ?? null;
   const activeTab = tabs.find((tab) => tab.key === view.tab) ?? tabs[0];
+  const openKey = current?.key ?? null;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
   // The control that opened the panel, so closing it can hand focus back (§8).
   const opener = useRef<HTMLElement | null>(null);
+  // What «Añadir otra» re-opens its form with, for as long as that panel is open.
+  const [seedFor, setSeedFor] = useState<{ action: string; seed: FormSeed } | null>(null);
+
+  const landing = useFichaLanding({
+    ok: params.get("ok"),
+    openAction: openKey,
+    panelRef,
+    rootRef,
+    searchKey: params.toString(),
+  });
 
   const show = useCallback(
     (change: Partial<FichaView>) => {
@@ -104,7 +143,13 @@ export function HoldingFicha({
     show({ action: key });
   }
 
-  const openKey = current?.key ?? null;
+  // Closing by hand abandons whatever the panel had sent and not yet landed: a
+  // later success elsewhere on the ficha is not that submit's.
+  const { forget } = landing;
+  const closePanel = useCallback(() => {
+    forget();
+    show({ action: null });
+  }, [forget, show]);
 
   // Focus follows the panel: into it when it opens — a deep link included — and back
   // to its opener when it closes, whether by «Cerrar», Esc, Back or a terminal that
@@ -114,6 +159,10 @@ export function HoldingFicha({
   useEffect(() => {
     const previous = shownKey.current;
     shownKey.current = openKey;
+    // A seed is for the opening «Añadir otra» made; once that panel goes, so does it.
+    if (previous !== null && openKey !== previous) {
+      setSeedFor((seeded) => (seeded?.action === previous ? null : seeded));
+    }
     if (openKey !== null && openKey !== previous) {
       panelRef.current?.focus();
       return;
@@ -135,20 +184,55 @@ export function HoldingFicha({
     if (openKey === null) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !event.defaultPrevented) {
-        show({ action: null });
+        closePanel();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openKey, show]);
+  }, [openKey, closePanel]);
+
+  // A link into the ficha (`FichaLink`) — «Indicar símbolo» beside the price, a
+  // warning's «Ver operaciones» in the band (#1828), Cobros' «Añadir un cobro»
+  // (#1830) — asks for a tab and a field, or an action: the tab switches in place
+  // and the cursor lands on the field, or the panel opens and gives focus back to
+  // the link when it closes (§8). Declared after the panel's focus effect so, when
+  // the ask also closes a panel, the field keeps the focus rather than the opener.
+  const [focusAsk, setFocusAsk] = useState<{ field: string; tab: string } | null>(null);
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const { request, trigger } = (event as CustomEvent<FichaOpenDetail>).detail;
+      const change = claimFichaOpen(request, spec);
+      if (change === null) return;
+      event.preventDefault();
+      if (change.action) opener.current = trigger;
+      setFocusAsk(
+        request.field && change.tab ? { field: request.field, tab: change.tab } : null,
+      );
+      show(change);
+    }
+    window.addEventListener(FICHA_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(FICHA_OPEN_EVENT, onOpen);
+  }, [show, spec]);
+  const activeTabKey = activeTab?.key;
+  useEffect(() => {
+    // The asked tab is not on show yet: the render that shows it runs this again.
+    if (focusAsk === null || focusAsk.tab !== activeTabKey) return;
+    setFocusAsk(null);
+    rootRef.current
+      ?.querySelector<HTMLElement>(`.fichaTabBody [name="${focusAsk.field}"]`)
+      ?.focus();
+  }, [activeTabKey, focusAsk]);
 
   const panelTop = usePanelTop(openKey !== null);
 
   const shown = actions.filter((action) => action.tier !== "more");
   const more = actions.filter((action) => action.tier === "more");
+  const again =
+    actions.find((action) => action.key === landing.againKey && action.again) ?? null;
+  const landed = landing.landed;
 
-  return (
-    <div className="ficha" ref={rootRef}>
+  const ficha = (
+    <div className="ficha" onSubmitCapture={landing.onSubmitCapture} ref={rootRef}>
       <section aria-label="Estado del activo" className="heroPanel fichaHero">
         <div className="fichaHeroTop">
           <div className="fichaIdentity">
@@ -160,7 +244,12 @@ export function HoldingFicha({
             <p className="fichaValue">{value}</p>
           </div>
 
-          <div aria-label="Acciones del activo" className="fichaActions" role="group">
+          <div
+            aria-label="Acciones del activo"
+            className="fichaActions"
+            ref={actionsRef}
+            role="group"
+          >
             {shown.map((action) => (
               <button
                 aria-expanded={action.key === openKey}
@@ -197,6 +286,35 @@ export function HoldingFicha({
           ))}
         </dl>
       </section>
+
+      {/* Beside the tabs, where the result landed. The live region is always in the
+          document — empty and out of sight until a terminal brings words — because
+          one inserted together with its text is not reliably announced (§8). Its
+          `role="status"` holds the words only, so the offer is a control and not
+          part of the announcement; the offer names it as its description. */}
+      <div
+        className={notice ? "successBand fichaNotice" : "srOnly"}
+        ref={landing.noticeRef}
+        tabIndex={notice ? -1 : undefined}
+      >
+        <p id={NOTICE_ID} role="status">
+          {notice}
+        </p>
+        {notice && again && landed ? (
+          <button
+            aria-describedby={NOTICE_ID}
+            className="btn btnSecondary fichaNoticeAgain"
+            onClick={(event) => {
+              setSeedFor({ action: again.key, seed: landed.submission.seed });
+              openAction(again.key, event.currentTarget);
+            }}
+            ref={landing.againRef}
+            type="button"
+          >
+            {again.again}
+          </button>
+        ) : null}
+      </div>
 
       <nav aria-label="Secciones de la ficha" className="fichaTabs">
         {tabs.map((tab) => {
@@ -238,6 +356,7 @@ export function HoldingFicha({
           aria-labelledby={PANEL_TITLE_ID}
           aria-modal="false"
           className="fichaPanel"
+          {...OWN_LANDING}
           ref={panelRef}
           role="dialog"
           style={{ "--ficha-panel-top": `${panelTop}px` } as CSSProperties}
@@ -245,21 +364,36 @@ export function HoldingFicha({
         >
           <header className="fichaPanelHead">
             <h3 id={PANEL_TITLE_ID}>{current.label}</h3>
-            <button
-              className="btn btnSecondary"
-              onClick={() => show({ action: null })}
-              type="button"
-            >
+            <button className="btn btnSecondary" onClick={closePanel} type="button">
               Cerrar
             </button>
           </header>
           <div className="fichaPanelBody" key={current.key}>
-            {current.content}
+            <FormSeedProvider
+              seed={seedFor?.action === current.key ? seedFor.seed : null}
+            >
+              {current.content}
+            </FormSeedProvider>
           </div>
         </section>
       ) : null}
+
+      <FichaStrip
+        actions={actions}
+        barRef={actionsRef}
+        columnRef={rootRef}
+        hidden={openKey !== null}
+        name={name}
+        onOpen={openAction}
+        openKey={openKey}
+        value={value}
+      />
     </div>
   );
+
+  // Above the whole ficha, so the rows a terminal added are known to whichever
+  // tab shows them — the «Cobros» grid mounts with the very landing (#1829).
+  return <FreshRowsProvider rows={rows}>{ficha}</FreshRowsProvider>;
 }
 
 /**

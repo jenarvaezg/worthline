@@ -25,6 +25,7 @@
  * loader carries a guard for a case it cannot be called in.
  */
 
+import type { RowKeys } from "@web/_components/fresh-row-keys";
 import type { FormErrorContext } from "@web/intake";
 import type { FichaTarget } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import type { WorthlineStore } from "@web/store";
@@ -32,12 +33,15 @@ import type { InvestmentAssetFull } from "@worthline/db";
 import type {
   CurrencyCode,
   DatedPayout,
+  DomainWarning,
   HoldingTrashImpact,
+  HoldingWarningCode,
   InvestmentOperation,
   Liability,
   ManualAsset,
   ValuationMethod,
   ValueOnlyOpening,
+  WarningOverride,
 } from "@worthline/domain";
 import type { ReactNode } from "react";
 import type { HoldingFamily } from "./holding-family";
@@ -64,6 +68,11 @@ export interface FichaContext {
   checkedAt: string;
   /** `?archivar=1`: the Papelera's «Lo traspasé a…» exit came back here (#1549). */
   archiveOriginAfterTransfer: boolean;
+  /**
+   * The «Es intencional» acknowledgements, already read for the band: a family
+   * that prints a warning beside its figure (#1828) asks the same list.
+   */
+  overrides: readonly WarningOverride[];
 }
 
 /**
@@ -74,12 +83,21 @@ export interface FichaContext {
 export interface PayoutsPanel {
   /** The whole section, for a ficha that keeps it inside «Configuración avanzada». */
   section: ReactNode;
-  /** What it paid and is declared to pay: a tabbed ficha's «Cobros» tab. */
-  record: (currentUrl: string) => ReactNode;
+  /**
+   * What it paid and is declared to pay: a tabbed ficha's «Cobros» tab. `addLink` is
+   * the door to the entry panel, printed in the one line a holding with no cobros
+   * shows instead of a block of zeros (#1830).
+   */
+  record: (currentUrl: string, addLink?: ReactNode) => ReactNode;
   /** The two entry forms: a tabbed ficha's «Añadir cobro» panel. */
   entry: (currentUrl: string) => ReactNode;
   /** How many cobros it has, one-off or recurring — the tab's count. */
   count: number;
+  /**
+   * The keys of the rows it lists — the grid's, and the declared recurring cobros' —
+   * so a tabbed ficha can point at a new one (#1829, #1731 review).
+   */
+  rows: Required<Pick<RowKeys, "cobros" | "recurrentes">>;
   /** Its payouts up to today, dated as the return engine reads them (#657). */
   datedPayouts: DatedPayout[];
 }
@@ -136,6 +154,11 @@ export interface FichaAction {
   tier: FichaActionTier;
   /** What the side panel holds while it is open — the action's form. */
   content: ReactNode;
+  /**
+   * The label of the success notice's offer to open this form again, keeping its
+   * date and currency (#1829) — «Añadir otra». Absent: the action offers none.
+   */
+  again?: string;
 }
 
 /** One tab of the tabbed ficha. */
@@ -162,6 +185,15 @@ export interface FichaFigure {
   detail?: ReactNode;
 }
 
+/** Where a warning is fixed on the ficha: a tab, and the field in it to focus (#1828). */
+export interface FichaFix {
+  tab: string;
+  /** The `name` of the field to focus once the tab is on show. */
+  field?: string;
+  /** The link's words: «Ver operaciones». */
+  label: string;
+}
+
 /** What a tabbed ficha carries — the common pieces render the rest (#1826). */
 export interface FichaLayout {
   /** The instrument, in words, under the name. */
@@ -175,6 +207,24 @@ export interface FichaLayout {
   tabs: readonly FichaTab[];
   /** By `formId`: the tab or panel whose form prints a refusal that came back. */
   errorTargets: Readonly<Record<string, FichaTarget>>;
+  /**
+   * The keys of the rows each tab lists, by list name, so the ficha can point at the
+   * one a terminal just added (#1829).
+   */
+  rows?: RowKeys;
+  /**
+   * The holding's active warnings, read ONCE (`holdingWarnings`, #1731 review): the
+   * family reads them to print its inline ones, and the page hands the same list to
+   * the band, which prints the rest.
+   */
+  warnings: readonly DomainWarning[];
+  /**
+   * The warning codes this ficha prints beside the figure they are about (#1828) —
+   * the band above the header leaves them out, so a warning is in exactly one place.
+   */
+  inlineWarnings?: readonly HoldingWarningCode[];
+  /** By warning code: where the band links for that warning to be fixed (#1828). */
+  warningFixes?: Readonly<Partial<Record<HoldingWarningCode, FichaFix>>>;
   /** Client state its tabs and panels share, wrapped around the whole ficha. */
   wrap?: (ficha: ReactNode) => ReactNode;
 }

@@ -9,8 +9,12 @@
  * normal, not absolute size) so a flat rent stays calm; each cell splits recurrent
  * (hatched) from one-off (blue). The drawer's per-occurrence controls are server
  * actions passed down as props (exclude a derived month, delete a one-off).
+ *
+ * A cobro just added is pointed at (#1829): the grid opens on its year and its
+ * month, with the new row marked in the drawer — «la fila nueva sale destacada».
  */
 
+import { useFreshRows } from "@web/_components/fresh-rows";
 import type { CurrencyCode } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import { useState } from "react";
@@ -84,6 +88,22 @@ export function CobrosGrid({
   const [year, setYear] = useState(currentYear);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
 
+  // The row the last render added (#1829) — the cobro just registered — opens its
+  // year and its month, whether the grid was already on screen or mounts with the
+  // landing. Adjusted
+  // during render (React's recipe for a changed input), not in an effect, so the
+  // drawer is open in the same paint as the row.
+  const fresh = useFreshRows("cobros");
+  const [seenFresh, setSeenFresh] = useState<ReadonlySet<string> | null>(null);
+  if (fresh !== seenFresh) {
+    setSeenFresh(fresh);
+    const landed = rows.find((row) => fresh.has(row.key));
+    if (landed) {
+      setYear(Number(landed.dateISO.slice(0, 4)));
+      setOpenMonth(landed.dateISO.slice(0, 7));
+    }
+  }
+
   const monthKeys = MONTH_ABBR.map((_, index) => `${year}-${pad2(index + 1)}`);
   // Normalise within the selected year so a flat rent-only year reads calm.
   const yearTotals = monthKeys
@@ -152,6 +172,9 @@ export function CobrosGrid({
           return (
             <button
               className="cobrosCell"
+              data-fresh-month={
+                monthRows.some((row) => fresh.has(row.key)) ? "" : undefined
+              }
               key={monthKey}
               onClick={() => setOpenMonth(openMonth === monthKey ? null : monthKey)}
               style={
@@ -199,7 +222,11 @@ export function CobrosGrid({
           </div>
           <div className="cobrosRowList">
             {openRows.map((row) => (
-              <div className="cobrosRow" key={row.key}>
+              <div
+                className="cobrosRow"
+                data-fresh={fresh.has(row.key) ? "" : undefined}
+                key={row.key}
+              >
                 <span className="cobrosRowDate">{formatDay(row.dateISO)}</span>
                 <span className="cobrosRowMeta">
                   {row.kind === "oneoff" ? (
@@ -207,6 +234,10 @@ export function CobrosGrid({
                   ) : (
                     <span className="cobrosBadge cobrosBadgeDerived">◇ {row.label}</span>
                   )}
+                  {/* Said in words too: the tint alone is not a reading. */}
+                  {fresh.has(row.key) ? (
+                    <small className="fichaFreshMark">nuevo</small>
+                  ) : null}
                 </span>
                 <span className="cobrosRowAmount">{fmt(row.amountMinor)}</span>
                 {row.kind === "derived" && row.scheduleId ? (

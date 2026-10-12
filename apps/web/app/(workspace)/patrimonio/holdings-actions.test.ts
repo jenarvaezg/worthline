@@ -449,6 +449,62 @@ describe("acknowledgeWarningAction", () => {
     store.close();
   });
 
+  test("from the board it lands on the board, on the holding's row", async () => {
+    const store = await seedHoldings();
+
+    const url = await runAction(
+      acknowledgeWarningAction,
+      form({ code: "MISSING_PRICE", entityId: "cash" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=warning_acknowledged/);
+    store.close();
+  });
+
+  test("from the ficha («Cotiza a mano») it comes back to the ficha (#1731 review)", async () => {
+    const store = await seedHoldings();
+
+    const url = await runAction(
+      acknowledgeWarningAction,
+      form({
+        code: "MISSING_PROVIDER_SYMBOL",
+        entityId: "cash",
+        returnTo: "/patrimonio/wl_hld_abc/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toBe(
+      "/patrimonio/wl_hld_abc/editar?ok=warning_acknowledged",
+    );
+    store.close();
+  });
+
+  test.each([
+    "//evil.example/robo",
+    "https://evil.example/robo",
+    "/\\evil.example",
+  ])("a return destination off the app (%s) is never followed: the board", async (returnTo) => {
+    const store = await seedHoldings();
+
+    const url = await runAction(
+      acknowledgeWarningAction,
+      form({ code: "MISSING_PRICE", entityId: "cash", returnTo }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=warning_acknowledged/);
+    expect(await overrides(store)).toContainEqual({
+      code: "MISSING_PRICE",
+      entityId: "cash",
+    });
+    store.close();
+  });
+
   test("a missing code reports an error without recording anything", async () => {
     const store = await seedHoldings();
 

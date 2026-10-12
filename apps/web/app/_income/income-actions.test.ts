@@ -221,7 +221,10 @@ describe("createIncomeAction — the same door on a holding's ficha", () => {
       ),
     );
 
-    expect(digest).toContain("form=payout");
+    // Its own form id (#1731 review): the ficha reopens «Añadir cobro» on the
+    // recurring pane, not the Cobros tab, with what was typed.
+    expect(digest).toContain("form=payoutRecurring");
+    expect(digest).toContain("v_label=Alquiler");
     expect(digest).toMatch(/de.dónde.sale.la.cifra/);
     expect(await store.payouts.readPayoutSchedulesForHolding(HOLDING)).toHaveLength(0);
   });

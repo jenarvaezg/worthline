@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 72;
+export const SCHEMA_VERSION = 73;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2369,6 +2369,24 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       }
     }
     await writeSchemaVersion(client, 72);
+  }
+
+  if (version < 73) {
+    // #1731 review: until #1828 `manual_priced_at` was written once, at the alta, and
+    // never again — so a stamp already here may be the day the holding was created
+    // rather than the day its price was typed, and the ficha prints that day beside
+    // the price. The honest ones cannot be told apart, so they all go: the header
+    // says «precio a mano» with no day until the next price change stamps one. The
+    // price itself is untouched. Its own rung, after #1812's v72, so it also runs on
+    // a database that already took that one. Tolerates a fixture without the table,
+    // as v70 does.
+    try {
+      await client.execute("UPDATE investment_assets SET manual_priced_at = NULL");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 73);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { FormSeedProvider } from "./form-seed";
 import { OperationRecordForm, RecordOperationSubmit } from "./operation-record-form";
 import { OperationsBookProvider } from "./operations-book";
 
@@ -144,5 +145,57 @@ describe("a refusal is printed beside the form that produced it", () => {
 describe("the form returns to the URL it is given (#1826)", () => {
   test("its terminal lands on the ficha it was posted from", () => {
     expect(render()).toContain('value="/patrimonio/wl_hld_1/editar"');
+  });
+});
+
+describe("«Añadir otra» re-opens it on the last one's day and currency (#1829)", () => {
+  const seeded = (overrides: Partial<ComponentProps<typeof OperationRecordForm>> = {}) =>
+    renderToStaticMarkup(
+      <OperationsBookProvider operations={[]}>
+        <FormSeedProvider
+          seed={{ values: { currency: "USD", executedAt: "2026-09-12" } }}
+        >
+          <OperationRecordForm
+            assetId="asset_1"
+            currentUrl="/patrimonio/wl_hld_1/editar"
+            defaultCurrency="EUR"
+            formError={null}
+            heldUnits="0"
+            recordAction={noop}
+            today="2026-10-12"
+            {...overrides}
+          />
+        </FormSeedProvider>
+      </OperationsBookProvider>,
+    );
+
+  test("the date and the currency are the last operation's, the figures start blank", () => {
+    const html = seeded();
+
+    expect(html).toContain('value="2026-09-12"');
+    expect(html).not.toContain('value="2026-10-12"');
+    expect(html).toContain('<option value="USD" selected="">');
+    expect(html).toContain("Precio por unidad (USD)");
+    expect(html).not.toMatch(/name="units"[^>]*value=/);
+  });
+
+  test("a refusal's own values still win over the seed", () => {
+    const html = seeded({
+      formError: {
+        formId: "operation",
+        message: "Las unidades son obligatorias.",
+        values: { currency: "GBP", executedAt: "2026-08-01" },
+      },
+    });
+
+    expect(html).toContain('value="2026-08-01"');
+    expect(html).toContain('<option value="GBP" selected="">');
+  });
+
+  test("with no seed it opens on today and the ledger's last currency, as before", () => {
+    const html = render({ defaultCurrency: "EUR" });
+
+    expect(html).toContain('value="2026-06-25"');
+    expect(html).toContain('<option value="EUR" selected="">');
   });
 });

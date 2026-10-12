@@ -24,28 +24,28 @@ import {
   resolveHoldingRoute,
 } from "@web/holding-route";
 import { parseFormError, resolveOkMessage } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadAvailabilityPanel } from "./_chrome/availability-panel";
 import { loadDangerPanel } from "./_chrome/danger-panel";
+import { holdingWarnings } from "./_chrome/holding-warnings";
 import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
 import type { FichaTarget } from "./_ficha/ficha-view";
-import { fichaTabUrl } from "./_ficha/ficha-view";
+import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
-import { prototypeVariantFor } from "./_prototype-1737/prototype-model";
-import { renderFichaPrototype } from "./_prototype-1737/render-prototype";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 
 /** The forms that render their own error band, next to the field that produced it. */
 const SECTIONS_WITH_OWN_ERROR_BAND = [
   "operation",
-  "payout",
+  ...Object.values(COBRO_FORM_ID),
   "transfer",
   TRASH_FORM_ID,
   // «Traer de otra entidad» prints its own band (#1518): without it here, its
@@ -53,14 +53,11 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
   "externalEntry",
 ];
 
-/** The tabbed ficha's chrome tab: «Lo básico», the availability, the Zona de peligro. */
-const DATOS_TAB = "datos";
-
 /** The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha. */
 const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
-  availableFrom: { tab: DATOS_TAB },
-  edit: { tab: DATOS_TAB },
-  [TRASH_FORM_ID]: { tab: DATOS_TAB },
+  availableFrom: { tab: FICHA_DATOS_TAB },
+  edit: { tab: FICHA_DATOS_TAB },
+  [TRASH_FORM_ID]: { tab: FICHA_DATOS_TAB },
 };
 
 /**
@@ -126,6 +123,7 @@ export default async function EditarPage({
     formError,
     id,
     isDemo,
+    overrides,
     privacyMode,
     store,
     today,
@@ -166,14 +164,13 @@ export default async function EditarPage({
   // On a tabbed ficha the chrome's forms live in «Datos del activo», so that is
   // where their terminals return (#1826); elsewhere, to the ficha as it was.
   const layout = surface.layout;
-  const chromeUrl =
+  const fichaTabKeys =
     layout.kind === "ficha"
-      ? fichaTabUrl(
-          currentUrl,
-          [...layout.ficha.tabs.map((tab) => tab.key), DATOS_TAB],
-          DATOS_TAB,
-        )
-      : currentUrl;
+      ? [...layout.ficha.tabs.map((tab) => tab.key), FICHA_DATOS_TAB]
+      : null;
+  const chromeUrl = fichaTabKeys
+    ? fichaTabUrl(currentUrl, fichaTabKeys, FICHA_DATOS_TAB)
+    : currentUrl;
   const chromeContext = { ...ficha, currentUrl: chromeUrl };
 
   // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
@@ -201,13 +198,34 @@ export default async function EditarPage({
     trashImpact: surface.trashImpact,
   });
 
+  // A tabbed ficha prints some warnings beside their figure and links the rest to
+  // the tab where each is fixed (#1828); the accordion keeps its band as it was.
+  const bandPlacement =
+    layout.kind === "ficha" && fichaTabKeys
+      ? {
+          exclude: layout.ficha.inlineWarnings ?? [],
+          fixes: Object.fromEntries(
+            Object.entries(layout.ficha.warningFixes ?? {}).map(([code, fix]) => [
+              code,
+              { ...fix, href: fichaTabUrl(currentUrl, fichaTabKeys, fix.tab) },
+            ]),
+          ),
+        }
+      : {};
+
+  // The holding's active warnings, read once (#1731 review): a tabbed family already
+  // read them to place its inline ones; the accordion's are read here.
+  const warnings =
+    layout.kind === "ficha"
+      ? layout.ficha.warnings
+      : holdingWarnings({ asset, id, operations: surface.operations, overrides });
+
   const warningsBand = (
     <WarningsBand
-      asset={asset}
       currentUrl={currentUrl}
       id={id}
-      operations={surface.operations}
-      overrides={overrides}
+      warnings={warnings}
+      {...bandPlacement}
     />
   );
 
@@ -245,26 +263,6 @@ export default async function EditarPage({
     </section>
   );
 
-  // PROTOTIPO #1737 — desechable: solo en desarrollo, solo inversión, solo con `?variante=`.
-  const prototypeVariant = prototypeVariantFor(resolvedSearchParams, surface.family);
-  if (prototypeVariant && assetWithPanel) {
-    return renderFichaPrototype({
-      availability: availabilityPanel,
-      basics: basicsSection,
-      boardHref,
-      ctx: {
-        ...ficha,
-        asset: assetWithPanel.row,
-        payoutsPanel: assetWithPanel.payoutsPanel,
-      },
-      danger: dangerPanel,
-      overrides,
-      searchParams: resolvedSearchParams,
-      variant: prototypeVariant,
-      warnings: warningsBand,
-    });
-  }
-
   const okBand = formOk ? (
     <p className="successBand" role="status">
       {formOk}
@@ -292,6 +290,10 @@ export default async function EditarPage({
         figures={tabbed.figures}
         instrument={tabbed.instrument}
         name={(asset ?? liability)?.name ?? ""}
+        // The success notice sits inside the ficha, beside the tabs where the result
+        // landed, and offers «Añadir otra» after a panel's submit (#1829).
+        notice={formOk}
+        rows={tabbed.rows ?? {}}
         tabs={[
           ...tabbed.tabs,
           {
@@ -304,7 +306,7 @@ export default async function EditarPage({
                 {dangerPanel}
               </div>
             ),
-            key: DATOS_TAB,
+            key: FICHA_DATOS_TAB,
             label: "Datos del activo",
             shortLabel: "Datos",
           },
@@ -314,14 +316,11 @@ export default async function EditarPage({
     );
 
     return (
-      <>
-        {okBand}
-        <section className="formPage fichaPage" aria-label="Ficha del activo">
-          {warningsBand}
-          {errorBand}
-          {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
-        </section>
-      </>
+      <section className="formPage fichaPage" aria-label="Ficha del activo">
+        {warningsBand}
+        {errorBand}
+        {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
+      </section>
     );
   }
 

@@ -6,6 +6,7 @@
  * honest attribution note. Prior art: housing-valuation-section.test.tsx.
  */
 
+import { FixedFreshRows } from "@web/_components/fresh-rows";
 import {
   formatMoneyMinorPrivacy,
   type Payout,
@@ -14,7 +15,12 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { CobrosSection } from "./cobros-section";
+import {
+  CobrosEntry,
+  type CobrosProps,
+  CobrosRecord,
+  CobrosSection,
+} from "./cobros-section";
 
 const TODAY = "2026-07-06";
 
@@ -48,6 +54,7 @@ function renderSection(
   over: {
     doubleCount?: string | null;
     monthlySpendingMinor?: number | null;
+    payouts?: Payout[];
     schedules?: PayoutSchedule[];
     showLeaseTerms?: boolean;
   } = {},
@@ -64,7 +71,7 @@ function renderSection(
       doubleCount={over.doubleCount ?? null}
       holdingId="h1"
       monthlySpendingMinor={over.monthlySpendingMinor ?? null}
-      payouts={[DIVIDEND]}
+      payouts={over.payouts ?? [DIVIDEND]}
       privacyMode={false}
       schedules={over.schedules ?? [RENT]}
       showLeaseTerms={over.showLeaseTerms ?? false}
@@ -351,5 +358,217 @@ describe("CobrosSection — el doble conteo de una renta ligada (#1675)", () => 
 
     expect(markup).not.toContain("INCOME_DOUBLE_COUNT");
     expect(markup).not.toContain("Es intencional");
+  });
+});
+
+describe("Cobros — a holding that never paid anything (#1830)", () => {
+  const EMPTY_LINE = "Este activo no ha pagado nada todavía.";
+
+  function renderRecord(over: Partial<CobrosProps> = {}) {
+    return renderToStaticMarkup(
+      <CobrosRecord
+        acknowledgeWarningAction={noop}
+        createIncomeAction={noop}
+        createPayoutAction={noop}
+        currency="EUR"
+        currentUrl="/patrimonio/h1/editar?pestaña=cobros"
+        deletePayoutAction={noop}
+        deletePayoutScheduleAction={noop}
+        doubleCount={null}
+        holdingId="h1"
+        monthlySpendingMinor={220000}
+        payouts={[]}
+        privacyMode={false}
+        schedules={[]}
+        showLeaseTerms={false}
+        today={TODAY}
+        updatePayoutScheduleAction={noop}
+        {...over}
+      />,
+    );
+  }
+
+  test("the record says so in one line, with the door to add one, instead of a block of zeros", () => {
+    const markup = renderRecord({
+      addLink: <a href="/patrimonio/h1/editar?accion=cobro">Añadir un cobro</a>,
+    });
+
+    expect(markup).toContain(EMPTY_LINE);
+    expect(markup).toContain('href="/patrimonio/h1/editar?accion=cobro"');
+    // Not the renta-pasiva strip at 0 €, nor a 0,0 % coverage of the spending, nor
+    // a year of empty months.
+    expect(markup).not.toContain("Renta pasiva");
+    expect(markup).not.toContain("de tu gasto declarado");
+    expect(markup).not.toContain("cobrosPasiva");
+    expect(markup).not.toContain("0,00 €");
+    // Still the `#cobros` fragment `holdingCobrosHref` lands on.
+    expect(markup).toContain('id="cobros"');
+  });
+
+  test("a refusal of the entry form is not the record's: it goes back to the entry (#1731 review)", () => {
+    const markup = renderRecord({
+      refusal: {
+        form: "payoutOneOff",
+        message: "Introduce un importe mayor que cero.",
+        values: { amount: "0" },
+      },
+    });
+
+    expect(markup).not.toContain("Introduce un importe mayor que cero.");
+    expect(markup).toContain(EMPTY_LINE);
+  });
+
+  test("on the accordion ficha the line stands alone: the entry forms are right below", () => {
+    const markup = renderSection({ payouts: [], schedules: [] });
+
+    expect(markup).toContain(EMPTY_LINE);
+    expect(markup).not.toContain("Renta pasiva");
+    expect(markup).toContain("Registrar un cobro puntual");
+  });
+
+  test("a declared recurring income is not «nothing»: the record keeps its strip", () => {
+    const markup = renderRecord({ schedules: [RENT] });
+
+    expect(markup).not.toContain(EMPTY_LINE);
+    expect(markup).toContain("Renta pasiva");
+    expect(markup).toContain("Alquiler piso");
+  });
+});
+
+describe("a refused cobro comes back to its own form, with what was typed (#1731 review)", () => {
+  const props: CobrosProps = {
+    acknowledgeWarningAction: noop,
+    createIncomeAction: noop,
+    createPayoutAction: noop,
+    currency: "EUR",
+    currentUrl: "/patrimonio/h1/editar?pestaña=cobros",
+    deletePayoutAction: noop,
+    deletePayoutScheduleAction: noop,
+    doubleCount: null,
+    holdingId: "h1",
+    monthlySpendingMinor: null,
+    payouts: [DIVIDEND],
+    privacyMode: false,
+    schedules: [RENT],
+    showLeaseTerms: false,
+    today: TODAY,
+    updatePayoutScheduleAction: noop,
+  };
+  const oneOffRefusal = {
+    form: "payoutOneOff",
+    message: "Introduce un importe mayor que cero.",
+    values: { amount: "0", dateISO: "2026-05-20", note: "Dividendo" },
+  } as const;
+  const recurringRefusal = {
+    form: "payoutRecurring",
+    message: "Falta de dónde sale la cifra.",
+    values: { label: "Alquiler local" },
+  } as const;
+  /** Whether the «Qué cobro» radio with `value` starts checked, whatever the attribute order. */
+  const checked = (markup: string, value: string) =>
+    (markup.match(/<input[^>]*name="cobroKind"[^>]*>/g) ?? []).some(
+      (radio) => radio.includes(`value="${value}"`) && radio.includes('checked=""'),
+    );
+
+  test("a refused one-off reopens on «Un cobro suelto», says why, and keeps the amount, the day and the note", () => {
+    const markup = renderToStaticMarkup(
+      <CobrosEntry {...props} refusal={oneOffRefusal} />,
+    );
+
+    expect(checked(markup, "suelto")).toBe(true);
+    expect(markup).toMatch(/role="alert">Introduce un importe mayor que cero\./);
+    expect(markup).toMatch(/name="amount"[^>]*value="0"|value="0"[^>]*name="amount"/);
+    expect(markup).toContain('value="2026-05-20"');
+    expect(markup).toContain('value="Dividendo"');
+  });
+
+  test("a refused recurring cobro reopens on «Uno que se repite», not on the default", () => {
+    const markup = renderToStaticMarkup(
+      <CobrosEntry {...props} refusal={recurringRefusal} />,
+    );
+
+    expect(checked(markup, "recurrente")).toBe(true);
+    expect(checked(markup, "suelto")).toBe(false);
+    expect(markup).toContain("Falta de dónde sale la cifra.");
+    expect(markup).toContain('value="Alquiler local"');
+  });
+
+  test("with no refusal the entry opens on the one-off, blank", () => {
+    const markup = renderToStaticMarkup(<CobrosEntry {...props} />);
+
+    expect(checked(markup, "suelto")).toBe(true);
+    expect(markup).not.toContain('role="alert"');
+  });
+
+  test("on the accordion the refusal prints once, at the form that produced it", () => {
+    const markup = renderToStaticMarkup(
+      <CobrosSection {...props} refusal={oneOffRefusal} />,
+    );
+
+    expect(markup.split("Introduce un importe mayor que cero.")).toHaveLength(2);
+    expect(markup).toContain('value="Dividendo"');
+  });
+
+  test("a refusal of the record's own controls prints on the record, not in the entry", () => {
+    const refusal = {
+      form: "payout",
+      message: "Los gastos tienen que ser un importe.",
+      values: {},
+    } as const;
+
+    expect(renderToStaticMarkup(<CobrosRecord {...props} refusal={refusal} />)).toContain(
+      "Los gastos tienen que ser un importe.",
+    );
+    expect(
+      renderToStaticMarkup(<CobrosEntry {...props} refusal={refusal} />),
+    ).not.toContain("Los gastos tienen que ser un importe.");
+  });
+});
+
+describe("a recurring cobro just declared is pointed at in the declared list (#1731 review)", () => {
+  // A schedule adds several occurrences to the grid, or none if it starts later, so
+  // the grid cannot single it out; the row that IS new is the declaration itself.
+  const OTHER: PayoutSchedule = { ...RENT, id: "sch-coupon", label: "Cupón" };
+
+  function renderRecord(fresh: ReadonlySet<string>) {
+    return renderToStaticMarkup(
+      <FixedFreshRows fresh={{ recurrentes: fresh }}>
+        <CobrosRecord
+          acknowledgeWarningAction={noop}
+          createIncomeAction={noop}
+          createPayoutAction={noop}
+          currency="EUR"
+          currentUrl="/patrimonio/h1/editar?pestaña=cobros"
+          deletePayoutAction={noop}
+          deletePayoutScheduleAction={noop}
+          doubleCount={null}
+          holdingId="h1"
+          monthlySpendingMinor={null}
+          payouts={[]}
+          privacyMode={false}
+          schedules={[RENT, OTHER]}
+          showLeaseTerms={false}
+          today={TODAY}
+          updatePayoutScheduleAction={noop}
+        />
+      </FixedFreshRows>,
+    );
+  }
+
+  test("the new one, and only it, is marked — in words as well as in tint", () => {
+    const markup = renderRecord(new Set(["sch-coupon"]));
+    const rows = markup.match(/<div class="cobrosSchedule"[^>]*>/g) ?? [];
+
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.includes('data-fresh=""'))).toHaveLength(1);
+    const fresh = markup.slice(markup.indexOf('data-fresh=""'));
+    expect(fresh).toMatch(/^[^]*?Cupón[^]*?<small class="fichaFreshMark">nuevo<\/small>/);
+  });
+
+  test("with nothing new, nothing is marked", () => {
+    const markup = renderRecord(new Set());
+
+    expect(markup).not.toContain("data-fresh");
+    expect(markup).not.toContain("fichaFreshMark");
   });
 });
