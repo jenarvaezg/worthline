@@ -8,8 +8,9 @@
  *   Comisión · Importe · «⋯». The importe is the domain's (`operationAmountMinor`),
  *   never a multiplication here; the figures are Iosevka tabular, right-aligned.
  * - The 10 latest on show; «Ver las N operaciones» unfolds the rest in place, a view
- *   toggle with no round trip (interaction-patterns §2). Which rows show is the pure
- *   `ledgerRowsOnShow`.
+ *   toggle with no round trip (interaction-patterns §2) mirrored in the URL as
+ *   `?libro=todas` (§3), so a delete's terminal, a reload and Back all keep it. Which
+ *   rows show is the pure `ledgerRowsOnShow`.
  * - On a phone each row reads in two lines with no sideways scroll: «12/09/2026 ·
  *   Compra» with the importe at the right, and «5 × 106,65 € · comisión 1 €» under it.
  *   It is still one `<tr>` per apunte; CSS lays it out.
@@ -22,10 +23,19 @@
  */
 
 import type { TransferRowCounterpart } from "@web/operation-kind-copy";
+import { pushMirroredUrl } from "@web/url-view-state";
+import { writeViewParam } from "@web/view-state";
 import { compareInvestmentOperations } from "@worthline/domain";
-import { type FormEvent, useId, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { type FormEvent, useId, useTransition } from "react";
 import { useOperationsBook } from "./operations-book";
-import { ledgerRowsOnShow, readLedgerRow } from "./operations-ledger-view";
+import {
+  LEDGER_VIEW_PARAM,
+  ledgerReturnUrl,
+  ledgerRowsOnShow,
+  readLedgerRow,
+  readLedgerScope,
+} from "./operations-ledger-view";
 
 /** No row is fresh unless the ficha says so. */
 const NO_FRESH_ROWS: ReadonlySet<string> = new Set();
@@ -60,8 +70,19 @@ export function OperationsLedger({
 }) {
   const { addPending, operations } = useOperationsBook();
   const [isDeleting, startDeleting] = useTransition();
-  const [expanded, setExpanded] = useState(false);
+  // Unfolded or not is the URL's (`?libro=todas`), read from it and never held beside
+  // it: a delete's terminal remounts the ledger, and it has to come back as it was.
+  const scope = readLedgerScope(useSearchParams()?.toString() ?? "");
+  const returnUrl = ledgerReturnUrl(currentUrl, scope);
   const bodyId = useId();
+
+  const toggleScope = () => {
+    const { hash, pathname, search } = window.location;
+    const next = scope === "todas" ? "recientes" : "todas";
+    pushMirroredUrl(
+      `${pathname}${writeViewParam(search, LEDGER_VIEW_PARAM, next)}${hash}`,
+    );
+  };
 
   const onDelete = (id: string) =>
     readOnly
@@ -77,7 +98,7 @@ export function OperationsLedger({
 
   const { shown, toggle } = ledgerRowsOnShow(
     [...operations].sort((a, b) => compareInvestmentOperations(b, a)),
-    expanded,
+    scope === "todas",
     (op) => freshIds.has(op.id),
   );
 
@@ -160,7 +181,7 @@ export function OperationsLedger({
                         </summary>
                         <div className="balanceMenu">
                           <form action={deleteAction} onSubmit={onDelete(op.id)}>
-                            <input name="currentUrl" type="hidden" value={currentUrl} />
+                            <input name="currentUrl" type="hidden" value={returnUrl} />
                             <input name="operationId" type="hidden" value={op.id} />
                             <details suppressHydrationWarning className="confirmDelete">
                               <summary>Eliminar</summary>
@@ -187,7 +208,7 @@ export function OperationsLedger({
               aria-controls={bodyId}
               aria-expanded={toggle.expanded}
               className="btnSecondary btnSmall opsMore"
-              onClick={() => setExpanded((open) => !open)}
+              onClick={toggleScope}
               type="button"
             >
               {toggle.label}

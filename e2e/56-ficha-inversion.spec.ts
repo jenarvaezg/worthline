@@ -249,6 +249,9 @@ test("the ledger shows the 10 latest with their importe and unfolds the rest wit
   await expect(more).toHaveAttribute("aria-expanded", "false");
   await more.click();
   await expect(rows).toHaveCount(12);
+  // The unfolded ledger is in the URL (interaction-patterns §3): shareable, and what a
+  // terminal lands back on.
+  await expect(page).toHaveURL(/libro=todas/);
   await expect(rows.last()).toContainText("01/01/2026");
   await expect(
     ledger.getByRole("button", { name: "Ver solo las 10 últimas" }),
@@ -258,4 +261,16 @@ test("the ledger shows the 10 latest with their importe and unfolds the rest wit
       () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
     ),
   ).toBe(true);
+
+  // Deleting a row past the tenth keeps the ledger where the person left it:
+  // unfolded, so the next one is still in reach.
+  const oldest = rows.filter({ hasText: "01/01/2026" });
+  await oldest.getByLabel("Acciones de la operación del 01/01/2026").click();
+  await oldest.locator("details.confirmDelete summary").click();
+  await oldest.getByRole("button", { name: "Confirmar" }).click();
+  await expect(page.getByRole("status")).toContainText("Operación eliminada");
+  await expect(rows).toHaveCount(11);
+  await expect(
+    ledger.getByRole("button", { name: "Ver solo las 10 últimas" }),
+  ).toHaveAttribute("aria-expanded", "true");
 });

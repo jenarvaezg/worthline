@@ -4,8 +4,10 @@ import { describe, expect, test } from "vitest";
 import {
   LEDGER_RECENT_LIMIT,
   type LedgerRowReading,
+  ledgerReturnUrl,
   ledgerRowsOnShow,
   readLedgerRow,
+  readLedgerScope,
 } from "./operations-ledger-view";
 
 function op(overrides: Partial<InvestmentOperation> = {}): InvestmentOperation {
@@ -153,6 +155,25 @@ describe("las 10 últimas y «Ver las N operaciones» (#1827)", () => {
 
     expect(view.shown).toHaveLength(12);
     expect(view.toggle).toEqual({ expanded: true, label: "Ver solo las 10 últimas" });
+  });
+
+  test("el libro desplegado vive en la URL, y la URL limpia es el libro plegado", () => {
+    expect(readLedgerScope("?libro=todas")).toBe("todas");
+    expect(readLedgerScope("?pesta%C3%B1a=cobros")).toBe("recientes");
+    expect(readLedgerScope("?libro=cualquiera")).toBe("recientes");
+  });
+
+  test("borrar con el libro desplegado vuelve al libro desplegado", () => {
+    // El terminal de «Eliminar» aterriza en `currentUrl`: tiene que llevar el despliegue.
+    expect(ledgerReturnUrl("/patrimonio/wl_hld_1/editar", "todas")).toBe(
+      "/patrimonio/wl_hld_1/editar?libro=todas",
+    );
+    expect(ledgerReturnUrl("/patrimonio/wl_hld_1/editar?privado=1", "todas")).toBe(
+      "/patrimonio/wl_hld_1/editar?privado=1&libro=todas",
+    );
+    expect(ledgerReturnUrl("/patrimonio/wl_hld_1/editar", "recientes")).toBe(
+      "/patrimonio/wl_hld_1/editar",
+    );
   });
 
   test("una fila recién registrada se ve aunque caiga más allá de la décima (#1829)", () => {

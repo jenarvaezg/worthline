@@ -50,8 +50,9 @@ export function isDeclaredOpening(
  * - What came IN — a buy, and the incoming half of a traspaso — cost units × price
  *   PLUS its fees, which are capitalized into it (the traspaso's commission lives on
  *   the `transfer_in`, #1393).
- * - What went OUT — a sell, and the outgoing half — brought back units × price LESS
- *   its fees, netted off the proceeds.
+ * - What went OUT — a sell — brought back units × price LESS its fees, netted off the
+ *   proceeds. The outgoing half of a traspaso is units × price: it carries no fees,
+ *   because the pair's commission has exactly one home, the `transfer_in` (ADR 0082).
  *
  * The product goes through big.js and rounds half up to the céntimo; never a `Number`
  * multiplication in a view. The direction is the kind's to say, so the figure is a

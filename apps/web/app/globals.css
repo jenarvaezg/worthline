@@ -5442,14 +5442,6 @@ p.muted {
   width: max-content;
 }
 
-/* La confirmación conserva el relleno rojo del canon (#1729): en el menú del «⋯» el
-   color de texto de `.balanceMenu` la dejaría roja sobre rojo. */
-.opsLedger .balanceMenu .confirmDelete button {
-  background: var(--red);
-  color: var(--paper-strong);
-  margin-top: 6px;
-}
-
 .opsLedger .balanceMenu .opCaptureNote {
   max-width: 24ch;
   padding: 0 10px;
@@ -6484,8 +6476,12 @@ p.muted {
   display: none;
 }
 
-.balanceMenu .confirmDelete button {
-  color: var(--red);
+/* La confirmación conserva el relleno rojo del canon (#1729) también en el menú, y
+   gana al fondo neutro de `.balanceMenu button` incluso en hover. Con texto rojo se
+   leía rojo sobre rojo (#1827). */
+.balanceMenu .confirmDelete:not(.confirmReversible) button {
+  background: var(--red);
+  color: var(--paper-strong);
 }
 
 /* Reconciliation footer: Activos − Pasivos = Patrimonio neto. A standard light card

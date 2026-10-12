@@ -15,6 +15,7 @@ import {
   type TransferRowCounterpart,
   transferRowNote,
 } from "@web/operation-kind-copy";
+import { readViewParam, type ViewParamSpec, writeViewParam } from "@web/view-state";
 import {
   formatUnits,
   type InvestmentOperation,
@@ -29,6 +30,37 @@ import {
 
 /** How many apuntes the ledger shows before «Ver las N operaciones». */
 export const LEDGER_RECENT_LIMIT = 10;
+
+/** The ledger folded to its latest rows, or unfolded. */
+export type LedgerScope = "recientes" | "todas";
+
+/**
+ * Whether the ledger is unfolded lives in the URL (`?libro=todas`, interaction-patterns
+ * §3), not beside it: the delete's terminal redirects and remounts the ledger (§4.1), so
+ * a fold held in component state snapped shut after every delete — exactly when the
+ * person was working through the older rows. The folded ledger is the clean URL.
+ */
+export const LEDGER_VIEW_PARAM: ViewParamSpec<LedgerScope> = {
+  allowed: ["recientes", "todas"],
+  fallback: "recientes",
+  key: "libro",
+};
+
+/** The scope a query string (`"?a=b"` or `"a=b"`) asks for. */
+export function readLedgerScope(search: string): LedgerScope {
+  return readViewParam(search, LEDGER_VIEW_PARAM);
+}
+
+/**
+ * The `currentUrl` a row's delete posts: the ficha it came from, carrying the scope,
+ * so its terminal lands on the ledger as the person left it. Every other param stays.
+ */
+export function ledgerReturnUrl(currentUrl: string, scope: LedgerScope): string {
+  const queryAt = currentUrl.indexOf("?");
+  const path = queryAt === -1 ? currentUrl : currentUrl.slice(0, queryAt);
+  const search = queryAt === -1 ? "" : currentUrl.slice(queryAt);
+  return `${path}${writeViewParam(search, LEDGER_VIEW_PARAM, scope)}`;
+}
 
 /** One ledger row, every figure already in the words the screen prints. */
 export interface LedgerRowReading {
@@ -55,10 +87,12 @@ export interface LedgerRowReading {
  * The importe of a row, or null when its figures are not numbers yet.
  *
  * A settled row holds canonical decimals; the optimistic one the record form adds
- * before its action resolves holds what was TYPED («105,50»). Both go through the same
- * es-ES normalization the server's parser applies, so the optimistic row shows the
- * importe the server is about to write — in the currency it was typed in, which the
- * money formatter names, so dollars never pass for euros (#1401).
+ * before its action resolves holds what was TYPED («105,50»). Both go through the
+ * es-ES normalization the server's operation parser applies (comma decimals, dots as
+ * thousands only beside a comma), so the optimistic row shows the importe the server
+ * is about to write — in the currency it was typed in, which the money formatter
+ * names, so dollars never pass for euros (#1401). A negative or unreadable figure is
+ * one the server refuses: no importe, rather than an invented one.
  */
 function readAmount(operation: InvestmentOperation, privacyMode: boolean): string | null {
   const units = normalizeNonNegativeDecimalString(operation.units);
