@@ -1,0 +1,35 @@
+/**
+ * Which rows a render brought that the previous one did not (#1829).
+ *
+ * After registering something, the ficha lands on the tab where it shows and points
+ * at the row it added. The row is found by the data, not by the form: whatever key
+ * the server lists now and did not list on the previous render is new — the
+ * operation a buy wrote, the half of a traspaso this ledger keeps, every row a
+ * statement loaded. A delete, a price refresh or a «Lo básico» save
+ * brings none, so the mark clears on the next render that adds nothing.
+ *
+ * Pure (interaction-patterns §7): the client provider keeps the previous render's
+ * keys and asks this; the rule is the test.
+ */
+
+/** Each list the ficha shows, by name, as the keys of its rows. */
+export type RowKeys = Readonly<Record<string, readonly string[]>>;
+
+/** Each list's fresh keys — empty when the render added nothing to it. */
+export type FreshRows = Readonly<Record<string, ReadonlySet<string>>>;
+
+/**
+ * The keys of `after` that `before` did not hold, list by list. A list `before` did
+ * not carry has nothing to compare against, so none of its rows is fresh — the
+ * first render of a list would otherwise mark all of it.
+ */
+export function freshRowKeys(before: RowKeys, after: RowKeys): FreshRows {
+  return Object.fromEntries(
+    Object.entries(after).map(([list, keys]) => {
+      const previous = before[list];
+      if (previous === undefined) return [list, new Set<string>()];
+      const known = new Set(previous);
+      return [list, new Set(keys.filter((key) => !known.has(key)))];
+    }),
+  );
+}

@@ -80,6 +80,8 @@ export interface PayoutsPanel {
   entry: (currentUrl: string) => ReactNode;
   /** How many cobros it has, one-off or recurring — the tab's count. */
   count: number;
+  /** The keys of the rows its grid lists, so a tabbed ficha can point at a new one (#1829). */
+  rowKeys: readonly string[];
   /** Its payouts up to today, dated as the return engine reads them (#657). */
   datedPayouts: DatedPayout[];
 }
@@ -136,6 +138,11 @@ export interface FichaAction {
   tier: FichaActionTier;
   /** What the side panel holds while it is open — the action's form. */
   content: ReactNode;
+  /**
+   * The label of the success notice's offer to open this form again, keeping its
+   * date and currency (#1829) — «Añadir otra». Absent: the action offers none.
+   */
+  again?: string;
 }
 
 /** One tab of the tabbed ficha. */
@@ -175,6 +182,11 @@ export interface FichaLayout {
   tabs: readonly FichaTab[];
   /** By `formId`: the tab or panel whose form prints a refusal that came back. */
   errorTargets: Readonly<Record<string, FichaTarget>>;
+  /**
+   * The keys of the rows each tab lists, by list name (`operaciones`, `cobros`), so
+   * the ficha can point at the ones a terminal just added (#1829).
+   */
+  rows?: Readonly<Record<string, readonly string[]>>;
   /** Client state its tabs and panels share, wrapped around the whole ficha. */
   wrap?: (ficha: ReactNode) => ReactNode;
 }

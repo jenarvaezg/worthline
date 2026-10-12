@@ -25,6 +25,7 @@ import {
   isTransferKind,
 } from "@worthline/domain";
 import { type FormEvent, useTransition } from "react";
+import { useFreshRows } from "./fresh-rows";
 import { readOperationFees, readOperationPrice } from "./operation-capture-reading";
 import { useOperationsBook } from "./operations-book";
 
@@ -51,6 +52,8 @@ export function OperationsLedger({
   transferCounterparts?: Record<string, TransferRowCounterpart>;
 }) {
   const { addPending, operations } = useOperationsBook();
+  // The row a terminal just added, pointed at (#1829): «la fila nueva sale destacada».
+  const fresh = useFreshRows("operaciones");
   const [isDeleting, startDeleting] = useTransition();
 
   const onDelete = (id: string) =>
@@ -115,10 +118,14 @@ export function OperationsLedger({
                   });
 
                   return (
-                    <tr key={op.id}>
+                    <tr data-fresh={fresh.has(op.id) ? "" : undefined} key={op.id}>
                       <td>{formatIsoDayEs(op.executedAt)}</td>
                       <td>
                         {operationKindLabel(op.kind)}
+                        {/* Said in words too: the tint alone is not a reading. */}
+                        {fresh.has(op.id) ? (
+                          <small className="fichaFreshMark">nueva</small>
+                        ) : null}
                         {transferNote ? (
                           <small className="opCaptureNote">{transferNote}</small>
                         ) : null}

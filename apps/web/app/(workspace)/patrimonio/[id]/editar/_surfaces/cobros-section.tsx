@@ -13,6 +13,7 @@
  * monthly-spending figure; otherwise it is omitted rather than invented.
  */
 
+import { SeededChoice, SeededInput } from "@web/_components/form-seed";
 import { IncomeDeclarationForm } from "@web/_income/income-declaration-form";
 import { IncomeDeclarationSummary } from "@web/_income/income-declaration-summary";
 import { PAYOUT_CADENCE_LABELS } from "@web/_income/income-recurrence";
@@ -144,16 +145,40 @@ export function CobrosRecord(props: CobrosProps) {
   );
 }
 
+/** The two kinds of cobro the «Añadir cobro» panel asks between (#1829). */
+const COBRO_KIND = "cobroKind";
+
 /**
  * The entry half (#1826): the two ways to add one — a one-off payment or a
  * recurring income — for the ficha's «Añadir cobro» panel.
+ *
+ * It asks first which one (#1829) and shows only that form: the two used to stand
+ * one after the other, some 1.000 px of fields for a dividend that needs three. The
+ * choice is a `.segmented` of radios whose pane shows through CSS (`:has()`), so it
+ * switches without a round-trip and works without JavaScript; it starts on the
+ * one-off — a fund's habitual cobro is a dividend — unless «Añadir otro» re-opened
+ * the panel on the recurring one. Each pane names its variant (`data-seed-choice`,
+ * `SEED_CHOICE_ATTRIBUTE`), which is how the ficha tells which one was sent.
  */
 export function CobrosEntry(props: CobrosProps) {
   return (
-    <section className="cobros" aria-label="Añadir cobro">
+    <section className="cobros cobroKindChoice" aria-label="Añadir cobro">
       <CobrosIntro />
-      <CobrosOneOffForm {...props} />
-      <CobrosRecurringForm {...props} />
+      <fieldset className="segmented cobroKind">
+        <legend className="srOnly">Qué cobro quieres añadir</legend>
+        <SeededChoice defaultChoice="suelto" name={COBRO_KIND} value="suelto">
+          Un cobro suelto
+        </SeededChoice>
+        <SeededChoice defaultChoice="suelto" name={COBRO_KIND} value="recurrente">
+          Uno que se repite
+        </SeededChoice>
+      </fieldset>
+      <div className="cobroKindPane" data-seed-choice="suelto">
+        <CobrosOneOffForm {...props} />
+      </div>
+      <div className="cobroKindPane" data-seed-choice="recurrente">
+        <CobrosRecurringForm {...props} />
+      </div>
     </section>
   );
 }
@@ -305,7 +330,8 @@ function CobrosOneOffForm({ createPayoutAction, currentUrl, today }: CobrosProps
         </label>
         <label>
           Fecha
-          <input defaultValue={today} name="dateISO" type="date" />
+          {/* «Añadir otro» re-opens it on the day of the cobro just added (#1829). */}
+          <SeededInput fallback={today} name="dateISO" type="date" />
         </label>
         <label>
           Nota

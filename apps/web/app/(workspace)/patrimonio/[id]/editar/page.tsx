@@ -292,6 +292,10 @@ export default async function EditarPage({
         figures={tabbed.figures}
         instrument={tabbed.instrument}
         name={(asset ?? liability)?.name ?? ""}
+        // The success notice sits inside the ficha, beside the tabs where the result
+        // landed, and offers «Añadir otra» after a panel's submit (#1829).
+        notice={formOk}
+        rows={tabbed.rows ?? {}}
         tabs={[
           ...tabbed.tabs,
           {
@@ -314,14 +318,11 @@ export default async function EditarPage({
     );
 
     return (
-      <>
-        {okBand}
-        <section className="formPage fichaPage" aria-label="Ficha del activo">
-          {warningsBand}
-          {errorBand}
-          {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
-        </section>
-      </>
+      <section className="formPage fichaPage" aria-label="Ficha del activo">
+        {warningsBand}
+        {errorBand}
+        {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
+      </section>
     );
   }
 

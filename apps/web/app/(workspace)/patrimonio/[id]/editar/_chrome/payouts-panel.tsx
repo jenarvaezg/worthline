@@ -35,6 +35,7 @@ import {
   CobrosRecord,
   CobrosSection,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
+import { buildCobroRows } from "@web/patrimonio/[id]/editar/_surfaces/cobros-view";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import type { ManualAsset, WarningOverride } from "@worthline/domain";
 import { collectHoldingPayouts, isHousingAsset } from "@worthline/domain";
@@ -136,6 +137,9 @@ export async function loadPayoutsPanel(
     ),
     entry: (returnUrl) => <CobrosEntry {...props(returnUrl)} />,
     record: (returnUrl) => <CobrosRecord {...props(returnUrl)} />,
+    // The grid's rows by the keys it renders them under, so a tabbed ficha can point
+    // at the one a terminal just added (#1829).
+    rowKeys: buildCobroRows(payouts, schedules, today).map((row) => row.key),
     section: <CobrosSection {...props(currentUrl)} />,
   };
 }

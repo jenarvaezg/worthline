@@ -308,6 +308,8 @@ export async function loadInvestmentSurface(
           today={today}
         />
       ),
+      // A run of buys typed off one statement shares its day and its currency.
+      again: "Añadir otra",
       key: "operacion",
       label: "Registrar operación",
       tier: "primary",
@@ -354,10 +356,13 @@ export async function loadInvestmentSurface(
     });
   }
   actions.push({
+    again: "Añadir otro",
     content: payoutsPanel.entry(tabUrl("cobros")),
     key: "cobro",
     label: "Añadir cobro",
-    tier: "secondary",
+    // At hand once the holding has paid something; a fund that never has does not
+    // need the button in view, so it waits in «Más» (#1829).
+    tier: payoutsPanel.count > 0 ? "secondary" : "more",
   });
   if (hasManualLedger) {
     // «Traer de otra entidad» (#1518): the movilización that arrives at a holding
@@ -450,6 +455,11 @@ export async function loadInvestmentSurface(
       },
       figures,
       instrument: INSTRUMENT_LABELS_ES[instrument],
+      // What each tab lists, so the row a terminal adds is pointed at (#1829).
+      rows: {
+        cobros: payoutsPanel.rowKeys,
+        operaciones: operations.map((operation) => operation.id),
+      },
       tabs: [
         {
           content: (

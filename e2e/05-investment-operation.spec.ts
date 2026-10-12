@@ -120,13 +120,11 @@ test("investment: create with manual price → buy operation → derived value v
   await expect(page).toHaveURL(/ok=saved/);
   await expect(page.getByRole("status")).toHaveText("Guardado.");
   // The terminal lands on the bare ficha, which names no action: the panel closes
-  // by itself, and focus is back on the button that opened it (§8).
+  // by itself. Focus goes where the next step is (§8, #1829): the notice's «Añadir
+  // otra», which re-opens the form on the same day — no longer the bar's button,
+  // which only gets it back when the panel is closed by hand (journey 56).
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(
-    page
-      .getByRole("group", { name: "Acciones del activo" })
-      .getByRole("button", { exact: true, name: "Registrar operación" }),
-  ).toBeFocused();
+  await expect(page.getByRole("button", { name: "Añadir otra" })).toBeFocused();
 
   // 10. The ficha's header now reports 10 units and the derived market value
   //     (10 × 100 EUR manual price = 1.000 €). The manual price is 100 even though

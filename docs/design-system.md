@@ -121,6 +121,14 @@ Su cabecera de estado (`.fichaHero`) es la `.heroPanel` de la página —la úni
 destacada—; las pestañas son `.navTab` con el recuento en gris, y la acción cuyo panel
 está abierto se marca con contorno de tinta, nunca con el azul del foco.
 
+Cuando la barra de acciones sale de la pantalla (#1829), la ficha conserva su acción
+habitual en una franja fija (`.fichaStrip`): en escritorio es su cabecera condensada
+—nombre, valor, el primario y «Más»— sobre su misma columna y bajo el riel de ámbitos,
+cerrada por regla gruesa y sin sombra; en el teléfono es un solo botón abajo, a la
+izquierda del lanzador del asistente y a su altura. Se aparta mientras hay un panel
+abierto. La fila que un registro acaba de añadir lleva el tinte del aviso de éxito y la
+palabra «nueva» (`.fichaFreshMark`): el tinte solo no es una lectura.
+
 Dentro de una propuesta, elegir el destino de una fila (#1373) no es un commit: son
 alternativas, y llevan `.assistantRowChoice` —radios nativos con marca de selección
 de regla lateral y hoja fuerte, el registro de los chips de selección de holding—
