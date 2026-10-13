@@ -7581,6 +7581,11 @@ td.rowActions > * {
   font-weight: 600;
 }
 
+/* A header value that is a word — a rung, «Caja» — not a figure (#1846, canon §3). */
+.fichaFigureText {
+  font-family: var(--font-body);
+}
+
 .fichaFigureDetail {
   display: grid;
   gap: 4px;

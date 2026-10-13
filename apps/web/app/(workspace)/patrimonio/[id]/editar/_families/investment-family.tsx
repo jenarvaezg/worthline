@@ -24,13 +24,11 @@ import { transferCounterpartByOperationId } from "@web/_components/transfer-coun
 import { currencyMark } from "@web/asistente/document-figures";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
-import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
 import {
   FICHA_DATOS_TAB,
-  fichaActionUrl,
   fichaTabUrl,
 } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
@@ -73,10 +71,11 @@ import type {
   HoldingSurface,
 } from "./family-contract";
 import { holdingSurface } from "./family-contract";
+import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { bindInvestmentActions } from "./investment-actions";
 
 /** The investment's own tabs; the page appends «Datos del activo». */
-const TABS = ["operaciones", "rentabilidad", "cobros"] as const;
+const TABS = ["operaciones", "rentabilidad", COBROS_TAB] as const;
 
 /**
  * Every tab the ficha ends up with, in order — the list each URL here is built
@@ -409,15 +408,10 @@ export async function loadInvestmentSurface(
       tier: "secondary",
     });
   }
-  actions.push({
-    again: "Añadir otro",
-    content: payoutsPanel.entry(tabUrl("cobros")),
-    key: "cobro",
-    label: "Añadir cobro",
-    // At hand once the holding has paid something; a fund that never has does not
-    // need the button in view, so it waits in «Más» (#1829).
-    tier: payoutsPanel.count > 0 ? "secondary" : "more",
-  });
+  // Cobros: its tab, its action and where its refusals land, as every asset ficha
+  // places them (#1846).
+  const cobros = fichaCobros({ currentUrl, payoutsPanel, tabs: FICHA_TABS });
+  actions.push(cobros.action);
   if (hasManualLedger) {
     // «Traer de otra entidad» (#1518): the movilización that arrives at a holding
     // this book ALREADY keeps. Gated on the same manual ledger as «Traspasar» — a
@@ -503,11 +497,7 @@ export async function loadInvestmentSurface(
         // The no-JS terminal of the record form; with JS its refusal comes back
         // as state and the panel never closed (#1311).
         operation: { action: "operacion" },
-        // The record's own controls print on the tab; an entry form's refusal
-        // reopens «Añadir cobro» over it, on the form that produced it (#1731 review).
-        [COBRO_FORM_ID.record]: { tab: "cobros" },
-        [COBRO_FORM_ID.oneOff]: { action: "cobro", tab: "cobros" },
-        [COBRO_FORM_ID.recurring]: { action: "cobro", tab: "cobros" },
+        ...cobros.errorTargets,
         statement: { action: "extracto" },
         transfer: { action: "traspaso" },
       },
@@ -577,23 +567,7 @@ export async function loadInvestmentSurface(
           key: "rentabilidad",
           label: "Rentabilidad",
         },
-        {
-          content: payoutsPanel.record(
-            tabUrl("cobros"),
-            // With none yet, the record is one line and this is its door (#1830):
-            // the «Añadir cobro» panel, opened over the tab.
-            <FichaLink
-              action="cobro"
-              href={fichaActionUrl(currentUrl, FICHA_TABS, "cobros", "cobro")}
-              tab="cobros"
-            >
-              Añadir un cobro
-            </FichaLink>,
-          ),
-          count: payoutsPanel.count,
-          key: "cobros",
-          label: "Cobros",
-        },
+        cobros.tab,
       ],
       value: money(valuation.valueMinor),
       warnings,

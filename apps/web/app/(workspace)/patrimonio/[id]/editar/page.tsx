@@ -27,6 +27,7 @@ import { parseFormError, resolveOkMessage } from "@web/intake";
 import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
+import { VALUE_FORM_ID } from "@web/patrimonio/action-helpers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadAvailabilityPanel } from "./_chrome/availability-panel";
@@ -51,13 +52,20 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
   // «Traer de otra entidad» prints its own band (#1518): without it here, its
   // refusal was printed twice.
   "externalEntry",
+  // «Actualizar valor» prints its own, in «Lo básico» or in the panel (#1846).
+  VALUE_FORM_ID,
 ];
 
-/** The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha. */
+/**
+ * The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha.
+ * A family that moved one of them out says so in its own targets, which win: the
+ * value form is in «Lo básico» unless the family's bar offers it (#1846).
+ */
 const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
   availableFrom: { tab: FICHA_DATOS_TAB },
   edit: { tab: FICHA_DATOS_TAB },
   [TRASH_FORM_ID]: { tab: FICHA_DATOS_TAB },
+  [VALUE_FORM_ID]: { tab: FICHA_DATOS_TAB },
 };
 
 /**
@@ -242,8 +250,10 @@ export default async function EditarPage({
           isCoinCollection={surface.basics.isCoinCollection}
           members={activeMembers}
           method={surface.basics.method}
+          formError={formError}
           privacyMode={privacyMode}
           scopeMemberId={ownershipScopeMemberId}
+          showValueForm={surface.basics.showValueForm}
           updateInvestmentAction={boundUpdateInvestmentAction}
           valueOnlyOpening={surface.basics.valueOnlyOpening}
           values={formError?.formId === "edit" ? formError.values : {}}
@@ -286,7 +296,7 @@ export default async function EditarPage({
         actions={tabbed.actions}
         basePath={currentUrl}
         boardHref={boardHref}
-        errorTargets={{ ...tabbed.errorTargets, ...CHROME_ERROR_TARGETS }}
+        errorTargets={{ ...CHROME_ERROR_TARGETS, ...tabbed.errorTargets }}
         figures={tabbed.figures}
         instrument={tabbed.instrument}
         name={(asset ?? liability)?.name ?? ""}

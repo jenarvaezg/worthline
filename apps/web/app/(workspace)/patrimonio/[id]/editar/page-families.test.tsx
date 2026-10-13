@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 /**
  * The ficha picks ONE surface family and loads only that family's rows (#1607).
@@ -77,10 +77,20 @@ const CASH = {
   id: ASSET_ID,
   instrument: "current_account",
   isPrimaryResidence: false,
-  liquidityTier: "liquid",
+  liquidityTier: "cash",
   name: "Cuenta nómina",
   ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
   type: "cash",
+};
+
+/** A term deposit: stored like the account, but locked until a date (ADR 0013). */
+const DEPOSIT = {
+  ...CASH,
+  currentValue: { amountMinor: 20_000_00, currency: "EUR" },
+  instrument: "term_deposit",
+  liquidityTier: "term-locked",
+  name: "Depósito 12 meses",
+  type: "manual",
 };
 
 /** The investment row behind the fund: what «Lo básico» edits and the price surfaces need. */
@@ -137,6 +147,8 @@ const calls = vi.hoisted(() => ({
   readAcquisitionCostMinor: vi.fn(async (): Promise<number | null> => null),
   readAnnualAppreciationRate: vi.fn(async (): Promise<string | null> => null),
   readAssets: vi.fn(async (): Promise<unknown[]> => []),
+  readAvailableFrom: vi.fn(async (): Promise<string | null> => null),
+  readContributionLots: vi.fn(async (): Promise<unknown[]> => []),
   readInvestmentAssetById: vi.fn(async (): Promise<unknown> => null),
   readValuationAnchors: vi.fn(async (): Promise<unknown[]> => []),
   readValuationCadence: vi.fn(async (): Promise<string | null> => null),
@@ -153,6 +165,9 @@ const calls = vi.hoisted(() => ({
   // Liability-side reads — never touched by an asset ficha
   readDebtModel: vi.fn(async (): Promise<string | null> => null),
   readLiabilities: vi.fn(async (): Promise<unknown[]> => []),
+  // A hand-set value's freshness: the audit history and the creation day (#1846)
+  readAssetCreatedAtById: vi.fn(async () => new Map<string, string>()),
+  readManualValueHistory: vi.fn(async () => new Map<string, unknown[]>()),
   // Shared chrome
   readCashContainerName: vi.fn(async (): Promise<string | null> => null),
   readFireConfig: vi.fn(async (): Promise<Record<string, unknown>> => ({})),
@@ -174,11 +189,17 @@ vi.mock("@web/page-shell", () => ({
       scopes,
       selectedScope: scopes[0],
       store: {
-        agentView: { readPublicIds: calls.readPublicIds },
+        agentView: {
+          readAssetCreatedAtById: calls.readAssetCreatedAtById,
+          readManualValueHistory: calls.readManualValueHistory,
+          readPublicIds: calls.readPublicIds,
+        },
         assets: {
           readAcquisitionCostMinor: calls.readAcquisitionCostMinor,
           readAnnualAppreciationRate: calls.readAnnualAppreciationRate,
           readAssets: calls.readAssets,
+          readAvailableFrom: calls.readAvailableFrom,
+          readContributionLots: calls.readContributionLots,
           readInvestmentAssetById: calls.readInvestmentAssetById,
           readValuationAnchors: calls.readValuationAnchors,
           readValuationCadence: calls.readValuationCadence,
@@ -648,43 +669,186 @@ describe("EditarPage — the investment header says where its price comes from (
   });
 });
 
-describe("EditarPage — the stored family (#1607)", () => {
+describe("EditarPage — the stored ficha is a state header with tabs (#1846)", () => {
+  const FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
+  const bar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const figures = (html: string) =>
+    html.slice(html.indexOf('class="fichaFigures"'), html.indexOf('class="fichaTabs"'));
+  /** The figure whose label is `label`, up to the next one. */
+  const figure = (html: string, label: string) => {
+    const row = figures(html);
+    const at = row.indexOf(`<dt>${label}</dt>`);
+    if (at === -1) return "";
+    const next = row.indexOf("<dt>", at + 1);
+    return row.slice(at, next === -1 ? undefined : next);
+  };
+  const ago = (days: number) =>
+    new Date(Date.UTC(2026, 9, 13) - days * 86_400_000).toISOString().slice(0, 10);
+
   beforeEach(() => {
+    // One clock for the page's «today»: only `Date`, so promises still settle.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T10:00:00.000Z"));
     calls.readAssets.mockResolvedValue([CASH]);
   });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-  test("a cash account shows its basics, its cobros and its danger zone — nothing else", async () => {
+  test("a current account opens on its value, its freshness, its availability and its bar", async () => {
+    calls.readManualValueHistory.mockResolvedValueOnce(
+      new Map([[ASSET_ID, [{ dateKey: ago(12), valueMinor: 3_500_00 }]]]),
+    );
     const html = await renderedHtml();
 
-    expect(html).toContain("Lo básico");
-    expect(html).toContain("Zona de peligro");
-    // Cobros lands INSIDE the «Configuración avanzada» accordion — the anchor the
-    // assistant's rent destination quotes (#1524), and the one thing a family
-    // could silently break by placing the shared panel outside its own body.
-    const body = html.indexOf('<div class="editAdvancedBody">');
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(body);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeLessThan(html.indexOf("</details>"));
-    // No ledger, no valuation curve, no debt model.
-    expect(html).not.toContain('id="operaciones"');
-    expect(html).not.toContain("<h3>Traspasar</h3>");
-    expect(html).not.toContain("<h3>Valoración del inmueble</h3>");
-    expect(html).not.toContain("<h3>Modelo de deuda</h3>");
+    expect(html).not.toContain("Configuración avanzada");
+    expect(html).toContain("<h2>Cuenta nómina</h2>");
+    expect(html).toContain('<span class="fichaInstrument">Cuenta corriente</span>');
+    // The board row's figure: the stored value, untransformed.
+    expect(html).toMatch(/class="fichaValue">3\.?500\s€/);
+    expect(figure(html, "Puesto al día")).toContain("01/10/2026");
+    expect(figure(html, "Puesto al día")).toContain("hace 12 días");
+    expect(figure(html, "Disponibilidad")).toContain("Caja");
+    // A rung is a word, not a figure: it is set in the body face (canon §3).
+    expect(figure(html, "Disponibilidad")).toMatch(
+      /class="fichaFigure fichaFigureText[^"]*">Caja</,
+    );
+    expect(figure(html, "Puesto al día")).not.toContain("fichaFigureText");
+    // A total, never a movement: no sign colour on any of them (canon §6).
+    expect(figures(html)).not.toMatch(/fichaFigure (pos|neg)/);
+    expect(bar(html)).toContain('class="btn" data-ficha-action="valor"');
+    expect(bar(html)).toContain(">Actualizar valor</button>");
+  });
+
+  test("past the aviso's threshold it says so, in the aviso's words", async () => {
+    calls.readManualValueHistory.mockResolvedValueOnce(
+      new Map([[ASSET_ID, [{ dateKey: ago(90), valueMinor: 3_500_00 }]]]),
+    );
+    const stale = figure(await renderedHtml(), "Puesto al día");
+
+    expect(stale).toContain("15/07/2026");
+    expect(stale).toContain("lleva más de 90 días sin actualizarse");
+    expect(stale).not.toContain("hace 90 días");
+  });
+
+  test("with no value ever set by hand, it is dated by the day the holding was created", async () => {
+    calls.readAssetCreatedAtById.mockResolvedValueOnce(
+      new Map([[ASSET_ID, `${ago(3)}T09:00:00.000Z`]]),
+    );
+
+    expect(figure(await renderedHtml(), "Puesto al día")).toContain("hace 3 días");
+  });
+
+  test("a term deposit says since when it can be touched", async () => {
+    calls.readAssets.mockResolvedValue([{ ...DEPOSIT, availableFrom: "2027-03-01" }]);
+
+    const availability = figure(await renderedHtml(), "Disponibilidad");
+    expect(availability).toContain("A plazo");
+    expect(availability).toContain("desde 01/03/2027");
+  });
+
+  test("a term deposit with no date says it, and links to where it is declared", async () => {
+    calls.readAssets.mockResolvedValue([DEPOSIT]);
+
+    const availability = figure(await renderedHtml(), "Disponibilidad");
+    expect(availability).toContain("Sin fecha declarada");
+    const link = availability.match(/<a [^>]*>Declarar fecha<\/a>/)?.[0] ?? "";
+    expect(link).toContain(`href="${FICHA}?pesta%C3%B1a=datos"`);
+    expect(link).toContain('data-ficha-tab="datos"');
+    expect(link).toContain('data-ficha-field="availableFrom"');
+    // …and the field it focuses is on that tab.
+    expect(tabBody(await renderedHtml({ pestaña: "datos" }))).toContain(
+      'name="availableFrom"',
+    );
+  });
+
+  test("«Añadir cobro» is at hand once it has paid something, and in «Más» before", async () => {
+    expect(bar(await renderedHtml())).not.toContain('data-ficha-action="cobro"');
+
+    calls.readPayoutsForHolding.mockResolvedValueOnce([
+      { amountMinor: 12_50, dateISO: "2026-06-01", holdingId: ASSET_ID, id: "pay_1" },
+    ]);
+    expect(bar(await renderedHtml())).toContain(
+      'class="btn btnSecondary" data-ficha-action="cobro"',
+    );
+  });
+
+  test("Cobros opens by default with its count, then «Datos del activo»", async () => {
+    const html = await renderedHtml();
+    const tabs = html.slice(html.indexOf('aria-label="Secciones de la ficha"'));
+
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">0</);
+    expect(tabs.indexOf("Datos del activo")).toBeGreaterThan(tabs.indexOf("Cobros"));
+    expect(tabBody(html)).toContain('id="cobros"');
+    expect(tabBody(html)).toContain("Este activo no ha pagado nada todavía.");
+    // `holdingCobrosHref` lands there too — the contract rentas, FIRE and salud use.
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+  });
+
+  test("«Actualizar valor» opens in the panel and comes back to the ficha", async () => {
+    const valor = panel(await renderedHtml({ accion: "valor" }));
+
+    expect(valor).toContain('<h3 id="ficha-panel-title">Actualizar valor</h3>');
+    expect(valor).toContain('aria-label="Valor actual en EUR"');
+    expect(valor).toMatch(
+      /name="currentValue"[^>]*value="3\.?500,00"|value="3\.?500,00"[^>]*name="currentValue"/,
+    );
+    // A refusal returns to the ficha; so does the success (`returnTo`).
+    expect(valor).toContain(`name="currentUrl" value="${FICHA}"`);
+    expect(valor).toContain(`name="returnTo" value="${FICHA}"`);
+    // Alone in the panel there is no identity form above it to be ruled off from.
+    expect(valor).not.toContain("updateValueForm");
+  });
+
+  test("the value form left «Lo básico»: the panel is its one place", async () => {
+    const datos = tabBody(await renderedHtml({ pestaña: "datos" }));
+
+    expect(datos).toContain("Lo básico");
+    expect(datos).not.toContain('name="currentValue"');
+    expect(datos.indexOf("Zona de peligro")).toBeGreaterThan(datos.indexOf("Lo básico"));
+  });
+
+  test("the cobro panel returns to Cobros, the default tab", async () => {
+    expect(panel(await renderedHtml({ accion: "cobro" }))).toContain(
+      `name="currentUrl" value="${FICHA}"`,
+    );
+  });
+
+  test("a refused value reopens the panel with what was typed, and says why once", async () => {
+    const message = "El valor del activo no es válido.";
+    const html = await renderedHtml({
+      error: message,
+      form: "value",
+      v_currentValue: "tres mil",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Actualizar valor</h3>');
+    expect(panel(html)).toContain('value="tres mil"');
+    expect(panel(html)).toContain(message);
+    expect(html.split(message)).toHaveLength(2);
   });
 
   test("it loads only what it paints", async () => {
     await renderedHtml();
 
-    // The whole point of the family split: a cash account issues the payout
-    // reads its Cobros panel needs, the cash-container gate its danger zone
-    // needs (ADR 0085) — and not one row of a ledger, a curve or a debt.
+    // Its cobros, its cash-container gate (ADR 0085), and the freshness the aviso
+    // reads — for THIS holding — and not one row of a ledger, a curve or a debt.
     expect(calls.readPayoutsForHolding).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readCashContainerName).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readManualValueHistory).toHaveBeenCalledWith([ASSET_ID]);
+    expect(calls.readAssetCreatedAtById).toHaveBeenCalledTimes(1);
     expect(calls.readOperations).not.toHaveBeenCalled();
     expect(calls.readPositions).not.toHaveBeenCalled();
     expect(calls.readSnapshotHoldings).not.toHaveBeenCalled();
     expect(calls.readInvestmentAssetById).not.toHaveBeenCalled();
     expect(calls.readValuationAnchors).not.toHaveBeenCalled();
     expect(calls.readDebtModel).not.toHaveBeenCalled();
+    // The date lives on the row it already has: no extra read for the header.
+    expect(calls.readAvailableFrom).not.toHaveBeenCalled();
   });
 });
 

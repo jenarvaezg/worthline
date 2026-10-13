@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { SourcePosition } from "./connected-source";
+import { manualValueFreshness } from "./data-quality-manual-value-freshness";
 import {
   COST_BASIS_VALUE_ONLY_CODE,
   type CollectDataQualitySignalsInput,
@@ -383,6 +384,59 @@ describe("collectDataQualitySignals", () => {
     expect(stale[0]!.observedDate).toBe("2025-01-01");
     expect(stale[0]!.severity).toBe("medium");
     expect(stale[0]!.fixable).toBe(true);
+  });
+
+  test.each([
+    { createdAt: "2025-01-01T00:00:00.000Z", history: undefined },
+    { createdAt: "2020-01-01T00:00:00.000Z", history: [{ dateKey: "2026-04-12" }] },
+    { createdAt: "2020-01-01T00:00:00.000Z", history: [{ dateKey: "2026-04-13" }] },
+    {
+      createdAt: "2020-01-01T00:00:00.000Z",
+      // Out of order on purpose: the latest one wins, not the last one listed.
+      history: [{ dateKey: "2026-03-01" }, { dateKey: "2025-12-01" }],
+    },
+  ])("the ficha's «Puesto al día» and the aviso read one date (#1846): %j", ({
+    createdAt,
+    history,
+  }) => {
+    const asOf = "2026-07-11";
+    const points = history?.map((point) => ({ ...point, valueMinor: 1_000_00 }));
+    const { asset, input } = fixture();
+    const signal = collectDataQualitySignals(
+      input({
+        asOfDateKey: asOf,
+        assetCreatedAtById: new Map([["asset_cash", createdAt]]),
+        assets: [asset({ id: "asset_cash", name: "Cuenta corriente", type: "cash" })],
+        ...(points
+          ? { manualValueHistoryByAssetId: new Map([["asset_cash", points]]) }
+          : {}),
+      }),
+    ).find((candidate) => candidate.code === "STALE_MANUAL_VALUE");
+
+    const freshness = manualValueFreshness(points, createdAt, asOf);
+
+    // Stale exactly when the aviso fires, and then of the very date it observed.
+    expect(freshness?.stale).toBe(signal !== undefined);
+    if (signal) expect(freshness?.lastUpdateDateKey).toBe(signal.observedDate);
+  });
+
+  test("the freshness reading counts the days since the last value, 90 and on is stale", () => {
+    expect(
+      manualValueFreshness(
+        [{ dateKey: "2026-04-12", valueMinor: 1 }],
+        undefined,
+        "2026-07-11",
+      ),
+    ).toEqual({ daysSince: 90, lastUpdateDateKey: "2026-04-12", stale: true });
+    expect(
+      manualValueFreshness(
+        [{ dateKey: "2026-04-13", valueMinor: 1 }],
+        undefined,
+        "2026-07-11",
+      ),
+    ).toEqual({ daysSince: 89, lastUpdateDateKey: "2026-04-13", stale: false });
+    // Nothing to date it by: no reading, never a made-up one.
+    expect(manualValueFreshness(undefined, undefined, "2026-07-11")).toBeUndefined();
   });
 
   test("never flags a CONNECTED holding, whatever its instrument column says", () => {

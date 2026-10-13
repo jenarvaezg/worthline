@@ -141,6 +141,12 @@ export interface FichaBasics {
   isCoinCollection: boolean;
   /** Identity fixed by a Binance source, same reason (ADR 0021). */
   isBinanceHolding: boolean;
+  /**
+   * Whether «Lo básico» still carries «Actualizar valor» (#1846). A family whose bar
+   * offers it as an action says false, so the form lives in one place; the rest keep
+   * it where it was until the accordion is retired (#1850).
+   */
+  showValueForm: boolean;
 }
 
 /** How an action sits in the bar: the habitual one, at hand, or inside «Más». */
@@ -181,6 +187,11 @@ export interface FichaFigure {
   value: ReactNode;
   /** The sign colour, for a figure that is a movement (canon §6) — never a total. */
   tone?: "pos" | "neg";
+  /**
+   * `text` for a value that is a word, not a figure — a rung, «Caja» (#1846): set in
+   * the body face, because the numeric one is for figures (canon §3).
+   */
+  kind?: "text";
   /** What qualifies the figure: where its price comes from, how fresh it is. */
   detail?: ReactNode;
 }
@@ -260,6 +271,7 @@ const NO_CHROME_CONTRIBUTION = {
     // reads it (its form is `LiabilityEditForm`, which takes no method).
     method: "stored",
     showRawBalanceForm: false,
+    showValueForm: true,
     valueOnlyOpening: null,
   },
   manualLedger: null,

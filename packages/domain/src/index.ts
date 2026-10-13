@@ -315,6 +315,7 @@ export type {
   DataQualitySourceFreshness,
   DataQualitySyncAttempt,
   DataQualityTrashedHolding,
+  ManualValueFreshness,
 } from "./data-quality-signals";
 export {
   COST_BASIS_VALUE_ONLY_CODE,
@@ -326,6 +327,7 @@ export {
   INCOME_DOUBLE_COUNT_CODE,
   isOverrideableSignalCode,
   MISSING_INVESTMENT_ISIN_CODE,
+  manualValueFreshness,
   OVERRIDEABLE_SIGNAL_CODES,
   overriddenSignalKeys,
   PERSISTENT_SYNC_FAILURE_CODE,

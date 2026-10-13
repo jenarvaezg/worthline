@@ -11,11 +11,8 @@
  * file the page composes. Server-rendered, no client JS (ADR 0009).
  */
 
-import {
-  editAssetAction,
-  updateAssetValuationAction,
-  updateLiabilityBalanceAction,
-} from "@web/patrimonio/actions";
+import type { FormErrorContext } from "@web/intake";
+import { editAssetAction, updateLiabilityBalanceAction } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
 import {
@@ -45,6 +42,7 @@ import {
 } from "@worthline/domain";
 import Link from "next/link";
 
+import { AssetValueForm } from "./asset-value-form";
 import { InstrumentPicker } from "./instrument-picker";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
@@ -88,6 +86,7 @@ export function AssetEditForm({
   asset,
   boardHref,
   currentUrl,
+  formError = null,
   investment,
   isBinanceHolding = false,
   isCoinCollection = false,
@@ -95,6 +94,7 @@ export function AssetEditForm({
   method,
   privacyMode,
   scopeMemberId,
+  showValueForm = true,
   updateInvestmentAction,
   valueOnlyOpening = null,
   values,
@@ -104,6 +104,13 @@ export function AssetEditForm({
   boardHref: string;
   /** The holding's own public `wl_hld_…` URL, where every form here returns. */
   currentUrl: string;
+  /** The refusal that came back, for the value form to print its own (#1846). */
+  formError?: FormErrorContext | null;
+  /**
+   * Whether «Lo básico» carries «Actualizar valor» (#1846). A ficha whose bar offers
+   * it as an action says false, so the form is in one place only.
+   */
+  showValueForm?: boolean;
   investment?: InvestmentAssetFull | null;
   isBinanceHolding?: boolean;
   isCoinCollection?: boolean;
@@ -466,26 +473,19 @@ export function AssetEditForm({
           Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
           derivado de las operaciones (ADR 0006).
         </p>
-      ) : (
+      ) : showValueForm ? (
         // stored AND appreciating keep the manual current-value form: a property's
         // current value is the appreciation curve's "today" anchor (the curve +
         // appraisals are additive via HousingValuationSection). Only derived
-        // holdings (units × price) hide it (ADR 0006).
-        <form action={updateAssetValuationAction} className="stackForm updateValueForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={asset.id} />
-          <label>
-            Valor actual (EUR)
-            <input
-              aria-label="Valor actual en EUR"
-              defaultValue={formatMoneyInput(asset.currentValue.amountMinor)}
-              inputMode="decimal"
-              name="currentValue"
-            />
-          </label>
-          <PendingSubmit pendingLabel="Actualizando…">Actualizar valor</PendingSubmit>
-        </form>
-      )}
+        // holdings (units × price) hide it (ADR 0006) — and a ficha that offers it
+        // as an action of its bar instead (#1846).
+        <AssetValueForm
+          asset={asset}
+          currentUrl={currentUrl}
+          formError={formError}
+          placement="basics"
+        />
+      ) : null}
     </>
   );
 }

@@ -108,19 +108,42 @@ test("stored: a cash asset edits its current value from the detail page", async 
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
   const id = new URL(page.url()).hash.slice(1);
 
-  await page.goto(`/patrimonio/${id}/editar`);
-  // Stored surface: a current-value field is offered (no operations, no curve).
-  const valueField = page.getByLabel("Valor actual en EUR");
-  await expect(valueField).toBeVisible();
+  const ficha = `/patrimonio/${id}/editar`;
+  await page.goto(ficha);
+  // Stored ficha (#1846): a state header with the value and when it was put up to
+  // date — no operations, no curve, no «Configuración avanzada».
+  const state = page.getByRole("region", { name: "Estado del activo" });
+  await expect(state.locator(".fichaValue")).toHaveText(/5\.?000\s*€/);
+  await expect(state.locator(".fichaFigures")).toContainText("Puesto al día");
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toHaveCount(0);
-  await valueField.fill("5500");
-  await page.getByRole("button", { name: "Actualizar valor" }).click();
-  await expect(page.getByRole("status")).toBeVisible();
-  // The action redirects to the list on success; re-open the detail to confirm.
-  await page.goto(`/patrimonio/${id}/editar`);
-  await expect(page.getByLabel("Valor actual en EUR")).toHaveValue(/5\.?500/);
+  await expect(page.locator("details.editAdvanced")).toHaveCount(0);
+
+  // «Actualizar valor» is the bar's habitual action, in the side panel.
+  let panel = await openFichaAction(page, "Actualizar valor");
+  await expect(page).toHaveURL(/accion=valor/);
+
+  // A value that is not one comes back to the same panel, with what was typed and
+  // why, said once (#1846).
+  await panel.getByLabel("Valor actual en EUR").fill("cinco mil");
+  await panel.getByRole("button", { name: "Actualizar valor" }).click();
+  await expect(page).toHaveURL(/form=value/);
+  panel = page.getByRole("dialog", { name: "Actualizar valor" });
+  await expect(panel.getByRole("alert")).toHaveText("El valor del activo no es válido.");
+  await expect(page.getByText("El valor del activo no es válido.")).toHaveCount(1);
+  await expect(panel.getByLabel("Valor actual en EUR")).toHaveValue("cinco mil");
+
+  await panel.getByLabel("Valor actual en EUR").fill("5500");
+  await panel.getByRole("button", { name: "Actualizar valor" }).click();
+
+  // The person stays on the ficha: the notice, the new value, today's date.
+  await expect(page).toHaveURL(new RegExp(`${ficha}\\?ok=saved`));
+  await expect(page.getByRole("status")).toHaveText("Guardado.");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(state.locator(".fichaValue")).toHaveText(/5\.?500\s*€/);
+  const [y, m, d] = today.split("-");
+  await expect(state.locator(".fichaFigures")).toContainText(`${d}/${m}/${y}`);
 });
 
 test("appreciating: a property edits its valuation curve from the detail page", async ({

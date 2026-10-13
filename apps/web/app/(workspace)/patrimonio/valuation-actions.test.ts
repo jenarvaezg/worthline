@@ -170,6 +170,92 @@ describe("updateAssetValuationAction", () => {
     store.close();
   });
 
+  test("from the ficha's panel it comes back to the ficha, not the board (#1846)", async () => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({
+        currentUrl: "/patrimonio/wl_hld_cuadro/editar",
+        currentValue: "7.500,00",
+        id: "cuadro",
+        returnTo: "/patrimonio/wl_hld_cuadro/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toBe("/patrimonio/wl_hld_cuadro/editar?ok=saved");
+    expect(await assetValue(store, "cuadro")).toBe(7_500_00);
+    store.close();
+  });
+
+  test.each([
+    "",
+    "//evil.example/robo",
+    "https://evil.example/robo",
+  ])("with no local return (%j) the success lands on the board, as before", async (returnTo) => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({ currentValue: "7.500,00", id: "cuadro", returnTo }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=saved/);
+    store.close();
+  });
+
+  test("a refused value comes back as the value form's, with what was typed (#1846)", async () => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({
+        currentUrl: "/patrimonio/wl_hld_cuadro/editar",
+        currentValue: "no-es-un-numero",
+        id: "cuadro",
+        returnTo: "/patrimonio/wl_hld_cuadro/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_cuadro/editar");
+    expect(target.searchParams.get("form")).toBe("value");
+    expect(target.searchParams.get("v_currentValue")).toBe("no-es-un-numero");
+    expect(target.searchParams.get("ok")).toBeNull();
+    store.close();
+  });
+
+  test("the domain guard's refusal is the value form's too (#1846)", async () => {
+    const store = await initStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 3_000_00,
+      id: "fondo",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      type: "investment",
+    });
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({ currentValue: "4.000,00", id: "fondo" }),
+      store,
+      CLOCK,
+    );
+
+    expect(new URL(url.split(";")[2]!, "http://x").searchParams.get("form")).toBe(
+      "value",
+    );
+    store.close();
+  });
+
   test("refuses to hand-edit a derived investment holding (domain guard)", async () => {
     const store = await initStore();
     await store.assets.createManualAsset({

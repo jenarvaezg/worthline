@@ -44,6 +44,8 @@ import {
   findAsset,
   findLiability,
   holdingBoardAnchor,
+  localReturnTo,
+  VALUE_FORM_ID,
 } from "./action-helpers";
 
 export async function updateAssetValuationAction(
@@ -60,7 +62,7 @@ export async function updateAssetValuationAction(
         return {
           ok: false,
           redirect: errorRedirectUrl(baseUrl(formData), {
-            formId: "edit",
+            formId: VALUE_FORM_ID,
             message: "El valor del activo no es válido.",
             values: preserveFields(formData, ["currentValue"]),
           }),
@@ -93,11 +95,18 @@ export async function updateAssetValuationAction(
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), {
-        formId: "edit",
+        formId: VALUE_FORM_ID,
         message: error,
         values: preserveFields(formData, ["currentValue"]),
       }),
-    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
+    // The ficha's side panel posts its own URL (#1846): the person stays where the
+    // new value and today's date show. Without one, the board's row, as before.
+    onSuccess: ({ formData, value }) => {
+      const back = localReturnTo(formData);
+      return back
+        ? successRedirectUrl(back, "saved")
+        : successRedirectUrl("/patrimonio", "saved", value);
+    },
   })(formData, ..._testArgs);
 }
 

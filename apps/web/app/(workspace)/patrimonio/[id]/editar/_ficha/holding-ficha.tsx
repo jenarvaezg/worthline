@@ -277,7 +277,11 @@ export function HoldingFicha({
             <div key={figure.key}>
               <dt>{figure.label}</dt>
               <dd>
-                <span className={`fichaFigure ${figure.tone ?? ""}`}>{figure.value}</span>
+                <span
+                  className={`fichaFigure${figure.kind === "text" ? " fichaFigureText" : ""} ${figure.tone ?? ""}`}
+                >
+                  {figure.value}
+                </span>
                 {figure.detail ? (
                   <div className="fichaFigureDetail">{figure.detail}</div>
                 ) : null}
