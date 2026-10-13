@@ -287,6 +287,8 @@ door in the book where the participaciones were derived and the price was declar
 buy or a sell it is the other way round (`InvestmentOperationPlan.pricePerUnit` is
 `(importe − comisión) ÷ participaciones`, «so the cash amount the document states is
 reproduced to the cent»), and the printed NAV is kept only as a cross-check.
+That formula holds for a buy only; on a sell the commission is added back — see ADR 0067,
+Amendment (#1836).
 
 Why the inversion is the honest model, and not just symmetry: **the position IS
 participaciones.** `derivePosition` folds units, «todo» liquidates units, the

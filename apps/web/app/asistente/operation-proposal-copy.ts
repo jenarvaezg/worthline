@@ -18,7 +18,7 @@
  * Pure and I/O-free (`docs/interaction-patterns.md`, ADR 0036).
  */
 
-import type { SecurityId } from "@worthline/domain";
+import { operationAmountMinor, type SecurityId } from "@worthline/domain";
 
 import {
   currencyMark,
@@ -27,7 +27,10 @@ import {
   formatDocumentUnits,
 } from "./document-figures";
 import { formatIsoDayEs } from "./iso-day-es";
-import type { OperationKindClaim } from "./operation-document-frontier";
+import {
+  ledgerOperationKind,
+  type OperationKindClaim,
+} from "./operation-document-frontier";
 import type { TypedHoldingEvent } from "./typed-holding-event";
 
 /**
@@ -54,13 +57,15 @@ export function operationKindLabel(kind: OperationKindClaim): string {
  * than re-spreading seven fields into a fresh literal at the call site — the fields
  * travel together everywhere in this lane, and copying them by hand is how one of them
  * eventually gets left behind.
+ *
+ * There is deliberately no importe here (#1836): the line computes it from what is
+ * about to be written, so it cannot print a figure the ledger will not.
  */
 export interface OperationFactLine {
   executedAt: string;
   kind: OperationKindClaim;
   units: string;
   pricePerUnit: string;
-  amountMinor: number;
   currency: string;
   /** Present when the document PRINTED a commission — a printed 0 included. */
   feesMinor?: number;
@@ -73,6 +78,10 @@ export interface OperationFactLine {
  * The commission segment appears only when the document printed one — a printed zero
  * says «sin comisión» and is worth showing, an absent one would paint a `0 €` the
  * paper never stated (the preview card's «only observed fields get a row» rule).
+ *
+ * The last segment is the importe the operations book will print for the row this
+ * writes — the domain's `operationAmountMinor`, the commission added to a purchase and
+ * netted off a sale (#1836) — so the card and the ledger agree by construction.
  */
 export function operationFactLine(fact: OperationFactLine): string {
   const parts = [
@@ -83,7 +92,13 @@ export function operationFactLine(fact: OperationFactLine): string {
   if (fact.feesMinor !== undefined) {
     parts.push(`comisión ${formatDocumentMoney(fact.feesMinor, fact.currency)}`);
   }
-  parts.push(formatDocumentMoney(fact.amountMinor, fact.currency));
+  const amountMinor = operationAmountMinor({
+    feesMinor: fact.feesMinor ?? 0,
+    kind: ledgerOperationKind(fact.kind),
+    pricePerUnit: fact.pricePerUnit,
+    units: fact.units,
+  });
+  parts.push(formatDocumentMoney(amountMinor, fact.currency));
   return parts.join(" · ");
 }
 
@@ -185,17 +200,29 @@ export function operationCurrencyAssumedNote(
   );
 }
 
-/** The importe multiplied out of the two figures the person did write. */
+/**
+ * The importe multiplied out of the two figures the person did write — with the
+ * commission, when there is one, named with the sign it carries (#1836): added to a
+ * purchase, netted off a sale. Without it the arithmetic on the card would not add up.
+ */
 export function operationDerivedAmountNote(derived: {
   units: string;
   pricePerUnit: number;
   amountMinor: number;
   currency: string;
+  kind: OperationKindClaim;
+  feesMinor?: number;
 }): string {
+  const fees =
+    derived.feesMinor === undefined || derived.feesMinor === 0
+      ? ""
+      : ` ${ledgerOperationKind(derived.kind) === "sell" ? "−" : "+"} ` +
+        `${formatDocumentMoney(derived.feesMinor, derived.currency)} de comisión`;
   return (
     `El importe no me lo has dicho, lo he calculado con tus dos cifras: ` +
     `${formatDocumentUnits(derived.units)} × ${formatDocumentUnitPrice(derived.pricePerUnit)} ` +
-    `${currencyMark(derived.currency)} = ${formatDocumentMoney(derived.amountMinor, derived.currency)}.`
+    `${currencyMark(derived.currency)}${fees} = ` +
+    `${formatDocumentMoney(derived.amountMinor, derived.currency)}.`
   );
 }
 

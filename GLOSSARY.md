@@ -344,6 +344,9 @@ quality score: renta variable can be 94% its own and still measure honestly.
 **Operation**:
 A buy, a sell, or one half of a **traspaso** against one **investment**: date, units,
 price per unit, fees.
+Its **importe** is units × price, plus the fees on the way in (a buy, the incoming half
+of a traspaso) and minus the fees on the way out (a sell): `operationAmountMinor`, the
+one figure the ledger, the IRR and the assistant's card all read (#1836).
 Always **stored in EUR** — the cost basis folds every operation of a holding into one
 accumulator, so a ledger that mixed currencies would sum dollars as euros (which is
 exactly what happened, #1401). An apunte the user has in another currency is therefore

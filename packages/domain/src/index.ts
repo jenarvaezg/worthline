@@ -977,7 +977,9 @@ export {
 export type { TransferFlowPolicy } from "./operation-flow";
 export {
   isDeclaredOpening,
+  operationAmountFromGrossMinor,
   operationAmountMinor,
+  operationGrossFromAmountMinor,
   signedInvestedMinor,
   unhandledOperationKind,
 } from "./operation-flow";

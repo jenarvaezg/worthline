@@ -17,9 +17,10 @@ const PASTED_CONFIRMATION = `CONFIRMACIÓN DE OPERACIÓN DE VALORES DATOS PERSON
 describe("operationReceiptFigures", () => {
   it("reads every figure of a pasted confirmation off its own label", () => {
     expect(operationReceiptFigures(PASTED_CONFIRMATION)).toEqual({
-      amount: 64.62,
       executedAt: "2026-09-01",
       fees: 0,
+      grossAmount: 64.62,
+      netAmount: 64.62,
       pricePerUnit: 42.7996,
       units: "1.51",
     });
@@ -36,22 +37,22 @@ describe("operationReceiptFigures", () => {
       "Participaciones: 6\nImporte: 312,55 €\nFecha operación: 12/08/2026",
     );
     expect(figures).toEqual({
-      amount: 312.55,
       executedAt: "2026-08-12",
+      netAmount: 312.55,
       units: "6",
     });
   });
 
-  it("anchors the importe on the gross plus what the operation cost", () => {
-    // The commission is not netted off: `resolveOperationTerms` reads `amount` as
-    // gross-plus-fees on both directions, so taking the printed «efectivo» of a SALE
-    // would subtract the fee twice.
+  it("reports the gross, the efectivo and the commission as printed, composing nothing", () => {
+    // #1836: the receipt does not know the direction, so it cannot say whether the fee
+    // was added or netted off. It reports the paper; the dictated door composes the
+    // importe with the kind (`holdingEventFromTyped`).
     const figures = operationReceiptFigures(
       ["Importe Bruto\tComisiones\tEfectivo", "1.000,00 EUR\t9,95 EUR\t990,05 EUR"].join(
         "\n",
       ),
     );
-    expect(figures).toMatchObject({ amount: 1009.95, fees: 9.95 });
+    expect(figures).toEqual({ fees: 9.95, grossAmount: 1000, netAmount: 990.05 });
   });
 
   it("adds up every cost line the paper prints", () => {
@@ -98,9 +99,10 @@ describe("operationReceiptFigures, on a pasted traspaso (#1794)", () => {
     // cell is an empty VALUE, not a label: read as a label, it made the commission row
     // unequal and dropped it, and a commission nobody read is one nobody refuses.
     expect(operationReceiptFigures(PASTED_REEMBOLSO)).toEqual({
-      amount: 739.22,
       executedAt: "2026-08-14",
       fees: 0,
+      grossAmount: 739.22,
+      netAmount: 739.22,
       operation: "REEMB.POR TRASPASO I",
       pricePerUnit: 12.0003,
       units: "61.6",
@@ -162,6 +164,7 @@ describe("parseTypedHoldingEvent, on a pasted confirmation", () => {
         direction: "in",
         executedAt: "2026-09-01",
         fees: 0,
+        grossAmount: 64.62,
         isin: "IE0007987708",
         pricePerUnit: 42.7996,
         units: "1.51",

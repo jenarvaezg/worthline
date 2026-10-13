@@ -278,7 +278,8 @@ What the amendment fixes in code:
 - **The typed door opens only when there is no validated `holding_event`.** With a
   document on the table the document wins and #1374's behaviour is byte-identical.
 - **The parser returns an `ExtractedHoldingEvent`**, which is why the change is surgical:
-  `operation-terms.ts` and its invariant (`importe = participaciones × precio + comisión`),
+  `operation-terms.ts` and its invariant (`importe = participaciones × precio + comisión`,
+  a purchase's rule; corrected for a sale by the Amendment (#1836) below),
   the card, and every guard in `operation-proposals.ts` — divisa, ISIN contradictorio,
   duplicado, sobreventa, fecha futura, fuente conectada — apply to both doors unchanged.
 - **The date is required and never defaulted.** «Hoy», «ayer» and an explicit day count as
@@ -314,3 +315,52 @@ shape `propose_transfer` has.
 The asymmetry this leaves — and it is deliberate — is that the model's own prose is still
 not a source. A figure it relays is checked against the reading and the call is refused
 when it disagrees (`operation_fact_not_in_message`), exactly as it is against a document.
+
+## Amendment (#1836): the lane's importe is the ledger's
+
+The operation lane read every operation with the purchase's rule. `resolveOperationTerms`
+took the commission out of the importe in both directions (`importe − comisión`) and
+derived the price or the participaciones from what was left, while the operations book
+(`operationAmountMinor`, #1827), the cost engine and the IRR say a sale brings back units ×
+price LESS its commission. On a sale with a commission that disagreement came out in one of
+three ways, depending on the door:
+
+- a dictated or documented importe — the efectivo, already net — had the fee taken off a
+  second time, and the price was written wrong in silence (995 € with 5 € of commission
+  over 10 participaciones wrote 99 €, not 100 €);
+- a derived or reconstructed importe (the dictated «a 100 € cada una», the pasted
+  confirmation's «bruto + comisión») wrote the right price, and the card printed 1.005 €
+  for a sale the book lists at 995 €;
+- the printed-price cross-check warned about a correct sale, and the dictated frontier
+  refused a model that relayed the efectivo the pasted paper prints.
+
+**The invariant of the lane is `operationAmountMinor`**: the importe is the money the
+operation moved in the account — units × price plus the commission on a purchase, minus it
+on a sale. There is one sign table, in the domain:
+
+- `operationAmountFromGrossMinor` and its inverse `operationGrossFromAmountMinor` live next
+  to `operationAmountMinor` in `packages/domain/src/operation-flow.ts`, on the same
+  exhaustive switch. `operationAmountMinor` is the first one over `units × price`.
+- `resolveOperationTerms(event, kind)` takes the direction, never defaulted. The gross comes
+  from `operationGrossFromAmountMinor`, and the price or the participaciones come from the
+  gross. The cross-check compares `operationAmountMinor` at the printed price with the
+  importe stated, and its sentence carries the commission with its sign. Refusing a
+  commission that «equals or exceeds the importe» is kept for the purchase alone, the only
+  direction where the gross can come out ≤ 0.
+- The card does not receive an importe. `operationFactLine` computes its last segment with
+  `operationAmountMinor` from what is about to be written, so the card and the book agree
+  by construction. `InvestmentOperationPlan.amountMinor` keeps the declared figure.
+- The dictated door composes with the direction (`holdingEventFromTyped(event, currency,
+  kind)`). An importe the person writes is read as is, in both directions; a derived one
+  comes from `operationAmountMinor`. A pasted confirmation reports what it prints
+  (`grossAmount`, `netAmount`) and composes nothing; when the paper prints the gross the
+  importe is composed from it with the direction, so a withholding inside the efectivo never
+  lands in the price.
+- The vision prompt says the importe is the efectivo charged or credited to the account; on
+  a sale, already net of the commission.
+
+Out of scope, on purpose: the agent view and the statement-import preview (each states a
+`grossAmount` or a file's own column as a contract), traspasos (the lane refuses one with a
+commission, and the domain capitalizes it on the `transfer_in`, as `operationAmountMinor`
+does), withholdings inside a sale's efectivo (not a commission; the cross-check flags the
+gap), and drafts saved before the change, which confirm with the plan as it was stored.

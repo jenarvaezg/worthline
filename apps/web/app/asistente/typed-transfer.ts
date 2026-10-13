@@ -362,8 +362,10 @@ function receiptReading(
     (VALUE_DATE.test(scanned)
       ? null
       : (dateInMessage(scanned.replace(NOT_A_DAY, " "), today)?.day ?? null));
-  const amountMinor =
-    figures.amount === undefined ? Number.NaN : Math.round(figures.amount * 100);
+  // The importe a traspaso stands on: the gross when the paper prints one, else the
+  // efectivo. The two coincide here — a commission was refused above.
+  const amount = figures.grossAmount ?? figures.netAmount;
+  const amountMinor = amount === undefined ? Number.NaN : Math.round(amount * 100);
 
   const missing: TypedTransferGap[] = [];
   if (!(amountMinor > 0) || !Number.isSafeInteger(amountMinor)) missing.push("amount");

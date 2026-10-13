@@ -27,7 +27,6 @@ describe("operationFactLine", () => {
     expect(
       plain(
         operationFactLine({
-          amountMinor: 125_00,
           currency: "EUR",
           executedAt: "2026-08-05",
           feesMinor: 0,
@@ -44,7 +43,6 @@ describe("operationFactLine", () => {
     expect(
       plain(
         operationFactLine({
-          amountMinor: 125_00,
           currency: "EUR",
           executedAt: "2026-08-05",
           feesMinor: 0,
@@ -59,16 +57,15 @@ describe("operationFactLine", () => {
   it("omits the commission segment when the document printed none", () => {
     const line = plain(
       operationFactLine({
-        amountMinor: 998_60,
         currency: "EUR",
         executedAt: "2026-07-24",
         kind: "sell",
-        pricePerUnit: "16.0184",
+        pricePerUnit: "16.01814513",
         units: "62.3418",
       }),
     );
 
-    expect(line).toBe("24/07/2026 · venta · 62,3418 part. × 16,0184 € · 998,60 €");
+    expect(line).toBe("24/07/2026 · venta · 62,3418 part. × 16,0181 € · 998,60 €");
     expect(line).not.toContain("comisión");
   });
 
@@ -76,7 +73,6 @@ describe("operationFactLine", () => {
     expect(
       plain(
         operationFactLine({
-          amountMinor: 1_000_00,
           currency: "USD",
           executedAt: "2026-07-24",
           kind: "buy",
@@ -85,6 +81,28 @@ describe("operationFactLine", () => {
         }),
       ),
     ).toContain("10 part. × 100 USD");
+  });
+
+  /**
+   * #1836: the last segment is the ledger's `operationAmountMinor` of what is about to
+   * be written, so the card and the operations book cannot disagree. A sale nets its
+   * commission off; a purchase capitalizes it.
+   */
+  it("prints the importe the ledger will, commission netted off a sale", () => {
+    const sale = {
+      currency: "EUR",
+      executedAt: "2026-09-10",
+      feesMinor: 500,
+      pricePerUnit: "100",
+      units: "10",
+    };
+
+    expect(plain(operationFactLine({ ...sale, kind: "sell" }))).toBe(
+      "10/09/2026 · venta · 10 part. × 100 € · comisión 5 € · 995 €",
+    );
+    expect(plain(operationFactLine({ ...sale, kind: "buy" }))).toBe(
+      "10/09/2026 · compra · 10 part. × 100 € · comisión 5 € · 1005 €",
+    );
   });
 });
 
@@ -186,11 +204,27 @@ describe("the dictated lane's own lines (#1466)", () => {
         operationDerivedAmountNote({
           amountMinor: 52090,
           currency: "EUR",
+          kind: "buy",
           pricePerUnit: 52.09,
           units: "10",
         }),
       ),
     ).toContain("10 × 52,09 € = 520,90 €");
+  });
+
+  it("names the commission with its sign, so the derived importe adds up (#1836)", () => {
+    const derived = { currency: "EUR", feesMinor: 500, pricePerUnit: 100, units: "10" };
+
+    expect(
+      plain(
+        operationDerivedAmountNote({ ...derived, amountMinor: 995_00, kind: "sell" }),
+      ),
+    ).toContain("10 × 100 € − 5 € de comisión = 995 €");
+    expect(
+      plain(
+        operationDerivedAmountNote({ ...derived, amountMinor: 1005_00, kind: "buy" }),
+      ),
+    ).toContain("10 × 100 € + 5 € de comisión = 1005 €");
   });
 
   /** #1422: a witness that does not hold is refused naming BOTH figures. */

@@ -48,8 +48,17 @@ import { dateTokenIn } from "./typed-message-reading";
 export interface OperationReceiptFigures {
   /** Participaciones as a decimal string, from «Número de títulos» and its synonyms. */
   units?: string;
-  /** The total importe in major units, commissions included. See {@link amountIn}. */
-  amount?: number;
+  /**
+   * The GROSS importe the paper prints (participaciones × precio), in major units, from
+   * «Importe Bruto» and its synonyms. Reported as printed: composing it with the
+   * commission is the dictated door's, which knows the direction (#1836).
+   */
+  grossAmount?: number;
+  /**
+   * The EFECTIVO the paper prints — the money charged or credited to the account — in
+   * major units, from «Importe», «Efectivo», «Importe Efectivo Neto» and their synonyms.
+   */
+  netAmount?: number;
   /** The unit price the paper prints, in major units. */
   pricePerUnit?: number;
   /** What the operation cost on top of the gross amount, summed. See {@link COST_LABELS}. */
@@ -430,28 +439,6 @@ function figureIn(cell: string, mark: DecimalMark | null): CellFigure | null {
   return { printed, unsettled: readings.size > 1, value };
 }
 
-/**
- * The importe the operation is anchored on: the GROSS amount plus what it cost.
- *
- * Not the printed «efectivo», even when the paper prints one, and the reason is that
- * `resolveOperationTerms` reads `amount` as gross-plus-fees on both directions
- * (`netMinor = amount − fees`, and the printed price is cross-checked against that net).
- * On a purchase the two readings coincide; on a SALE the efectivo is gross MINUS the
- * commission, so taking it would net the fee twice and quietly move the price per share.
- * Reconstructing it from the gross keeps one meaning for `amount` on both.
- *
- * With no gross printed, the efectivo is all there is and the fees are the ones read —
- * which is the purchase case, and it adds up.
- */
-function amountIn(
-  gross: number | undefined,
-  net: number | undefined,
-  fees: number,
-): number | undefined {
-  if (gross !== undefined) return roundToCent(gross + fees);
-  return net;
-}
-
 /** Cents, exactly: the sum above must not inherit a float tail. */
 function roundToCent(amount: number): number {
   return Math.round(amount * 100) / 100;
@@ -498,9 +485,8 @@ export function operationReceiptFigures(text: string): OperationReceiptFigures |
     costs.length > 0
       ? roundToCent(costs.reduce((sum, cost) => sum + cost.value, 0))
       : undefined;
-  const amount = amountIn(gross?.value, net?.value, fees ?? 0);
-  // The importe stands on the gross plus the costs when there is a gross, and on the
-  // efectivo otherwise: a figure is unsettled for it only if it is one it stands on.
+  // The importe stands on the gross when there is one, and on the efectivo otherwise:
+  // a figure is unsettled for it only if it is one it stands on.
   const unsettled: UnsettledFigure[] = [
     ...unsettledAs("units", units),
     ...unsettledAs("price", price),
@@ -509,7 +495,8 @@ export function operationReceiptFigures(text: string): OperationReceiptFigures |
   ];
   return {
     ...(units === undefined ? {} : { units: String(units.value) }),
-    ...(amount === undefined ? {} : { amount }),
+    ...(gross === undefined ? {} : { grossAmount: gross.value }),
+    ...(net === undefined ? {} : { netAmount: net.value }),
     ...(price === undefined ? {} : { pricePerUnit: price.value }),
     ...(fees === undefined ? {} : { fees }),
     ...(executedAt === undefined ? {} : { executedAt }),

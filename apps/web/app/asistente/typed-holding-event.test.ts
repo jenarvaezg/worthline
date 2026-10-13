@@ -57,7 +57,11 @@ describe("parseTypedHoldingEvent (#1466)", () => {
     // The importe the chain will record is the two written figures multiplied, never
     // a third figure the app supplies.
     expect(
-      holdingEventFromTyped(reading.status === "read" ? reading.event : never(), "EUR"),
+      holdingEventFromTyped(
+        reading.status === "read" ? reading.event : never(),
+        "EUR",
+        "buy",
+      ),
     ).toMatchObject({
       amount: 520.9,
       currency: "EUR",
@@ -161,6 +165,58 @@ describe("parseTypedHoldingEvent (#1466)", () => {
 
     expect(message).toContain("participaciones");
     expect(message).toContain("fecha");
+  });
+});
+
+describe("holdingEventFromTyped · la dirección (#1836)", () => {
+  function read(text: string) {
+    const reading = parseTypedHoldingEvent(text, TODAY);
+    if (reading.status !== "read") throw new Error(`not read: ${reading.status}`);
+    return reading.event;
+  }
+
+  it("deriva el importe de una venta restando la comisión, y el de una compra sumándola", () => {
+    const event = read(
+      "Hoy he vendido 10 participaciones a 100 € cada una con 5 € de comisión",
+    );
+
+    expect(holdingEventFromTyped(event, "EUR", "sell").amount).toBe(995);
+    expect(holdingEventFromTyped(event, "EUR", "buy").amount).toBe(1005);
+  });
+
+  it("lee tal cual el importe dictado, como el dinero que se movió, en las dos direcciones", () => {
+    const event = read("Hoy he vendido 10 participaciones por 995 € con 5 € de comisión");
+
+    expect(holdingEventFromTyped(event, "EUR", "sell").amount).toBe(995);
+    expect(holdingEventFromTyped(event, "EUR", "buy").amount).toBe(995);
+  });
+
+  it("ancla un justificante pegado en el bruto impreso y compone el importe según el tipo", () => {
+    const event = read(
+      [
+        "REEMBOLSO I.I.C.",
+        "Participaciones\tPrecio\tImporte Bruto\tComisiones\tEfectivo",
+        "10\t100,00 EUR\t1.000,00 EUR\t9,95 EUR\t990,05 EUR",
+        "Fecha operación: 12/08/2026",
+      ].join("\n"),
+    );
+
+    expect(event).toMatchObject({ amount: 990.05, fees: 9.95, grossAmount: 1000 });
+    expect(holdingEventFromTyped(event, "EUR", "sell").amount).toBe(990.05);
+    expect(holdingEventFromTyped(event, "EUR", "buy").amount).toBe(1009.95);
+  });
+
+  it("toma el efectivo de un justificante pegado que no imprime el bruto", () => {
+    const event = read(
+      [
+        "Participaciones\tComisiones\tEfectivo",
+        "10\t5,00 EUR\t995,00 EUR",
+        "Fecha operación: 12/08/2026",
+      ].join("\n"),
+    );
+
+    expect(event).not.toHaveProperty("grossAmount");
+    expect(holdingEventFromTyped(event, "EUR", "sell").amount).toBe(995);
   });
 });
 

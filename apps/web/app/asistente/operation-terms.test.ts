@@ -19,7 +19,7 @@ const APORTACION: ExtractedHoldingEvent = {
 
 describe("resolveOperationTerms · the case of the issue", () => {
   it("keeps the printed participaciones and derives the price so the importe is exact", () => {
-    const result = resolveOperationTerms(APORTACION);
+    const result = resolveOperationTerms(APORTACION, "buy");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -43,16 +43,19 @@ describe("resolveOperationTerms · the case of the issue", () => {
    * confirmation, not a mismatch: the card must not cry wolf on every real receipt.
    */
   it("says nothing when the printed NAV only differs by its own rounding", () => {
-    const result = resolveOperationTerms(APORTACION);
+    const result = resolveOperationTerms(APORTACION, "buy");
 
     expect(result.ok && result.terms.notes).toEqual([]);
   });
 
   it("warns, without blocking, when the printed terms genuinely do not add up", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      pricePerUnit: { amount: 32.5, currency: "EUR" },
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        pricePerUnit: { amount: 32.5, currency: "EUR" },
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -66,13 +69,16 @@ describe("resolveOperationTerms · the case of the issue", () => {
 
 describe("resolveOperationTerms · the commission", () => {
   it("nets a real commission off the amount so the cost basis keeps it", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      amount: 1000,
-      fees: { amount: 1.5, currency: "EUR" },
-      pricePerUnit: undefined,
-      units: 10,
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        amount: 1000,
+        fees: { amount: 1.5, currency: "EUR" },
+        pricePerUnit: undefined,
+        units: 10,
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -83,18 +89,21 @@ describe("resolveOperationTerms · the commission", () => {
   });
 
   it("carries a printed zero (the card says «comisión 0 €») and an absent one apart", () => {
-    const zero = resolveOperationTerms(APORTACION);
-    const absent = resolveOperationTerms({ ...APORTACION, fees: undefined });
+    const zero = resolveOperationTerms(APORTACION, "buy");
+    const absent = resolveOperationTerms({ ...APORTACION, fees: undefined }, "buy");
 
     expect(zero.ok && zero.terms.feesMinor).toBe(0);
     expect(absent.ok && "feesMinor" in absent.terms).toBe(false);
   });
 
   it("refuses a commission that equals or exceeds the amount (a unit slip)", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      fees: { amount: 125, currency: "EUR" },
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        fees: { amount: 125, currency: "EUR" },
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -102,10 +111,13 @@ describe("resolveOperationTerms · the commission", () => {
   });
 
   it("refuses a commission in another currency instead of inventing a rate", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      fees: { amount: 1.5, currency: "USD" },
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        fees: { amount: 1.5, currency: "USD" },
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -119,10 +131,13 @@ describe("resolveOperationTerms · a document with no participaciones", () => {
    * from the price the document DOES print, so both figures are ink on the paper.
    */
   it("derives the participaciones from the printed unit price", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      units: undefined,
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        units: undefined,
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -142,11 +157,14 @@ describe("resolveOperationTerms · a document with no participaciones", () => {
    * the #1325 failure, which on an existing position has no honest encoding.
    */
   it("refuses when neither the quantity nor the price is printed, and says which is missing", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      pricePerUnit: undefined,
-      units: undefined,
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        pricePerUnit: undefined,
+        units: undefined,
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -155,11 +173,14 @@ describe("resolveOperationTerms · a document with no participaciones", () => {
   });
 
   it("refuses a printed price in another currency", () => {
-    const result = resolveOperationTerms({
-      ...APORTACION,
-      pricePerUnit: { amount: 21.12, currency: "USD" },
-      units: undefined,
-    });
+    const result = resolveOperationTerms(
+      {
+        ...APORTACION,
+        pricePerUnit: { amount: 21.12, currency: "USD" },
+        units: undefined,
+      },
+      "buy",
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -169,7 +190,7 @@ describe("resolveOperationTerms · a document with no participaciones", () => {
 
 describe("resolveOperationTerms · a document with no amount to write", () => {
   it("refuses a zero amount rather than record an empty operation", () => {
-    const result = resolveOperationTerms({ ...APORTACION, amount: 0 });
+    const result = resolveOperationTerms({ ...APORTACION, amount: 0 }, "buy");
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -177,7 +198,7 @@ describe("resolveOperationTerms · a document with no amount to write", () => {
   });
 
   it("reads a negative amount as its magnitude: the direction is the kind's, not the sign's", () => {
-    const result = resolveOperationTerms({ ...APORTACION, amount: -125 });
+    const result = resolveOperationTerms({ ...APORTACION, amount: -125 }, "buy");
 
     expect(result.ok && result.terms.amountMinor).toBe(125_00);
   });
@@ -196,7 +217,7 @@ const JORGE: ExtractedHoldingEvent = {
 
 describe("resolveOperationTerms · derived price scale (#1467)", () => {
   it("writes Jorge's price at 8 decimals, and the cost is still 312,55 €", () => {
-    const result = resolveOperationTerms(JORGE);
+    const result = resolveOperationTerms(JORGE, "buy");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -206,12 +227,96 @@ describe("resolveOperationTerms · derived price scale (#1467)", () => {
   });
 
   it("does not write more decimals than the canonical 8, even on a periodic division", () => {
-    const result = resolveOperationTerms({ ...JORGE, amount: 1, units: 3 });
+    const result = resolveOperationTerms({ ...JORGE, amount: 1, units: 3 }, "buy");
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.terms.pricePerUnit).toBe("0.33333333");
     expect(result.terms.pricePerUnit.split(".")[1]?.length).toBeLessThanOrEqual(8);
     expect(multiplyToMinor(result.terms.units, result.terms.pricePerUnit)).toBe(1_00);
+  });
+});
+
+/** es-ES puts NBSP/narrow-NBSP before the symbol; compare in plain spaces. */
+function plain(value: string): string {
+  return value.replace(/[\u00a0\u202f]/g, " ");
+}
+
+/**
+ * A SALE with a commission (#1836): the importe is the money that came back into the
+ * account, gross LESS the fee — the ledger's `operationAmountMinor` — so the price is
+ * derived from 995 € + 5 €, never from 995 € − 5 €.
+ */
+const VENTA: ExtractedHoldingEvent = {
+  amount: 995,
+  currency: "EUR",
+  date: "2026-09-10",
+  fees: { amount: 5, currency: "EUR" },
+  kind: "other",
+  label: "Venta 10 participaciones",
+  units: 10,
+};
+
+describe("resolveOperationTerms · la dirección (#1836)", () => {
+  it("una venta con participaciones se escribe al precio de su bruto", () => {
+    const result = resolveOperationTerms(VENTA, "sell");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.terms).toMatchObject({
+      amountMinor: 995_00,
+      feesMinor: 500,
+      pricePerUnit: "100",
+      units: "10",
+    });
+  });
+
+  it("una venta con solo el precio deriva las participaciones de su bruto", () => {
+    const result = resolveOperationTerms(
+      { ...VENTA, pricePerUnit: { amount: 100, currency: "EUR" }, units: undefined },
+      "sell",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.terms.units).toBe("10");
+    expect(result.terms.pricePerUnit).toBe("100");
+    // 1.000 € ÷ 100 € — the gross, not the importe.
+    expect(plain(result.terms.notes[0] ?? "")).toContain("1000,00 € ÷ 100");
+  });
+
+  it("el contraste con el precio impreso no salta en una venta correcta", () => {
+    const result = resolveOperationTerms(
+      { ...VENTA, pricePerUnit: { amount: 100, currency: "EUR" } },
+      "sell",
+    );
+
+    expect(result.ok && result.terms.notes).toEqual([]);
+  });
+
+  it("el contraste de una venta que no cuadra resta la comisión", () => {
+    const result = resolveOperationTerms(
+      { ...VENTA, pricePerUnit: { amount: 90, currency: "EUR" } },
+      "sell",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 10 × 90 € − 5 € = 895 €, frente a los 995 € del papel.
+    expect(result.terms.notes.map(plain)).toEqual([
+      expect.stringContaining("10 × 90 EUR − 5,00 € de comisión son 895,00 €"),
+    ]);
+  });
+
+  it("una venta cuya comisión supera el importe no se rechaza: su bruto es positivo", () => {
+    const result = resolveOperationTerms(
+      { ...VENTA, amount: 5, fees: { amount: 5, currency: "EUR" } },
+      "sell",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // (5 € + 5 €) ÷ 10 part.
+    expect(result.terms.pricePerUnit).toBe("1");
   });
 });

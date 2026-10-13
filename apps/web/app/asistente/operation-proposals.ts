@@ -53,7 +53,10 @@ import {
   readConnectedSourceOwners,
 } from "./connected-source-write-guard";
 import { formatIsoDayEs } from "./iso-day-es";
-import type { OperationKindClaim } from "./operation-document-frontier";
+import {
+  ledgerOperationKind,
+  type OperationKindClaim,
+} from "./operation-document-frontier";
 import type { OperationProposal } from "./operation-proposal-contract";
 import {
   OPERATION_DICTATED_CAPTION,
@@ -135,11 +138,6 @@ export interface ProjectedOperation {
   holding: { id: string; name: string; currency: string; securityId?: SecurityId };
   unitsBefore: DecimalString;
   unitsAfter: DecimalString;
-}
-
-/** The ledger kind an observed operation is written as (an aportación is a buy). */
-export function ledgerOperationKind(kind: OperationKindClaim): "buy" | "sell" {
-  return kind === "sell" ? "sell" : "buy";
 }
 
 /**
@@ -295,7 +293,7 @@ export async function buildOperationProposal(
 ): Promise<{ ok: true; proposal: OperationProposal } | { ok: false; error: string }> {
   const fact = await resolveOperationFact(store, args);
   const { dictated, event } = fact;
-  const resolved = resolveOperationTerms(event);
+  const resolved = resolveOperationTerms(event, ledgerOperationKind(args.kind));
   if (!resolved.ok) return resolved;
   const terms = resolved.terms;
 
@@ -409,7 +407,7 @@ export async function buildOperationProposal(
       },
       impactCaption: OPERATION_IMPACT_CAPTION,
       kind: args.kind,
-      notes: dictatedNotes(fact, terms, holding.name).concat(terms.notes),
+      notes: dictatedNotes(fact, args.kind, terms, holding.name).concat(terms.notes),
       position: {
         unitsAfter: formatUnits(projected.unitsAfter),
         unitsBefore: formatUnits(projected.unitsBefore),
@@ -455,7 +453,7 @@ async function resolveOperationFact(
   return {
     assumedCurrency: typed.currency === null ? currency : null,
     dictated: typed,
-    event: holdingEventFromTyped(typed, currency),
+    event: holdingEventFromTyped(typed, currency, args.kind),
   };
 }
 
@@ -490,6 +488,7 @@ async function holdingCurrency(
  */
 function dictatedNotes(
   fact: ResolvedOperationFact,
+  kind: OperationKindClaim,
   terms: OperationTerms,
   holdingName: string,
 ): string[] {
@@ -498,6 +497,7 @@ function dictatedNotes(
   if (
     dictated !== null &&
     dictated.amount === undefined &&
+    dictated.grossAmount === undefined &&
     dictated.units !== undefined &&
     dictated.pricePerUnit !== undefined
   ) {
@@ -505,8 +505,10 @@ function dictatedNotes(
       operationDerivedAmountNote({
         amountMinor: terms.amountMinor,
         currency: terms.currency,
+        kind,
         pricePerUnit: dictated.pricePerUnit,
         units: dictated.units,
+        ...(terms.feesMinor === undefined ? {} : { feesMinor: terms.feesMinor }),
       }),
     );
   }

@@ -2,11 +2,18 @@
  * From an observed dated fact to the terms an operation is written with (#1374).
  * Pure: no store, no clock, no persistence.
  *
- * The whole module is one invariant, the same one the alta solves for (#1315):
- * `importe = participaciones × precio + comisión`. A confirmation states three of
- * those four terms at most, so the missing side is DERIVED from the ones printed and
- * never invented — and when nothing printed can pin the quantity, the operation is
- * refused instead of encoded with a fake participación.
+ * The whole module is one invariant, the ledger's own (#1836): the importe is the
+ * money the operation moved in the account, `operationAmountMinor` —
+ * `participaciones × precio` PLUS the commission on a purchase, LESS it on a sale. A
+ * confirmation states three of those four terms at most, so the missing side is
+ * DERIVED from the ones printed and never invented — and when nothing printed can pin
+ * the quantity, the operation is refused instead of encoded with a fake participación.
+ *
+ * The direction is the caller's to say, and never defaulted: a sale of 995 € with 5 €
+ * of commission sold 1.000 € at market, and reading it with the purchase's rule wrote
+ * it at 99 € a share. The sign table lives in the domain
+ * (`operationGrossFromAmountMinor`), so this lane and the ledger cannot apply different
+ * rules to the same operation.
  *
  * That refusal is the sharp edge here, and it is deliberate. On an EXISTING position
  * the «1 participación al importe» encoding of a value-only alta (#1325) is not
@@ -25,6 +32,8 @@ import {
   formatUnits,
   multiplyToMinor,
   normalizeDecimal,
+  operationAmountMinor,
+  operationGrossFromAmountMinor,
   PRICE_READBACK_DECIMALS,
 } from "@worthline/domain";
 
@@ -76,7 +85,7 @@ function euros(amountMinor: number, currency: string): string {
 }
 
 /**
- * Cents of slack when reconciling `participaciones × precio impreso + comisión`
+ * Cents of slack when reconciling `participaciones × precio impreso ± comisión`
  * against the printed amount. It has to SCALE with the quantity: a fund prints its
  * NAV rounded to the decimals it quotes, so the true price is within half of that
  * last decimal, and over 5,92 participaciones a NAV printed as 21,12 € can be off by
@@ -105,10 +114,12 @@ const MISSING_QUANTITY =
 
 /**
  * Resolve the observed event into the terms the ledger will record, or an honest
- * Spanish refusal the assistant can act on.
+ * Spanish refusal the assistant can act on. `kind` is the LEDGER direction (an
+ * aportación is a `buy`): it says which way the commission moves the importe.
  */
 export function resolveOperationTerms(
   event: ExtractedHoldingEvent,
+  kind: "buy" | "sell",
 ): OperationTermsResolution {
   const amountMinor = Math.abs(toMinor(event.amount));
   if (amountMinor <= 0) {
@@ -134,8 +145,14 @@ export function resolveOperationTerms(
 
   const feesMinor =
     event.fees === undefined ? undefined : Math.abs(toMinor(event.fees.amount));
-  const netMinor = amountMinor - (feesMinor ?? 0);
-  if (netMinor <= 0) {
+  // units × price: the importe with the commission taken back out, the way it went in.
+  const grossMinor = operationGrossFromAmountMinor({
+    amountMinor,
+    feesMinor: feesMinor ?? 0,
+    kind,
+  });
+  // Only a purchase can get here: a sale's gross is its importe PLUS the commission.
+  if (grossMinor <= 0) {
     return {
       ok: false,
       error:
@@ -158,7 +175,7 @@ export function resolveOperationTerms(
     // cent — the same division the reconcile's matched rows persist. The printed NAV
     // (rounded to the decimals the fund quotes) is kept as a cross-check below.
     const pricePerUnit = divideUnits(
-      minorToDecimal(netMinor),
+      minorToDecimal(grossMinor),
       units,
       PRICE_READBACK_DECIMALS,
     );
@@ -166,7 +183,7 @@ export function resolveOperationTerms(
       ok: true,
       terms: {
         ...common,
-        notes: printedPriceNotes(event, units, netMinor, feesMinor),
+        notes: printedPriceNotes(event, kind, units, amountMinor, feesMinor),
         pricePerUnit,
         units,
       },
@@ -185,7 +202,7 @@ export function resolveOperationTerms(
     }
     const derived = deriveOpeningUnits({
       priceRaw: String(event.pricePerUnit.amount),
-      saldoRaw: minorToDecimal(netMinor),
+      saldoRaw: minorToDecimal(grossMinor),
     });
     // Unreachable with a validated positive price and net, but never assume a parse.
     if (!derived.ok) return { ok: false, error: MISSING_QUANTITY };
@@ -195,7 +212,7 @@ export function resolveOperationTerms(
         ...common,
         notes: [
           "El documento no dice las participaciones, así que las derivo del precio que sí " +
-            `imprime: ${euros(netMinor, event.currency)} ÷ ${formatDocumentUnitPrice(event.pricePerUnit.amount)} ` +
+            `imprime: ${euros(grossMinor, event.currency)} ÷ ${formatDocumentUnitPrice(event.pricePerUnit.amount)} ` +
             `= ${formatUnits(derived.units)} part. Las dos cifras son del documento, pero la ` +
             "cantidad es una división y queda así en el libro: si el justificante trae los " +
             "títulos exactos, dímelos y los anoto tal cual.",
@@ -217,8 +234,9 @@ export function resolveOperationTerms(
  */
 function printedPriceNotes(
   event: ExtractedHoldingEvent,
+  kind: "buy" | "sell",
   units: DecimalString,
-  netMinor: number,
+  amountMinor: number,
   feesMinor: number | undefined,
 ): string[] {
   const printed = event.pricePerUnit;
@@ -228,14 +246,24 @@ function printedPriceNotes(
   ) {
     return [];
   }
-  const computedMinor = multiplyToMinor(units, String(printed.amount));
+  // What the ledger would print for these participaciones at the printed price — the
+  // same `operationAmountMinor` the operations book reads — against the importe stated.
+  const computedMinor = operationAmountMinor({
+    feesMinor: feesMinor ?? 0,
+    kind,
+    pricePerUnit: normalizeDecimal(String(printed.amount)),
+    units,
+  });
   const tolerance = reconciliationToleranceMinor(Number(units), printed.amount);
-  if (Math.abs(computedMinor - netMinor) <= tolerance) return [];
+  if (Math.abs(computedMinor - amountMinor) <= tolerance) return [];
+  const feeSegment =
+    feesMinor === undefined
+      ? ""
+      : ` ${kind === "sell" ? "−" : "+"} ${euros(feesMinor, event.currency)} de comisión`;
   return [
-    `El documento dice ${euros(event.fees === undefined ? netMinor : netMinor + (feesMinor ?? 0), event.currency)}, ` +
-      `pero ${units} × ${printed.amount} ${event.currency}` +
-      `${feesMinor === undefined ? "" : ` + ${euros(feesMinor, event.currency)} de comisión`} son ` +
-      `${euros(computedMinor + (feesMinor ?? 0), event.currency)}. Anoto las participaciones y el ` +
+    `El documento dice ${euros(amountMinor, event.currency)}, ` +
+      `pero ${units} × ${printed.amount} ${event.currency}${feeSegment} son ` +
+      `${euros(computedMinor, event.currency)}. Anoto las participaciones y el ` +
       "importe tal cual: revisa la cifra si no cuadra.",
   ];
 }

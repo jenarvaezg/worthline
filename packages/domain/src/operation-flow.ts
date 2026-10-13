@@ -65,18 +65,58 @@ export function isDeclaredOpening(
 export function operationAmountMinor(
   operation: Pick<InvestmentOperation, "feesMinor" | "kind" | "pricePerUnit" | "units">,
 ): number {
-  const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
+  return operationAmountFromGrossMinor({
+    feesMinor: operation.feesMinor,
+    grossMinor: multiplyToMinor(operation.units, operation.pricePerUnit),
+    kind: operation.kind,
+  });
+}
 
-  switch (operation.kind) {
+/**
+ * Which way a kind's fees move its importe, and the one table that says it (#1836):
+ * capitalized (+1) on what came IN, netted off (−1) on what went OUT. Both
+ * directions of the importe ↔ gross conversion read it, so the assistant's
+ * operation lane and the ledger cannot apply different rules to the same sale.
+ */
+function feeSign(kind: OperationKind): 1 | -1 {
+  switch (kind) {
     case "buy":
     case "transfer_in":
-      return grossMinor + operation.feesMinor;
+      return 1;
     case "sell":
     case "transfer_out":
-      return grossMinor - operation.feesMinor;
+      return -1;
     default:
-      return unhandledOperationKind(operation.kind);
+      return unhandledOperationKind(kind);
   }
+}
+
+/**
+ * The importe of an operation from its gross (units × price, in minor units): the
+ * gross PLUS the fees on the way in, LESS the fees on the way out. The arithmetic
+ * of {@link operationAmountMinor}, for a caller that already holds the gross.
+ */
+export function operationAmountFromGrossMinor(input: {
+  kind: OperationKind;
+  grossMinor: number;
+  feesMinor: number;
+}): number {
+  return input.grossMinor + feeSign(input.kind) * input.feesMinor;
+}
+
+/**
+ * The inverse (#1836): the gross (units × price) an operation of this importe and
+ * these fees moved. A sale that brought 995 € back with 5 € of fees sold 1.000 € at
+ * market; a buy that cost 1.005 € with the same fees bought 1.000 €. Whoever derives
+ * a price or a number of units from a declared importe goes through here, never
+ * through its own `importe − comisión`.
+ */
+export function operationGrossFromAmountMinor(input: {
+  kind: OperationKind;
+  amountMinor: number;
+  feesMinor: number;
+}): number {
+  return input.amountMinor - feeSign(input.kind) * input.feesMinor;
 }
 
 /**
