@@ -1365,6 +1365,13 @@ h3 {
   z-index: 30;
 }
 
+/* Lo que se pega arriba dentro de la página se ancla BAJO esta barra, que está
+   por encima (z 30). Su alto de una línea vive aquí, junto a ella: si la barra
+   cambia de alto, cambia esto (#1837, el buscador del selector largo). */
+.workspace:has(> .tabsBar) {
+  --scope-bar-clearance: 56px;
+}
+
 .scopeTabs,
 .framingTabs {
   display: flex;
@@ -4917,7 +4924,10 @@ code {
   width: 14px;
 }
 
-.chipChoice label:has(input:checked) {
+/* El tinte de lo elegido: el chip marcado y, en el móvil, cada elegido de la
+   cesta del selector largo (#1837) — el mismo registro, una sola receta. */
+.chipChoice label:has(input:checked),
+.chipLedgerBasketItem {
   background: rgba(42, 161, 136, 0.12);
   border-color: var(--tier-cash);
   color: var(--tier-cash);
@@ -4940,6 +4950,470 @@ code {
 .chipChoice label:has(input:focus-visible) {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
+}
+
+/* El código que distingue a dos gemelos (#1837): ISIN, código DGS o símbolo,
+   solo cuando otra opción comparte el nombre. Misma etiqueta en el chip, en la
+   fila del libro y en la cesta. */
+.chipChoice .chipCode,
+.chipLedgerCode {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  display: inline-block;
+  font-family: var(--font-numeric);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.chipLedgerName .chipLedgerCode {
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+/* ── El selector largo (#1837, canon §4) ────────────────────────────────────
+   Pasadas las doce opciones, los chips son un muro: el selector se vuelve libro
+   por peldaños, con el buscador primero y lo elegido en una cesta. */
+.chipLedger {
+  /* Lo pegajoso se ancla bajo la barra de ámbito cuando la hay (`.tabsBar`). */
+  --chip-ledger-top: var(--scope-bar-clearance, 0px);
+  /* Alto fijo del buscador con su pista, que nunca parte línea: la cabecera del
+     grupo en curso se pega justo debajo. */
+  --chip-ledger-bar: 84px;
+  /* Hijo de un grid (`.stackForm`): sin esto, el nombre más largo fija el ancho
+     mínimo de la columna y la página desborda en un móvil. */
+  min-width: 0;
+}
+
+.chipLedgerLayout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Cabeceras de la cesta y de cada grupo: label pequeño real (canon §3). */
+.chipLedgerHead {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.7rem;
+  font-weight: 700;
+  gap: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chipLedgerCount {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* La cesta en el móvil: lo elegido como chips con ×, encima del buscador. Es un
+   espejo sin casillas — lo que se envía son las del libro. */
+.chipLedgerBasket {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chipLedgerBasketHead {
+  display: none;
+}
+
+.chipLedgerBasketList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chipLedgerBasketItem {
+  align-items: center;
+  border-radius: 999px;
+  border-style: solid;
+  border-width: 1px;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 600;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 2px 4px 2px 12px;
+}
+
+.chipLedgerBasketItem .chipLedgerCode {
+  border-color: color-mix(in srgb, var(--tier-cash) 45%, transparent);
+  color: inherit;
+}
+
+.chipLedgerBasketName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipLedgerBasketValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* La × de la cesta: anula la receta global de botón (tinta, 38 px de alto). */
+.chipLedger .chipLedgerRemove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  display: inline-flex;
+  flex: none;
+  font-size: 1.05rem;
+  height: 26px;
+  justify-content: center;
+  line-height: 1;
+  min-height: 0;
+  padding: 0;
+  width: 26px;
+}
+
+.chipLedger .chipLedgerRemove:hover {
+  background: color-mix(in srgb, var(--tier-cash) 16%, transparent);
+}
+
+.chipLedgerRemove:focus-visible,
+.chipLedgerFold:focus-visible,
+.chipLedgerMore:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.chipLedgerEmpty {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+/* El buscador, primero y pegado arriba: a mitad de sesenta fondos de Mercado no
+   se pierde. Alto fijo, para que la cabecera del grupo sepa dónde pegarse. */
+.chipLedgerSearchBar {
+  background: var(--paper);
+  box-sizing: border-box;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--chip-ledger-bar);
+  padding: 8px 0 6px;
+  position: sticky;
+  top: var(--chip-ledger-top);
+  z-index: 2;
+}
+
+.chipLedger .chipLedgerSearch {
+  appearance: none;
+  background: var(--panel)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%234e5c54' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat 12px center;
+  font-size: 1rem;
+  min-height: 44px;
+  padding: 8px 12px 8px 36px;
+}
+
+.chipLedgerSearch::placeholder {
+  color: var(--muted);
+}
+
+.chipLedgerHint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipLedgerHint strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.chipLedgerHint kbd {
+  border: 1px solid var(--line-soft);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-numeric);
+  font-size: 0.7rem;
+  padding: 0 4px;
+}
+
+/* El libro: se abre por regla gruesa, como toda sección del canon (§4). */
+.chipLedgerBook {
+  border-top: var(--rule-heavy);
+}
+
+/* `hidden` pierde contra cualquier `display` de autor: sin esto, el buscador, la
+   ventana de cinco y el pliegue esconderían filas solo en teoría. */
+.chipLedger .chipLedgerGroup[hidden],
+.chipLedger .chipLedgerRows[hidden],
+.chipLedger .chipLedgerRow[hidden] {
+  display: none;
+}
+
+/* La cabecera del grupo en curso se pega bajo el buscador. */
+.chipLedgerGroupHead {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-strong);
+  padding: 16px 0 6px;
+  position: sticky;
+  top: calc(var(--chip-ledger-top) + var(--chip-ledger-bar));
+  z-index: 1;
+}
+
+/* La cabecera de un grupo plegado es el botón que lo despliega: anula la receta
+   global de botón y se queda en label. */
+.chipLedger .chipLedgerFold {
+  background: var(--paper);
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--muted);
+  cursor: pointer;
+  min-height: 0;
+  padding: 16px 0 6px;
+  text-align: left;
+  width: 100%;
+}
+
+.chipLedger .chipLedgerFold:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chipLedgerCaret {
+  display: inline-block;
+  margin-right: 6px;
+  width: 0.8em;
+}
+
+.chipLedgerGroupMeta {
+  align-items: baseline;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.chipLedgerGroupChosen {
+  color: var(--tier-cash);
+  letter-spacing: 0.04em;
+}
+
+/* La fila: casilla · nombre · valor. Es un <label> dentro de `.stackForm`, cuya
+   receta de label de campo (gris, 600, gap 6) le gana a una clase sola por
+   especificidad: por eso va anclada a la raíz del libro. */
+.chipLedger .chipLedgerRow {
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  font-size: 0.9rem;
+  font-weight: 400;
+  gap: 12px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  letter-spacing: 0;
+  min-height: 40px;
+  padding: 6px;
+}
+
+/* La fila que Enter añadiría sale señalada (banda), no elegida (casilla). */
+.chipLedgerRow:hover,
+.chipLedgerRow[data-target] {
+  background: var(--band);
+}
+
+.chipLedgerRow[data-target] .chipLedgerValue::after {
+  color: var(--blue);
+  content: "↵";
+  margin-left: 8px;
+}
+
+/* La casilla nativa es la marca binaria (#1483); el `min-height` global de 38 px
+   la engordaría. */
+.chipLedger .chipLedgerRow input {
+  accent-color: var(--tier-cash);
+  cursor: pointer;
+  height: 16px;
+  margin: 0;
+  min-height: 0;
+  padding: 0;
+  width: 16px;
+}
+
+.chipLedgerRow:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.chipLedgerRow:has(input:checked) .chipLedgerName {
+  font-weight: 600;
+}
+
+.chipLedgerName {
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chipLedgerValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chipLedgerHit {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  color: inherit;
+  padding: 0;
+}
+
+/* «Ver N más», «Ver solo los 5 mayores» y «Borrar la búsqueda»: controles de
+   texto, no botones de tinta. */
+.chipLedger .chipLedgerMore {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 400;
+  min-height: 0;
+  padding: 10px 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.chipLedgerNoMatch {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 14px 0 0;
+}
+
+.chipLedger .chipLedgerNoMatch .chipLedgerMore {
+  padding: 0;
+}
+
+@media (max-width: 640px) {
+  .chipLedger .chipLedgerRow {
+    font-size: 0.92rem;
+    gap: 10px;
+    min-height: 44px;
+  }
+}
+
+/* En escritorio: el libro a la izquierda y la cesta a la derecha, pegajosa, con
+   las filas del libro (nombre, código, valor, ×) y su regla gruesa a la altura de
+   la del libro. Recorrer el libro no esconde lo que ya llevas. */
+@media (min-width: 960px) {
+  .chipLedgerLayout {
+    align-items: start;
+    column-gap: 48px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    row-gap: 10px;
+  }
+
+  .chipLedgerSearchBar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .chipLedgerBook {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .chipLedgerBasket {
+    align-content: start;
+    border-top: var(--rule-heavy);
+    gap: 0;
+    grid-column: 2;
+    grid-row: 2;
+    max-height: calc(100vh - var(--chip-ledger-top) - 24px);
+    overflow-y: auto;
+    position: sticky;
+    top: calc(var(--chip-ledger-top) + 12px);
+  }
+
+  .chipLedgerBasketHead {
+    border-bottom: 1px solid var(--line-strong);
+    display: flex;
+    padding: 16px 0 6px;
+  }
+
+  .chipLedgerBasketList {
+    display: grid;
+    gap: 0;
+  }
+
+  .chipLedgerBasketItem {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+    color: var(--ink);
+    column-gap: 10px;
+    display: grid;
+    font-size: 0.88rem;
+    font-weight: 400;
+    grid-template-areas:
+      "name value remove"
+      "code value remove";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    min-height: 40px;
+    padding: 7px 0 7px 2px;
+    row-gap: 2px;
+  }
+
+  .chipLedgerBasketName {
+    grid-area: name;
+    line-height: 1.3;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .chipLedgerBasketItem .chipLedgerCode {
+    border-color: var(--line-soft);
+    color: var(--muted);
+    grid-area: code;
+    justify-self: start;
+  }
+
+  .chipLedgerBasketValue {
+    grid-area: value;
+  }
+
+  .chipLedger .chipLedgerRemove {
+    color: var(--muted);
+    grid-area: remove;
+  }
+
+  .chipLedger .chipLedgerRemove:hover {
+    background: var(--band);
+    color: var(--ink);
+  }
+
+  .chipLedgerEmpty {
+    padding: 12px 0;
+  }
 }
 
 @media (max-width: 560px) {

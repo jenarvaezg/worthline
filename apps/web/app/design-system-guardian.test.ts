@@ -121,6 +121,14 @@ const semanticShapeAllowlist: AllowedDeclaration[] = [
     value: "999px",
   },
   {
+    // Lo elegido en el selector largo, en el móvil (#1837): sigue siendo un chip
+    // de selección de holding, el mismo registro que `.chipChoice label`.
+    file: "globals.css",
+    property: "border-radius",
+    selector: ".chipLedgerBasketItem",
+    value: "999px",
+  },
+  {
     file: "globals.css",
     property: "border-radius",
     selector: ".simpleInlineCheck",
@@ -652,6 +660,39 @@ describe("Libro mayor design-system guardian (#906)", () => {
       .map((file) => relative(appDirectory, file));
 
     expect(painters).toEqual(["chip-choice.tsx"]);
+  });
+
+  test("the long selector keeps one painter, and no consumer picks its mode (#1837)", () => {
+    // Pasadas las doce opciones el selector se vuelve libro con buscador y cesta.
+    // Sigue siendo EL selector del canon: un único pintor del libro, y solo el
+    // componente compartido lo monta, para que ningún consumidor elija modo ni
+    // nazca un segundo libro a mano.
+    const ledgerPainters = sourceFiles(/\.tsx$/)
+      .filter((file) => readFileSync(file, "utf8").includes('className="chipLedger"'))
+      .map((file) => relative(appDirectory, file));
+    expect(ledgerPainters).toEqual(["chip-ledger.tsx"]);
+
+    const mounters = sourceFiles(/\.tsx$/)
+      .filter((file) => !file.endsWith(".test.tsx"))
+      // Por alias o por ruta relativa: cualquier import que acabe en `chip-ledger`.
+      .filter((file) => /from "[^"]*\bchip-ledger"/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(appDirectory, file));
+    expect(mounters).toEqual(["chip-choice.tsx"]);
+
+    // La fila es un <label> dentro de `.stackForm`, cuya receta de label de campo
+    // (gris, 600) le gana a una clase sola: la del libro va anclada a su raíz.
+    expectRecipe(".chipLedger .chipLedgerRow", {
+      color: "var(--ink)",
+      "font-weight": "400",
+    });
+    // `hidden` pierde contra cualquier `display` de autor: sin esto el buscador
+    // y la ventana esconderían filas solo en teoría.
+    expectRecipe(".chipLedger .chipLedgerRow[hidden]", { display: "none" });
+    // El valor es cifra tabular, como toda columna numérica del canon (§3).
+    expectRecipe(".chipLedgerValue", {
+      "font-family": "var(--font-numeric)",
+      "font-variant-numeric": "tabular-nums",
+    });
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {

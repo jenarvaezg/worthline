@@ -131,7 +131,9 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   await page.getByLabel("Nombre").last().fill(checkGoalName);
   await page.getByLabel("Importe objetivo (EUR)").last().fill("5000");
   await page.getByLabel("Fecha límite").last().fill("2030-01-01");
-  await page.locator("#goalCreateForm .chipChoice label").first().click();
+  // El primer activo que el selector enseña, sea chip o fila del libro: con más de
+  // doce activos acumulados por la suite, el selector es el libro (#1837).
+  await page.locator("#goalCreateForm label:has(input[name=assetIds])").first().click();
   await page.getByRole("button", { name: "Crear objetivo" }).click();
   await expect(page).toHaveURL(/\/objetivos/);
 

@@ -100,6 +100,36 @@ componente compartido `chip-choice.tsx`, y el guardián prohíbe que ningún otr
 **pregunta** («Elige qué activos…»); afirmar («Activos que…») queda para la prosa
 que solo enumera lo ya marcado.
 
+El selector **escala solo** (#1837): hasta doce opciones, chips; a partir de la
+decimotercera, ochenta chips son un muro que se escanea en vez de leerse, y el mismo
+componente pinta el **libro** (`.chipLedger`, isla `chip-ledger.tsx`, lógica pura en
+`chip-ledger-view.ts`). Ningún consumidor elige modo; el guardián fija que solo
+`chip-choice.tsx` monta el libro. El libro es:
+
+- **Buscador primero**, pegado arriba. Filtra por nombre, ISIN/código DGS y símbolo,
+  sin mayúsculas ni tildes, y resalta la coincidencia. La pista de una sola línea
+  dice qué añadiría Enter (con el código si es gemelo) y esa fila sale señalada con
+  banda, no marcada. Enter añade y limpia, **nunca envía** el formulario; Escape
+  limpia; ↓ baja a la primera fila visible.
+- **Filas por peldaño** de la escalera, cada grupo con su cabecera pegajosa (label,
+  «N elegidos», recuento): casilla nativa · nombre · valor en cifra tabular,
+  enmascarado en modo privacidad. Dentro del grupo, de mayor a menor valor, decidido
+  en el servidor. Cada grupo enseña sus **cinco mayores** y el resto a demanda; una
+  fila marcada al cargar o tocada en la sesión no se esconde al plegar —la lista no se
+  mueve bajo el dedo—. Ilíquido y Vivienda salen plegados.
+- **La cesta**: en escritorio (≥ 960 px), un panel pegajoso a la derecha abierto por regla gruesa a la altura de la del
+  libro, con las filas del libro y su ×; en el móvil, chips con × encima del buscador
+  —la única píldora del libro, porque sigue siendo un chip de selección de holding—.
+  Es un espejo sin casillas.
+
+Las casillas del libro son lo único que se envía (`defaultChecked`, el mismo `name`
+que los chips): una fila oculta por el buscador, la ventana o el pliegue sigue
+montada y sigue viajando en el formulario. La isla no es dueña de lo que se envía:
+añade buscador, pliegue y cesta sobre casillas que ya pintó el servidor. Y en ambos
+modos, dos opciones con el mismo nombre visible llevan cada
+una su ISIN o código DGS (o el símbolo, si no tiene identificador) en una etiqueta
+de cifra (`.chipCode` / `.chipLedgerCode`).
+
 El asistente (#911) no tiene ruta propia y la propuesta A no lo receta, así que
 lleva receta de panel propia: una hoja encartada sobre la página (`.assistantPanel`,
 fondo `--panel`) ligada por su lomo —una regla gruesa, no un borde suave con

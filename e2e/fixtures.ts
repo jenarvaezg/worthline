@@ -110,6 +110,35 @@ export async function waitForHydration(locator: import("@playwright/test").Locat
 }
 
 /**
+ * Mark one option of the holding selector by its visible name, whichever mode
+ * the selector is in (#1837).
+ *
+ * The mode is the catalogue's to decide, not the journey's: up to twelve options
+ * it is chips, past that the ledger. In this serial suite the catalogue grows
+ * journey by journey, so the same form can be either depending on what ran
+ * before. A chip's native input is hidden by the canon (`opacity: 0`) and is
+ * marked through its label, the gesture a finger makes; a ledger row may sit
+ * behind «Ver N más» or inside a folded rung, so the search brings it into view
+ * first — and the row is then clicked, not added with Enter, because Enter takes
+ * the FIRST unchosen match and a name can be a prefix of another.
+ */
+export async function pickHolding(
+  selector: import("@playwright/test").Locator,
+  name: string,
+) {
+  const search = selector.getByRole("searchbox", { name: "Buscar un activo" });
+  if ((await search.count()) > 0) {
+    await waitForHydration(search);
+    await search.fill(name);
+  }
+  const option = selector.locator("label:has(input[type=checkbox])", { hasText: name });
+  const box = option.locator("input");
+  await expect(box).not.toBeChecked();
+  await option.click();
+  await expect(box).toBeChecked();
+}
+
+/**
  * Whether React owns this element RIGHT NOW — one sample, no waiting.
  *
  * This is the suite's only hydration signal, so it lives here instead of being
