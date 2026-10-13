@@ -19,6 +19,7 @@ import {
   holdingRow,
   openAdvancedSettings,
   openFichaAction,
+  openFichaTab,
   test,
 } from "./fixtures";
 
@@ -159,18 +160,32 @@ test("appreciating: a property edits its valuation curve from the detail page", 
   const id = new URL(page.url()).hash.slice(1);
 
   await page.goto(`/patrimonio/${id}/editar`);
-  await openAdvancedSettings(page);
-  // Appreciating surface: the housing valuation region with a rate field.
+  // Housing ficha (#1847): a state header with the curve's value, its last
+  // appraisal and its rate — no «Configuración avanzada».
+  const state = page.getByRole("region", { name: "Estado del activo" });
+  await expect(state.locator(".fichaValue")).toHaveText(/220\.?000\s*€/);
+  await expect(state.locator(".fichaFigures")).toContainText("Última tasación");
+  await expect(state.locator(".fichaFigures")).toContainText("Adquisición · 10/01/2021");
+  await expect(page.locator("details.editAdvanced")).toHaveCount(0);
+
+  // With no cobros it opens on «Valoración», the curve with its rate field.
   await expect(
     page.getByRole("region", { name: "Valoración del inmueble" }),
   ).toBeVisible();
   await page.getByLabel("Tasa de revalorización anual (%)").fill("3");
   await page.getByRole("button", { name: "Guardar tasa" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
-  // The save redirect folds the advanced block shut again; re-open it before
-  // reading the field back.
-  await openAdvancedSettings(page);
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("3");
+  await expect(state.locator(".fichaFigures")).toContainText("3 %");
+
+  // Cobros is a tab away, and «Registrar tasación» opens in the panel over it.
+  await openFichaTab(page, "Cobros");
+  await expect(page.locator("#cobros")).toBeVisible();
+  const panel = await openFichaAction(page, "Registrar tasación");
+  await expect(panel.getByLabel("Fecha de la tasación")).toHaveValue(today);
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  await openFichaTab(page, "Valoración");
+  await expect(page.getByRole("table", { name: "Tasaciones" })).toBeVisible();
 });
 
 test("amortized & anchored: a liability switches debt-model surfaces from the detail page", async ({

@@ -852,37 +852,227 @@ describe("EditarPage — the stored ficha is a state header with tabs (#1846)", 
   });
 });
 
-describe("EditarPage — the housing family (#1607)", () => {
+describe("EditarPage — the housing ficha is a state header with tabs (#1847)", () => {
+  const FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
+  const TODAY = "2026-10-13";
+  const bar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const figures = (html: string) =>
+    html.slice(html.indexOf('class="fichaFigures"'), html.indexOf('class="fichaTabs"'));
+  /** The figure whose label is `label`, up to the next one. */
+  const figure = (html: string, label: string) => {
+    const row = figures(html);
+    const at = row.indexOf(`<dt>${label}</dt>`);
+    if (at === -1) return "";
+    const next = row.indexOf("<dt>", at + 1);
+    return row.slice(at, next === -1 ? undefined : next);
+  };
+  const tabNav = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Secciones de la ficha"'),
+      html.indexOf('class="fichaTabBody"'),
+    );
+
+  const ACQUISITION = {
+    adjustsPriorCurve: true,
+    assetId: ASSET_ID,
+    id: "anchor_acq",
+    kind: "acquisition",
+    source: "manual",
+    valuationDate: "2020-05-10",
+    valueMinor: 200_000_00,
+  };
+  const APPRAISAL = {
+    adjustsPriorCurve: true,
+    assetId: ASSET_ID,
+    id: "anchor_tas",
+    kind: null,
+    source: "manual",
+    valuationDate: "2024-03-15",
+    valueMinor: 230_000_00,
+  };
+  /** A rent declared on the flat: what makes it a ficha that opens on Cobros. */
+  const RENT = {
+    amountBasis: "real",
+    amountMinor: 900_00,
+    assumedContributionThrough: null,
+    cadence: "monthly",
+    endISO: null,
+    exclusions: [],
+    holdingId: ASSET_ID,
+    id: "sch_rent",
+    label: "Alquiler Chamberí",
+    nature: "passive",
+    provenance: null,
+    provenanceAsOf: null,
+    startISO: "2026-01-01",
+  };
+
   beforeEach(() => {
+    // One clock for the page's «today»: only `Date`, so promises still settle.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${TODAY}T10:00:00.000Z`));
     calls.readAssets.mockResolvedValue([FLAT]);
   });
-
-  test("the valuation curve and the acquisition cost sit BELOW cobros", async () => {
-    const html = await renderedHtml();
-
-    // The order the ficha has always had: what the flat PAYS comes before the
-    // slower conversation about what it is worth. The family owns that order now,
-    // so it is the thing a re-split could silently invert.
-    const cobros = html.indexOf("<h3>Cobros</h3>");
-    expect(cobros).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Valoración del inmueble</h3>")).toBeGreaterThan(cobros);
-    expect(html.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
-      html.indexOf("<h3>Valoración del inmueble</h3>"),
-    );
-    expect(html).not.toContain('id="operaciones"');
+  afterEach(() => {
+    vi.useRealTimers();
+    // A test that gives the flat a rent or anchors for every render takes them back.
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([]);
+    calls.readValuationAnchors.mockResolvedValue([]);
   });
 
-  test("Cobros is still where the assistant sends a rent's expenses (#1524)", async () => {
+  test("a flat opens on its value, its last appraisal, its rate, its result and its bar", async () => {
+    calls.readValuationAnchors.mockResolvedValueOnce([ACQUISITION, APPRAISAL]);
+    calls.readAcquisitionCostMinor.mockResolvedValueOnce(210_000_00);
     const html = await renderedHtml();
 
-    // «la ficha del inmueble, desplegando «Configuración avanzada» → «Cobros»»: the
-    // property keeps the accordion until #1824 moves it to tabs, as the investment
-    // ficha moved in #1826. When it does, this and the destination change together.
-    const body = html.indexOf('<div class="editAdvancedBody">');
-    expect(body).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(body);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeLessThan(html.indexOf("</details>"));
-    expect(html).toContain("Gastos");
+    expect(html).not.toContain("Configuración avanzada");
+    expect(html).toContain("<h2>Piso de Chamberí</h2>");
+    expect(html).toContain('<span class="fichaInstrument">Inmueble</span>');
+    // No rate: the curve holds the last appraisal flat — the board's figure.
+    expect(html).toMatch(/class="fichaValue">230\.?000\s€/);
+    const latest = figure(html, "Última tasación");
+    expect(latest).toMatch(/230\.?000\s€/);
+    expect(latest).toContain("Tasación · 15/03/2024");
+    expect(figure(html, "Revalorización anual")).toContain("Sin revalorización");
+    // A movement: signed in the text and in the hue (canon §6).
+    const result = figure(html, "Resultado frente al coste");
+    expect(result).toMatch(/class="fichaFigure pos">\+20\.?000\s€/);
+    expect(bar(html)).toContain('class="btn" data-ficha-action="tasacion"');
+    expect(bar(html)).toContain(">Registrar tasación</button>");
+  });
+
+  test("the header's value is the curve's, not the stored column", async () => {
+    // An appraisal of 230.000 € on 15/03/2024 and 3 % a year, compounded by the
+    // day: the curve is past the appraisal and nowhere near the stored 240.000 €.
+    calls.readValuationAnchors.mockResolvedValueOnce([APPRAISAL]);
+    calls.readAnnualAppreciationRate.mockResolvedValueOnce("0.03");
+    calls.readValuationCadence.mockResolvedValueOnce("interpolated");
+    calls.readAcquisitionCostMinor.mockResolvedValueOnce(200_000_00);
+    const html = await renderedHtml();
+
+    // 230.000 × 1,03^(942/366) = 248.180,64 — the worked figure, not the stored one.
+    expect(html).toMatch(/class="fichaValue">248\.?181\s€/);
+    expect(figure(html, "Revalorización anual")).toContain("3 %");
+    // The result is measured against that value, in the header and in the tab.
+    expect(figure(html, "Resultado frente al coste")).toMatch(/\+48\.?181\s€/);
+    expect(tabBody(html)).toMatch(
+      /aria-label="Resultado frente al coste de adquisición"[^>]*>\+48\.?181\s€/,
+    );
+  });
+
+  test("with nothing declared it says so, each gap with its door", async () => {
+    const html = await renderedHtml();
+
+    expect(figure(html, "Última tasación")).toContain("Sin tasaciones");
+    const rate = figure(html, "Revalorización anual");
+    const rateLink = rate.match(/<a [^>]*>Indicar tasa<\/a>/)?.[0] ?? "";
+    expect(rateLink).toContain(`href="${FICHA}"`);
+    expect(rateLink).toContain('data-ficha-tab="valoracion"');
+    expect(rateLink).toContain('data-ficha-field="rate"');
+    const result = figure(html, "Resultado frente al coste");
+    expect(result).toContain("—");
+    expect(result).toContain("Sin coste declarado");
+    const costLink = result.match(/<a [^>]*>Indicar coste<\/a>/)?.[0] ?? "";
+    expect(costLink).toContain('data-ficha-tab="valoracion"');
+    expect(costLink).toContain('data-ficha-field="acquisitionCost"');
+    // …and both fields are on that tab, the one a flat with no cobros opens on.
+    expect(tabBody(html)).toContain('name="rate"');
+    expect(tabBody(html)).toContain('name="acquisitionCost"');
+  });
+
+  test("a flat that never paid anything opens on Valoración, then Cobros", async () => {
+    const html = await renderedHtml();
+    const tabs = tabNav(html);
+
+    expect(tabs.indexOf("Valoración")).toBeLessThan(tabs.indexOf("Cobros"));
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">0</);
+    expect(tabs.indexOf("Datos del activo")).toBeGreaterThan(tabs.indexOf("Cobros"));
+    const body = tabBody(html);
+    expect(body).toContain("<h3>Valoración del inmueble</h3>");
+    expect(body.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
+      body.indexOf("<h3>Valoración del inmueble</h3>"),
+    );
+    expect(bar(html)).not.toContain('data-ficha-action="cobro"');
+    // `holdingCobrosHref` — the contract rentas, FIRE and salud use — lands on Cobros.
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+  });
+
+  test("a rented flat opens on Cobros, where the assistant sends its expenses", async () => {
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([RENT]);
+    const html = await renderedHtml();
+    const tabs = tabNav(html);
+
+    expect(tabs.indexOf("Cobros")).toBeLessThan(tabs.indexOf("Valoración"));
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">1</);
+    expect(tabBody(html)).toContain('id="cobros"');
+    expect(tabBody(html)).toContain('aria-label="Gastos de Alquiler Chamberí"');
+    expect(bar(html)).toContain('class="btn btnSecondary" data-ficha-action="cobro"');
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+    // Valoración is a tab away, and the URLs here are built on THIS order.
+    expect(tabBody(await renderedHtml({ pestaña: "valoracion" }))).toContain(
+      "<h3>Valoración del inmueble</h3>",
+    );
+    expect(panel(await renderedHtml({ accion: "tasacion" }))).toContain(
+      `name="currentUrl" value="${FICHA}?pesta%C3%B1a=valoracion"`,
+    );
+  });
+
+  test("«Registrar tasación» opens in the panel, dated today, and lands on Valoración", async () => {
+    const tasacion = panel(await renderedHtml({ accion: "tasacion" }));
+
+    expect(tasacion).toContain('<h3 id="ficha-panel-title">Registrar tasación</h3>');
+    expect(tasacion).toContain('aria-label="Registrar tasación"');
+    const date = tasacion.match(/<input[^>]*name="valuationDate"[^>]*>/)?.[0] ?? "";
+    expect(date).toContain(`value="${TODAY}"`);
+    expect(date).toContain(`max="${TODAY}"`);
+    expect(date).not.toContain("readOnly");
+    // A market appraisal recalibrates the whole curve: a choice, never the default.
+    const market = tasacion.match(/<input[^>]*name="adjustsPriorCurve"[^>]*>/)?.[0] ?? "";
+    expect(market).not.toContain("checked");
+    // Valoración is the default tab of a flat with no cobros: the bare ficha.
+    expect(tasacion).toContain(`name="currentUrl" value="${FICHA}"`);
+    expect(tasacion).toMatch(
+      /<button[^>]*type="submit"[^>]*>Registrar tasación<\/button>/,
+    );
+  });
+
+  test("a refused appraisal reopens the panel with what was typed, and says why once", async () => {
+    const message = "Ya hay una tasación en esa fecha.";
+    const html = await renderedHtml({
+      error: message,
+      form: "anchor",
+      v_anchorValue: "250.000",
+      v_valuationDate: "2024-03-15",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Registrar tasación</h3>');
+    expect(panel(html)).toContain(message);
+    expect(panel(html)).toContain('value="2024-03-15"');
+    expect(panel(html)).toContain('value="250.000"');
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("the rest of Valoración's refusals land on its tab", async () => {
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([RENT]);
+    calls.readValuationAnchors.mockResolvedValue([ACQUISITION, APPRAISAL]);
+    for (const form of ["rate", "cadence", "acquisitionCost", "anchor-anchor_tas"]) {
+      const html = await renderedHtml({ error: "No.", form });
+      expect(tabBody(html), form).toContain("<h3>Valoración del inmueble</h3>");
+      expect(panel(html), form).toBe("");
+    }
+  });
+
+  test("the ficha no longer offers «Actualizar valor»", async () => {
+    const html = await renderedHtml();
+    expect(html).not.toContain("Actualizar valor");
+
+    const datos = tabBody(await renderedHtml({ pestaña: "datos" }));
+    expect(datos).toContain("Lo básico");
+    expect(datos).not.toContain('name="currentValue"');
   });
 
   test("it reads the four housing rows and no ledger", async () => {
@@ -890,9 +1080,15 @@ describe("EditarPage — the housing family (#1607)", () => {
 
     expect(calls.readValuationAnchors).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readAnnualAppreciationRate).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readValuationCadence).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readAcquisitionCostMinor).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readPayoutsForHolding).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readPositions).not.toHaveBeenCalled();
+    expect(calls.readInvestmentAssetById).not.toHaveBeenCalled();
     expect(calls.readDebtModel).not.toHaveBeenCalled();
+    // The header is the curve's, not the hand-set value's freshness.
+    expect(calls.readManualValueHistory).not.toHaveBeenCalled();
   });
 });
 

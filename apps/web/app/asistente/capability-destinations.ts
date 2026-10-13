@@ -58,17 +58,16 @@ export const CAPABILITY_DESTINATIONS: CapabilityDestination[] = [
   {
     id: "rent-expenses",
     // The entry that was missing (#1524). Three things a usable answer needs and the
-    // transcript had none of: «Configuración avanzada», because on a property's ficha
-    // the Cobros section is inside that collapsed `<details>` and an answer that omits
-    // it sends the user hunting (which is #1510, the sibling failure, seen from this
-    // side); the field's own name; and the cadence — a monthly rent with an annual IBI
-    // typed in raw would net out to nonsense. The investment ficha moved to tabs
-    // (#1826) and the property's has not yet (#1824): when it does, this becomes its
-    // «Cobros» tab, and `page-families.test.tsx` is what turns red to say so.
+    // transcript had none of: where on the ficha — since #1847 the property's ficha
+    // has tabs and the rent lives on its «Cobros» tab, and an answer that stops at
+    // «en su ficha» sends the user hunting (which is #1510, the sibling failure, seen
+    // from this side); the field's own name; and the cadence — a monthly rent with an
+    // annual IBI typed in raw would net out to nonsense. Its test renders a
+    // property's ficha, so a renamed tab or field turns it red.
     where:
       "los gastos de un alquiler (IBI, comunidad, seguro) se declaran en la ficha del " +
-      "inmueble, desplegando «Configuración avanzada» → «Cobros», campo Gastos del " +
-      "cobro recurrente, en la MISMA cadencia que su importe",
+      "inmueble, pestaña «Cobros», en el cobro recurrente del alquiler: campo Gastos, " +
+      "en la MISMA cadencia que su importe",
     // WHY it does not work — the engine discards a rent with no declared expenses —
     // belongs to `get_holding_detail`, which is where the model reads that field.
     // Here it is only named as refused, so the two do not say ADR 0076 twice.

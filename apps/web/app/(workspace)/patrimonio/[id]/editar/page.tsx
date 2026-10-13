@@ -41,6 +41,7 @@ import type { FichaTarget } from "./_ficha/ficha-view";
 import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
+import { ANCHOR_FORM_ID } from "./_surfaces/housing-valuation-section";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 
 /** The forms that render their own error band, next to the field that produced it. */
@@ -54,6 +55,8 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
   "externalEntry",
   // «Actualizar valor» prints its own, in «Lo básico» or in the panel (#1846).
   VALUE_FORM_ID,
+  // «Registrar tasación» prints its own, in the property's panel (#1847).
+  ANCHOR_FORM_ID,
 ];
 
 /**

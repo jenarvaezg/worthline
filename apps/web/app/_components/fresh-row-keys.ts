@@ -17,11 +17,11 @@
 
 /**
  * The lists a ficha points a fresh row in, by name (#1731 review): the ledger, the
- * Cobros grid (one-offs and each schedule's occurrences) and the declared recurring
- * cobros. A schedule adds several occurrences to the grid — or none, if it starts
- * later — so it is pointed at in its own list.
+ * Cobros grid (one-offs and each schedule's occurrences), the declared recurring
+ * cobros and a property's tasaciones (#1847). A schedule adds several occurrences to
+ * the grid — or none, if it starts later — so it is pointed at in its own list.
  */
-export type RowList = "operaciones" | "cobros" | "recurrentes";
+export type RowList = "operaciones" | "cobros" | "recurrentes" | "tasaciones";
 
 /** Each list the ficha shows, by name, as the keys of its rows. */
 export type RowKeys = Readonly<Partial<Record<RowList, readonly string[]>>>;

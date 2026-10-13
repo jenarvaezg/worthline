@@ -1,16 +1,19 @@
 /**
  * Housing valuation editor — the `appreciating` surface (PRD #108, #152).
  *
- * Only rendered for an appreciating holding (a property). Stacked forms, all
- * server-action driven (no client JS, ADR 0009): the appreciation rate, a new
- * anchor, and a date-desc list of anchors with inline edit (<details>) and
- * two-step delete per row. Extracted from the monolithic editar page.
+ * Only rendered for an appreciating holding (a property), as its ficha's
+ * «Valoración» tab (#1847). Stacked forms, all server-action driven (no client JS,
+ * ADR 0009): the appreciation rate, and a date-desc list of anchors with inline
+ * edit (<details>) and two-step delete per row. A NEW anchor is the ficha's
+ * habitual action, so its form ({@link AnchorAddForm}) lives in the side panel and
+ * not here; the row it adds is marked when the panel lands back on this tab.
  *
  * The ONE exception is the named acquisition editor (#1437), an island since
  * #1562: editing the oldest point of the curve rewrites decades of history, so
  * it asks before it does it (preview → confirm).
  */
 
+import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
   addValuationAnchorAction,
@@ -19,24 +22,21 @@ import {
   setHousingValuationCadenceAction,
   updateValuationAnchorAction,
 } from "@web/patrimonio/actions";
+import { PendingSubmit } from "@web/pending-submit";
 import type { ValuationAnchorRecord } from "@worthline/db";
 import type { ValuationCadence } from "@worthline/domain";
 import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
+import type { ReactNode } from "react";
 import { AcquisitionEditForm } from "./acquisition-edit-form";
+import { anchorKindLabel, rateToPercentInput } from "./housing-valuation-view";
 
-/** Render a stored decimal rate ("0.03") back as the percent the user typed ("3"). */
-function rateToPercentInput(rate: string | null): string {
-  if (rate === null) {
-    return "";
-  }
+/** The «Registrar tasación» form's `formId`: its refusal reopens the panel. */
+export const ANCHOR_FORM_ID = "anchor";
 
-  const pct = Number(rate) * 100;
-
-  // Trim float noise (0.07 * 100 = 7.000000000000001) without dropping real decimals.
-  return String(Math.round(pct * 1_000_000) / 1_000_000);
-}
+const ANCHOR_ERROR_ID = "anchor-error";
 
 export function HousingValuationSection({
+  addLink,
   anchors,
   appreciationRate,
   assetId,
@@ -46,6 +46,11 @@ export function HousingValuationSection({
   today,
   valuationCadence,
 }: {
+  /**
+   * With no anchor yet, the door to «Registrar tasación» printed in the one line
+   * that says so (#1847), as Cobros' empty line opens its own panel (#1830).
+   */
+  addLink?: ReactNode;
   anchors: ValuationAnchorRecord[];
   appreciationRate: string | null;
   /** Internal storage id — hidden form plumbing, never a URL (#1318). */
@@ -59,7 +64,6 @@ export function HousingValuationSection({
   valuationCadence: ValuationCadence | null;
 }) {
   const rateValues = formError?.formId === "rate" ? formError.values : {};
-  const anchorValues = formError?.formId === "anchor" ? formError.values : {};
   const sorted = [...anchors].sort((a, b) =>
     b.valuationDate.localeCompare(a.valuationDate),
   );
@@ -138,17 +142,6 @@ export function HousingValuationSection({
         />
       ) : null}
 
-      <form
-        action={addValuationAnchorAction}
-        aria-label="Registrar tasación"
-        className="stackForm"
-      >
-        <input name="currentUrl" type="hidden" value={currentUrl} />
-        <input name="id" type="hidden" value={assetId} />
-        <AnchorFields max={today} values={anchorValues} />
-        <button type="submit">Registrar tasación</button>
-      </form>
-
       {sorted.length > 0 ? (
         <div className="tableScroll">
           <table aria-label="Tasaciones">
@@ -176,19 +169,84 @@ export function HousingValuationSection({
           </table>
         </div>
       ) : (
-        <p className="emptyLine">Sin tasaciones registradas.</p>
+        <p className="emptyLine">Sin tasaciones registradas. {addLink}</p>
       )}
     </section>
   );
 }
 
+/**
+ * «Registrar tasación»: a new anchor, from the ficha's side panel (#1847). Its date
+ * comes set to today — the usual case is an appraisal just received — and stays
+ * editable, never past today. «Es una tasación de mercado» starts unticked, as it
+ * always has: ticking it recalibrates the whole curve behind it, so it is a choice.
+ *
+ * Its refusal is its own (`ANCHOR_FORM_ID`): a repeated date or an unreadable value
+ * comes back with what was typed and is printed here, inside the panel, which on a
+ * phone covers the page band that would otherwise say it.
+ */
+export function AnchorAddForm({
+  assetId,
+  currentUrl,
+  formError,
+  readOnly = false,
+  today,
+}: {
+  /** Internal storage id — hidden form plumbing, never a URL (#1318). */
+  assetId: string;
+  /** Where the success and a refusal return: the tab the new row shows on. */
+  currentUrl: string;
+  formError: FormErrorContext | null;
+  /** Demo: the write-guard rejects it, so the submit is not offered (§10). */
+  readOnly?: boolean;
+  today: string;
+}) {
+  const refusal = formError?.formId === ANCHOR_FORM_ID ? formError : null;
+  const values = refusal ? refusal.values : { valuationDate: today };
+
+  return (
+    <form
+      action={addValuationAnchorAction}
+      aria-label="Registrar tasación"
+      className="stackForm"
+    >
+      <input name="currentUrl" type="hidden" value={currentUrl} />
+      <input name="id" type="hidden" value={assetId} />
+      {refusal ? (
+        <p className="errorBand" id={ANCHOR_ERROR_ID} role="alert">
+          {refusal.message}
+        </p>
+      ) : null}
+      <AnchorFields
+        errorId={refusal ? ANCHOR_ERROR_ID : undefined}
+        max={today}
+        values={values}
+      />
+      <PendingSubmit disabled={readOnly} pendingLabel="Registrando…">
+        Registrar tasación
+      </PendingSubmit>
+    </form>
+  );
+}
+
 /** Shared date / value / type fields for the add and edit anchor forms. */
-function AnchorFields({ max, values }: { max: string; values: Record<string, string> }) {
+function AnchorFields({
+  errorId,
+  max,
+  values,
+}: {
+  /** The refusal printed above the fields, which the date and the value point at. */
+  errorId?: string | undefined;
+  max: string;
+  values: Record<string, string>;
+}) {
   return (
     <>
       <label>
         Fecha de la tasación
         <input
+          aria-describedby={errorId}
+          aria-invalid={errorId ? true : undefined}
           aria-label="Fecha de la tasación"
           defaultValue={values["valuationDate"]}
           max={max}
@@ -200,6 +258,8 @@ function AnchorFields({ max, values }: { max: string; values: Record<string, str
       <label>
         Valor de la tasación (EUR)
         <input
+          aria-describedby={errorId}
+          aria-invalid={errorId ? true : undefined}
           aria-label="Valor de la tasación en EUR"
           defaultValue={values["anchorValue"]}
           inputMode="decimal"
@@ -254,21 +314,20 @@ function AnchorRow({
       };
 
   return (
-    <tr>
-      <td>{anchor.valuationDate}</td>
+    // The row «Registrar tasación» just added is marked when the panel lands back
+    // on this tab (#1847), as a new operation or cobro is (#1829).
+    <FreshRow as="tr" list="tasaciones" rowKey={anchor.id}>
+      <td>
+        {anchor.valuationDate}
+        <FreshMark list="tasaciones" rowKey={anchor.id} word="nueva" />
+      </td>
       <td className="numCol">
         {formatMoneyMinorPrivacy(
           { amountMinor: anchor.valueMinor, currency: "EUR" },
           privacyMode,
         )}
       </td>
-      <td>
-        {anchor.kind === "acquisition"
-          ? "Adquisición"
-          : anchor.adjustsPriorCurve
-            ? "Tasación"
-            : "Mejora"}
-      </td>
+      <td>{anchorKindLabel(anchor)}</td>
       <td className="rowActions">
         <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
@@ -298,6 +357,6 @@ function AnchorRow({
           </form>
         ) : null}
       </td>
-    </tr>
+    </FreshRow>
   );
 }

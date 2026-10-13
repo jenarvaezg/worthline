@@ -7832,7 +7832,8 @@ td.rowActions > * {
    el tinte solo no es una lectura (canon §8). */
 #operaciones [data-fresh],
 .cobrosRow[data-fresh],
-.cobrosSchedule[data-fresh] {
+.cobrosSchedule[data-fresh],
+.housingValuation tr[data-fresh] {
   background: var(--green-tint);
   scroll-margin: var(--ficha-sticky-top) 0 var(--ficha-strip-clearance);
 }
