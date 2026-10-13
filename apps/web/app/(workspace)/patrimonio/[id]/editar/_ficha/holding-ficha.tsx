@@ -51,6 +51,7 @@ import { useFichaLanding } from "./ficha-landing";
 import type { FichaOpenDetail } from "./ficha-link";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import { FichaStrip } from "./ficha-strip";
+import { FICHA_SUBJECT_WORDS, type FichaSubject } from "./ficha-subject";
 import {
   claimFichaOpen,
   FICHA_OPEN_EVENT,
@@ -68,6 +69,11 @@ export interface HoldingFichaProps {
   /** «← Patrimonio»: the holding's row on the board. */
   boardHref: string;
   name: string;
+  /**
+   * What the holding is to its owner, for the regions' names: «Estado del activo»,
+   * or «Estado de la deuda» on a debt's ficha (#1848).
+   */
+  subject?: FichaSubject;
   instrument: string | null;
   /** The value — the one dominant figure of the page. */
   value: string;
@@ -97,9 +103,11 @@ export function HoldingFicha({
   name,
   notice,
   rows,
+  subject = "activo",
   tabs,
   value,
 }: HoldingFichaProps) {
+  const words = FICHA_SUBJECT_WORDS[subject];
   const spec = useMemo<FichaViewSpec>(
     () => ({
       actions: actions.map((action) => action.key),
@@ -233,7 +241,7 @@ export function HoldingFicha({
 
   const ficha = (
     <div className="ficha" onSubmitCapture={landing.onSubmitCapture} ref={rootRef}>
-      <section aria-label="Estado del activo" className="heroPanel fichaHero">
+      <section aria-label={`Estado ${words.of}`} className="heroPanel fichaHero">
         <div className="fichaHeroTop">
           <div className="fichaIdentity">
             <Link className="fichaBack" href={boardHref}>
@@ -241,11 +249,12 @@ export function HoldingFicha({
             </Link>
             <h2>{name}</h2>
             {instrument ? <span className="fichaInstrument">{instrument}</span> : null}
-            <p className="fichaValue">{value}</p>
+            {/* A debt's figure carries the Línea del debe (`valueClass`, canon §6). */}
+            <p className={words.valueClass}>{value}</p>
           </div>
 
           <div
-            aria-label="Acciones del activo"
+            aria-label={`Acciones ${words.of}`}
             className="fichaActions"
             ref={actionsRef}
             role="group"
@@ -277,7 +286,11 @@ export function HoldingFicha({
             <div key={figure.key}>
               <dt>{figure.label}</dt>
               <dd>
-                <span className={`fichaFigure ${figure.tone ?? ""}`}>{figure.value}</span>
+                <span
+                  className={`fichaFigure${figure.kind === "text" ? " fichaFigureText" : ""} ${figure.tone ?? ""}`}
+                >
+                  {figure.value}
+                </span>
                 {figure.detail ? (
                   <div className="fichaFigureDetail">{figure.detail}</div>
                 ) : null}

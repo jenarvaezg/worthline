@@ -1,6 +1,9 @@
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+
+/** The URL the island reads through `useSearchParams` — set per render. */
+const url = vi.hoisted(() => ({ search: new URLSearchParams() }));
 
 const calls = vi.hoisted(() => ({
   debtBalanceAtDate: vi.fn(async () => 174_500_00),
@@ -8,9 +11,9 @@ const calls = vi.hoisted(() => ({
   readAssets: vi.fn(async () => []),
   readBalanceAnchors: vi.fn(async (): Promise<unknown[]> => []),
   readBalanceRebaselines: vi.fn(async (): Promise<unknown[]> => []),
-  readDebtModel: vi.fn(async () => "amortizable"),
-  readEarlyRepayments: vi.fn(async () => []),
-  readInterestRateRevisions: vi.fn(async () => []),
+  readDebtModel: vi.fn(async (): Promise<string | null> => "amortizable"),
+  readEarlyRepayments: vi.fn(async (): Promise<unknown[]> => []),
+  readInterestRateRevisions: vi.fn(async (): Promise<unknown[]> => []),
   readPublicIds: vi.fn(async () => [
     {
       entityId: "liability_mortgage",
@@ -87,9 +90,10 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("not found");
   },
-  redirect: (url: string) => {
-    throw new Error(`redirected to ${url}`);
+  redirect: (to: string) => {
+    throw new Error(`redirected to ${to}`);
   },
+  useSearchParams: () => url.search,
 }));
 
 vi.mock("@web/pending-submit", () => ({
@@ -106,11 +110,13 @@ import EditarPage from "./page";
  * storage id it resolves to.
  */
 const PUBLIC_ID = "wl_hld_mortgage";
+const FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
 
 async function renderedHtml(
   routeId: string = PUBLIC_ID,
   searchParams: Record<string, string> = {},
 ): Promise<string> {
+  url.search = new URLSearchParams(searchParams);
   const element = (await EditarPage({
     params: Promise.resolve({ id: routeId }),
     searchParams: Promise.resolve(searchParams),
@@ -118,13 +124,41 @@ async function renderedHtml(
   return renderToStaticMarkup(element);
 }
 
+/** The markup of the tab on show (up to the panel), and of the side panel. */
+const tabBody = (html: string) => {
+  const panelAt = html.indexOf('class="fichaPanel"');
+  return html.slice(
+    html.indexOf('class="fichaTabBody"'),
+    panelAt === -1 ? undefined : panelAt,
+  );
+};
+const panel = (html: string) => {
+  const at = html.indexOf('class="fichaPanel"');
+  return at === -1 ? "" : html.slice(at);
+};
+const bar = (html: string) =>
+  html.slice(
+    html.indexOf('aria-label="Acciones de la deuda"'),
+    html.indexOf('class="fichaFigures"'),
+  );
+/** The state header: the value, the bar and the figures. */
+const header = (html: string) =>
+  html.slice(
+    html.indexOf('class="heroPanel fichaHero"'),
+    html.indexOf('class="fichaTabs"'),
+  );
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("EditarPage — one id vocabulary (#1318)", () => {
   test("the ficha is addressed by the holding's public id, and links back with it", async () => {
-    const html = await renderedHtml();
+    const html = await renderedHtml(PUBLIC_ID, { pestaña: "datos" });
 
     // Every URL the page emits — the return-here field every form posts, and the
-    // «Volver» anchor — names the holding by its public id.
-    expect(html).toContain(`value="/patrimonio/${PUBLIC_ID}/editar"`);
+    // «← Patrimonio» anchor — names the holding by its public id.
+    expect(html).toContain(`value="${FICHA}?pesta%C3%B1a=datos"`);
     expect(html).toContain(`href="/patrimonio#${PUBLIC_ID}"`);
     // …and never by the internal storage id, which is what the assistant used to
     // read out of the URL bar and hand to tools that reject it.
@@ -134,11 +168,9 @@ describe("EditarPage — one id vocabulary (#1318)", () => {
     expect(html).toContain('value="liability_mortgage"');
   });
 
-  test("a mutation's ok band still lands on the public URL", async () => {
-    // Every debt/housing action now returns to the `currentUrl` the form posted
-    // instead of rebuilding the path from the storage id, so the success band
-    // has to survive that swap — it is the only thing the user sees confirming
-    // the write.
+  test("a mutation's ok notice still lands on the public URL", async () => {
+    // Every debt action returns to the `currentUrl` the form posted, so the notice
+    // has to survive that — it is the only thing confirming the write.
     const html = await renderedHtml(PUBLIC_ID, { ok: "debt_model_saved" });
 
     expect(html).toContain('role="status"');
@@ -154,58 +186,39 @@ describe("EditarPage — one id vocabulary (#1318)", () => {
   });
 });
 
-describe("EditarPage progressive disclosure (#604)", () => {
-  test("keeps mortgage basics open, machinery collapsed, and danger last", async () => {
+describe("EditarPage — a debt's ficha is a state header with tabs (#1848)", () => {
+  test("its own tabs, then «Datos de la deuda»", async () => {
     const html = await renderedHtml();
-    const basic = html.indexOf("Lo básico");
-    const balance = html.indexOf("Saldo pendiente");
-    const advanced = html.indexOf("Configuración avanzada");
-    const model = html.indexOf("Modelo de deuda");
-    const danger = html.indexOf("Zona de peligro");
 
-    expect(basic).toBeGreaterThan(-1);
-    expect(balance).toBeGreaterThan(basic);
-    expect(advanced).toBeGreaterThan(balance);
-    expect(model).toBeGreaterThan(advanced);
-    expect(danger).toBeGreaterThan(model);
-    expect(html).toContain("<summary>Configuración avanzada</summary>");
-
-    const basicMarkup = html.slice(basic, advanced);
-    expect(basicMarkup.match(/<form/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Ficha de la deuda"');
+    expect(html).toContain('aria-label="Estado de la deuda"');
+    expect(html).toContain('aria-label="Acciones de la deuda"');
+    expect(html).not.toContain("del activo");
+    const tabs = html.slice(html.indexOf('aria-label="Secciones de la ficha"'));
+    expect(tabs.indexOf("Datos de la deuda")).toBeGreaterThan(tabs.indexOf("Plan"));
   });
 
-  /**
-   * The danger zone's "registrar la venta" link (#1365) points back at this ficha
-   * with `?abrir=operaciones`. The operations surface lives inside the collapsed
-   * advanced block, so a bare `#operaciones` fragment would scroll to something
-   * `display:none` and reveal nothing — the param has to unfold it server-side.
-   */
-  test("?abrir=operaciones unfolds the advanced block on load", async () => {
-    expect(await renderedHtml(PUBLIC_ID, { abrir: "operaciones" })).toContain(
-      '<details class="editAdvanced" open=""',
-    );
-    expect(await renderedHtml()).not.toContain('class="editAdvanced" open=""');
-  });
+  test("«Datos de la deuda» holds «Lo básico» and the Zona de peligro last", async () => {
+    const datos = tabBody(await renderedHtml(PUBLIC_ID, { pestaña: "datos" }));
 
-  test("?abrir=cobros unfolds the advanced block on load", async () => {
-    expect(await renderedHtml(PUBLIC_ID, { abrir: "cobros" })).toContain(
-      '<details class="editAdvanced" open=""',
-    );
+    expect(datos).toContain("Lo básico");
+    expect(datos.indexOf("Zona de peligro")).toBeGreaterThan(datos.indexOf("Lo básico"));
+    // The balance door left «Lo básico»: it is an action of the bar now.
+    expect(datos).not.toContain("Saldo pendiente (EUR)");
   });
 });
 
 /**
  * A debt with a modelled curve takes its figure from the curve; the raw
- * `current_balance_minor` form is then a write into the void (#1290).
+ * `current_balance_minor` form is then a write into the void (#1290). Since #1848
+ * the door is an action of the bar, offered by the same rule.
  */
-describe("EditarPage — the raw balance door follows the engine (#1290)", () => {
+describe("EditarPage — «Actualizar saldo» follows the engine (#1290, #1848)", () => {
   // The modelled figure below is a function of TODAY: every cuota the plan pays
-  // moves it. Left on the real clock this test passed for one month and then
-  // started failing on the 21st, when the second cuota fell. Freezing the day is
-  // what makes the pinned figure mean "the plan produces this", not "the calendar
-  // happens to agree".
+  // moves it. Freezing the day is what makes the pinned figure mean "the plan
+  // produces this", not "the calendar happens to agree".
   beforeAll(() => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-08-10T12:00:00.000Z"));
   });
   afterAll(() => {
@@ -223,37 +236,53 @@ describe("EditarPage — the raw balance door follows the engine (#1290)", () =>
     termMonths: 42,
   };
 
-  test("with no plan and no re-baseline the stored balance is the only figure", async () => {
-    calls.readAmortizationPlan.mockResolvedValueOnce(null);
-    calls.readBalanceRebaselines.mockResolvedValueOnce([]);
+  test("with no plan and no re-baseline the stored balance is the figure, and its door leads", async () => {
     const html = await renderedHtml();
 
-    expect(html).toContain("Saldo pendiente (EUR)");
-    expect(html).toContain('name="balance"');
-    expect(html).toContain("Actualizar saldo");
+    expect(html).toMatch(/class="fichaValue debitCol">− 180\.?000\s€/);
+    expect(bar(html)).toMatch(/class="btn"[^>]*data-ficha-action="saldo-pendiente"/);
+
+    const form = panel(await renderedHtml(PUBLIC_ID, { accion: "saldo-pendiente" }));
+    expect(form).toContain('<h3 id="ficha-panel-title">Actualizar saldo</h3>');
+    expect(form).toContain("Saldo pendiente (EUR)");
+    expect(form).toMatch(/name="balance"[^>]*value="180\.?000,00"/);
+    // A refusal returns to the ficha; so does the success (`returnTo`).
+    expect(form).toContain(`name="currentUrl" value="${FICHA}"`);
+    expect(form).toContain(`name="returnTo" value="${FICHA}"`);
   });
 
-  test("an amortizable debt with a plan exposes no raw balance form", async () => {
-    calls.readAmortizationPlan.mockResolvedValueOnce(PLAN);
-    calls.readBalanceRebaselines.mockResolvedValueOnce([]);
+  test("a refused balance reopens the panel with what was typed, and says why once", async () => {
+    const message = "El saldo de la deuda no es válido.";
+    const html = await renderedHtml(PUBLIC_ID, {
+      error: message,
+      form: "balance",
+      v_balance: "mucho",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Actualizar saldo</h3>');
+    expect(panel(html)).toContain('value="mucho"');
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("an amortizable debt with a plan offers no balance door, and heads with the plan's figure", async () => {
+    calls.readAmortizationPlan.mockResolvedValueOnce(PLAN).mockResolvedValueOnce(PLAN);
     const html = await renderedHtml();
 
-    // "Saldo pendiente hoy" (the current-state form) is a different door; what
-    // must be gone is the raw `current_balance_minor` input and its submit.
-    expect(html).not.toContain("Saldo pendiente (EUR)");
+    expect(bar(html)).not.toContain("saldo-pendiente");
     expect(html).not.toContain('name="balance"');
-    expect(html).not.toContain("Actualizar saldo");
-    // The modelled figure is the one on screen, and it is not the stored 180.000.
-    // Since #1292 the page derives it from the rows it already read instead of
-    // asking the store again, so this pins the figure the PLAN actually produces
-    // (6.000 € at 5,89 % closes its first cuota at 5.871,01 €) rather than
-    // whatever the store stub was told to return.
-    expect(html).toContain("Saldo modelado a día de hoy");
-    expect(html).toContain("5871");
+    // The modelled figure is the one on screen, and it is not the stored 180.000:
+    // 6.000 € at 5,89 % closes its first cuota at 5.871,01 €, which the board and
+    // the ficha read off the same curve (#1848).
+    expect(html).toMatch(/class="fichaValue debitCol">− 5\.?871\s€/);
     expect(html).not.toContain("180.000");
+
+    // «Recalibrar» carries the same modelled figure beside the repair.
+    const recalibrar = panel(await renderedHtml(PUBLIC_ID, { accion: "recalibrar" }));
+    expect(recalibrar).toContain("Saldo modelado a día de hoy");
+    expect(recalibrar).toContain("5871");
   });
 
-  test("an anchored debt with at least one anchor exposes no raw balance form", async () => {
+  test("an anchored debt with at least one balance offers no balance door", async () => {
     calls.readDebtModel.mockResolvedValueOnce("informal");
     calls.readBalanceAnchors.mockResolvedValueOnce([
       {
@@ -265,25 +294,27 @@ describe("EditarPage — the raw balance door follows the engine (#1290)", () =>
     ]);
     const html = await renderedHtml();
 
-    // `name="balance"` is not discriminating here — the anchor form uses it too;
-    // the raw door is identified by its label + submit.
+    expect(bar(html)).not.toContain("saldo-pendiente");
     expect(html).not.toContain("Saldo pendiente (EUR)");
-    expect(html).not.toContain("Actualizar saldo");
-    // The declared balances are the figure on screen for an anchored debt.
-    expect(html).toContain("Saldos declarados");
+    // The declared balance is the figure on screen for an anchored debt.
+    expect(html).toMatch(/class="fichaValue debitCol">− 9\.?000\s€/);
+    expect(tabBody(html)).toContain('aria-label="Saldos declarados"');
   });
 
-  test("an anchored debt with no anchors yet keeps the raw balance form", async () => {
-    calls.readDebtModel.mockResolvedValueOnce("informal");
-    calls.readBalanceAnchors.mockResolvedValueOnce([]);
+  test("an anchored debt with no balance yet keeps the door, inside «Más»", async () => {
+    calls.readDebtModel
+      .mockResolvedValueOnce("informal")
+      .mockResolvedValueOnce("informal");
     const html = await renderedHtml();
 
-    expect(html).toContain("Saldo pendiente (EUR)");
-    expect(html).toContain("Actualizar saldo");
+    expect(bar(html)).not.toMatch(/data-ficha-action="saldo-pendiente"/);
+    expect(bar(html)).toContain("data-ficha-more");
+    expect(panel(await renderedHtml(PUBLIC_ID, { accion: "saldo-pendiente" }))).toContain(
+      "Saldo pendiente (EUR)",
+    );
   });
 
-  test("a re-baseline alone (no plan row) also retires the raw balance form", async () => {
-    calls.readAmortizationPlan.mockResolvedValueOnce(null);
+  test("a re-baseline alone (no plan row) also retires the door, and recalibrar leads", async () => {
     calls.readBalanceRebaselines.mockResolvedValueOnce([
       {
         annualInterestRate: "0.0589",
@@ -298,8 +329,9 @@ describe("EditarPage — the raw balance door follows the engine (#1290)", () =>
     ]);
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Saldo pendiente (EUR)");
-    expect(html).not.toContain('name="balance"');
-    expect(html).toContain("Saldo modelado a día de hoy");
+    expect(bar(html)).not.toContain("saldo-pendiente");
+    expect(bar(html)).toMatch(/class="btn"[^>]*data-ficha-action="recalibrar"/);
+    expect(html).not.toContain("180.000");
+    expect(header(html)).toContain("Cuota vigente");
   });
 });

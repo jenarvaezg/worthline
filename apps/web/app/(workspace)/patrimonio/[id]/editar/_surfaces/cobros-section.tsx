@@ -137,26 +137,6 @@ export interface CobrosProps {
 }
 
 /**
- * The whole Cobros surface, in the order every ficha that still keeps it inside
- * «Configuración avanzada» has always had: what it paid, the two entry forms, the
- * declared schedules.
- */
-export function CobrosSection(props: CobrosProps) {
-  return (
-    <section className="cobros" aria-label="Cobros" id="cobros" tabIndex={-1}>
-      <h3>Cobros</h3>
-      <CobrosIntro />
-      <CobrosAlerts {...props} />
-      <CobrosSummary {...props} />
-      <CobrosOneOffForm {...props} />
-      <CobrosRecurringForm {...props} />
-      <CobrosSchedules {...props} />
-      <CobrosHonestNote />
-    </section>
-  );
-}
-
-/**
  * The record half (#1826): what this holding has paid and what it is declared to
  * pay — the ficha's «Cobros» tab. It is the `#cobros` fragment `holdingCobrosHref`
  * lands on, and where a refusal of the record's own controls (a schedule's costs,

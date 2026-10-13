@@ -15,7 +15,7 @@ import { CurrentStateDebtFields } from "./current-state-debt-fields";
  * parse + `deriveCurrentStateDebt`) covers it there instead.
  *
  * Asserted via `renderToStaticMarkup` (the established pattern for this
- * component's structure, e.g. debt-model-section.test.tsx) rather than
+ * component's structure, e.g. debt-plan-section.test.tsx) rather than
  * jsdom/RTL — this repo's interaction-patterns §7 convention, and neither is
  * an installed dependency here.
  */

@@ -1,9 +1,10 @@
+import { FixedFreshRows } from "@web/_components/fresh-rows";
 import type { ValuationAnchorRecord } from "@worthline/db";
 import type { ValuationCadence } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { HousingValuationSection } from "./housing-valuation-section";
+import { AnchorAddForm, HousingValuationSection } from "./housing-valuation-section";
 
 /**
  * The housing valuation surface carries an advanced valuation-cadence control
@@ -120,5 +121,98 @@ describe("HousingValuationSection — adquisición por su nombre (#1437)", () =>
     const markup = renderFor(null, [appraisalAnchor]);
     expect(markup).not.toContain(">Adquisición</td>");
     expect(markup).toContain("Confirmar");
+  });
+});
+
+describe("HousingValuationSection — the «Valoración» tab of the ficha (#1847)", () => {
+  test("a new anchor is the panel's: the tab offers no add form", () => {
+    const markup = renderFor(null, [appraisalAnchor]);
+    expect(markup).not.toContain('aria-label="Registrar tasación"');
+  });
+
+  test("with none yet, its one line is the door to the panel", () => {
+    const markup = renderToStaticMarkup(
+      <HousingValuationSection
+        addLink={<a href="/x?accion=tasacion">Registrar una tasación</a>}
+        anchors={[]}
+        appreciationRate={null}
+        assetId="a_home"
+        currentUrl="/patrimonio/wl_hld_a_home/editar"
+        formError={null}
+        today="2026-06-14"
+        valuationCadence={null}
+      />,
+    );
+    expect(markup).toMatch(
+      /Sin tasaciones registradas\.[^<]*<a [^>]*>Registrar una tasación/,
+    );
+  });
+
+  test("the row the panel just added is marked, in words as well as tint", () => {
+    const markup = renderToStaticMarkup(
+      <FixedFreshRows fresh={{ tasaciones: new Set(["anchor_tasacion"]) }}>
+        <HousingValuationSection
+          anchors={[acquisitionAnchor, appraisalAnchor]}
+          appreciationRate={null}
+          assetId="a_home"
+          currentUrl="/patrimonio/wl_hld_a_home/editar"
+          formError={null}
+          today="2026-07-14"
+          valuationCadence={null}
+        />
+      </FixedFreshRows>,
+    );
+    const rows = markup.split("<tr").slice(1);
+    expect(rows.filter((row) => row.includes('data-fresh=""'))).toHaveLength(1);
+    const fresh = rows.find((row) => row.includes('data-fresh=""')) ?? "";
+    expect(fresh).toContain("2026-07-09");
+    expect(fresh).toContain('<small class="fichaFreshMark">nueva</small>');
+  });
+});
+
+describe("AnchorAddForm — «Registrar tasación» in the panel (#1847)", () => {
+  const render = (props: Partial<Parameters<typeof AnchorAddForm>[0]> = {}) =>
+    renderToStaticMarkup(
+      <AnchorAddForm
+        assetId="a_home"
+        currentUrl="/patrimonio/wl_hld_a_home/editar"
+        formError={null}
+        today="2026-06-14"
+        {...props}
+      />,
+    );
+
+  test("dated today, editable, never past today, and not a market appraisal by default", () => {
+    const markup = render();
+    const date = markup.match(/<input[^>]*name="valuationDate"[^>]*>/)?.[0] ?? "";
+    expect(date).toContain('value="2026-06-14"');
+    expect(date).toContain('max="2026-06-14"');
+    expect(markup).not.toMatch(/name="adjustsPriorCurve"[^>]*checked/);
+  });
+
+  test("a refusal is printed inside it, with what was typed", () => {
+    const markup = render({
+      formError: {
+        formId: "anchor",
+        message: "Ya hay una tasación en esa fecha.",
+        values: {
+          adjustsPriorCurve: "on",
+          anchorValue: "250.000",
+          valuationDate: "2026-05-01",
+        },
+      },
+    });
+    expect(markup).toContain('role="alert">Ya hay una tasación en esa fecha.</p>');
+    expect(markup).toContain('value="2026-05-01"');
+    expect(markup).toContain('value="250.000"');
+    expect(markup).toMatch(
+      /name="adjustsPriorCurve"[^>]*checked|checked[^>]*name="adjustsPriorCurve"/,
+    );
+  });
+
+  test("demo: the submit is not offered", () => {
+    expect(render({ readOnly: true })).toMatch(
+      /<button[^>]*disabled=""[^>]*>Registrar tasación/,
+    );
   });
 });

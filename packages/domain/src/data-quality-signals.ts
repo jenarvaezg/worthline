@@ -120,7 +120,9 @@ export {
   MISSING_INVESTMENT_ISIN_CODE,
   UNCLASSIFIED_SECURITY_ID_CODE,
 } from "./data-quality-instrument-identity";
+export type { ManualValueFreshness } from "./data-quality-manual-value-freshness";
 export {
+  manualValueFreshness,
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,
 } from "./data-quality-manual-value-freshness";

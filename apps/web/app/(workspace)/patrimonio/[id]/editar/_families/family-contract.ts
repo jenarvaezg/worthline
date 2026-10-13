@@ -12,11 +12,10 @@
  * Naming them here — instead of letting the page re-derive them from a handful of
  * instrument booleans — is what keeps the page out of the branching business.
  *
- * Since #1826 a family also says HOW its ficha is laid out ({@link SurfaceLayout}):
- * the old single column with its «Configuración avanzada» accordion, or the tabbed
- * ficha — a state header with an action bar, a side panel per action, and tabs.
- * The tabbed one is built from common pieces (`_ficha/`), so a family that moves to
- * it states only WHAT it carries: its figures, its actions, its tabs.
+ * Since #1826 every family is laid out the same way ({@link FichaLayout}): a state
+ * header with an action bar, a side panel per action, and tabs. The ficha is built
+ * from common pieces (`_ficha/`), so a family states only WHAT it carries: its
+ * figures, its actions, its tabs — and #1850 retired the single column it replaced.
  *
  * The context comes in two halves on purpose. {@link FichaContext} is everything
  * resolved BEFORE the family is known, so the shared Cobros and Papelera panels
@@ -36,7 +35,6 @@ import type {
   DomainWarning,
   HoldingTrashImpact,
   HoldingWarningCode,
-  InvestmentOperation,
   Liability,
   ManualAsset,
   ValuationMethod,
@@ -76,15 +74,12 @@ export interface FichaContext {
 }
 
 /**
- * The shared Cobros panel, loaded once by the page and PLACED by the family (#1607).
- * A ficha that keeps the accordion places the whole section; a tabbed one splits it
- * (#1826) into a tab and an action, each returning to the tab where it shows.
+ * The shared Cobros panel, loaded once by the page and PLACED by the family (#1607),
+ * split (#1826) into a tab and an action, each returning to the tab where it shows.
  */
 export interface PayoutsPanel {
-  /** The whole section, for a ficha that keeps it inside «Configuración avanzada». */
-  section: ReactNode;
   /**
-   * What it paid and is declared to pay: a tabbed ficha's «Cobros» tab. `addLink` is
+   * What it paid and is declared to pay: the ficha's «Cobros» tab. `addLink` is
    * the door to the entry panel, printed in the one line a holding with no cobros
    * shows instead of a block of zeros (#1830).
    */
@@ -135,8 +130,6 @@ export interface FichaBasics {
   investment: InvestmentAssetFull | null;
   /** The «alta por valor total» state «Lo básico» warns about (#1329). */
   valueOnlyOpening: ValueOnlyOpening | null;
-  /** Whether «Lo básico» still offers the raw balance door (#1290). */
-  showRawBalanceForm: boolean;
   /** Identity fixed by a Numista source: name/type/value are read-only (ADR 0016). */
   isCoinCollection: boolean;
   /** Identity fixed by a Binance source, same reason (ADR 0021). */
@@ -181,6 +174,11 @@ export interface FichaFigure {
   value: ReactNode;
   /** The sign colour, for a figure that is a movement (canon §6) — never a total. */
   tone?: "pos" | "neg";
+  /**
+   * `text` for a value that is a word, not a figure — a rung, «Caja» (#1846): set in
+   * the body face, because the numeric one is for figures (canon §3).
+   */
+  kind?: "text";
   /** What qualifies the figure: where its price comes from, how fresh it is. */
   detail?: ReactNode;
 }
@@ -194,7 +192,7 @@ export interface FichaFix {
   label: string;
 }
 
-/** What a tabbed ficha carries — the common pieces render the rest (#1826). */
+/** What a ficha carries — the common pieces render the rest (#1826). */
 export interface FichaLayout {
   /** The instrument, in words, under the name. */
   instrument: string | null;
@@ -207,6 +205,14 @@ export interface FichaLayout {
   tabs: readonly FichaTab[];
   /** By `formId`: the tab or panel whose form prints a refusal that came back. */
   errorTargets: Readonly<Record<string, FichaTarget>>;
+  /**
+   * The `formId`s of the family's own forms that print their own refusal, inside
+   * the panel (#1848): the page's band leaves them out, so a refusal is said once.
+   * Named by the family (#1850), because the same `formId` («cadence») may be
+   * printed by its own form on one ficha and by the band on another; the page lists
+   * only the chrome's (Cobros, Papelera).
+   */
+  ownErrorForms?: readonly string[];
   /**
    * The keys of the rows each tab lists, by list name, so the ficha can point at the
    * one a terminal just added (#1829).
@@ -229,22 +235,12 @@ export interface FichaLayout {
   wrap?: (ficha: ReactNode) => ReactNode;
 }
 
-/** How the page lays the family out. */
-export type SurfaceLayout =
-  | {
-      kind: "advanced";
-      /** The family's advanced-configuration body, in its own order. */
-      body: ReactNode;
-    }
-  | { kind: "ficha"; ficha: FichaLayout };
-
 /** What a family hands back to the page. */
 export interface HoldingSurface {
   family: HoldingFamily;
-  layout: SurfaceLayout;
+  /** What its ficha carries: the page lays every family out the same way (#1850). */
+  ficha: FichaLayout;
   basics: FichaBasics;
-  /** This holding's operations ledger — empty for a family that keeps none. */
-  operations: InvestmentOperation[];
   /** What the Papelera would withdraw (#1365); null when it withdraws nothing. */
   trashImpact: HoldingTrashImpact | null;
   manualLedger: ManualLedgerExit | null;
@@ -259,48 +255,31 @@ const NO_CHROME_CONTRIBUTION = {
     // Overwritten by the dispatch for an asset; a liability's «Lo básico» never
     // reads it (its form is `LiabilityEditForm`, which takes no method).
     method: "stored",
-    showRawBalanceForm: false,
     valueOnlyOpening: null,
   },
   manualLedger: null,
-  operations: [],
   trashImpact: null,
-} as const satisfies Omit<HoldingSurface, "family" | "layout">;
+} as const satisfies Omit<HoldingSurface, "family" | "ficha">;
+
+/** What a family may say about the shared chrome; whatever it leaves out is "nothing". */
+type ChromeContributions = Partial<
+  Omit<HoldingSurface, "basics" | "family" | "ficha">
+> & { basics?: Partial<FichaBasics> };
 
 /**
  * Build a surface, defaulting every chrome contribution the family does not make.
  * A family states only what it actually answers for — silence reads as "nothing",
- * which is what a coin collection or a cash account genuinely contributes. A `body`
- * lays it out in the accordion; a `ficha`, in tabs (#1826).
+ * which is what a coin collection or a cash account genuinely contributes.
  */
 export function holdingSurface(
   family: HoldingFamily,
-  parts: ({ body: ReactNode } | { ficha: FichaLayout }) & ChromeContributions,
-): HoldingSurface {
-  if ("ficha" in parts) {
-    const { basics, ficha, ...contributions } = parts;
-    return withDefaults(family, { ficha, kind: "ficha" }, basics, contributions);
-  }
-  const { basics, body, ...contributions } = parts;
-  return withDefaults(family, { body, kind: "advanced" }, basics, contributions);
-}
-
-/** What a family may say about the shared chrome; whatever it leaves out is "nothing". */
-type ChromeContributions = Partial<
-  Omit<HoldingSurface, "basics" | "family" | "layout">
-> & { basics?: Partial<FichaBasics> };
-
-function withDefaults(
-  family: HoldingFamily,
-  layout: SurfaceLayout,
-  basics: Partial<FichaBasics> | undefined,
-  contributions: Omit<ChromeContributions, "basics">,
+  { basics, ficha, ...contributions }: { ficha: FichaLayout } & ChromeContributions,
 ): HoldingSurface {
   return {
     ...NO_CHROME_CONTRIBUTION,
     ...contributions,
     basics: { ...NO_CHROME_CONTRIBUTION.basics, ...basics },
     family,
-    layout,
+    ficha,
   };
 }

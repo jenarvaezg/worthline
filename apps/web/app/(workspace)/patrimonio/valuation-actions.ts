@@ -39,11 +39,14 @@ import {
   systemClock,
 } from "@worthline/domain";
 import {
+  BALANCE_FORM_ID,
   baseUrl,
   boardAnchorResult,
   findAsset,
   findLiability,
   holdingBoardAnchor,
+  localReturnTo,
+  VALUE_FORM_ID,
 } from "./action-helpers";
 
 export async function updateAssetValuationAction(
@@ -60,7 +63,7 @@ export async function updateAssetValuationAction(
         return {
           ok: false,
           redirect: errorRedirectUrl(baseUrl(formData), {
-            formId: "edit",
+            formId: VALUE_FORM_ID,
             message: "El valor del activo no es válido.",
             values: preserveFields(formData, ["currentValue"]),
           }),
@@ -93,11 +96,18 @@ export async function updateAssetValuationAction(
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), {
-        formId: "edit",
+        formId: VALUE_FORM_ID,
         message: error,
         values: preserveFields(formData, ["currentValue"]),
       }),
-    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
+    // The ficha's side panel posts its own URL (#1846): the person stays where the
+    // new value and today's date show. Without one, the board's row, as before.
+    onSuccess: ({ formData, value }) => {
+      const back = localReturnTo(formData);
+      return back
+        ? successRedirectUrl(back, "saved")
+        : successRedirectUrl("/patrimonio", "saved", value);
+    },
   })(formData, ..._testArgs);
 }
 
@@ -129,7 +139,7 @@ export async function updateLiabilityBalanceAction(
         return {
           ok: false,
           redirect: errorRedirectUrl(baseUrl(formData), {
-            formId: "edit",
+            formId: BALANCE_FORM_ID,
             message: "El saldo de la deuda no es válido.",
             values: preserveFields(formData, ["balance"]),
           }),
@@ -150,11 +160,18 @@ export async function updateLiabilityBalanceAction(
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), {
-        formId: "edit",
+        formId: BALANCE_FORM_ID,
         message: error,
         values: preserveFields(formData, ["balance"]),
       }),
-    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
+    // The debt ficha's side panel posts its own URL (#1848): the person stays where
+    // the new balance shows. Without one, the board's row, as before.
+    onSuccess: ({ formData, value }) => {
+      const back = localReturnTo(formData);
+      return back
+        ? successRedirectUrl(back, "saved")
+        : successRedirectUrl("/patrimonio", "saved", value);
+    },
   })(formData, ..._testArgs);
 }
 
@@ -372,6 +389,9 @@ export async function setHousingAcquisitionCostAction(
   })(formData, ..._testArgs);
 }
 
+/** What an anchor form carries back when it is refused: the three fields it types. */
+const ANCHOR_FIELDS = ["valuationDate", "anchorValue", "adjustsPriorCurve"];
+
 export async function addValuationAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
@@ -386,11 +406,7 @@ export async function addValuationAnchorAction(
           redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "anchor",
             message: parsed.error,
-            values: preserveFields(formData, [
-              "valuationDate",
-              "anchorValue",
-              "adjustsPriorCurve",
-            ]),
+            values: preserveFields(formData, ANCHOR_FIELDS),
           }),
         };
       }
@@ -407,8 +423,15 @@ export async function addValuationAnchorAction(
       await executeAddValuationAnchorCommand(store, { input: parsed, today });
       return { ok: true };
     },
+    // A repeated date is refused here, after the parse (the UNIQUE translation of
+    // `datedFact`): it reopens the ficha's «Registrar tasación» panel (#1847), so it
+    // carries what was typed back, as a parse refusal does.
     onError: ({ error }) =>
-      errorRedirectUrl(baseUrl(formData), { formId: "anchor", message: error }),
+      errorRedirectUrl(baseUrl(formData), {
+        formId: "anchor",
+        message: error,
+        values: preserveFields(formData, ANCHOR_FIELDS),
+      }),
     onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_added"),
   })(formData, ..._testArgs);
 }
@@ -490,11 +513,7 @@ export async function updateValuationAnchorAction(
           redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `anchor-${extra.anchorId}`,
             message: parsed.error,
-            values: preserveFields(formData, [
-              "valuationDate",
-              "anchorValue",
-              "adjustsPriorCurve",
-            ]),
+            values: preserveFields(formData, ANCHOR_FIELDS),
           }),
         };
       }

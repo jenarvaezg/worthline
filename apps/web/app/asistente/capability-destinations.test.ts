@@ -5,6 +5,12 @@ import {
   FEEDBACK_BUTTON_LABEL,
   FEEDBACK_BUTTON_PLACE,
 } from "@web/feedback/feedback-message";
+import { loadPayoutsPanel } from "@web/patrimonio/[id]/editar/_chrome/payouts-panel";
+import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
+import { loadHousingSurface } from "@web/patrimonio/[id]/editar/_families/housing-family";
+import type { ManualAsset, PayoutSchedule } from "@worthline/domain";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -32,11 +38,9 @@ describe("capability destinations (#1524)", () => {
     expect(rent?.where).toMatch(/cobros/i);
     expect(rent?.where).toMatch(/campo\s+Gastos/i);
     expect(rent?.where).toMatch(/misma cadencia/i);
-    // And the accordion it hides behind. On a property's ficha `CobrosSection`
-    // renders inside the «Configuración avanzada» `<details>`, which is closed unless
-    // ?abrir=cobros — so an answer that stops at «en Cobros» still leaves the user
-    // hunting. (The investment ficha has tabs since #1826; the property's, not yet.)
-    expect(rent?.where).toMatch(/configuración avanzada/i);
+    // And where on the ficha: its «Cobros» tab (#1847) — that the tab exists under
+    // that name, with the field, is pinned by rendering the ficha, below.
+    expect(rent?.where).toContain("pestaña «Cobros»");
   });
 
   it("refuses the net-in-the-amount workaround by name, with both reasons", () => {
@@ -184,24 +188,85 @@ describe("capability destinations (#1524)", () => {
     expect(source("feedback/feedback-launcher.tsx")).toContain("{FEEDBACK_BUTTON_LABEL}");
   });
 
-  it("names the accordion the UI actually renders", () => {
-    // The rent destination quotes «Configuración avanzada» because `CobrosSection` sits
-    // inside that `<details>`. Nothing in the type system ties this prose to the page,
-    // so a rename there would leave the assistant confidently sending users to a
-    // control that no longer exists — the drift this module was born to prevent,
-    // pointing at the UI instead of at a sibling module. Anchored by reading the UI.
-    //
-    // Since #1607 those are two files: the ficha owns the accordion, and the shared
-    // Cobros panel mounts the section its families place inside it. That a
-    // PROPERTY's panel really lands in the accordion — the investment ficha has tabs
-    // since #1826 — is pinned by rendering, in the ficha's own
-    // `page-families.test.tsx`; here it is the WORDS that must still match.
-    const page = source("(workspace)/patrimonio/[id]/editar/page.tsx");
-    const panel = source("(workspace)/patrimonio/[id]/editar/_chrome/payouts-panel.tsx");
+  it("names the tab and the field a property's ficha actually renders (#1847)", async () => {
+    // Nothing in the type system ties this prose to the page, so a rename there would
+    // leave the assistant confidently sending users to a control that no longer
+    // exists — the drift this module was born to prevent, pointing at the UI instead
+    // of at a sibling module. So it is anchored by RENDERING a rented flat's ficha:
+    // its tabs, and the declared rent's expenses field on the one the prose names.
+    const tabs = await rentedFlatTabs();
     const rent = CAPABILITY_DESTINATIONS.find((entry) => entry.id === "rent-expenses");
+    const cobros = tabs.find((tab) => tab.key === "cobros");
 
-    expect(page).toContain("<summary>Configuración avanzada</summary>");
-    expect(panel).toContain("<CobrosSection");
-    expect(rent?.where).toContain("Configuración avanzada");
+    expect(cobros).toBeDefined();
+    expect(rent?.where).toContain(`pestaña «${cobros?.label}»`);
+    const markup = renderToStaticMarkup(cobros?.content as ReactElement);
+    expect(markup).toContain(`aria-label="Gastos de ${RENT.label}"`);
+    expect(markup).toMatch(/<label>Gastos<input/);
   });
 });
+
+/** A rent declared on a flat — the cobro whose expenses the user asked about. */
+const RENT: PayoutSchedule = {
+  amountBasis: "real",
+  amountMinor: 900_00,
+  assumedContributionThrough: null,
+  cadence: "monthly",
+  endISO: null,
+  exclusions: [],
+  holdingId: "asset_piso",
+  id: "sch_rent",
+  label: "Alquiler Chamberí",
+  nature: "passive",
+  provenance: null,
+  provenanceAsOf: null,
+  startISO: "2026-01-01",
+};
+
+/** The tabs of a rented flat's ficha, loaded the way the page loads them. */
+async function rentedFlatTabs() {
+  const asset: ManualAsset = {
+    currency: "EUR",
+    currentValue: { amountMinor: 240_000_00, currency: "EUR" },
+    id: "asset_piso",
+    instrument: "property",
+    isPrimaryResidence: false,
+    liquidityTier: "housing",
+    name: "Piso de Chamberí",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "real_estate",
+  } as ManualAsset;
+  const store = {
+    assets: {
+      readAcquisitionCostMinor: async () => null,
+      readAnnualAppreciationRate: async () => null,
+      readValuationAnchors: async () => [],
+      readValuationCadence: async () => null,
+    },
+    payouts: {
+      readPayoutSchedulesForHolding: async () => [RENT],
+      readPayoutsForHolding: async () => [],
+    },
+  };
+  const ficha: FichaContext = {
+    allAssets: [asset],
+    archiveOriginAfterTransfer: false,
+    baseCurrency: "EUR",
+    checkedAt: "2026-10-13T08:00:00.000Z",
+    currentUrl: "/patrimonio/wl_hld_piso/editar",
+    formError: null,
+    id: asset.id,
+    isDemo: false,
+    overrides: [],
+    privacyMode: false,
+    store: store as never,
+    today: "2026-10-13",
+  };
+  const payoutsPanel = await loadPayoutsPanel(ficha, {
+    asset,
+    overrides: [],
+    scopeId: undefined,
+  });
+  const surface = await loadHousingSurface({ ...ficha, asset, payoutsPanel });
+  return surface.ficha.tabs;
+}

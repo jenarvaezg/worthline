@@ -203,12 +203,13 @@ export async function clickSectionTab(
 /**
  * Open one of the tabbed ficha's actions in its side panel (#1826): its button in
  * the bar, or the same button inside «Más». Returns the panel, named by the action.
+ * The bar is «Acciones del activo», or «Acciones de la deuda» on a debt (#1848).
  */
 export async function openFichaAction(
   page: import("@playwright/test").Page,
   label: string,
 ) {
-  const bar = page.getByRole("group", { name: "Acciones del activo" });
+  const bar = page.getByRole("group", { name: /^Acciones (del activo|de la deuda)$/ });
   await expect(bar).toBeVisible();
   await waitForHydration(bar);
   const direct = bar.getByRole("button", { exact: true, name: label });
@@ -229,21 +230,6 @@ export async function openFichaTab(page: import("@playwright/test").Page, label:
   const tab = tabs.getByRole("link", { name: label });
   await tab.click();
   await expect(tab).toHaveAttribute("aria-current", "true");
-}
-
-/**
- * Expand the edit page's progressive-disclosure block before using advanced forms.
- * Only the fichas that still keep «Configuración avanzada» — a property, a debt, a
- * connected source; an investment's ficha has tabs and a side panel since #1826.
- */
-export async function openAdvancedSettings(page: import("@playwright/test").Page) {
-  const advanced = page.locator("details.editAdvanced");
-  await expect(advanced).toBeVisible();
-  await waitForHydration(advanced);
-  if (!(await advanced.evaluate((el: HTMLDetailsElement) => el.open))) {
-    await advanced.getByText("Configuración avanzada", { exact: true }).click();
-  }
-  await expect(advanced).toHaveJSProperty("open", true);
 }
 
 /** Open a holding row's ⋯ actions popover (the menu hides Editar/Eliminar/ack). */

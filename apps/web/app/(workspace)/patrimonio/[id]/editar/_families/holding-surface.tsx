@@ -62,11 +62,14 @@ export async function loadHoldingSurface(
 
     // The routing decision and the row that justifies it travel together, so the
     // Binance loader takes a source it cannot be missing — `holdingFamily` says
-    // "binance" for exactly the assets this read resolved one for.
+    // "binance" for exactly the assets this read resolved one for — and the
+    // collection reuses it rather than listing the sources again (#1849).
     const surface =
       family === "binance" && connectedSource !== null
         ? await loadBinanceSurface(ctx, connectedSource)
-        : await loadAssetFamilySurface(family, ctx);
+        : family === "coin-collection"
+          ? await loadCoinCollectionSurface(ctx, connectedSource)
+          : await loadAssetFamilySurface(family, ctx);
 
     // The method was derived here to route; «Lo básico» reads the same value
     // rather than deriving it a second time in the page (#152, ADR 0014).
@@ -82,8 +85,6 @@ function loadAssetFamilySurface(
   ctx: AssetFamilyContext,
 ): Promise<HoldingSurface> | HoldingSurface {
   switch (family) {
-    case "coin-collection":
-      return loadCoinCollectionSurface(ctx);
     case "housing":
       return loadHousingSurface(ctx);
     case "investment":

@@ -242,7 +242,9 @@ describe("selectHeroHealth", () => {
           code: "MISSING_DEBT_MODEL",
           affected: { id: "h9", label: "Hipoteca", object: "holding" },
         },
-        "/patrimonio/wl_hld_h9/editar",
+        // Straight to the panel where the model is chosen (#1848), not to a ficha
+        // the person has to search.
+        "/patrimonio/wl_hld_h9/editar?accion=modelo",
       ],
       [
         {

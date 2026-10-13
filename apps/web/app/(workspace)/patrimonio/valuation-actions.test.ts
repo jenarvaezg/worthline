@@ -170,6 +170,92 @@ describe("updateAssetValuationAction", () => {
     store.close();
   });
 
+  test("from the ficha's panel it comes back to the ficha, not the board (#1846)", async () => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({
+        currentUrl: "/patrimonio/wl_hld_cuadro/editar",
+        currentValue: "7.500,00",
+        id: "cuadro",
+        returnTo: "/patrimonio/wl_hld_cuadro/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toBe("/patrimonio/wl_hld_cuadro/editar?ok=saved");
+    expect(await assetValue(store, "cuadro")).toBe(7_500_00);
+    store.close();
+  });
+
+  test.each([
+    "",
+    "//evil.example/robo",
+    "https://evil.example/robo",
+  ])("with no local return (%j) the success lands on the board, as before", async (returnTo) => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({ currentValue: "7.500,00", id: "cuadro", returnTo }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=saved/);
+    store.close();
+  });
+
+  test("a refused value comes back as the value form's, with what was typed (#1846)", async () => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({
+        currentUrl: "/patrimonio/wl_hld_cuadro/editar",
+        currentValue: "no-es-un-numero",
+        id: "cuadro",
+        returnTo: "/patrimonio/wl_hld_cuadro/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_cuadro/editar");
+    expect(target.searchParams.get("form")).toBe("value");
+    expect(target.searchParams.get("v_currentValue")).toBe("no-es-un-numero");
+    expect(target.searchParams.get("ok")).toBeNull();
+    store.close();
+  });
+
+  test("the domain guard's refusal is the value form's too (#1846)", async () => {
+    const store = await initStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 3_000_00,
+      id: "fondo",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      type: "investment",
+    });
+
+    const url = await runAction(
+      updateAssetValuationAction,
+      form({ currentValue: "4.000,00", id: "fondo" }),
+      store,
+      CLOCK,
+    );
+
+    expect(new URL(url.split(";")[2]!, "http://x").searchParams.get("form")).toBe(
+      "value",
+    );
+    store.close();
+  });
+
   test("refuses to hand-edit a derived investment holding (domain guard)", async () => {
     const store = await initStore();
     await store.assets.createManualAsset({
@@ -330,6 +416,85 @@ describe("updateLiabilityBalanceAction", () => {
 
     store.close();
   });
+
+  test("from the ficha's panel it comes back to the ficha, not the board (#1848)", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({
+        balance: "8.000,00",
+        currentUrl: "/patrimonio/wl_hld_prestamo/editar",
+        id: "prestamo",
+        returnTo: "/patrimonio/wl_hld_prestamo/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toBe("/patrimonio/wl_hld_prestamo/editar?ok=saved");
+    expect(await liabilityBalance(store, "prestamo")).toBe(8_000_00);
+    store.close();
+  });
+
+  test("with no local return the success lands on the board, as before", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ balance: "8.000,00", id: "prestamo", returnTo: "https://evil.example" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=saved/);
+    store.close();
+  });
+
+  test("a refused balance comes back as the balance form's, with what was typed (#1848)", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({
+        balance: "no-es-un-numero",
+        currentUrl: "/patrimonio/wl_hld_prestamo/editar",
+        id: "prestamo",
+        returnTo: "/patrimonio/wl_hld_prestamo/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_prestamo/editar");
+    expect(target.searchParams.get("form")).toBe("balance");
+    expect(target.searchParams.get("v_balance")).toBe("no-es-un-numero");
+    store.close();
+  });
+
+  test("the curve guard's refusal is the balance form's too (#1848)", async () => {
+    const store = await seedLiability();
+    await store.liabilities.setDebtModel("prestamo", "informal");
+    await store.liabilities.addBalanceAnchor({
+      anchorDate: "2026-07-01",
+      balanceMinor: 9_000_00,
+      id: "anchor_1",
+      liabilityId: "prestamo",
+    });
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ balance: "8.000,00", id: "prestamo" }),
+      store,
+      CLOCK,
+    );
+
+    expect(new URL(url.split(";")[2]!, "http://x").searchParams.get("form")).toBe(
+      "balance",
+    );
+    store.close();
+  });
 });
 
 describe("addValuationAnchorAction", () => {
@@ -357,6 +522,39 @@ describe("addValuationAnchorAction", () => {
       adjustsPriorCurve: true,
     });
     expect(await grossAt(store, "2026-05-01")).toBe(150_000_00);
+
+    store.close();
+  });
+
+  test("a repeated date comes back as the anchor form's, with what was typed (#1847)", async () => {
+    const store = await seedHousing();
+    const entries = {
+      adjustsPriorCurve: "on",
+      anchorValue: "150.000,00",
+      currentUrl: "/patrimonio/wl_hld_piso/editar?pestaña=valoracion",
+      id: "piso",
+      valuationDate: "2026-05-01",
+    };
+    await runAction(addValuationAnchorAction, form(entries), store, CLOCK);
+
+    const url = await runAction(
+      addValuationAnchorAction,
+      form({ ...entries, anchorValue: "160.000,00" }),
+      store,
+      CLOCK,
+    );
+
+    // The ficha's «Registrar tasación» panel reopens on it: the refusal is the
+    // form's own, and the panel shows what was typed rather than a blank form.
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_piso/editar");
+    expect(target.searchParams.get("pestaña")).toBe("valoracion");
+    expect(target.searchParams.get("form")).toBe("anchor");
+    expect(target.searchParams.get("error")).toBeTruthy();
+    expect(target.searchParams.get("v_valuationDate")).toBe("2026-05-01");
+    expect(target.searchParams.get("v_anchorValue")).toBe("160.000,00");
+    expect(target.searchParams.get("v_adjustsPriorCurve")).toBe("on");
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
 
     store.close();
   });

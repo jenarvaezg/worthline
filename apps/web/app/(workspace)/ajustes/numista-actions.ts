@@ -24,12 +24,14 @@ import { redirect } from "next/navigation";
 import {
   NUMISTA_CONNECT_FORM_ID,
   NUMISTA_CREDENTIALS_FORM_ID,
+  NUMISTA_DISCONNECT_FORM_ID,
 } from "./connected-source-form-ids";
 import {
   CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
   connectedSourceCredentialsRejectedMessage,
   connectedSourceProviderErrorMessage,
   currentUrlOf,
+  disconnectLanding,
   scopeMemberId,
 } from "./connected-source-helpers";
 import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
@@ -422,8 +424,16 @@ export const disconnectNumistaAction = formAction({
       ? { ok: true, value: { message: "numista_disconnected" } }
       : { ok: false, error: "No se pudo desconectar la colección." };
   },
+  // Tagged with its own form so the ficha reopens the panel that sent it (#1849).
   onError: ({ formData, error }) =>
-    errorRedirectUrl(currentUrlOf(formData), { message: error }),
+    errorRedirectUrl(currentUrlOf(formData), {
+      formId: NUMISTA_DISCONNECT_FORM_ID,
+      message: error,
+    }),
   onSuccess: ({ formData, value }) =>
-    appendParam(currentUrlOf(formData), "ok", value!.message),
+    appendParam(
+      disconnectLanding(formData, value!.message === "numista_disconnected"),
+      "ok",
+      value!.message,
+    ),
 });

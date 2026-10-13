@@ -182,6 +182,7 @@ export {
   resolveDataDir,
   runBootstrapHealthcheck,
 } from "./database-target";
+export { type DebtCurveRows, debtBalanceCurveInput } from "./debt-balance-input";
 export type { EarlyRepaymentPlan } from "./early-repayment-plan";
 export {
   deriveEffectivePlan,
@@ -199,6 +200,7 @@ export type {
   InvestmentHoldingCreationPlan,
   StoredHoldingCreationPlan,
 } from "./holding-creation-plan";
+export { type HousingCurveRows, housingCurveInput } from "./housing-curve-input";
 export type { InvestmentOperationPlan } from "./investment-operation-plan";
 export type { InvestmentTransferPlan } from "./investment-transfer-plan";
 export {

@@ -45,23 +45,30 @@ export function holdingDetailHref(publicHoldingId: string): string {
 }
 
 /**
- * The ficha with its operations on show (#1365). Since #1826 an investment's ficha
- * reads `?abrir=operaciones` as its «Operaciones» tab (`_ficha/ficha-view.ts`); a
- * ficha that still keeps the «Configuración avanzada» accordion renders it unfolded,
- * where a bare `#operaciones` would scroll to a closed `<details>` and show nothing.
+ * The ficha with its operations on show (#1365). An investment's ficha reads
+ * `?abrir=operaciones` as its «Operaciones» tab (#1826, `_ficha/ficha-view.ts`): a
+ * bare `#operaciones` would scroll to a tab that is not on show.
  */
 export function holdingOperationsHref(publicHoldingId: string): string {
   return `${holdingDetailHref(publicHoldingId)}?abrir=operaciones#operaciones`;
 }
 
 /**
- * The ficha with its cobros on show and scrolled into view (#1510). A tabbed ficha
- * (#1826) reads `?abrir=cobros` as its «Cobros» tab; one that still keeps the
- * «Configuración avanzada» accordion renders it unfolded, where a bare `#cobros`
- * would scroll to a closed `<details>` and show nothing.
+ * The ficha with its cobros on show and scrolled into view (#1510). The ficha reads
+ * `?abrir=cobros` as its «Cobros» tab (#1826): a bare `#cobros` would scroll to a
+ * tab that is not on show.
  */
 export function holdingCobrosHref(publicHoldingId: string): string {
   return `${holdingDetailHref(publicHoldingId)}?abrir=cobros#cobros`;
+}
+
+/**
+ * The ficha with one of its actions open in the side panel (#1826): the `?accion=`
+ * that `_ficha/ficha-view.ts` reads. The key is the family's own name for it
+ * (`DEBT_ACTION.model`, «extracto»…), never spelled again by the caller.
+ */
+export function holdingActionHref(publicHoldingId: string, action: string): string {
+  return `${holdingDetailHref(publicHoldingId)}?${new URLSearchParams({ accion: action })}`;
 }
 
 /**
@@ -70,7 +77,7 @@ export function holdingCobrosHref(publicHoldingId: string): string {
  * «ahora carga el extracto» it is greeted with is one click, not a search.
  */
 export function holdingStatementHref(publicHoldingId: string): string {
-  return `${holdingDetailHref(publicHoldingId)}?accion=extracto`;
+  return holdingActionHref(publicHoldingId, "extracto");
 }
 
 /** The holding's row on the board, as an anchor target (the ficha's «← Volver»). */

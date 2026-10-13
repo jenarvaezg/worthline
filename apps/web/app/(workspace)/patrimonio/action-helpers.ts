@@ -1,5 +1,10 @@
 import { holdingPublicIdOf, readHoldingPublicIdIndex } from "@web/holding-route";
-import { errorRedirectUrl, mapDomainViolation, preserveFields } from "@web/intake";
+import {
+  errorRedirectUrl,
+  isLocalRedirectPath,
+  mapDomainViolation,
+  preserveFields,
+} from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import { type OwnershipSplitCommandResult } from "@worthline/db";
 
@@ -35,6 +40,37 @@ export const EDIT_ASSET_FIELDS = [
 export function baseUrl(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio";
 }
+
+/**
+ * Where a form asked its success to come back to, or null for «the board, as
+ * always». A ficha form that should keep the person on the ficha posts its own URL
+ * as `returnTo` — «Cotiza a mano» beside the price (#1731 review), «Actualizar
+ * valor» in the side panel (#1846) — and the success lands there with its notice.
+ * Only a path inside the app is followed (`isLocalRedirectPath`, the guard every
+ * redirect here runs): anything else, or nothing, falls back to the caller's board
+ * destination, which lands on the holding's row as it always did.
+ *
+ * Kept apart from {@link baseUrl} on purpose: `currentUrl` is where a REFUSAL
+ * returns, and a form that never posts `returnTo` keeps the success it had.
+ */
+export function localReturnTo(formData: FormData): string | null {
+  const raw = String(formData.get("returnTo") ?? "").trim();
+  return raw !== "" && isLocalRedirectPath(raw) ? raw : null;
+}
+
+/**
+ * The `formId` of the hand-set value form (#1846): «Actualizar valor», in «Lo
+ * básico» or in the ficha's side panel. Its own, not «Lo básico»'s `edit`, so a
+ * refusal reopens the form that produced it and prints there, once.
+ */
+export const VALUE_FORM_ID = "value";
+
+/**
+ * The `formId` of a debt's hand-set balance form (#1848): «Actualizar saldo», in
+ * the ficha's side panel. Its own for the same reason as {@link VALUE_FORM_ID}:
+ * `edit` lands in «Datos», behind the panel that produced the refusal.
+ */
+export const BALANCE_FORM_ID = "balance";
 
 /**
  * The holding's board anchor: its public `wl_hld_…` id, so a mutation's success

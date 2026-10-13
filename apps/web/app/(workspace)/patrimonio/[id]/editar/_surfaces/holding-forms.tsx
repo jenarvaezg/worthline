@@ -1,21 +1,17 @@
 /**
- * The identity + valuation forms shared across the detail surfaces (#152).
+ * The identity forms of «Lo básico», shared across the detail surfaces (#152).
  *
  * `AssetEditForm` / `LiabilityEditForm` edit a holding's identity (name, type,
- * ownership) and — for non-investments — its stored value/balance. An investment
- * shows no manual value field (ADR 0006: value is always derived); its
- * operations live in the `derived` surface (OperationsEditor). `OwnershipInputs`
- * is the shared ownership fieldset.
+ * ownership) — and an investment's pricing. A hand-set value or balance is not
+ * typed here: it is an action of the ficha's bar (#1846, #1848). An investment
+ * shows no manual value field (ADR 0006: value is always derived); its operations
+ * live in its own tab. `OwnershipInputs` is the shared ownership fieldset.
  *
  * Extracted from the monolithic editar page so each surface is a small focused
  * file the page composes. Server-rendered, no client JS (ADR 0009).
  */
 
-import {
-  editAssetAction,
-  updateAssetValuationAction,
-  updateLiabilityBalanceAction,
-} from "@web/patrimonio/actions";
+import { editAssetAction } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
 import {
@@ -32,7 +28,6 @@ import type {
   ValuationMethod,
 } from "@worthline/domain";
 import {
-  formatMoneyInput,
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   isRetiredInvestmentPriceProvider,
@@ -461,35 +456,23 @@ export function AssetEditForm({
         ) : null}
       </form>
 
+      {/* A hand-set value is not typed here: «Actualizar valor» is an action of the
+          ficha's bar (#1846), and a property's value is its appraisals (#1847). */}
       {method === "derived" ? (
         <p className="infoNote">
           Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
           derivado de las operaciones (ADR 0006).
         </p>
-      ) : (
-        // stored AND appreciating keep the manual current-value form: a property's
-        // current value is the appreciation curve's "today" anchor (the curve +
-        // appraisals are additive via HousingValuationSection). Only derived
-        // holdings (units × price) hide it (ADR 0006).
-        <form action={updateAssetValuationAction} className="stackForm updateValueForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={asset.id} />
-          <label>
-            Valor actual (EUR)
-            <input
-              aria-label="Valor actual en EUR"
-              defaultValue={formatMoneyInput(asset.currentValue.amountMinor)}
-              inputMode="decimal"
-              name="currentValue"
-            />
-          </label>
-          <PendingSubmit pendingLabel="Actualizando…">Actualizar valor</PendingSubmit>
-        </form>
-      )}
+      ) : null}
     </>
   );
 }
 
+/**
+ * A debt's identity. Its balance is not typed here: «Actualizar saldo» is an action
+ * of the ficha's bar (#1848), offered only while the stored balance governs the
+ * figure (#1290).
+ */
 export function LiabilityEditForm({
   assets,
   boardHref,
@@ -497,7 +480,6 @@ export function LiabilityEditForm({
   liability,
   members,
   scopeMemberId,
-  showRawBalanceForm,
   values,
 }: {
   assets: ManualAsset[];
@@ -508,92 +490,62 @@ export function LiabilityEditForm({
   liability: Liability;
   members: Member[];
   scopeMemberId: string | undefined;
-  /**
-   * Whether `liabilities.current_balance_minor` still governs this debt's figure
-   * (#1290). Decided server-side with `storedBalanceGovernsDebtFigure`: a debt
-   * with a modelled curve (plan / re-baseline / anchors) takes its balance from
-   * the curve, so the raw form would be a silent write into the void — the
-   * repair door there is «Recalibrar con saldo real» or a new anchor (ADR 0056).
-   */
-  showRawBalanceForm: boolean;
   values: Record<string, string>;
 }) {
   return (
-    <>
-      <form action={editAssetAction} className="stackForm">
-        <input name="currentUrl" type="hidden" value={currentUrl} />
-        <input name="id" type="hidden" value={liability.id} />
-        <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
-        <input name="isLiability" type="hidden" value="true" />
+    <form action={editAssetAction} className="stackForm">
+      <input name="currentUrl" type="hidden" value={currentUrl} />
+      <input name="id" type="hidden" value={liability.id} />
+      <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
+      <input name="isLiability" type="hidden" value="true" />
 
-        <label>
-          Nombre
-          <input
-            aria-label="Nombre de la deuda"
-            defaultValue={values["name"] ?? liability.name}
-            name="name"
-          />
-        </label>
-
-        <label>
-          Tipo
-          <select defaultValue={values["type"] ?? liability.type} name="type">
-            <option value="mortgage">Hipoteca</option>
-            <option value="debt">Deuda</option>
-          </select>
-        </label>
-
-        <label>
-          Activo asociado (opcional)
-          <select
-            defaultValue={
-              values["associatedAssetId"] ?? liability.associatedAssetId ?? ""
-            }
-            name="associatedAssetId"
-          >
-            <option value="">Sin activo asociado</option>
-            {assets.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <OwnershipInputs
-          allowPartial={
-            assets.find((a) => a.id === liability.associatedAssetId)?.type ===
-            "real_estate"
-          }
-          members={members}
-          scopeMemberId={scopeMemberId}
-          currentOwnership={liability.ownership}
-          values={values}
+      <label>
+        Nombre
+        <input
+          aria-label="Nombre de la deuda"
+          defaultValue={values["name"] ?? liability.name}
+          name="name"
         />
+      </label>
 
-        <div className="formActions">
-          <button type="submit">Guardar cambios</button>
-          <Link href={boardHref}>Cancelar</Link>
-        </div>
-      </form>
+      <label>
+        Tipo
+        <select defaultValue={values["type"] ?? liability.type} name="type">
+          <option value="mortgage">Hipoteca</option>
+          <option value="debt">Deuda</option>
+        </select>
+      </label>
 
-      {showRawBalanceForm ? (
-        <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={liability.id} />
-          <label>
-            Saldo pendiente (EUR)
-            <input
-              aria-label="Saldo pendiente en EUR"
-              defaultValue={formatMoneyInput(liability.currentBalance.amountMinor)}
-              inputMode="decimal"
-              name="balance"
-            />
-          </label>
-          <PendingSubmit pendingLabel="Actualizando…">Actualizar saldo</PendingSubmit>
-        </form>
-      ) : null}
-    </>
+      <label>
+        Activo asociado (opcional)
+        <select
+          defaultValue={values["associatedAssetId"] ?? liability.associatedAssetId ?? ""}
+          name="associatedAssetId"
+        >
+          <option value="">Sin activo asociado</option>
+          {assets.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <OwnershipInputs
+        allowPartial={
+          assets.find((a) => a.id === liability.associatedAssetId)?.type === "real_estate"
+        }
+        members={members}
+        scopeMemberId={scopeMemberId}
+        currentOwnership={liability.ownership}
+        values={values}
+      />
+
+      <div className="formActions">
+        <button type="submit">Guardar cambios</button>
+        <Link href={boardHref}>Cancelar</Link>
+      </div>
+    </form>
   );
 }
 

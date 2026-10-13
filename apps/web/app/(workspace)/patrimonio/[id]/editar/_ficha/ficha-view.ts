@@ -147,6 +147,17 @@ export function writeFichaView(
 export const FICHA_DATOS_TAB = "datos";
 
 /**
+ * Every tab a ficha ends up with, in order: the family's own, then «Datos del
+ * activo», which the page appends. What each URL a family builds is built against
+ * (`fichaTabUrl`, `fichaActionUrl`), so the default tab is the family's first.
+ */
+export function withDatosTab<const T extends readonly string[]>(
+  own: T,
+): readonly [...T, typeof FICHA_DATOS_TAB] {
+  return [...own, FICHA_DATOS_TAB];
+}
+
+/**
  * The ask a link into the ficha sends it: show this tab, open this action's panel,
  * focus this field. A cancelable window event — `FichaLink` dispatches it, the
  * island claims it with `preventDefault` — so one mechanism serves a link outside

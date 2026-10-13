@@ -19,6 +19,37 @@ export const STALE_MANUAL_VALUE_THRESHOLD_DAYS = 90;
 /** Machine code for a stored holding without a recent manual value update. */
 export const STALE_MANUAL_VALUE_CODE = "STALE_MANUAL_VALUE";
 
+/** How fresh a hand-set value is: when it was last put up to date, and how long ago. */
+export interface ManualValueFreshness {
+  /** The day of the latest declared value, or the holding's creation day without one. */
+  lastUpdateDateKey: string;
+  /** Whole days from that day to the reading day. */
+  daysSince: number;
+  /** At or past {@link STALE_MANUAL_VALUE_THRESHOLD_DAYS}: what the aviso fires on. */
+  stale: boolean;
+}
+
+/**
+ * The ONE reading of a hand-set value's freshness: the `STALE_MANUAL_VALUE` aviso
+ * fires on it, and the ficha's «Puesto al día» prints it (#1846), so the date the
+ * aviso is about and the date the ficha shows cannot be two dates. Undefined when
+ * there is nothing to date it by — no history and no creation timestamp.
+ */
+export function manualValueFreshness(
+  history: readonly ManualValuePoint[] | undefined,
+  createdAtIso: string | undefined,
+  asOfDateKey: string,
+): ManualValueFreshness | undefined {
+  const lastUpdateDateKey = lastManualValueUpdateDateKey(history, createdAtIso);
+  if (lastUpdateDateKey === undefined) return undefined;
+  const daysSince = daysBetween(lastUpdateDateKey, asOfDateKey);
+  return {
+    daysSince,
+    lastUpdateDateKey,
+    stale: daysSince >= STALE_MANUAL_VALUE_THRESHOLD_DAYS,
+  };
+}
+
 export interface DataQualityManualValueFreshnessInput {
   assets: readonly ManualAsset[];
   /** Manual value audit history keyed by asset id. */
@@ -50,20 +81,15 @@ export const collectManualValueFreshnessSignals: DataQualityCollector<
       continue;
     }
 
-    const lastUpdateDateKey = lastManualValueUpdateDateKey(
+    const freshness = manualValueFreshness(
       input.manualValueHistoryByAssetId.get(asset.id),
       input.assetCreatedAtById.get(asset.id),
+      input.asOfDateKey,
     );
-    if (lastUpdateDateKey === undefined) {
+    if (freshness === undefined || !freshness.stale) {
       continue;
     }
-
-    if (
-      daysBetween(lastUpdateDateKey, input.asOfDateKey) <
-      STALE_MANUAL_VALUE_THRESHOLD_DAYS
-    ) {
-      continue;
-    }
+    const { lastUpdateDateKey } = freshness;
 
     const baseLabel = `El valor manual de "${asset.name}" lleva más de ${STALE_MANUAL_VALUE_THRESHOLD_DAYS} días sin actualizarse.`;
     signals.push({

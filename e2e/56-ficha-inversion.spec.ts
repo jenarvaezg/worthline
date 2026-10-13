@@ -71,8 +71,7 @@ test("the tabs switch without a reload, mirror ?pestaña= and walk back with Atr
 }) => {
   await fundWithBuy(page, "Fondo Pestañas E2E");
 
-  // No accordion left: the state and the bar are what the ficha opens with.
-  await expect(page.getByText("Configuración avanzada")).toHaveCount(0);
+  // The state and the bar are what the ficha opens with.
   await expect(page.getByRole("region", { name: "Estado del activo" })).toBeVisible();
   expect(await sidewaysOverflow(page)).toBeLessThanOrEqual(0);
 

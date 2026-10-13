@@ -1,6 +1,7 @@
 /**
- * Wiring test for the Cobros surface (PRD #652 S1, #656). Renders the server
- * section (with its client grid island) to static markup and asserts it surfaces
+ * Wiring test for the Cobros surface (PRD #652 S1, #656). Renders its two halves —
+ * the record (with its client grid island) and the entry forms, as the ficha's tab
+ * and panel place them (#1826) — to static markup and asserts they surface
  * the derived + one-off figures, both entry forms, the schedule-management
  * controls, the renta-pasiva strip (coverage only when spending is known), and the
  * honest attribution note. Prior art: housing-valuation-section.test.tsx.
@@ -15,12 +16,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import {
-  CobrosEntry,
-  type CobrosProps,
-  CobrosRecord,
-  CobrosSection,
-} from "./cobros-section";
+import { CobrosEntry, type CobrosProps, CobrosRecord } from "./cobros-section";
 
 const TODAY = "2026-07-06";
 
@@ -59,29 +55,33 @@ function renderSection(
     showLeaseTerms?: boolean;
   } = {},
 ) {
+  const props: CobrosProps = {
+    acknowledgeWarningAction: noop,
+    createIncomeAction: noop,
+    createPayoutAction: noop,
+    currency: "EUR",
+    currentUrl: "/patrimonio/h1/editar",
+    deletePayoutAction: noop,
+    deletePayoutScheduleAction: noop,
+    doubleCount: over.doubleCount ?? null,
+    holdingId: "h1",
+    monthlySpendingMinor: over.monthlySpendingMinor ?? null,
+    payouts: over.payouts ?? [DIVIDEND],
+    privacyMode: false,
+    schedules: over.schedules ?? [RENT],
+    showLeaseTerms: over.showLeaseTerms ?? false,
+    today: TODAY,
+    updatePayoutScheduleAction: noop,
+  };
   return renderToStaticMarkup(
-    <CobrosSection
-      acknowledgeWarningAction={noop}
-      createPayoutAction={noop}
-      createIncomeAction={noop}
-      currency="EUR"
-      currentUrl="/patrimonio/h1/editar"
-      deletePayoutAction={noop}
-      deletePayoutScheduleAction={noop}
-      doubleCount={over.doubleCount ?? null}
-      holdingId="h1"
-      monthlySpendingMinor={over.monthlySpendingMinor ?? null}
-      payouts={over.payouts ?? [DIVIDEND]}
-      privacyMode={false}
-      schedules={over.schedules ?? [RENT]}
-      showLeaseTerms={over.showLeaseTerms ?? false}
-      today={TODAY}
-      updatePayoutScheduleAction={noop}
-    />,
+    <>
+      <CobrosRecord {...props} />
+      <CobrosEntry {...props} />
+    </>,
   );
 }
 
-describe("CobrosSection wiring", () => {
+describe("Cobros wiring", () => {
   test.each([
     [{ nature: null }, "Naturaleza sin declarar"],
     [{ nature: "work" }, "Renta del trabajo"],
@@ -147,7 +147,7 @@ describe("CobrosSection wiring", () => {
 
 // ── the declaration door (#1673) ──────────────────────────────────────────────
 
-describe("CobrosSection — the same declaration door as Rentas (#1673)", () => {
+describe("Cobros — the same declaration door as Rentas (#1673)", () => {
   test("declaring here asks for the nature, basis and provenance, nothing preselected for the person", () => {
     const markup = renderSection();
     const checked = (name: string, value: string) =>
@@ -189,7 +189,7 @@ describe("CobrosSection — the same declaration door as Rentas (#1673)", () => 
 
 // ── declared expenses (#1448) ─────────────────────────────────────────────────
 
-describe("CobrosSection — declared expenses", () => {
+describe("Cobros — declared expenses", () => {
   test("the recurring form offers a costs field and says what it is for", () => {
     const markup = renderSection();
 
@@ -231,7 +231,7 @@ describe("CobrosSection — declared expenses", () => {
 
 // ── the net lens (#1463) ──────────────────────────────────────────────────────
 
-describe("CobrosSection — net passive income (#1463)", () => {
+describe("Cobros — net passive income (#1463)", () => {
   test("nets the headline and names gross − expenses when the schedule declares costs", () => {
     const markup = renderSection({
       monthlySpendingMinor: 220000,
@@ -279,7 +279,7 @@ describe("CobrosSection — net passive income (#1463)", () => {
 
 // ── the lease terms (#1521) ───────────────────────────────────────────────────
 
-describe("CobrosSection — lease terms (#1521)", () => {
+describe("Cobros — lease terms (#1521)", () => {
   test("a coupon or a dividend is offered no regime at all", () => {
     // `endISO` on a coupon means exactly what it says, so there is nothing to
     // declare — and a select that decides nothing is worse than no select.
@@ -340,7 +340,7 @@ describe("CobrosSection — lease terms (#1521)", () => {
   });
 });
 
-describe("CobrosSection — el doble conteo de una renta ligada (#1675)", () => {
+describe("Cobros — el doble conteo de una renta ligada (#1675)", () => {
   const SENTENCE =
     "«Plan Indexa» tiene valor y además una renta declarada ligada a él («Renta vitalicia»).";
 
@@ -418,14 +418,6 @@ describe("Cobros — a holding that never paid anything (#1830)", () => {
     expect(markup).toContain(EMPTY_LINE);
   });
 
-  test("on the accordion ficha the line stands alone: the entry forms are right below", () => {
-    const markup = renderSection({ payouts: [], schedules: [] });
-
-    expect(markup).toContain(EMPTY_LINE);
-    expect(markup).not.toContain("Renta pasiva");
-    expect(markup).toContain("Registrar un cobro puntual");
-  });
-
   test("a declared recurring income is not «nothing»: the record keeps its strip", () => {
     const markup = renderRecord({ schedules: [RENT] });
 
@@ -500,9 +492,12 @@ describe("a refused cobro comes back to its own form, with what was typed (#1731
     expect(markup).not.toContain('role="alert"');
   });
 
-  test("on the accordion the refusal prints once, at the form that produced it", () => {
+  test("across the tab and the panel the refusal prints once, at the form that produced it", () => {
     const markup = renderToStaticMarkup(
-      <CobrosSection {...props} refusal={oneOffRefusal} />,
+      <>
+        <CobrosRecord {...props} refusal={oneOffRefusal} />
+        <CobrosEntry {...props} refusal={oneOffRefusal} />
+      </>,
     );
 
     expect(markup.split("Introduce un importe mayor que cero.")).toHaveLength(2);

@@ -23,6 +23,7 @@ import { type FormErrorContext, HOUSING_ACQUISITION_COST_HELP } from "@web/intak
 import { setHousingAcquisitionCostAction } from "@web/patrimonio/actions";
 import type { CurrencyCode } from "@worthline/domain";
 import { formatMoneyInput, formatMoneyMinorPrivacy, moneySign } from "@worthline/domain";
+import { resultAgainstCost } from "./housing-valuation-view";
 
 export function AcquisitionCostSection({
   acquisitionCostMinor,
@@ -40,22 +41,21 @@ export function AcquisitionCostSection({
   currency: CurrencyCode;
   /** The holding's own public `wl_hld_…` URL, where the form returns. */
   currentUrl: string;
-  /** Today's value of the property, the other half of the result line. */
+  /**
+   * Today's value of the property, the other half of the result line: the board
+   * row's — the curve's today — never the stored column, which drifts from it as
+   * soon as there is a rate (#1847).
+   */
   currentValueMinor: number;
   formError: FormErrorContext | null;
   privacyMode?: boolean;
 }) {
   const values = formError?.formId === "acquisitionCost" ? formError.values : {};
-  // The line needs BOTH halves. Without a cost there is no return to show and a
-  // 0 % would be an invention — the four properties on the book start here on
-  // purpose (no backfill from the mixed anchor), and the line stays away until
-  // someone reads the escritura. Without a current value it would read as a total
-  // loss of everything disbursed, which is a valuation that has not happened yet,
-  // not a result.
-  const result =
-    acquisitionCostMinor === null || currentValueMinor <= 0
-      ? null
-      : { amountMinor: currentValueMinor - acquisitionCostMinor, currency };
+  // The line needs BOTH halves, by the rule the ficha's header reads too (#1847).
+  const result = resultAgainstCost(acquisitionCostMinor, {
+    amountMinor: currentValueMinor,
+    currency,
+  });
 
   return (
     <section className="housingCost" aria-label="Coste de adquisición">

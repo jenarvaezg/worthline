@@ -14,7 +14,8 @@ import {
   storedBalanceGovernsDebtFigure,
   valueHousingAtDate,
 } from "@worthline/domain";
-
+import { debtBalanceCurveInput } from "./debt-balance-input";
+import { housingCurveInput } from "./housing-curve-input";
 import {
   amortizationPlans,
   assets,
@@ -119,14 +120,18 @@ export async function readHousingCurveInputs(
     cadenceByAsset.set(row.id, row.valuationCadence ?? null);
   }
 
+  // What the curve reads off those rows is decided in ONE place, the same one the
+  // ficha asks for its header (#1847): this loop only hands each property its rows.
   for (const asset of housingAssets) {
-    const cadence = cadenceByAsset.get(asset.id) ?? undefined;
-    inputs.set(asset.id, {
-      anchors: anchorsByAsset.get(asset.id) ?? [],
-      annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
-      currentValueMinor: asset.currentValue.amountMinor,
-      ...(cadence != null ? { cadence } : {}),
-    });
+    inputs.set(
+      asset.id,
+      housingCurveInput({
+        anchors: anchorsByAsset.get(asset.id) ?? [],
+        annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
+        cadence: cadenceByAsset.get(asset.id) ?? null,
+        currentValueMinor: asset.currentValue.amountMinor,
+      }),
+    );
   }
 
   return inputs;
@@ -235,43 +240,21 @@ export async function readDebtBalanceInputs(
     rebaselinesByLiability.set(row.liabilityId, list);
   }
 
+  // Which rows count for which model is decided in ONE place, the same one the
+  // ficha asks for its header (#1848): this loop only hands each debt its rows.
   for (const liability of liveLiabilities) {
-    const debtModel = modelById.get(liability.id) ?? null;
-    if (debtModel === null) continue;
-
-    const currentBalanceMinor = liability.currentBalance.amountMinor;
-    const cadence = cadenceById.get(liability.id) ?? undefined;
-
-    if (debtModel === "amortizable") {
-      const plan = planByLiability.get(liability.id);
-      inputs.set(liability.id, {
-        balanceRebaselines: rebaselinesByLiability.get(liability.id) ?? [],
-        currentBalanceMinor,
-        debtModel,
-        ...(cadence != null ? { cadence } : {}),
-        ...(plan
-          ? {
-              earlyRepayments: repaymentsByPlan.get(plan.id) ?? [],
-              plan: {
-                annualInterestRate: plan.annualInterestRate,
-                disbursementDate: plan.disbursementDate,
-                firstPaymentDate: plan.firstPaymentDate,
-                initialCapitalMinor: plan.initialCapitalMinor,
-                termMonths: plan.termMonths,
-              },
-              revisions: revisionsByPlan.get(plan.id) ?? [],
-            }
-          : {}),
-      });
-      continue;
-    }
-
-    inputs.set(liability.id, {
+    const plan = planByLiability.get(liability.id) ?? null;
+    const input = debtBalanceCurveInput({
       anchors: anchorsByLiability.get(liability.id) ?? [],
-      currentBalanceMinor,
-      ...(cadence != null ? { cadence } : {}),
-      debtModel,
+      balanceRebaselines: rebaselinesByLiability.get(liability.id) ?? [],
+      cadence: cadenceById.get(liability.id) ?? null,
+      currentBalanceMinor: liability.currentBalance.amountMinor,
+      debtModel: modelById.get(liability.id) ?? null,
+      earlyRepayments: plan ? (repaymentsByPlan.get(plan.id) ?? []) : [],
+      plan,
+      revisions: plan ? (revisionsByPlan.get(plan.id) ?? []) : [],
     });
+    if (input !== null) inputs.set(liability.id, input);
   }
 
   return inputs;
