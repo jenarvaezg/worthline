@@ -7,6 +7,11 @@
   padding-bottom: 88px;
 }
 
+.prototype > *,
+.prototype form > * {
+  min-width: 0;
+}
+
 .controls {
   align-items: center;
   border: 1px dashed var(--line);
@@ -340,6 +345,18 @@ button.ledgerHead:not(:disabled) {
 }
 
 @media (max-width: 640px) {
+  .switcher {
+    bottom: 10px;
+    font-size: 0.72rem;
+    gap: 8px;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  .switcherPrefix {
+    display: none;
+  }
+
   .result {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }

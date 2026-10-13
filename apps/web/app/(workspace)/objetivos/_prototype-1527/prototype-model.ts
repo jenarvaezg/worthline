@@ -3,7 +3,7 @@
  * y no va a main.
  *
  * Tres variantes del selector de activos de un objetivo para catálogos largos,
- * sobre la ruta real `/objetivos` con `?variante=A|B|C` (solo en desarrollo).
+ * sobre la ruta real `/objetivos` con `?variante=A|B|C|D` (solo en desarrollo).
  * `?catalogo=real` cambia el catálogo sintético de ~80 activos por los activos del
  * workspace.
  */
@@ -19,6 +19,7 @@ export const VARIANTS = [
   { key: "A", name: "Chips agrupados" },
   { key: "B", name: "Libro con casillas" },
   { key: "C", name: "Buscar y añadir" },
+  { key: "D", name: "Elegidos + libro (B+C)" },
 ] as const;
 
 export type VariantKey = (typeof VARIANTS)[number]["key"];

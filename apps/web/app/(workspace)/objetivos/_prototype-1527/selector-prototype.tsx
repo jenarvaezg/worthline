@@ -21,6 +21,7 @@ import {
   type VariantKey,
 } from "./prototype-model";
 import styles from "./selector-prototype.module.css";
+import { VariantD } from "./variant-d";
 
 type Scenario = "crear" | "editar";
 
@@ -461,7 +462,8 @@ function PrototypeSwitcher({
         ←
       </button>
       <span>
-        Prototipo #1527 · {VARIANTS[index]?.key} ({VARIANTS[index]?.name})
+        <span className={styles.switcherPrefix}>Prototipo #1527 · </span>
+        {VARIANTS[index]?.key} ({VARIANTS[index]?.name})
       </span>
       <button aria-label="Variante siguiente" onClick={() => cycle(1)} type="button">
         →
@@ -576,6 +578,7 @@ export default function SelectorPrototype({
         {variant === "A" ? <VariantA key={`${catalog}-${scenario}`} {...props} /> : null}
         {variant === "B" ? <VariantB key={`${catalog}-${scenario}`} {...props} /> : null}
         {variant === "C" ? <VariantC key={`${catalog}-${scenario}`} {...props} /> : null}
+        {variant === "D" ? <VariantD key={`${catalog}-${scenario}`} {...props} /> : null}
         <button className={styles.submit} type="submit">
           Crear objetivo (no guarda: enseña lo que enviaría)
         </button>

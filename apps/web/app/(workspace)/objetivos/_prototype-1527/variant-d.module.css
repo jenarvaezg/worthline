@@ -1,0 +1,370 @@
+/* PROTOTIPO #1527 — desechable. Variante D (B + C). */
+
+.root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  max-width: 720px;
+  /* Hijo de un grid (`.stackForm`): sin esto, el chip más largo fija el ancho
+     mínimo de la columna y la página desborda en un móvil. */
+  min-width: 0;
+}
+
+/* ── Cabeceras: label pequeño real, con el recuento en cifra tabular ── */
+
+.head {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.7rem;
+  font-weight: 700;
+  gap: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.count {
+  text-transform: none;
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* ── Elegidos ── */
+
+.chosen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chip {
+  align-items: center;
+  background: rgba(42, 161, 136, 0.12);
+  border: 1px solid var(--tier-cash);
+  border-radius: 999px;
+  color: var(--tier-cash);
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 600;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 2px 4px 2px 12px;
+}
+
+.chipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.root .chipRemove {
+  min-height: 0;
+  padding: 0;
+}
+
+.chipRemove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  font-size: 1.05rem;
+  height: 26px;
+  justify-content: center;
+  line-height: 1;
+  width: 26px;
+}
+
+.chipRemove:hover {
+  background: rgba(13, 122, 100, 0.16);
+}
+
+.chipRemove:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+/* ── Buscador ── */
+
+.searchBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.search {
+  appearance: none;
+  background: var(--panel)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%234e5c54' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat 12px center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  min-height: 44px;
+  padding: 8px 12px 8px 36px;
+  width: 100%;
+}
+
+.search::placeholder {
+  color: var(--muted);
+}
+
+.search:focus-visible {
+  border-color: var(--blue);
+  outline: 2px solid var(--blue);
+  outline-offset: 0;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+  min-height: 1.2em;
+}
+
+.hint strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.hint kbd {
+  border: 1px solid var(--line-soft);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-numeric);
+  font-size: 0.7rem;
+  padding: 0 4px;
+}
+
+/* ── Libro ── */
+
+.ledger {
+  border-top: var(--rule-heavy);
+}
+
+.group[hidden],
+.ledger [hidden] {
+  display: none;
+}
+
+.groupHead {
+  border-bottom: 1px solid var(--line-strong);
+  padding: 16px 0 6px;
+}
+
+.groupToggle {
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.groupToggle:hover {
+  color: var(--ink);
+}
+
+.groupToggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.caret {
+  display: inline-block;
+  margin-right: 6px;
+  width: 0.8em;
+}
+
+.groupMeta {
+  align-items: baseline;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.groupChosen {
+  color: var(--tier-cash);
+  letter-spacing: 0.04em;
+}
+
+/* `.root .row` y no `.row`: la fila es un <label> dentro de `.stackForm`, cuya
+   receta de label de campo (gris, 600, gap 6) ganaría por especificidad. */
+.root .row {
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  box-sizing: border-box;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  font-size: 0.9rem;
+  font-weight: 400;
+  gap: 12px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  letter-spacing: 0;
+  min-height: 40px;
+  padding: 6px;
+}
+
+/* `hidden` pierde contra cualquier `display` de autor: sin esto, el «ver más» y el
+   buscador esconderían filas solo en teoría. */
+.root .row[hidden] {
+  display: none;
+}
+
+.row:hover {
+  background: var(--band);
+}
+
+.root .row input {
+  accent-color: var(--tier-cash);
+  cursor: pointer;
+  height: 16px;
+  margin: 0;
+  min-height: 0;
+  padding: 0;
+  width: 16px;
+}
+
+.row:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.row[data-checked] .rowName {
+  font-weight: 600;
+}
+
+/* La fila que Enter añadiría: señalada, no seleccionada. */
+.row[data-target] {
+  background: var(--band);
+}
+
+.row[data-target] .rowValue::after {
+  color: var(--blue);
+  content: "↵";
+  font-family: var(--font-body, inherit);
+  margin-left: 8px;
+}
+
+.rowName {
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rowValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.code {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  display: inline-block;
+  font-family: var(--font-numeric);
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-left: 8px;
+  padding: 0 4px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.chip .code {
+  border-color: color-mix(in srgb, var(--tier-cash) 45%, transparent);
+  color: inherit;
+  margin-left: 0;
+}
+
+.hit {
+  background: color-mix(in srgb, var(--gold) 24%, transparent);
+  border-radius: 2px;
+  color: inherit;
+  padding: 0;
+}
+
+.more {
+  background: transparent;
+  border: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 10px 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.more:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.noMatch {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 14px 0 0;
+}
+
+.noMatch .more {
+  padding: 0;
+}
+
+.srOnly {
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@media (max-width: 640px) {
+  .root .row {
+    font-size: 0.92rem;
+    gap: 10px;
+    min-height: 44px;
+  }
+
+  .chip {
+    font-size: 0.78rem;
+  }
+}
