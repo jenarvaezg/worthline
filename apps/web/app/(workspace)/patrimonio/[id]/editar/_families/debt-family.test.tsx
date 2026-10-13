@@ -245,4 +245,80 @@ describe("«Cuota vigente» follows the rate revisions (#1848, #1520)", () => {
     expect(cuota).toContain("Sin plan");
     expect(cuota).toContain("Configurar el plan");
   });
+
+  test("a paid-off plan has no cuota running, and the dash says why", async () => {
+    const store = await freshStore();
+    await seedDebt(store, "l_paid");
+    await store.liabilities.setDebtModel("l_paid", "amortizable");
+    await store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.03",
+      disbursementDate: "2020-01-15",
+      firstPaymentDate: "2020-02-15",
+      id: "plan_paid",
+      initialCapitalMinor: 12_000_00,
+      liabilityId: "l_paid",
+      termMonths: 12,
+    });
+
+    const cuota = figure(await ficha(store, "l_paid"), "cuota");
+    expect(cuota).toContain("—");
+    expect(cuota).toContain("sin cuotas pendientes");
+  });
+
+  test("a re-baseline with no plan, already run out, says it has no cuotas left", async () => {
+    const store = await freshStore();
+    await seedDebt(store, "l_rebased");
+    await store.liabilities.setDebtModel("l_rebased", "amortizable");
+    await store.liabilities.addBalanceRebaseline({
+      annualInterestRate: "0.03",
+      baselineDate: "2024-01-01",
+      endDate: "2025-01-01",
+      id: "reb_done",
+      liabilityId: "l_rebased",
+      nextPaymentDate: "2024-02-01",
+      outstandingBalanceMinor: 12_000_00,
+      startsAtBaseline: true,
+    });
+
+    const cuota = figure(await ficha(store, "l_rebased"), "cuota");
+    expect(cuota).toContain("—");
+    expect(cuota).toContain("sin cuotas pendientes");
+  });
+
+  test("a plan not yet disbursed has no cuota yet, and says so", async () => {
+    const store = await freshStore();
+    await seedDebt(store, "l_future");
+    await store.liabilities.setDebtModel("l_future", "amortizable");
+    await store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.03",
+      disbursementDate: "2026-12-01",
+      firstPaymentDate: "2027-01-01",
+      id: "plan_future",
+      initialCapitalMinor: 200_000_00,
+      liabilityId: "l_future",
+      termMonths: 240,
+    });
+
+    expect(figure(await ficha(store, "l_future"), "cuota")).toContain(
+      "aún sin desembolsar",
+    );
+  });
+
+  test("the cuota is said in the debt's own currency, as its balance", async () => {
+    const store = await freshStore();
+    await store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "USD",
+      id: "l_usd",
+      name: "l_usd",
+      ownership: [{ memberId: MEMBER, shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await seedPlan(store, "l_usd");
+
+    const layout = await ficha(store, "l_usd");
+    expect(layout.value).toContain("US$");
+    expect(figure(layout, "cuota")).toContain("US$");
+    expect(figure(layout, "cuota")).not.toContain("€");
+  });
 });

@@ -15,6 +15,7 @@ import {
   valueHousingAtDate,
 } from "@worthline/domain";
 import { debtBalanceCurveInput } from "./debt-balance-input";
+import { housingCurveInput } from "./housing-curve-input";
 import {
   amortizationPlans,
   assets,
@@ -119,14 +120,18 @@ export async function readHousingCurveInputs(
     cadenceByAsset.set(row.id, row.valuationCadence ?? null);
   }
 
+  // What the curve reads off those rows is decided in ONE place, the same one the
+  // ficha asks for its header (#1847): this loop only hands each property its rows.
   for (const asset of housingAssets) {
-    const cadence = cadenceByAsset.get(asset.id) ?? undefined;
-    inputs.set(asset.id, {
-      anchors: anchorsByAsset.get(asset.id) ?? [],
-      annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
-      currentValueMinor: asset.currentValue.amountMinor,
-      ...(cadence != null ? { cadence } : {}),
-    });
+    inputs.set(
+      asset.id,
+      housingCurveInput({
+        anchors: anchorsByAsset.get(asset.id) ?? [],
+        annualAppreciationRate: rateByAsset.get(asset.id) ?? null,
+        cadence: cadenceByAsset.get(asset.id) ?? null,
+        currentValueMinor: asset.currentValue.amountMinor,
+      }),
+    );
   }
 
   return inputs;

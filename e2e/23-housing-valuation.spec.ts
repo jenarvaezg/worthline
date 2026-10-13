@@ -57,7 +57,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
   // Persisted value is shown back in the input, and in the header.
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("3");
-  await expect(state.locator(".fichaFigures")).toContainText("3 %");
+  await expect(state.locator(".fichaFigures")).toContainText("3,00 %");
 
   // 4. Register a PAST market appraisal from the panel. Its date comes set to
   //    today and stays editable.

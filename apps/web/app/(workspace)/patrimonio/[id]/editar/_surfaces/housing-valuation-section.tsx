@@ -13,8 +13,10 @@
  * it asks before it does it (preview → confirm).
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import {
   addValuationAnchorAction,
   deleteValuationAnchorAction,
@@ -28,12 +30,15 @@ import type { ValuationCadence } from "@worthline/domain";
 import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactNode } from "react";
 import { AcquisitionEditForm } from "./acquisition-edit-form";
-import { anchorKindLabel, rateToPercentInput } from "./housing-valuation-view";
+import { anchorKindLabel } from "./housing-valuation-view";
 
 /** The «Registrar tasación» form's `formId`: its refusal reopens the panel. */
 export const ANCHOR_FORM_ID = "anchor";
 
 const ANCHOR_ERROR_ID = "anchor-error";
+
+/** The anchors' list name, for the ficha to point at the one just added (#1847). */
+export const APPRAISALS_ROW_LIST = "tasaciones";
 
 export function HousingValuationSection({
   addLink,
@@ -87,7 +92,12 @@ export function HousingValuationSection({
           Tasa de revalorización anual (%)
           <input
             aria-label="Tasa de revalorización anual (%)"
-            defaultValue={rateValues["rate"] ?? rateToPercentInput(appreciationRate)}
+            defaultValue={
+              rateValues["rate"] ??
+              (appreciationRate === null
+                ? ""
+                : formatDecimalAsPercentField(Number(appreciationRate)))
+            }
             inputMode="decimal"
             name="rate"
             placeholder="3"
@@ -201,7 +211,7 @@ export function AnchorAddForm({
   readOnly?: boolean;
   today: string;
 }) {
-  const refusal = formError?.formId === ANCHOR_FORM_ID ? formError : null;
+  const refusal = refusalFor(formError, ANCHOR_FORM_ID);
   const values = refusal ? refusal.values : { valuationDate: today };
 
   return (
@@ -212,11 +222,7 @@ export function AnchorAddForm({
     >
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="id" type="hidden" value={assetId} />
-      {refusal ? (
-        <p className="errorBand" id={ANCHOR_ERROR_ID} role="alert">
-          {refusal.message}
-        </p>
-      ) : null}
+      <FormRefusal id={ANCHOR_ERROR_ID} refusal={refusal} />
       <AnchorFields
         errorId={refusal ? ANCHOR_ERROR_ID : undefined}
         max={today}
@@ -245,8 +251,7 @@ function AnchorFields({
       <label>
         Fecha de la tasación
         <input
-          aria-describedby={errorId}
-          aria-invalid={errorId ? true : undefined}
+          {...refusalAria(errorId)}
           aria-label="Fecha de la tasación"
           defaultValue={values["valuationDate"]}
           max={max}
@@ -258,8 +263,7 @@ function AnchorFields({
       <label>
         Valor de la tasación (EUR)
         <input
-          aria-describedby={errorId}
-          aria-invalid={errorId ? true : undefined}
+          {...refusalAria(errorId)}
           aria-label="Valor de la tasación en EUR"
           defaultValue={values["anchorValue"]}
           inputMode="decimal"
@@ -316,10 +320,10 @@ function AnchorRow({
   return (
     // The row «Registrar tasación» just added is marked when the panel lands back
     // on this tab (#1847), as a new operation or cobro is (#1829).
-    <FreshRow as="tr" list="tasaciones" rowKey={anchor.id}>
+    <FreshRow as="tr" list={APPRAISALS_ROW_LIST} rowKey={anchor.id}>
       <td>
         {anchor.valuationDate}
-        <FreshMark list="tasaciones" rowKey={anchor.id} word="nueva" />
+        <FreshMark list={APPRAISALS_ROW_LIST} rowKey={anchor.id} word="nueva" />
       </td>
       <td className="numCol">
         {formatMoneyMinorPrivacy(

@@ -9,6 +9,7 @@
  */
 
 import type { FormErrorContext } from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import {
   deleteAmortizationPlanAction,
   saveAmortizationPlanAction,
@@ -16,12 +17,14 @@ import {
 } from "@web/patrimonio/actions";
 import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
 import type { AmortizationPlanRecord } from "@worthline/db";
+import type { CurrencyCode } from "@worthline/domain";
 import { daysBetween, firstCuota, formatMoneyInput } from "@worthline/domain";
 import { DEBT_FORM_ID } from "./debt-form-ids";
-import { formatEurCentsPrivacy, rateToPercent } from "./debt-format";
+import { formatCuotaPrivacy } from "./debt-format";
 import { PlanDateFields } from "./plan-date-fields";
 
 export function DebtPlanSection({
+  currency,
   currentUrl,
   formError,
   liabilityId,
@@ -29,6 +32,8 @@ export function DebtPlanSection({
   privacyMode,
   today,
 }: {
+  /** The debt's currency: what its cuotas are said in. */
+  currency: CurrencyCode;
   /** The «Plan» tab's URL: where every form here returns. */
   currentUrl: string;
   formError: FormErrorContext | null;
@@ -43,7 +48,9 @@ export function DebtPlanSection({
       ? formError.values
       : plan
         ? {
-            annualInterestRate: rateToPercent(plan.annualInterestRate),
+            annualInterestRate: formatDecimalAsPercentField(
+              Number(plan.annualInterestRate),
+            ),
             disbursementDate: plan.disbursementDate,
             firstPaymentDate: plan.firstPaymentDate,
             initialCapital: formatMoneyInput(plan.initialCapitalMinor),
@@ -119,7 +126,9 @@ export function DebtPlanSection({
         </form>
       ) : null}
 
-      {plan ? <PlanCuotaSummary plan={plan} privacyMode={privacyMode} /> : null}
+      {plan ? (
+        <PlanCuotaSummary currency={currency} plan={plan} privacyMode={privacyMode} />
+      ) : null}
     </div>
   );
 }
@@ -186,9 +195,11 @@ function PlanFields({ max, values }: { max: string; values: Record<string, strin
  * header's «Cuota vigente» (#1848), read from the same curve as the balance.
  */
 function PlanCuotaSummary({
+  currency,
   plan,
   privacyMode,
 }: {
+  currency: CurrencyCode;
   plan: AmortizationPlanRecord;
   privacyMode: boolean;
 }) {
@@ -201,7 +212,7 @@ function PlanCuotaSummary({
   });
   const stubDays = daysBetween(plan.disbursementDate, plan.firstPaymentDate);
   const fmt = (amountMinor: number): string =>
-    formatEurCentsPrivacy(amountMinor, privacyMode);
+    formatCuotaPrivacy({ amountMinor, currency }, privacyMode);
 
   return (
     <section className="planCuota" aria-label="Cuotas del préstamo">

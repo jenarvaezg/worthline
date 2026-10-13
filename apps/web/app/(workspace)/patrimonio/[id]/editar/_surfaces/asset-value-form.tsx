@@ -11,6 +11,7 @@
  * that used to say it.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import type { FormErrorContext } from "@web/intake";
 import { VALUE_FORM_ID } from "@web/patrimonio/action-helpers";
 import { updateAssetValuationAction } from "@web/patrimonio/actions";
@@ -36,7 +37,7 @@ export function AssetValueForm({
   /** Where the success returns: the ficha, where the new value shows. */
   returnTo: string;
 }) {
-  const refusal = formError?.formId === VALUE_FORM_ID ? formError : null;
+  const refusal = refusalFor(formError, VALUE_FORM_ID);
   const currency = asset.currentValue.currency;
 
   return (
@@ -44,16 +45,11 @@ export function AssetValueForm({
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="returnTo" type="hidden" value={returnTo} />
       <input name="id" type="hidden" value={asset.id} />
-      {refusal ? (
-        <p className="errorBand" id={ERROR_ID} role="alert">
-          {refusal.message}
-        </p>
-      ) : null}
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
       <label>
         Valor actual ({currency})
         <input
-          aria-describedby={refusal ? ERROR_ID : undefined}
-          aria-invalid={refusal ? true : undefined}
+          {...refusalAria(refusal ? ERROR_ID : undefined)}
           aria-label={`Valor actual en ${currency}`}
           defaultValue={
             refusal?.values["currentValue"] ??

@@ -15,3 +15,18 @@ const twoDecimals = new Intl.NumberFormat("es-ES", {
 export function formatFinePercent(fraction: number): string {
   return `${twoDecimals.format(fraction * 100)} %`;
 }
+
+const declaredDecimals = new Intl.NumberFormat("es-ES", {
+  maximumFractionDigits: 4,
+  minimumFractionDigits: 2,
+});
+
+/**
+ * A rate the user DECLARED — an interest rate, an appreciation rate — read back on
+ * display: two decimals like {@link formatFinePercent}, but never rounding away one
+ * the user typed. A loan at Euríbor plus a spread is 2,875 %, and printing «2,88 %»
+ * beside a field that holds 2.875 would be a second opinion on the same contract.
+ */
+export function formatDeclaredRatePercent(fraction: number): string {
+  return `${declaredDecimals.format(fraction * 100)} %`;
+}

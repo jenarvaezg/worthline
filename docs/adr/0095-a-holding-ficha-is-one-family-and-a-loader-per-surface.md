@@ -57,9 +57,10 @@ it does not branch on the instrument.**
 4. **What the family owes the shared chrome is named, not re-derived.** The surface
    it returns carries `basics` (what «Lo básico» shows for this holding: the
    investment row, the value-only warning, the raw-balance door, whether the
-   identity is locked by a source), the `operations` ledger the warning collector
-   folds, and what the Papelera would withdraw. The page reads those fields; it does
-   not recompute the conditions behind them.
+   identity is locked by a source) and what the Papelera would withdraw. The page
+   reads those fields; it does not recompute the conditions behind them. (Until #1850
+   it also carried the `operations` ledger the warning collector folded; the family
+   now reads its warnings itself and hands them back in `FichaLayout.warnings`.)
 
 5. **Shared chrome that still loads gets its own module, not a place in the page.**
    `_chrome/` holds the warnings band, the Cobros panel — loaded for every asset and
@@ -172,9 +173,13 @@ moved, no family returns a `body`, so the accordion went with the last of them, 
   looks at a layout kind.
 - **What only the accordion used is gone with it.** `PayoutsPanel.section` and
   `CobrosSection` (the Cobros panel is its record and its entry only), and the value
-  and balance forms of «Lo básico» with their `showValueForm` / `showRawBalanceForm`
-  flags: «Actualizar valor» and «Actualizar saldo» are actions of the bar, and «Lo
-  básico» is the holding's identity.
+  and balance forms of «Lo básico» — the value one printed for every non-derived
+  method, the balance one behind the `showRawBalanceForm` flag: «Actualizar valor»
+  and «Actualizar saldo» are actions of the bar, and «Lo básico» is the holding's
+  identity.
+- **The surface no longer carries `operations`.** Each family reads its warnings once
+  (`holdingWarnings`) and hands them back in `FichaLayout.warnings`, so the page has
+  no ledger to fold.
 - **A family names its own self-printing forms.** The page's list of forms that print
   their own refusal keeps only the chrome's (the Cobros panel, the Papelera); a
   family's own (`operation`, `transfer`, a valuation anchor, a disconnect…) are in its

@@ -784,6 +784,13 @@ describe("EditarPage — the stored ficha is a state header with tabs (#1846)", 
     expect(figure(await renderedHtml(), "Puesto al día")).toContain("hace 3 días");
   });
 
+  test("with nothing to date it by, the dash says why", async () => {
+    const freshness = figure(await renderedHtml(), "Puesto al día");
+
+    expect(freshness).toContain("—");
+    expect(freshness).toContain("sin fecha registrada");
+  });
+
   test("a term deposit says since when it can be touched", async () => {
     calls.readAssets.mockResolvedValue([{ ...DEPOSIT, availableFrom: "2027-03-01" }]);
 
@@ -994,7 +1001,7 @@ describe("EditarPage — the housing ficha is a state header with tabs (#1847)",
 
     // 230.000 × 1,03^(942/366) = 248.180,64 — the worked figure, not the stored one.
     expect(html).toMatch(/class="fichaValue">248\.?181\s€/);
-    expect(figure(html, "Revalorización anual")).toContain("3 %");
+    expect(figure(html, "Revalorización anual")).toContain("3,00 %");
     // The result is measured against that value, in the header and in the tab.
     expect(figure(html, "Resultado frente al coste")).toMatch(/\+48\.?181\s€/);
     expect(tabBody(html)).toMatch(
@@ -1020,6 +1027,17 @@ describe("EditarPage — the housing ficha is a state header with tabs (#1847)",
     // …and both fields are on that tab, the one a flat with no cobros opens on.
     expect(tabBody(html)).toContain('name="rate"');
     expect(tabBody(html)).toContain('name="acquisitionCost"');
+  });
+
+  test("a cost with no value to set against it is a dash that says why", async () => {
+    calls.readAssets.mockResolvedValue([
+      { ...FLAT, currentValue: { amountMinor: 0, currency: "EUR" } },
+    ]);
+    calls.readAcquisitionCostMinor.mockResolvedValueOnce(200_000_00);
+
+    const result = figure(await renderedHtml(), "Resultado frente al coste");
+    expect(result).toContain("—");
+    expect(result).toContain("sin valor actual que medir");
   });
 
   test("a flat that never paid anything opens on Valoración, then Cobros", async () => {
@@ -1332,6 +1350,8 @@ describe("EditarPage — the Numista collection is a mirror ficha with tabs (#18
 
     expect(mirrorFigure(html, "Sincronizado")).toContain("Sin fuente conectada");
     expect(html).not.toContain("Sincronizar Numista");
+    // No source is named under the name either: it is not «· Numista».
+    expect(html).toContain('<span class="fichaInstrument">Colección de monedas</span>');
     // Nothing to disconnect: asking for the panel opens none.
     expect(panel(await renderedHtml({ accion: "desconectar" }))).toBe("");
     expect(calls.readSourcePositions).not.toHaveBeenCalled();
@@ -1560,6 +1580,18 @@ const REPAYMENT = {
   repaymentDate: "2024-03-01",
 };
 
+/** A current-state import's re-baseline: the curve of a debt with no plan row. */
+const REBASELINE = {
+  annualInterestRate: "0.03",
+  baselineDate: "2026-01-01",
+  endDate: "2040-01-01",
+  id: "reb_1",
+  liabilityId: ASSET_ID,
+  nextPaymentDate: "2026-02-01",
+  outstandingBalanceMinor: 120_000_00,
+  startsAtBaseline: true,
+};
+
 const ANCHOR = {
   anchorDate: "2026-07-01",
   balanceMinor: 1_200_00,
@@ -1700,6 +1732,51 @@ describe("EditarPage — the debt family, one ficha per model (#1848)", () => {
       expect(tabBody(html)).toContain("Guardar por estado actual");
       expect(html).toContain("Sin plan");
       expect(html).toContain("Configurar el plan");
+    });
+  });
+
+  describe("amortizable with a re-baseline and no plan", () => {
+    // An imported current-state debt (ADR 0056, #678): the re-baseline alone is its
+    // curve — recalibrable, with a cuota — and with no plan row there is nothing to
+    // revise or repay early against.
+    beforeEach(() => {
+      calls.readDebtModel.mockResolvedValue("amortizable");
+      calls.readBalanceRebaselines.mockResolvedValue([REBASELINE]);
+    });
+
+    test("«Recalibrar» leads and «Modelo de deuda» waits in «Más»; Plan · Datos", async () => {
+      const html = await renderedHtml();
+
+      expect(shown(html)).toEqual(["recalibrar*"]);
+      expect(debtBar(html)).toContain("data-ficha-more");
+      expect(debtBar(html)).not.toContain('data-ficha-action="modelo"');
+      expect(panel(await renderedHtml({ accion: "modelo" }))).toContain(
+        '<h3 id="ficha-panel-title">Modelo de deuda</h3>',
+      );
+      const tabs = tabStrip(html);
+      expect(tabs).toMatch(/Plan<\/a>/);
+      expect(tabs).not.toContain("Revisiones");
+      expect(tabs).not.toContain("Anticipadas");
+      expect(tabs.indexOf("Datos de la deuda")).toBeGreaterThan(tabs.indexOf("Plan"));
+      // The re-baseline is a schedule: the header quotes its cuota, not «Sin plan».
+      expect(html).toContain("Cuota vigente");
+      expect(html).toContain("próxima el");
+      expect(html).not.toContain("Configurar el plan");
+      // Recalibrar lands on Plan, the bare ficha, with its notice.
+      expect(panel(await renderedHtml({ accion: "recalibrar" }))).toContain(
+        `name="currentUrl" value="${FICHA}"`,
+      );
+    });
+
+    test("it reads the plan and its re-baselines — no revisions or repayments without a plan, no anchors", async () => {
+      await renderedHtml();
+
+      expect(calls.readAmortizationPlan).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readBalanceRebaselines).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readInterestRateRevisions).not.toHaveBeenCalled();
+      expect(calls.readEarlyRepayments).not.toHaveBeenCalled();
+      expect(calls.readBalanceAnchors).not.toHaveBeenCalled();
+      expect(calls.readPayoutsForHolding).not.toHaveBeenCalled();
     });
   });
 

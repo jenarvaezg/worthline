@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import {
   anchorKindLabel,
   latestAnchor,
-  rateToPercentInput,
   resultAgainstCost,
 } from "./housing-valuation-view";
 
@@ -58,14 +57,6 @@ describe("latestAnchor — «Última tasación»", () => {
   test("none: null", () => {
     expect(latestAnchor([], "2026-10-13")).toBeNull();
     expect(latestAnchor([appraisal], "2020-01-01")).toBeNull();
-  });
-});
-
-describe("rateToPercentInput — a stored decimal as the percent typed", () => {
-  test("trims the float noise without dropping real decimals", () => {
-    expect(rateToPercentInput("0.07")).toBe("7");
-    expect(rateToPercentInput("0.025")).toBe("2.5");
-    expect(rateToPercentInput(null)).toBe("");
   });
 });
 

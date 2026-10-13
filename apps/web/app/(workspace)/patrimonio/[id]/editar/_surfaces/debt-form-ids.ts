@@ -1,14 +1,13 @@
 /**
  * The debt ficha's form ids (#1848) — what each server action names its refusal
- * with, so the ficha can reopen the panel or show the tab that holds the form — and
- * the refusal line a panel form prints inside itself.
+ * with, so the ficha can reopen the panel or show the tab that holds the form. A
+ * panel form prints its own refusal with the shared `FormRefusal`
+ * (`@web/_components/form-refusal`).
  *
  * The ids are the ones the actions always used (`debt-actions`, `balance-anchor-
  * actions`, `valuation-actions`); they are named here, beside the forms, instead of
  * being spelled again in the family's targets and in the page's list.
  */
-
-import type { FormErrorContext } from "@web/intake";
 
 export const DEBT_FORM_ID = {
   /** «Registrar saldo» (revolving / informal). */
@@ -52,18 +51,3 @@ export const DEBT_PANEL_FORM_IDS: readonly string[] = [
   DEBT_FORM_ID.repayment,
   DEBT_FORM_ID.revision,
 ];
-
-/** A panel form's refusal, printed once, inside the form that produced it. */
-export function FormRefusal({
-  formError,
-  formId,
-}: {
-  formError: FormErrorContext | null;
-  formId: string;
-}) {
-  return formError?.formId === formId ? (
-    <p className="errorBand" role="alert">
-      {formError.message}
-    </p>
-  ) : null;
-}

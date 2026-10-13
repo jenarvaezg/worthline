@@ -9,12 +9,12 @@
  */
 
 import { currencyMark } from "@web/asistente/document-figures";
-import type { DecimalString } from "@worthline/domain";
+import type { CurrencyCode, DecimalString } from "@worthline/domain";
 import { formatPrice, maskMoneyString } from "@worthline/domain";
 
 export function fichaUnitPrice(
   price: DecimalString,
-  currency: string,
+  currency: CurrencyCode,
   privacyMode: boolean,
 ): string {
   const formatted = formatPrice(price);

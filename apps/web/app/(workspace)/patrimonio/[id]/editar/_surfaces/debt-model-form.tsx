@@ -7,12 +7,16 @@
  * form returns to the bare ficha, which opens on that model's default tab.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import type { FormErrorContext } from "@web/intake";
 import { setDebtModelAction, setValuationCadenceAction } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import type { DebtModel, ValuationCadence } from "@worthline/domain";
-import { DEBT_FORM_ID, FormRefusal } from "./debt-form-ids";
+import { DEBT_FORM_ID } from "./debt-form-ids";
 import { DEBT_MODEL_LABELS } from "./debt-format";
+
+const MODEL_ERROR_ID = "debt-model-error";
+const CADENCE_ERROR_ID = "cadence-error";
 
 export function DebtModelForm({
   currentUrl,
@@ -33,15 +37,19 @@ export function DebtModelForm({
   /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
   valuationCadence: ValuationCadence | null;
 }) {
+  const modelRefusal = refusalFor(formError, DEBT_FORM_ID.model);
+  const cadenceRefusal = refusalFor(formError, DEBT_FORM_ID.cadence);
+
   return (
     <div className="debtSurface">
       <form action={setDebtModelAction} className="stackForm">
         <input name="currentUrl" type="hidden" value={currentUrl} />
         <input name="id" type="hidden" value={liabilityId} />
-        <FormRefusal formError={formError} formId={DEBT_FORM_ID.model} />
+        <FormRefusal id={MODEL_ERROR_ID} refusal={modelRefusal} />
         <label>
           Modelo de deuda
           <select
+            {...refusalAria(modelRefusal ? MODEL_ERROR_ID : undefined)}
             aria-label="Modelo de deuda"
             defaultValue={debtModel ?? ""}
             name="debtModel"
@@ -65,16 +73,17 @@ export function DebtModelForm({
         <details
           suppressHydrationWarning
           className="anchorEdit"
-          open={formError?.formId === DEBT_FORM_ID.cadence}
+          open={cadenceRefusal !== null}
         >
           <summary>Avanzado</summary>
           <form action={setValuationCadenceAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="id" type="hidden" value={liabilityId} />
-            <FormRefusal formError={formError} formId={DEBT_FORM_ID.cadence} />
+            <FormRefusal id={CADENCE_ERROR_ID} refusal={cadenceRefusal} />
             <label>
               Cadencia de valoración
               <select
+                {...refusalAria(cadenceRefusal ? CADENCE_ERROR_ID : undefined)}
                 aria-label="Cadencia de valoración"
                 defaultValue={valuationCadence ?? "step"}
                 name="cadence"

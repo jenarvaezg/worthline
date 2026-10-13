@@ -14,7 +14,8 @@
  * door here and the «puesta al día» keeps its own.
  *
  * The header's value is the board row's, from the same calculation: the curve on
- * today (`housingValueToday`, the read `load-patrimonio` values its rows with), not
+ * today, its input assembled by `housingCurveInput` — the function the board's read
+ * (`readHousingCurveInputs`, what `load-patrimonio` values its rows with) uses — not
  * the stored column, which is only the curve's fallback basis. «Resultado frente al
  * coste» is measured against that same value, in the header and in the tab.
  *
@@ -24,26 +25,27 @@
  * threshold that brings «Añadir cobro» to the bar (#1829).
  */
 
-import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
+import { formatDeclaredRatePercent } from "@web/_components/fine-percent";
+import { ledgerlessHoldingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
 import {
-  FICHA_DATOS_TAB,
   fichaActionUrl,
   fichaTabUrl,
+  withDatosTab,
 } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import { AcquisitionCostSection } from "@web/patrimonio/[id]/editar/_surfaces/acquisition-cost-section";
 import {
   ANCHOR_FORM_ID,
   AnchorAddForm,
+  APPRAISALS_ROW_LIST,
   HousingValuationSection,
 } from "@web/patrimonio/[id]/editar/_surfaces/housing-valuation-section";
 import {
   anchorKindLabel,
-  housingValueToday,
   latestAnchor,
-  rateToPercentInput,
   resultAgainstCost,
 } from "@web/patrimonio/[id]/editar/_surfaces/housing-valuation-view";
+import { housingCurveInput } from "@worthline/db";
 import type { MoneyMinor } from "@worthline/domain";
 import {
   formatDateKeyEs,
@@ -51,6 +53,7 @@ import {
   INSTRUMENT_LABELS_ES,
   instrumentOfAsset,
   moneySign,
+  valueHousingAtDate,
 } from "@worthline/domain";
 import type {
   AssetFamilyContext,
@@ -97,19 +100,20 @@ export async function loadHousingSurface(
     payoutsPanel.count > 0
       ? ([COBROS_TAB, VALORACION_TAB] as const)
       : ([VALORACION_TAB, COBROS_TAB] as const);
-  const fichaTabs = [...ownTabs, FICHA_DATOS_TAB] as const;
+  const fichaTabs = withDatosTab(ownTabs);
   const valoracionUrl = fichaTabUrl(currentUrl, fichaTabs, VALORACION_TAB);
   const cobros = fichaCobros({ currentUrl, payoutsPanel, tabs: fichaTabs });
 
-  // The board row's figure, from the same calculation (`load-patrimonio`).
+  // The board row's figure, from the same calculation (`load-patrimonio`): the
+  // input assembled by the board's own function, walked on today.
+  const curve = housingCurveInput({
+    anchors,
+    annualAppreciationRate: appreciationRate,
+    cadence: valuationCadence,
+    currentValueMinor: asset.currentValue.amountMinor,
+  });
   const value: MoneyMinor = {
-    amountMinor: housingValueToday({
-      anchors,
-      appreciationRate,
-      cadence: valuationCadence,
-      currentValueMinor: asset.currentValue.amountMinor,
-      today,
-    }),
+    amountMinor: valueHousingAtDate({ ...curve, targetDate: today, today }),
     currency: asset.currentValue.currency,
   };
   const money = (amountMinor: number) =>
@@ -118,7 +122,6 @@ export async function loadHousingSurface(
 
   // ── The state header ────────────────────────────────────────────────────────
   const latest = latestAnchor(anchors, today);
-  const ratePercent = rateToPercentInput(appreciationRate);
   const rateLink = (words: string) => (
     <FichaLink field="rate" href={valoracionUrl} tab={VALORACION_TAB}>
       {words}
@@ -143,7 +146,7 @@ export async function loadHousingSurface(
           label: "Última tasación",
           value: "Sin tasaciones",
         },
-    ratePercent === ""
+    appreciationRate === null
       ? {
           detail: (
             <small className="priceRefreshCaption">{rateLink("Indicar tasa")}</small>
@@ -159,7 +162,7 @@ export async function loadHousingSurface(
           ),
           key: "rate",
           label: "Revalorización anual",
-          value: `${ratePercent.replace(".", ",")} %`,
+          value: formatDeclaredRatePercent(Number(appreciationRate)),
         },
     resultFigure(),
   ];
@@ -176,7 +179,16 @@ export async function loadHousingSurface(
         value: `${result.amountMinor > 0 ? "+" : ""}${money(result.amountMinor)}`,
       };
     }
-    if (acquisitionCostMinor !== null) return { key: "result", label, value: "—" };
+    // With a cost but no value to set against it there is no result either — and the
+    // dash says why (canon: a measure that is missing says why).
+    if (acquisitionCostMinor !== null) {
+      return {
+        detail: <small className="priceRefreshCaption">sin valor actual que medir</small>,
+        key: "result",
+        label,
+        value: "—",
+      };
+    }
     // Said here, not only inside «Valoración»: with no cost there is no result, and
     // whoever does not know that cannot fix it.
     return {
@@ -276,11 +288,14 @@ export async function loadHousingSurface(
       instrument: INSTRUMENT_LABELS_ES[instrumentOfAsset(asset)],
       // «Registrar tasación» prints its own refusal, in its panel (#1847).
       ownErrorForms: [ANCHOR_FORM_ID],
-      rows: { ...payoutsPanel.rows, tasaciones: anchors.map((anchor) => anchor.id) },
+      rows: {
+        ...payoutsPanel.rows,
+        [APPRAISALS_ROW_LIST]: anchors.map((anchor) => anchor.id),
+      },
       tabs,
       value: money(value.amountMinor),
       // No ledger: the band's warnings are about the holding's own row.
-      warnings: holdingWarnings({ asset, id, operations: [], overrides }),
+      warnings: ledgerlessHoldingWarnings({ asset, id, overrides }),
     },
   });
 }

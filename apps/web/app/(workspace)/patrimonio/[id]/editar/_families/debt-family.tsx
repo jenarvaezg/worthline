@@ -34,7 +34,7 @@ import {
 } from "@web/patrimonio/[id]/editar/_surfaces/debt-form-ids";
 import {
   DEBT_MODEL_LABELS,
-  formatEurCentsPrivacy,
+  formatCuotaPrivacy,
 } from "@web/patrimonio/[id]/editar/_surfaces/debt-format";
 import { DebtModelForm } from "@web/patrimonio/[id]/editar/_surfaces/debt-model-form";
 import { DebtPlanSection } from "@web/patrimonio/[id]/editar/_surfaces/debt-plan-section";
@@ -150,11 +150,10 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
   });
   const fichaTabs = [...shape.tabs, FICHA_DATOS_TAB];
   const tabUrl = (tab: string) => fichaTabUrl(currentUrl, fichaTabs, tab);
+  // Every figure here is in the debt's own currency, as the board row's balance.
+  const currency = liability.currentBalance.currency;
   const money = (amountMinor: number) =>
-    formatMoneyMinorPrivacy(
-      { amountMinor, currency: liability.currentBalance.currency },
-      privacyMode,
-    );
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 
   // ── The state header ────────────────────────────────────────────────────────
   const figures: FichaFigure[] = [
@@ -196,10 +195,24 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
                 próxima el {formatDateKeyEs(service.nextPaymentDate)}
               </small>
             ),
-            value: formatEurCentsPrivacy(service.paymentMinor, privacyMode),
+            value: formatCuotaPrivacy(
+              { amountMinor: service.paymentMinor, currency },
+              privacyMode,
+            ),
           }
         : hasSchedule
-          ? { value: "—" }
+          ? {
+              // A schedule with no cuota running today (`debtServiceAtDate`): not yet
+              // disbursed, or already paid off — said, not a bare dash.
+              detail: (
+                <small className="priceRefreshCaption">
+                  {amortizationPlan && today < amortizationPlan.disbursementDate
+                    ? "aún sin desembolsar"
+                    : "sin cuotas pendientes"}
+                </small>
+              ),
+              value: "—",
+            }
           : {
               kind: "text" as const,
               value: (
@@ -261,6 +274,7 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
     ),
     recalibrar: () => (
       <DebtRecalibrateForm
+        currency={currency}
         // What separates the modelled capital from the settlement amount the bank
         // shows, so the panel can name WHICH magnitude is compared (#1292).
         currentDebtAccrual={atToday ? debtAccrualAtDate(atToday) : null}
@@ -336,6 +350,7 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
     plan: () => ({
       content: (
         <DebtPlanSection
+          currency={currency}
           currentUrl={tabUrl(DEBT_TAB.plan)}
           formError={formError}
           liabilityId={id}

@@ -173,7 +173,7 @@ test("appreciating: a property edits its valuation curve from the detail page", 
   await page.getByRole("button", { name: "Guardar tasa" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("3");
-  await expect(state.locator(".fichaFigures")).toContainText("3 %");
+  await expect(state.locator(".fichaFigures")).toContainText("3,00 %");
 
   // Cobros is a tab away, and «Registrar tasación» opens in the panel over it.
   await openFichaTab(page, "Cobros");

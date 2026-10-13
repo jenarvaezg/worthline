@@ -34,6 +34,7 @@ import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
+import { FICHA_SUBJECT_WORDS, type FichaSubject } from "./_ficha/ficha-subject";
 import type { FichaTarget } from "./_ficha/ficha-view";
 import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
@@ -248,7 +249,8 @@ export default async function EditarPage({
     ) : null;
 
   // A debt is not an «activo»: the ficha names it as what it is (#1848).
-  const subject = asset ? "activo" : "deuda";
+  const subject: FichaSubject = asset ? "activo" : "deuda";
+  const words = FICHA_SUBJECT_WORDS[subject];
   const holdingFicha = (
     <HoldingFicha
       actions={layout.actions}
@@ -276,7 +278,7 @@ export default async function EditarPage({
             </div>
           ),
           key: FICHA_DATOS_TAB,
-          label: asset ? "Datos del activo" : "Datos de la deuda",
+          label: words.datos,
           shortLabel: "Datos",
         },
       ]}
@@ -285,10 +287,7 @@ export default async function EditarPage({
   );
 
   return (
-    <section
-      className="formPage fichaPage"
-      aria-label={asset ? "Ficha del activo" : "Ficha de la deuda"}
-    >
+    <section className="formPage fichaPage" aria-label={words.ficha}>
       {warningsBand}
       {errorBand}
       {layout.wrap ? layout.wrap(holdingFicha) : holdingFicha}

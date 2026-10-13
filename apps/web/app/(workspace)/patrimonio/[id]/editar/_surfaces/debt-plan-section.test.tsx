@@ -30,6 +30,7 @@ const BANK_PLAN: AmortizationPlanRecord = {
 function render(plan: AmortizationPlanRecord | null) {
   return renderToStaticMarkup(
     <DebtPlanSection
+      currency="EUR"
       currentUrl="/patrimonio/wl_hld_l_mortgage/editar"
       formError={null}
       liabilityId="l_mortgage"

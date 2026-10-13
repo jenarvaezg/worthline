@@ -5,6 +5,7 @@
  * delete, as before.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
@@ -15,7 +16,9 @@ import {
 import { PendingSubmit } from "@web/pending-submit";
 import type { BalanceAnchorRecord } from "@worthline/db";
 import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
-import { DEBT_FORM_ID, FormRefusal, rowFormId } from "./debt-form-ids";
+import { DEBT_FORM_ID, rowFormId } from "./debt-form-ids";
+
+const ERROR_ID = "balance-anchor-error";
 
 /** The rows' list name, for the ficha to point at the one just added (#1829). */
 export const ANCHORS_ROW_LIST = "saldos";
@@ -36,7 +39,8 @@ export function BalanceAnchorForm({
   readOnly?: boolean;
   today: string;
 }) {
-  const values = formError?.formId === DEBT_FORM_ID.anchor ? formError.values : {};
+  const refusal = refusalFor(formError, DEBT_FORM_ID.anchor);
+  const values = refusal?.values ?? {};
 
   return (
     <form
@@ -46,8 +50,12 @@ export function BalanceAnchorForm({
     >
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="id" type="hidden" value={liabilityId} />
-      <FormRefusal formError={formError} formId={DEBT_FORM_ID.anchor} />
-      <BalanceAnchorFields max={today} values={values} />
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
+      <BalanceAnchorFields
+        errorId={refusal ? ERROR_ID : undefined}
+        max={today}
+        values={values}
+      />
       <p className="infoNote">
         Declara el total adeudado en esa fecha (intereses incluidos).
       </p>
@@ -109,9 +117,12 @@ export function BalanceAnchorsTable({
 
 /** Shared date / balance fields for the add and edit balance-anchor forms. */
 function BalanceAnchorFields({
+  errorId,
   max,
   values,
 }: {
+  /** The panel form's refusal, printed above the fields, which they point at. */
+  errorId?: string | undefined;
   max: string;
   values: Record<string, string>;
 }) {
@@ -120,6 +131,7 @@ function BalanceAnchorFields({
       <label>
         Fecha del saldo
         <input
+          {...refusalAria(errorId)}
           aria-label="Fecha del saldo"
           defaultValue={values["anchorDate"]}
           max={max}
@@ -131,6 +143,7 @@ function BalanceAnchorFields({
       <label>
         Saldo restante (EUR)
         <input
+          {...refusalAria(errorId)}
           aria-label="Saldo restante en EUR"
           defaultValue={values["balance"]}
           inputMode="decimal"

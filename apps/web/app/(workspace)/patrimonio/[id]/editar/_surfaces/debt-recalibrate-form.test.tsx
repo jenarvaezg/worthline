@@ -1,3 +1,4 @@
+import type { FormErrorContext } from "@web/intake";
 import type { AccruedInterestAtDate } from "@worthline/domain";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -19,13 +20,18 @@ import { DebtRecalibrateForm } from "./debt-recalibrate-form";
 function render(
   currentModelledBalanceMinor: number,
   currentDebtAccrual: AccruedInterestAtDate | null = null,
+  {
+    currency = "EUR",
+    formError = null,
+  }: { currency?: string; formError?: FormErrorContext | null } = {},
 ) {
   return renderToStaticMarkup(
     <DebtRecalibrateForm
+      currency={currency}
       currentDebtAccrual={currentDebtAccrual}
       currentModelledBalanceMinor={currentModelledBalanceMinor}
       currentUrl="/patrimonio/wl_hld_l_mortgage/editar"
-      formError={null}
+      formError={formError}
       liabilityId="l_mortgage"
       privacyMode={false}
       today="2026-06-14"
@@ -41,6 +47,28 @@ describe("DebtRecalibrateForm — the modelled balance beside the repair (#678)"
     expect(markup).toContain("Saldo real (EUR)");
     expect(markup).toContain("Fecha de recalibración");
     expect(markup).toContain("Recalibrar saldo");
+  });
+
+  test("says the balance in the debt's own currency, as the header does", () => {
+    const markup = render(195_000_00, null, { currency: "USD" });
+    expect(markup).toMatch(/195\.000\sUS\$/);
+    expect(markup).not.toMatch(/195\.000\s€/);
+  });
+
+  test("a refusal is printed in the panel and both fields point at it", () => {
+    const markup = render(195_000_00, null, {
+      formError: {
+        formId: "recalibrateDebt",
+        message: "El saldo no es válido.",
+        values: { rbBalanceDate: "2026-06-01", rbOutstandingBalance: "abc" },
+      },
+    });
+    expect(markup).toContain(
+      '<p class="errorBand" id="recalibrate-error" role="alert">El saldo no es válido.</p>',
+    );
+    expect(markup.match(/aria-describedby="recalibrate-error"/g)).toHaveLength(2);
+    expect(markup.match(/aria-invalid="true"/g)).toHaveLength(2);
+    expect(markup).toContain('value="abc"');
   });
 });
 

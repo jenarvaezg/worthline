@@ -3,14 +3,14 @@
  * «Valoración» tab (#1847) — written once, so the two can never say different
  * things about the same flat.
  *
- * Pure (interaction-patterns §7): the family reads the rows and renders; what the
- * value is today, which appraisal is the last, and when a result against the cost
- * exists at all are decided — and tested — here.
+ * Pure (interaction-patterns §7): the family reads the rows and renders; which
+ * appraisal is the last, and when a result against the cost exists at all are
+ * decided — and tested — here. What the value is today is the board's own reading:
+ * `housingCurveInput` (`@worthline/db`), walked by `valueHousingAtDate`.
  */
 
 import type { ValuationAnchorRecord } from "@worthline/db";
-import type { MoneyMinor, ValuationCadence } from "@worthline/domain";
-import { valueHousingAtDate } from "@worthline/domain";
+import type { MoneyMinor } from "@worthline/domain";
 
 type AnchorKind = Pick<ValuationAnchorRecord, "adjustsPriorCurve" | "kind">;
 
@@ -38,18 +38,6 @@ export function latestAnchor<A extends Pick<ValuationAnchorRecord, "valuationDat
   return latest;
 }
 
-/** Render a stored decimal rate ("0.03") back as the percent the user typed ("3"). */
-export function rateToPercentInput(rate: string | null): string {
-  if (rate === null) {
-    return "";
-  }
-
-  const pct = Number(rate) * 100;
-
-  // Trim float noise (0.07 * 100 = 7.000000000000001) without dropping real decimals.
-  return String(Math.round(pct * 1_000_000) / 1_000_000);
-}
-
 /**
  * «Resultado frente al coste» (#1441): the value it is handed minus what was
  * disbursed. It needs BOTH halves. Without a cost there is no result to show and a
@@ -70,34 +58,4 @@ export function resultAgainstCost(
     amountMinor: value.amountMinor - acquisitionCostMinor,
     currency: value.currency,
   };
-}
-
-/**
- * The property's value today, by the calculation the board's row runs
- * (`readCurveValuedHoldingsAtDate` → `valueLiveHoldingsAtDate`): its anchors, its
- * rate and its cadence, with the stored value as the curve's fallback basis and
- * today as both the "today" and the date valued.
- */
-export function housingValueToday(input: {
-  anchors: readonly Pick<
-    ValuationAnchorRecord,
-    "adjustsPriorCurve" | "valuationDate" | "valueMinor"
-  >[];
-  appreciationRate: string | null;
-  cadence: ValuationCadence | null;
-  currentValueMinor: number;
-  today: string;
-}): number {
-  return valueHousingAtDate({
-    anchors: input.anchors.map((anchor) => ({
-      adjustsPriorCurve: anchor.adjustsPriorCurve,
-      valuationDate: anchor.valuationDate,
-      valueMinor: anchor.valueMinor,
-    })),
-    annualAppreciationRate: input.appreciationRate,
-    currentValueMinor: input.currentValueMinor,
-    ...(input.cadence != null ? { cadence: input.cadence } : {}),
-    targetDate: input.today,
-    today: input.today,
-  });
 }

@@ -23,11 +23,8 @@
 import { syncBinanceAction } from "@web/ajustes/binance-actions";
 import { BINANCE_DISCONNECT_FORM_ID } from "@web/ajustes/connected-source-form-ids";
 import { DisconnectBinanceForm } from "@web/ajustes/disconnect-binance-fold";
-import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
-import {
-  FICHA_DATOS_TAB,
-  fichaTabUrl,
-} from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
+import { ledgerlessHoldingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
+import { fichaTabUrl, withDatosTab } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import { BinanceHoldingSection } from "@web/patrimonio/[id]/editar/_surfaces/binance-holding-section";
 import {
   buildBinanceHoldingView,
@@ -39,6 +36,7 @@ import {
   formatMoneyMinorPrivacy,
   LIQUIDITY_TIER_LABELS,
 } from "@worthline/domain";
+import type { ConnectedSource } from "./connected-source";
 import type {
   AssetFamilyContext,
   FichaAction,
@@ -49,19 +47,11 @@ import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { DISCONNECT_ACTION, syncedFigure } from "./mirror-ficha";
 
-/** A connected source's row, as the store lists it. */
-export type ConnectedSource = Awaited<
-  ReturnType<WorthlineStore["connectedSources"]["listSources"]>
->[number];
-
 /** «Tokens»: its key. */
 const TOKENS_TAB = "tokens";
 
-/** Its own tabs; the page appends «Datos del activo». «Tokens» opens by default. */
-const TABS = [TOKENS_TAB, COBROS_TAB] as const;
-
-/** Every tab the ficha ends up with, in order — what each URL here is built against. */
-const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
+/** Every tab the ficha ends up with, in order. «Tokens» opens by default. */
+const FICHA_TABS = withDatosTab([TOKENS_TAB, COBROS_TAB]);
 
 /**
  * The Binance source behind this asset, or null when there is none — which is
@@ -187,7 +177,7 @@ export async function loadBinanceSurface(
       // The board row's figure, untransformed — not the tokens' own sum.
       value: formatMoneyMinorPrivacy(asset.currentValue, privacyMode),
       // No ledger: the band's warnings are about the holding's own row.
-      warnings: holdingWarnings({ asset, id, operations: [], overrides }),
+      warnings: ledgerlessHoldingWarnings({ asset, id, overrides }),
     },
   });
 }

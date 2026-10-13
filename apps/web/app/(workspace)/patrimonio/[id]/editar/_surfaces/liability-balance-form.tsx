@@ -11,6 +11,7 @@
  * (`storedBalanceGovernsDebtFigure`); the server action re-checks it.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import type { FormErrorContext } from "@web/intake";
 import { BALANCE_FORM_ID } from "@web/patrimonio/action-helpers";
 import { updateLiabilityBalanceAction } from "@web/patrimonio/actions";
@@ -36,23 +37,18 @@ export function LiabilityBalanceForm({
   /** Where the success returns: the ficha, where the new balance shows. */
   returnTo: string;
 }) {
-  const refusal = formError?.formId === BALANCE_FORM_ID ? formError : null;
+  const refusal = refusalFor(formError, BALANCE_FORM_ID);
 
   return (
     <form action={updateLiabilityBalanceAction} className="stackForm">
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="returnTo" type="hidden" value={returnTo} />
       <input name="id" type="hidden" value={liability.id} />
-      {refusal ? (
-        <p className="errorBand" id={ERROR_ID} role="alert">
-          {refusal.message}
-        </p>
-      ) : null}
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
       <label>
         Saldo pendiente (EUR)
         <input
-          aria-describedby={refusal ? ERROR_ID : undefined}
-          aria-invalid={refusal ? true : undefined}
+          {...refusalAria(refusal ? ERROR_ID : undefined)}
           aria-label="Saldo pendiente en EUR"
           defaultValue={
             refusal?.values["balance"] ??

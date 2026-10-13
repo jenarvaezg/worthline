@@ -18,16 +18,13 @@
 import { NUMISTA_DISCONNECT_FORM_ID } from "@web/ajustes/connected-source-form-ids";
 import { DisconnectNumistaForm } from "@web/ajustes/disconnect-numista-fold";
 import { syncNumistaAction } from "@web/ajustes/numista-actions";
-import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
-import {
-  FICHA_DATOS_TAB,
-  fichaTabUrl,
-} from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
+import { ledgerlessHoldingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
+import { fichaTabUrl, withDatosTab } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import { CoinCollectionSection } from "@web/patrimonio/[id]/editar/_surfaces/coin-collection-section";
 import { buildCoinCollectionView } from "@web/patrimonio/[id]/editar/_surfaces/coin-collection-view";
 import type { CoinPosition } from "@worthline/domain";
 import { formatMoneyMinorPrivacy, groupPositionsByMetal } from "@worthline/domain";
-import type { ConnectedSource } from "./binance-family";
+import type { ConnectedSource } from "./connected-source";
 import type {
   AssetFamilyContext,
   FichaAction,
@@ -41,11 +38,8 @@ import { DISCONNECT_ACTION, syncedFigure } from "./mirror-ficha";
 /** «Monedas»: its key. */
 const COINS_TAB = "monedas";
 
-/** Its own tabs; the page appends «Datos del activo». «Monedas» opens by default. */
-const TABS = [COINS_TAB, COBROS_TAB] as const;
-
-/** Every tab the ficha ends up with, in order — what each URL here is built against. */
-const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
+/** Every tab the ficha ends up with, in order. «Monedas» opens by default. */
+const FICHA_TABS = withDatosTab([COINS_TAB, COBROS_TAB]);
 
 export async function loadCoinCollectionSurface(
   ctx: AssetFamilyContext,
@@ -155,7 +149,9 @@ export async function loadCoinCollectionSurface(
         [NUMISTA_DISCONNECT_FORM_ID]: { action: DISCONNECT_ACTION },
       },
       figures,
-      instrument: "Colección de monedas · Numista",
+      // The source is named only while there is one: a collection that never had
+      // one, or lost it, is not «· Numista» (#1849).
+      instrument: source ? "Colección de monedas · Numista" : "Colección de monedas",
       // «Desconectar» prints its own refusal, in its panel (#1849).
       ownErrorForms: [NUMISTA_DISCONNECT_FORM_ID],
       rows: payoutsPanel.rows,
@@ -177,7 +173,7 @@ export async function loadCoinCollectionSurface(
       // The board row's figure, untransformed — not the positions' own sum.
       value: formatMoneyMinorPrivacy(asset.currentValue, privacyMode),
       // No ledger: the band's warnings are about the holding's own row.
-      warnings: holdingWarnings({ asset, id, operations: [], overrides }),
+      warnings: ledgerlessHoldingWarnings({ asset, id, overrides }),
     },
   });
 }

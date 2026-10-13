@@ -51,6 +51,7 @@ import { useFichaLanding } from "./ficha-landing";
 import type { FichaOpenDetail } from "./ficha-link";
 import { FichaMoreMenu } from "./ficha-more-menu";
 import { FichaStrip } from "./ficha-strip";
+import { FICHA_SUBJECT_WORDS, type FichaSubject } from "./ficha-subject";
 import {
   claimFichaOpen,
   FICHA_OPEN_EVENT,
@@ -72,7 +73,7 @@ export interface HoldingFichaProps {
    * What the holding is to its owner, for the regions' names: «Estado del activo»,
    * or «Estado de la deuda» on a debt's ficha (#1848).
    */
-  subject?: "activo" | "deuda";
+  subject?: FichaSubject;
   instrument: string | null;
   /** The value — the one dominant figure of the page. */
   value: string;
@@ -106,7 +107,7 @@ export function HoldingFicha({
   tabs,
   value,
 }: HoldingFichaProps) {
-  const ofHolding = subject === "deuda" ? "de la deuda" : "del activo";
+  const words = FICHA_SUBJECT_WORDS[subject];
   const spec = useMemo<FichaViewSpec>(
     () => ({
       actions: actions.map((action) => action.key),
@@ -240,7 +241,7 @@ export function HoldingFicha({
 
   const ficha = (
     <div className="ficha" onSubmitCapture={landing.onSubmitCapture} ref={rootRef}>
-      <section aria-label={`Estado ${ofHolding}`} className="heroPanel fichaHero">
+      <section aria-label={`Estado ${words.of}`} className="heroPanel fichaHero">
         <div className="fichaHeroTop">
           <div className="fichaIdentity">
             <Link className="fichaBack" href={boardHref}>
@@ -248,15 +249,12 @@ export function HoldingFicha({
             </Link>
             <h2>{name}</h2>
             {instrument ? <span className="fichaInstrument">{instrument}</span> : null}
-            {/* A debt's figure carries the Línea del debe, as its pane does on the
-                board (canon §6): the «−» alone is not what marks a pasivo. */}
-            <p className={subject === "deuda" ? "fichaValue debitCol" : "fichaValue"}>
-              {value}
-            </p>
+            {/* A debt's figure carries the Línea del debe (`valueClass`, canon §6). */}
+            <p className={words.valueClass}>{value}</p>
           </div>
 
           <div
-            aria-label={`Acciones ${ofHolding}`}
+            aria-label={`Acciones ${words.of}`}
             className="fichaActions"
             ref={actionsRef}
             role="group"

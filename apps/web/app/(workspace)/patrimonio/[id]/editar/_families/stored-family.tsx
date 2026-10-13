@@ -16,11 +16,12 @@
  * family shares (`ficha-cobros`).
  */
 
-import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
+import { ledgerlessHoldingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
 import {
   FICHA_DATOS_TAB,
   fichaTabUrl,
+  withDatosTab,
 } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import { AssetValueForm } from "@web/patrimonio/[id]/editar/_surfaces/asset-value-form";
 import { VALUE_FORM_ID } from "@web/patrimonio/action-helpers";
@@ -42,11 +43,8 @@ import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { availabilityReading, freshnessCaption } from "./stored-header-view";
 
-/** Its own tabs; the page appends «Datos del activo». Cobros opens by default. */
-const TABS = [COBROS_TAB] as const;
-
-/** Every tab the ficha ends up with, in order — what each URL here is built against. */
-const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
+/** Every tab the ficha ends up with, in order. Cobros opens by default. */
+const FICHA_TABS = withDatosTab([COBROS_TAB]);
 
 /** «Actualizar valor»: its `?accion=`. */
 const VALUE_ACTION = "valor";
@@ -99,7 +97,12 @@ export async function loadStoredSurface(
             ),
             value: formatDateKeyEs(freshness.lastUpdateDateKey),
           }
-        : { value: "—" }),
+        : {
+            // Nothing to date it by — no declared value and no creation day — said,
+            // not left as a bare dash (canon: a measure that is missing says why).
+            detail: <small className="priceRefreshCaption">sin fecha registrada</small>,
+            value: "—",
+          }),
       key: "freshness",
       label: "Puesto al día",
     },
@@ -148,7 +151,7 @@ export async function loadStoredSurface(
       // The board row's figure, untransformed, in the holding's own currency.
       value: formatMoneyMinorPrivacy(asset.currentValue, privacyMode),
       // No ledger: the band's warnings are about the holding's own row.
-      warnings: holdingWarnings({ asset, id, operations: [], overrides }),
+      warnings: ledgerlessHoldingWarnings({ asset, id, overrides }),
     },
   });
 }

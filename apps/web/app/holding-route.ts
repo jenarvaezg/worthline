@@ -63,12 +63,21 @@ export function holdingCobrosHref(publicHoldingId: string): string {
 }
 
 /**
+ * The ficha with one of its actions open in the side panel (#1826): the `?accion=`
+ * that `_ficha/ficha-view.ts` reads. The key is the family's own name for it
+ * (`DEBT_ACTION.model`, «extracto»…), never spelled again by the caller.
+ */
+export function holdingActionHref(publicHoldingId: string, action: string): string {
+  return `${holdingDetailHref(publicHoldingId)}?${new URLSearchParams({ accion: action })}`;
+}
+
+/**
  * The ficha with «Cargar movimientos» open in its side panel (#1826): where an
  * investment created to be filled from a broker statement lands (#173), so the
  * «ahora carga el extracto» it is greeted with is one click, not a search.
  */
 export function holdingStatementHref(publicHoldingId: string): string {
-  return `${holdingDetailHref(publicHoldingId)}?accion=extracto`;
+  return holdingActionHref(publicHoldingId, "extracto");
 }
 
 /** The holding's row on the board, as an anchor target (the ficha's «← Volver»). */

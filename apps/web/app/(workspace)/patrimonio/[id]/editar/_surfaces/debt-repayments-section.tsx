@@ -5,6 +5,7 @@
  * table, each row with its inline edit and its two-step delete, as before.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
@@ -15,8 +16,10 @@ import {
 import { PendingSubmit } from "@web/pending-submit";
 import type { EarlyRepaymentRecord } from "@worthline/db";
 import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
-import { DEBT_FORM_ID, FormRefusal, rowFormId } from "./debt-form-ids";
+import { DEBT_FORM_ID, rowFormId } from "./debt-form-ids";
 import { EARLY_REPAYMENT_MODE_LABELS } from "./debt-format";
+
+const ERROR_ID = "repayment-error";
 
 /** The rows' list name, for the ficha to point at the one just added (#1829). */
 export const REPAYMENTS_ROW_LIST = "anticipadas";
@@ -39,7 +42,8 @@ export function EarlyRepaymentForm({
   readOnly?: boolean;
   today: string;
 }) {
-  const values = formError?.formId === DEBT_FORM_ID.repayment ? formError.values : {};
+  const refusal = refusalFor(formError, DEBT_FORM_ID.repayment);
+  const values = refusal?.values ?? {};
 
   return (
     <form
@@ -50,8 +54,12 @@ export function EarlyRepaymentForm({
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="id" type="hidden" value={liabilityId} />
       <input name="planId" type="hidden" value={planId} />
-      <FormRefusal formError={formError} formId={DEBT_FORM_ID.repayment} />
-      <EarlyRepaymentFields max={today} values={values} />
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
+      <EarlyRepaymentFields
+        errorId={refusal ? ERROR_ID : undefined}
+        max={today}
+        values={values}
+      />
       <PendingSubmit disabled={readOnly} pendingLabel="Registrando…">
         Registrar amortización
       </PendingSubmit>
@@ -116,9 +124,12 @@ export function EarlyRepaymentsTable({
 
 /** Shared date / amount / mode fields for the add and edit early-repayment forms. */
 function EarlyRepaymentFields({
+  errorId,
   max,
   values,
 }: {
+  /** The panel form's refusal, printed above the fields, which they point at. */
+  errorId?: string | undefined;
   max: string;
   values: Record<string, string>;
 }) {
@@ -127,6 +138,7 @@ function EarlyRepaymentFields({
       <label>
         Fecha de la amortización
         <input
+          {...refusalAria(errorId)}
           aria-label="Fecha de la amortización"
           defaultValue={values["repaymentDate"]}
           max={max}
@@ -138,6 +150,7 @@ function EarlyRepaymentFields({
       <label>
         Importe en EUR
         <input
+          {...refusalAria(errorId)}
           aria-label="Importe en EUR"
           defaultValue={values["amount"]}
           inputMode="decimal"
@@ -150,6 +163,7 @@ function EarlyRepaymentFields({
       <label>
         Tipo de amortización
         <select
+          {...refusalAria(errorId)}
           aria-label="Tipo de amortización"
           defaultValue={values["mode"] ?? "reduce-payment"}
           name="mode"

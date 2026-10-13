@@ -107,7 +107,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
 
   const revisionTable = page.getByRole("table", { name: "Revisiones de tipo" });
   await expect(revisionTable.getByText(revisionDate)).toBeVisible();
-  await expect(revisionTable.getByText("3 %")).toBeVisible();
+  await expect(revisionTable.getByText("3,00 %")).toBeVisible();
   await expect(revisionTable.locator("tr[data-fresh]")).toContainText("nueva");
 
   // 8. Edit the revision's rate via its inline edit form.
@@ -117,7 +117,7 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await editRevision.getByLabel("Nuevo tipo de interés (%)").fill("3,5");
   await editRevision.getByRole("button", { name: "Guardar revisión" }).click();
   await expect(page.getByRole("status")).toHaveText("Revisión de tipo actualizada.");
-  await expect(revisionTable.getByText("3.5 %")).toBeVisible();
+  await expect(revisionTable.getByText("3,50 %")).toBeVisible();
 
   // 9. The past plan produced historical snapshots — visible in /historico.
   //     `range=all`: since #1535 the page reads a WINDOW, and its 1A default would

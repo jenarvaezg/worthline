@@ -11,6 +11,7 @@
  * sources read identically wherever the user disconnects.
  */
 
+import { FormRefusal, refusalFor } from "@web/_components/form-refusal";
 import type { FormErrorContext } from "@web/intake";
 import { PendingSubmit } from "@web/pending-submit";
 import { RETURN_AFTER_REMOVE_FIELD } from "./connected-source-form-ids";
@@ -116,7 +117,7 @@ export function DisconnectPanelForm({
   readOnly: boolean;
   sourceId: string;
 }) {
-  const refusal = formError?.formId === formId ? formError : null;
+  const refusal = refusalFor(formError, formId);
 
   return (
     <form
@@ -127,11 +128,7 @@ export function DisconnectPanelForm({
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name={RETURN_AFTER_REMOVE_FIELD} type="hidden" value="/patrimonio" />
       <input name="sourceId" type="hidden" value={sourceId} />
-      {refusal ? (
-        <p className="errorBand" id={ERROR_ID} role="alert">
-          {refusal.message}
-        </p>
-      ) : null}
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
       <DisconnectOptions copy={copy} readOnly={readOnly} />
     </form>
   );

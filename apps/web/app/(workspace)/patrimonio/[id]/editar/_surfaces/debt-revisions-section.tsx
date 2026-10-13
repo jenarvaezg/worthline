@@ -7,8 +7,11 @@
  * it from the same curve as the balance, so the row added here is said up there too.
  */
 
+import { formatDeclaredRatePercent } from "@web/_components/fine-percent";
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
+import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import {
   addInterestRateRevisionAction,
   deleteInterestRateRevisionAction,
@@ -16,8 +19,9 @@ import {
 } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import type { InterestRateRevisionRecord } from "@worthline/db";
-import { DEBT_FORM_ID, FormRefusal, rowFormId } from "./debt-form-ids";
-import { rateToPercent } from "./debt-format";
+import { DEBT_FORM_ID, rowFormId } from "./debt-form-ids";
+
+const ERROR_ID = "revision-error";
 
 /** The rows' list name, for the ficha to point at the one just added (#1829). */
 export const REVISIONS_ROW_LIST = "revisiones";
@@ -40,7 +44,8 @@ export function RevisionForm({
   readOnly?: boolean;
   today: string;
 }) {
-  const values = formError?.formId === DEBT_FORM_ID.revision ? formError.values : {};
+  const refusal = refusalFor(formError, DEBT_FORM_ID.revision);
+  const values = refusal?.values ?? {};
 
   return (
     <form
@@ -51,8 +56,12 @@ export function RevisionForm({
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="id" type="hidden" value={liabilityId} />
       <input name="planId" type="hidden" value={planId} />
-      <FormRefusal formError={formError} formId={DEBT_FORM_ID.revision} />
-      <RevisionFields max={today} values={values} />
+      <FormRefusal id={ERROR_ID} refusal={refusal} />
+      <RevisionFields
+        errorId={refusal ? ERROR_ID : undefined}
+        max={today}
+        values={values}
+      />
       <PendingSubmit disabled={readOnly} pendingLabel="Registrando…">
         Registrar revisión
       </PendingSubmit>
@@ -113,9 +122,12 @@ export function RevisionsTable({
 
 /** Shared date / rate fields for the add and edit revision forms. */
 function RevisionFields({
+  errorId,
   max,
   values,
 }: {
+  /** The panel form's refusal, printed above the fields, which they point at. */
+  errorId?: string | undefined;
   max: string;
   values: Record<string, string>;
 }) {
@@ -124,6 +136,7 @@ function RevisionFields({
       <label>
         Fecha de la revisión
         <input
+          {...refusalAria(errorId)}
           aria-label="Fecha de la revisión"
           defaultValue={values["revisionDate"]}
           max={max}
@@ -135,6 +148,7 @@ function RevisionFields({
       <label>
         Nuevo tipo de interés (%)
         <input
+          {...refusalAria(errorId)}
           aria-label="Nuevo tipo de interés (%)"
           defaultValue={values["newAnnualInterestRate"]}
           inputMode="decimal"
@@ -168,7 +182,9 @@ function RevisionRow({
   const editValues = editing
     ? formError.values
     : {
-        newAnnualInterestRate: rateToPercent(revision.newAnnualInterestRate),
+        newAnnualInterestRate: formatDecimalAsPercentField(
+          Number(revision.newAnnualInterestRate),
+        ),
         revisionDate: revision.revisionDate,
       };
 
@@ -178,7 +194,9 @@ function RevisionRow({
         {revision.revisionDate}
         <FreshMark list={REVISIONS_ROW_LIST} rowKey={revision.id} word="nueva" />
       </td>
-      <td className="numCol">{rateToPercent(revision.newAnnualInterestRate)} %</td>
+      <td className="numCol">
+        {formatDeclaredRatePercent(Number(revision.newAnnualInterestRate))}
+      </td>
       <td className="rowActions">
         <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>

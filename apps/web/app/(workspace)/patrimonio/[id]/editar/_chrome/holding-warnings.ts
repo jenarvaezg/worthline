@@ -35,3 +35,15 @@ export function holdingWarnings(input: {
     operationsByAssetId: ledger,
   });
 }
+
+/**
+ * The warnings of a holding that keeps no ledger — a stored value, a property, a
+ * mirror: the band's warnings are about the holding's own row, so it passes none.
+ */
+export function ledgerlessHoldingWarnings(input: {
+  asset: ManualAsset;
+  id: string;
+  overrides: readonly WarningOverride[];
+}): DomainWarning[] {
+  return holdingWarnings({ ...input, operations: [] });
+}

@@ -200,6 +200,7 @@ export type {
   InvestmentHoldingCreationPlan,
   StoredHoldingCreationPlan,
 } from "./holding-creation-plan";
+export { type HousingCurveRows, housingCurveInput } from "./housing-curve-input";
 export type { InvestmentOperationPlan } from "./investment-operation-plan";
 export type { InvestmentTransferPlan } from "./investment-transfer-plan";
 export {

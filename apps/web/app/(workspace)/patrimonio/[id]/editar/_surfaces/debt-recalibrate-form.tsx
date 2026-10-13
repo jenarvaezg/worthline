@@ -14,14 +14,18 @@
  * and is still recalibrable.
  */
 
+import { FormRefusal, refusalAria, refusalFor } from "@web/_components/form-refusal";
 import type { FormErrorContext } from "@web/intake";
 import { recalibrateDebtBalanceAction } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
-import type { AccruedInterestAtDate } from "@worthline/domain";
+import type { AccruedInterestAtDate, CurrencyCode } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
-import { DEBT_FORM_ID, FormRefusal } from "./debt-form-ids";
+import { DEBT_FORM_ID } from "./debt-form-ids";
+
+const ERROR_ID = "recalibrate-error";
 
 export function DebtRecalibrateForm({
+  currency,
   currentDebtAccrual,
   currentModelledBalanceMinor,
   currentUrl,
@@ -31,6 +35,8 @@ export function DebtRecalibrateForm({
   readOnly = false,
   today,
 }: {
+  /** The debt's currency: what its balances here are said in, as the header's. */
+  currency: CurrencyCode;
   /** Interest accrued since the last cuota (#1292); null with no running cycle. */
   currentDebtAccrual: AccruedInterestAtDate | null;
   /** The curve's balance as of today — the header's value. */
@@ -45,18 +51,16 @@ export function DebtRecalibrateForm({
   readOnly?: boolean;
   today: string;
 }) {
-  const values = formError?.formId === DEBT_FORM_ID.recalibrate ? formError.values : {};
+  const refusal = refusalFor(formError, DEBT_FORM_ID.recalibrate);
+  const values = refusal?.values ?? {};
+  const fieldAria = refusalAria(refusal ? ERROR_ID : undefined);
+  const money = (amountMinor: number) =>
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 
   return (
     <>
       <p className="infoNote">
-        Saldo modelado a día de hoy:{" "}
-        <strong>
-          {formatMoneyMinorPrivacy(
-            { amountMinor: currentModelledBalanceMinor, currency: "EUR" },
-            privacyMode,
-          )}
-        </strong>{" "}
+        Saldo modelado a día de hoy: <strong>{money(currentModelledBalanceMinor)}</strong>{" "}
         — capital pendiente. Si el saldo real de tu banco difiere, decláralo con su fecha
         para recalibrar el plan hacia delante — el pasado no se toca.
       </p>
@@ -65,24 +69,11 @@ export function DebtRecalibrateForm({
           Tu banco suele enseñar el <strong>importe de liquidación</strong>: ese mismo
           capital más el interés corrido desde la última cuota (
           {currentDebtAccrual.cycleStartDate}), unos{" "}
-          {formatMoneyMinorPrivacy(
-            {
-              amountMinor: currentDebtAccrual.accruedInterestMinor,
-              currency: "EUR",
-            },
-            privacyMode,
-          )}{" "}
-          a día de hoy — es decir, cerca de{" "}
-          {formatMoneyMinorPrivacy(
-            {
-              amountMinor: currentDebtAccrual.settlementEstimateMinor,
-              currency: "EUR",
-            },
-            privacyMode,
-          )}
-          . Las dos cifras son correctas. Aquí se declara el{" "}
-          <strong>capital pendiente</strong>: si pegas el importe de liquidación, esos
-          intereses se quedan dentro del capital y ya no salen.
+          {money(currentDebtAccrual.accruedInterestMinor)} a día de hoy — es decir, cerca
+          de {money(currentDebtAccrual.settlementEstimateMinor)}. Las dos cifras son
+          correctas. Aquí se declara el <strong>capital pendiente</strong>: si pegas el
+          importe de liquidación, esos intereses se quedan dentro del capital y ya no
+          salen.
         </p>
       ) : null}
       <form
@@ -92,10 +83,11 @@ export function DebtRecalibrateForm({
       >
         <input name="currentUrl" type="hidden" value={currentUrl} />
         <input name="id" type="hidden" value={liabilityId} />
-        <FormRefusal formError={formError} formId={DEBT_FORM_ID.recalibrate} />
+        <FormRefusal id={ERROR_ID} refusal={refusal} />
         <label>
           <span>Saldo real (EUR)</span>
           <input
+            {...fieldAria}
             aria-label="Saldo real (EUR)"
             defaultValue={values["rbOutstandingBalance"]}
             inputMode="decimal"
@@ -108,6 +100,7 @@ export function DebtRecalibrateForm({
         <label>
           <span>Fecha de recalibración</span>
           <input
+            {...fieldAria}
             aria-label="Fecha de recalibración"
             defaultValue={values["rbBalanceDate"]}
             max={today}
