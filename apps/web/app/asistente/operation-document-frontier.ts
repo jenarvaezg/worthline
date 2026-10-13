@@ -49,6 +49,18 @@ export const OPERATION_KIND_CLAIMS: ReadonlySet<string> = new Set([
 ]);
 export type OperationKindClaim = "buy" | "sell" | "contribution";
 
+/** The two ledger kinds this lane writes: an observed operation is a buy or a sell. */
+export type LedgerOperationKind = "buy" | "sell";
+
+/**
+ * The ledger kind an observed operation is written as (an aportación is a buy). It
+ * lives beside the claim it reads so the card's copy and the dictated door can ask it
+ * which way the commission moves the importe without importing the builder (#1836).
+ */
+export function ledgerOperationKind(kind: OperationKindClaim): LedgerOperationKind {
+  return kind === "sell" ? "sell" : "buy";
+}
+
 /**
  * What the model may say about the fact: enough to POINT at the event worthline
  * extracted, plus the one judgement the document cannot make (`kind`). Every
@@ -247,7 +259,7 @@ export function operationClaimMismatches(
     }
   }
   // The PRINTED price is not compared when the document has one: what gets written is
-  // `(importe − comisión) / participaciones`, so the model may legitimately relay
+  // `(importe ∓ comisión) / participaciones` (#1836), so the model may legitimately relay
   // either figure and neither is the single authority. A price relayed for a document
   // that prints none is invention with nothing behind it.
   if (claim.pricePerUnit !== undefined && event.pricePerUnit === undefined) {

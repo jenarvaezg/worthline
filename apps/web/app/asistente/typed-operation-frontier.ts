@@ -122,7 +122,7 @@ export function resolveTypedOperationEvent(
     event.currency === null ? { ...claim, currency: undefined } : claim;
   const mismatches = operationClaimMismatches(
     checked,
-    holdingEventFromTyped(event, currency),
+    holdingEventFromTyped(event, currency, claim.kind),
     MESSAGE_VOICE,
   );
   if (mismatches.length > 0) {

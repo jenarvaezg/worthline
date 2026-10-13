@@ -2,15 +2,17 @@
 // which the narrowed application store does not expose.
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
-import type { SecurityId } from "@worthline/domain";
+import { operationAmountMinor, type SecurityId } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
+import { formatDocumentMoney } from "./document-figures";
 import {
   confirmOperationProposalAction,
   discardOperationProposalAction,
 } from "./operation-proposal-action";
-import { buildOperationProposal } from "./operation-proposals";
+import { buildOperationProposal, type OperationArgs } from "./operation-proposals";
+import { parseTypedHoldingEvent } from "./typed-holding-event";
 
 /**
  * `propose_operation` end to end (#1374), on the real case that opened the issue: the
@@ -630,5 +632,195 @@ describe("buildOperationProposal · la identidad del plan es su código DGS (#17
     if (built.ok) return;
     expect(built.error).toContain("instrumentos distintos");
     store.close();
+  });
+});
+
+/**
+ * #1836: the card and the operations book give the same importe for the same
+ * operation, by construction. Each case builds the proposal through one of the three
+ * doors, confirms it, reads the row the engine wrote, and compares the ledger's own
+ * `operationAmountMinor` of that row with the last segment of the card's fact line — and
+ * both with the figure the paper says, so the check is not the code agreeing with itself.
+ */
+describe("la tarjeta y el libro dicen el mismo importe (#1836)", () => {
+  async function confirmAndRead(source: OperationArgs["source"], kind: "buy" | "sell") {
+    const store = await seedPortfolio();
+    const built = await buildOperationProposal(
+      storeFor(store),
+      { assetId: "plan-sp500", kind, publicHoldingId: "wl_hld_plan", source },
+      TODAY,
+    );
+    if (!built.ok) throw new Error(`build failed: ${built.error}`);
+    const { proposal } = built;
+    expect(await confirmOperationProposalAction(proposal.draft, store, clock)).toEqual({
+      status: "applied",
+    });
+    const written = (await store.operations.readOperations("plan-sp500")).find(
+      (operation) => operation.id !== "op-seed",
+    );
+    store.close();
+    if (!written) throw new Error("nothing written");
+    return {
+      card: proposal.document.fact.split(" · ").at(-1)?.replace(NBSP, " "),
+      ledger: formatDocumentMoney(operationAmountMinor(written)).replace(NBSP, " "),
+      line: proposal.document.line.replace(NBSP, " "),
+      notes: proposal.notes,
+      written,
+    };
+  }
+
+  function typed(text: string): OperationArgs["source"] {
+    const reading = parseTypedHoldingEvent(text, TODAY);
+    if (reading.status !== "read") throw new Error(`not read: ${reading.status}`);
+    return { from: "message", typed: reading.event };
+  }
+
+  const VENTA_JUSTIFICANTE: ExtractedHoldingEvent = {
+    amount: 995,
+    currency: "EUR",
+    date: TODAY,
+    fees: { amount: 5, currency: "EUR" },
+    kind: "other",
+    label: "VENTA 10 PARTICIPACIONES",
+    pricePerUnit: { amount: 100, currency: "EUR" },
+    units: 10,
+  };
+
+  test("justificante de venta: se escribe a 100 € y no salta el contraste", async () => {
+    const result = await confirmAndRead(
+      { event: VENTA_JUSTIFICANTE, from: "document" },
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({
+      kind: "sell",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+    expect(result.notes.join(" ")).not.toContain("revisa la cifra");
+  });
+
+  test("justificante de venta sin participaciones: se derivan 10 del precio", async () => {
+    const result = await confirmAndRead(
+      { event: { ...VENTA_JUSTIFICANTE, units: undefined }, from: "document" },
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+  });
+
+  test("justificante de compra: la comisión se suma, igual que hoy", async () => {
+    const result = await confirmAndRead(
+      { event: { ...VENTA_JUSTIFICANTE, amount: 1005 }, from: "document" },
+      "buy",
+    );
+
+    expect(result.written).toMatchObject({
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    expect(result.card).toBe("1005 €");
+    expect(result.ledger).toBe("1005 €");
+  });
+
+  test("venta dictada sin importe: el importe derivado resta la comisión", async () => {
+    const result = await confirmAndRead(
+      typed("Hoy he vendido 10 participaciones a 100 € cada una con 5 € de comisión"),
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+    expect(result.notes.join(" ").replace(NBSP, " ")).toContain(
+      "10 × 100 € − 5 € de comisión = 995 €",
+    );
+  });
+
+  test("venta dictada con importe: el importe es el efectivo y el precio sale a 100 €", async () => {
+    const result = await confirmAndRead(
+      typed("Hoy he vendido 10 participaciones por 995 € con 5 € de comisión"),
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+  });
+
+  test("compra dictada sin importe: la nota suma la comisión y cuadra", async () => {
+    const result = await confirmAndRead(
+      typed("Hoy he comprado 10 participaciones a 100 € cada una con 5 € de comisión"),
+      "buy",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("1005 €");
+    expect(result.ledger).toBe("1005 €");
+    expect(result.notes.join(" ").replace(NBSP, " ")).toContain(
+      "10 × 100 € + 5 € de comisión = 1005 €",
+    );
+  });
+
+  test("venta dictada con importe y precio, sin participaciones: se derivan 10", async () => {
+    const result = await confirmAndRead(
+      typed("Hoy he vendido por 995 € a 100 € cada una con 5 € de comisión"),
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+  });
+
+  test("compra pegada con solo el bruto: la comisión se suma y el eco dice lo de hoy", async () => {
+    const result = await confirmAndRead(
+      typed(
+        [
+          "SUSCRIPCION I.I.C.",
+          "Participaciones\tPrecio\tImporte Bruto\tComisiones",
+          "10\t100,00 EUR\t1.000,00 EUR\t5,00 EUR",
+          "Fecha operación: 05/08/2026",
+        ].join("\n"),
+      ),
+      "buy",
+    );
+
+    expect(result.written).toMatchObject({
+      feesMinor: 500,
+      pricePerUnit: "100",
+      units: "10",
+    });
+    expect(result.card).toBe("1005 €");
+    expect(result.ledger).toBe("1005 €");
+    expect(result.line).toContain("· 1005 € ·");
+  });
+
+  test("venta pegada: bruto 1.000, comisiones 9,95 y efectivo 990,05 dicen 990,05 €", async () => {
+    const result = await confirmAndRead(
+      typed(
+        [
+          "REEMBOLSO I.I.C.",
+          "Participaciones\tPrecio\tImporte Bruto\tComisiones\tEfectivo",
+          "10\t100,00 EUR\t1.000,00 EUR\t9,95 EUR\t990,05 EUR",
+          "Fecha operación: 05/08/2026",
+        ].join("\n"),
+      ),
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({
+      feesMinor: 995,
+      pricePerUnit: "100",
+      units: "10",
+    });
+    expect(result.card).toBe("990,05 €");
+    expect(result.ledger).toBe("990,05 €");
+    expect(result.notes.join(" ")).not.toContain("revisa la cifra");
   });
 });

@@ -1116,6 +1116,47 @@ describe("createChatTools · propose_operation dictada (#1466)", () => {
     store.close();
   });
 
+  /**
+   * #1836: a pasted SALE is composed with the direction, so its importe is the efectivo
+   * the paper prints — 990,05 €, not the 1.009,95 € the purchase's rule used to build.
+   * A model that passes the efectivo is reading the message right and goes through; one
+   * that passes the old figure is told the one the message does carry.
+   */
+  const PASTED_SALE = [
+    "REEMBOLSO I.I.C.",
+    "Participaciones\tPrecio\tImporte Bruto\tComisiones\tEfectivo",
+    "10\t100,00 EUR\t1.000,00 EUR\t9,95 EUR\t990,05 EUR",
+    "Fecha operación: 12/08/2026",
+  ].join("\n");
+
+  it("accepts the efectivo of a pasted sale as its importe (#1836)", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(store, PASTED_SALE);
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { amount: 990.05, holdingId: publicId, kind: "sell" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ proposalType: "investment_operation" });
+    expect(result.document.fact.replace(/[\u00a0\u202f]/g, " ")).toMatch(/· 990,05 €$/);
+    store.close();
+  });
+
+  it("refuses the purchase-rule importe on a pasted sale, naming 990,05 € (#1836)", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(store, PASTED_SALE);
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { amount: 1009.95, holdingId: publicId, kind: "sell" },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_fact_not_in_message");
+    expect(result.message?.replace(/[\u00a0\u202f]/g, " ")).toContain("990,05 €");
+    store.close();
+  });
+
   it("refuses a declared total that does not hold, naming both figures", async () => {
     const store = await dictatedStore();
     const { publicId, tools } = await dictatedTools(

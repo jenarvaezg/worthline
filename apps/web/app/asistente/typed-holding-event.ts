@@ -19,8 +19,9 @@
  *
  * What it returns is deliberately close to {@link ExtractedHoldingEvent}
  * ({@link holdingEventFromTyped} completes it): from there the whole existing chain is
- * reused intact — `operation-terms.ts` and its invariant
- * (`importe = participaciones × precio + comisión`), the card with its provenance, and
+ * reused intact — `operation-terms.ts` and its invariant (the importe is the money the
+ * operation moved, `operationAmountMinor`: `participaciones × precio` plus the commission
+ * on a purchase, less it on a sale), the card with its provenance, and
  * every guard in `operation-proposals.ts` (divisa, sobreventa, duplicado, fecha
  * futura, fuente conectada, ISIN contradictorio).
  *
@@ -36,7 +37,12 @@
  *   adding dollars as euros).
  */
 
-import { multiplyToMinor } from "@worthline/domain";
+import {
+  multiplyToMinor,
+  normalizeDecimal,
+  operationAmountFromGrossMinor,
+  operationAmountMinor,
+} from "@worthline/domain";
 import type { UIMessage } from "ai";
 
 import {
@@ -44,7 +50,10 @@ import {
   normalizeExtractedNumber,
   validIsinOrNull,
 } from "./attachment-extraction-contract";
-import type { OperationKindClaim } from "./operation-document-frontier";
+import {
+  ledgerOperationKind,
+  type OperationKindClaim,
+} from "./operation-document-frontier";
 import {
   dateInMessage,
   ISIN_TOKEN,
@@ -62,8 +71,19 @@ export interface TypedHoldingEvent {
   executedAt: string;
   /** Participaciones as a decimal string, when the message states them. */
   units?: string;
-  /** The total importe, in major units, when the message states it. */
+  /**
+   * The importe, in major units, when the message states it: the money the operation
+   * moved in the account — on a sale, already net of the commission. On a pasted
+   * confirmation it is the printed efectivo.
+   */
   amount?: number;
+  /**
+   * The GROSS importe (participaciones × precio) a pasted confirmation prints, in major
+   * units (#1836). When present the importe is composed from it and the commission by
+   * {@link holdingEventFromTyped}, which knows the direction, so a withholding inside
+   * the efectivo never lands in the price.
+   */
+  grossAmount?: number;
   /** The price per participación, in major units, when the message states it. */
   pricePerUnit?: number;
   /** The commission, in major units — read by its own word, never by position. */
@@ -314,7 +334,9 @@ function receiptReading(
   scanned: string,
   today: string,
 ): TypedHoldingEventReading {
-  const { amount, fees, pricePerUnit, units } = figures;
+  const { fees, grossAmount, netAmount: amount, pricePerUnit, units } = figures;
+  // Either printed importe pins the money; the gross wins when both are there.
+  const printedImporte = grossAmount ?? amount;
   // «Fecha Operación» wins; a paper that labels no date falls back to the day the
   // message names, and silence is still never «hoy».
   const executedAt = figures.executedAt ?? dateInMessage(withoutIsin.rest, today)?.day;
@@ -322,10 +344,13 @@ function receiptReading(
   const missing: TypedHoldingEventGap[] = [];
   // The same rule as the prose reader, for the same reason (ADR 0067, #1325): without a
   // quantity the chain can only derive one from the two money figures together.
-  if (units === undefined && !(amount !== undefined && pricePerUnit !== undefined)) {
+  if (
+    units === undefined &&
+    !(printedImporte !== undefined && pricePerUnit !== undefined)
+  ) {
     missing.push("units");
   }
-  if (amount === undefined && pricePerUnit === undefined) missing.push("money");
+  if (printedImporte === undefined && pricePerUnit === undefined) missing.push("money");
   if (executedAt === undefined || executedAt === null) missing.push("date");
   if (missing.length > 0) return { missing, status: "incomplete" };
 
@@ -336,6 +361,7 @@ function receiptReading(
       executedAt: executedAt as string,
       ...(units === undefined ? {} : { units }),
       ...(amount === undefined ? {} : { amount }),
+      ...(grossAmount === undefined ? {} : { grossAmount }),
       ...(pricePerUnit === undefined ? {} : { pricePerUnit }),
       ...(fees === undefined ? {} : { fees }),
       ...(withoutIsin.isin === undefined ? {} : { isin: withoutIsin.isin }),
@@ -394,20 +420,27 @@ export function typedDirectionConflict(
 /**
  * The event the existing chain builds from, with the currency resolved.
  *
- * The importe is the one figure that may be DERIVED here, and only from two figures the
- * person wrote: `participaciones × precio`. It is the same arithmetic the ledger will
- * redo in reverse (`operation-terms.ts` derives the price back from the amount), so
- * nothing is invented — but the card says so, because a figure the user did not type is
- * a figure they have to be able to check.
+ * The importe is the money the operation moved in the account, the ledger's
+ * `operationAmountMinor` (#1836), and `kind` says which way the commission moves it. It
+ * comes from one of three places, in this order:
+ *
+ * - **A printed gross** (a pasted confirmation): composed with the commission, plus on a
+ *   purchase and minus on a sale. The paper's efectivo is not taken even when printed,
+ *   so a withholding inside it never lands in the price.
+ * - **An importe the person wrote** (or the efectivo a paste prints alone): read as is,
+ *   in both directions — on a sale it is already net of the commission.
+ * - **Neither**: DERIVED from the two figures the person wrote, `participaciones ×
+ *   precio ± comisión`. It is the same arithmetic the ledger will redo in reverse
+ *   (`operation-terms.ts` derives the price back from the importe), so nothing is
+ *   invented — but the card says so, because a figure the user did not type is a figure
+ *   they have to be able to check.
  */
 export function holdingEventFromTyped(
   event: TypedHoldingEvent,
   currency: string,
+  kind: OperationKindClaim,
 ): ExtractedHoldingEvent {
-  const amount =
-    event.amount ??
-    // Reached only when both were read: the parser refuses a message with neither.
-    derivedAmount(event.units ?? "0", event.pricePerUnit ?? 0, event.fees);
+  const amount = typedOperationImporte(event, kind);
   return {
     amount,
     currency,
@@ -427,7 +460,9 @@ export function holdingEventFromTyped(
 }
 
 /**
- * `participaciones × precio + comisión`, through the money seam and back to major units.
+ * The importe of {@link holdingEventFromTyped}, through the money seam and back to major
+ * units. Exported for the card's echo line, which prints it for a paste that states only
+ * its gross — the one importe it stands on.
  *
  * The round trip out of céntimos is the contract's, not a choice: an
  * {@link ExtractedHoldingEvent} states its figures in the document's own major units, and
@@ -435,10 +470,27 @@ export function holdingEventFromTyped(
  * arithmetic itself never leaves integer cents, so the only float here is the last
  * division, which is exact for every amount the ledger can hold.
  */
-function derivedAmount(units: string, price: number, fees: number | undefined): number {
-  const grossMinor = multiplyToMinor(units, String(price));
-  const feesMinor = fees === undefined ? 0 : multiplyToMinor(String(fees), "1");
-  return (grossMinor + feesMinor) / 100;
+export function typedOperationImporte(
+  event: TypedHoldingEvent,
+  claim: OperationKindClaim,
+): number {
+  const kind = ledgerOperationKind(claim);
+  const feesMinor =
+    event.fees === undefined ? 0 : multiplyToMinor(String(event.fees), "1");
+  if (event.grossAmount !== undefined) {
+    const grossMinor = multiplyToMinor(String(event.grossAmount), "1");
+    return operationAmountFromGrossMinor({ feesMinor, grossMinor, kind }) / 100;
+  }
+  if (event.amount !== undefined) return event.amount;
+  // Reached only when both were read: the parser refuses a message with neither.
+  return (
+    operationAmountMinor({
+      feesMinor,
+      kind,
+      pricePerUnit: normalizeDecimal(String(event.pricePerUnit ?? 0)),
+      units: event.units ?? "0",
+    }) / 100
+  );
 }
 
 /** The instrument the message names, and the message with every ISIN token cut out. */

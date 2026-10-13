@@ -34,8 +34,10 @@ export interface InvestmentOperationPlan {
   /** Participaciones, decimal string — the document's own quantity. */
   units: string;
   /**
-   * Unit price, decimal string. Derived as `(importe − comisión) / participaciones`
-   * so the cash amount the document states is reproduced to the cent, which is the
+   * Unit price, decimal string. Derived from the gross, `(importe ∓ comisión) /
+   * participaciones` according to the kind — the commission taken out of a buy's
+   * importe and added back to a sell's (#1836, the inverse of `operationAmountMinor`)
+   * — so the cash amount the document states is reproduced to the cent, which is the
    * same derivation the reconcile's matched rows persist. The document's PRINTED
    * price (a NAV rounded to two decimals) is kept only as a cross-check.
    */
@@ -60,6 +62,11 @@ export interface InvestmentOperationPlan {
    * «comisión 0 €» — and absent means it printed none at all.
    */
   feesMinor?: number;
-  /** The cash amount the document states, minor units: the figure the card printed. */
+  /**
+   * The importe declared, minor units: the money the operation moved in the account —
+   * on a sell, already net of the commission. The card does not print this figure: it
+   * prints `operationAmountMinor` of what is written (#1836), which reproduces it to
+   * the cent because the price is derived from it.
+   */
   amountMinor: number;
 }
