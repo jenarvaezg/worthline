@@ -5,7 +5,7 @@
  * delete, as before.
  */
 
-import { FreshMark, FreshTableRow } from "@web/_components/fresh-rows";
+import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
   addBalanceAnchorAction,
@@ -169,7 +169,7 @@ function BalanceAnchorRow({
       };
 
   return (
-    <FreshTableRow list={ANCHORS_ROW_LIST} rowKey={anchor.id}>
+    <FreshRow as="tr" list={ANCHORS_ROW_LIST} rowKey={anchor.id}>
       <td>
         {anchor.anchorDate}
         <FreshMark list={ANCHORS_ROW_LIST} rowKey={anchor.id} word="nuevo" />
@@ -207,6 +207,6 @@ function BalanceAnchorRow({
           </details>
         </form>
       </td>
-    </FreshTableRow>
+    </FreshRow>
   );
 }

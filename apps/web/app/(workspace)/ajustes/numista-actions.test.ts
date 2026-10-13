@@ -6,9 +6,12 @@
  * cover the cookie-free actions: sync's guard and disconnect's cascade.
  */
 
+import { holdingFamily } from "@web/patrimonio/[id]/editar/_families/holding-family";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db/testing";
+import { instrumentOfAsset, valuationMethodOfAsset } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { NUMISTA_DISCONNECT_FORM_ID } from "./connected-source-form-ids";
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
@@ -264,6 +267,95 @@ describe("disconnectNumistaAction", () => {
     const frozen = (await store.assets.readAssets()).find((a) => a.id === assetId);
     expect(frozen?.instrument).toBe("precious_metal");
     expect(frozen?.currentValue.amountMinor).toBe(35_000);
+  });
+});
+
+describe("disconnectNumistaAction from the collection's ficha (#1849)", () => {
+  const FICHA = "/patrimonio/wl_hld_coleccion/editar";
+  /** Where the redirect lands: the path and query the digest carries. */
+  const landing = (digest: string) => digest.split(";")[2] ?? "";
+
+  test("«Eliminar y conservar histórico» lands on the board with its notice, not on the 404 of the ficha it removed", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({
+        currentUrl: FICHA,
+        mode: "remove",
+        returnToAfterRemove: "/patrimonio",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toBe("/patrimonio?ok=numista_disconnected");
+  });
+
+  test("a return outside the app is not followed: the removal falls back to where it was sent from", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({
+        currentUrl: "/ajustes/conexiones",
+        mode: "remove",
+        returnToAfterRemove: "https://example.com/",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toBe("/ajustes/conexiones?ok=numista_disconnected");
+  });
+
+  test("«Convertir en activo manual» comes back to the ficha, which is a stored holding now", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({
+        currentUrl: FICHA,
+        mode: "freeze",
+        returnToAfterRemove: "/patrimonio",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toBe(`${FICHA}?ok=numista_frozen`);
+    const frozen = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
+    expect(
+      holdingFamily({
+        connectedSourceAdapter: null,
+        instrument: instrumentOfAsset(frozen),
+        kind: "asset",
+        method: valuationMethodOfAsset(frozen),
+      }),
+    ).toBe("stored");
+  });
+
+  test("a refusal comes back to the ficha, tagged so its panel reopens", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectNumistaAction,
+      form({
+        currentUrl: FICHA,
+        mode: "remove",
+        returnToAfterRemove: "/patrimonio",
+        sourceId: "source_gone",
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toMatch(new RegExp(`^${FICHA}\\?`));
+    expect(landing(digest)).toContain(`form=${NUMISTA_DISCONNECT_FORM_ID}`);
+    expect(landing(digest)).toContain("error=");
   });
 });
 

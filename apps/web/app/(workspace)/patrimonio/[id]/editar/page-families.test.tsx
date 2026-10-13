@@ -65,7 +65,7 @@ const CRYPTO = {
   id: ASSET_ID,
   instrument: "crypto",
   isPrimaryResidence: false,
-  liquidityTier: "invested",
+  liquidityTier: "market",
   name: "Binance · mercado",
   ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
   type: "investment",
@@ -139,8 +139,11 @@ const POSITION = {
   warnings: [],
 };
 
-/** The URL the island reads through `useSearchParams` — set per render. */
-const url = vi.hoisted(() => ({ search: new URLSearchParams() }));
+/**
+ * The URL the island reads through `useSearchParams` — set per render — and the
+ * shell's privacy mode, for the figures that must mask in it.
+ */
+const url = vi.hoisted(() => ({ privacy: false, search: new URLSearchParams() }));
 
 const calls = vi.hoisted(() => ({
   // Asset-side reads
@@ -190,7 +193,7 @@ vi.mock("@web/page-shell", () => ({
     const scopes = [{ id: "household", label: "Hogar", type: "household" }];
     return {
       persistence: { checkedAt: "2026-08-29T00:00:00.000Z", status: "ok" },
-      privacyMode: false,
+      privacyMode: url.privacy,
       requestedScopeId: undefined,
       scopes,
       selectedScope: scopes[0],
@@ -265,8 +268,20 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => url.search,
 }));
 vi.mock("@web/pending-submit", () => ({
-  PendingSubmit: ({ children }: { children: ReactNode }) => (
-    <button type="submit">{children}</button>
+  // The pair a button POSTs is kept: a form with two submits (the disconnect
+  // choice) is told apart by it.
+  PendingSubmit: ({
+    children,
+    name,
+    value,
+  }: {
+    children: ReactNode;
+    name?: string;
+    value?: string;
+  }) => (
+    <button name={name} type="submit" value={value}>
+      {children}
+    </button>
   ),
 }));
 // The exposure catalog is a control-plane read, not a store one: stub it so the
@@ -301,6 +316,7 @@ const panel = (html: string) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  url.privacy = false;
   calls.readPublicIds.mockResolvedValue([
     { entityId: ASSET_ID, entityType: "holding" as const, publicId: PUBLIC_ID },
   ]);
@@ -864,37 +880,227 @@ describe("EditarPage — the stored ficha is a state header with tabs (#1846)", 
   });
 });
 
-describe("EditarPage — the housing family (#1607)", () => {
+describe("EditarPage — the housing ficha is a state header with tabs (#1847)", () => {
+  const FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
+  const TODAY = "2026-10-13";
+  const bar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const figures = (html: string) =>
+    html.slice(html.indexOf('class="fichaFigures"'), html.indexOf('class="fichaTabs"'));
+  /** The figure whose label is `label`, up to the next one. */
+  const figure = (html: string, label: string) => {
+    const row = figures(html);
+    const at = row.indexOf(`<dt>${label}</dt>`);
+    if (at === -1) return "";
+    const next = row.indexOf("<dt>", at + 1);
+    return row.slice(at, next === -1 ? undefined : next);
+  };
+  const tabNav = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Secciones de la ficha"'),
+      html.indexOf('class="fichaTabBody"'),
+    );
+
+  const ACQUISITION = {
+    adjustsPriorCurve: true,
+    assetId: ASSET_ID,
+    id: "anchor_acq",
+    kind: "acquisition",
+    source: "manual",
+    valuationDate: "2020-05-10",
+    valueMinor: 200_000_00,
+  };
+  const APPRAISAL = {
+    adjustsPriorCurve: true,
+    assetId: ASSET_ID,
+    id: "anchor_tas",
+    kind: null,
+    source: "manual",
+    valuationDate: "2024-03-15",
+    valueMinor: 230_000_00,
+  };
+  /** A rent declared on the flat: what makes it a ficha that opens on Cobros. */
+  const RENT = {
+    amountBasis: "real",
+    amountMinor: 900_00,
+    assumedContributionThrough: null,
+    cadence: "monthly",
+    endISO: null,
+    exclusions: [],
+    holdingId: ASSET_ID,
+    id: "sch_rent",
+    label: "Alquiler Chamberí",
+    nature: "passive",
+    provenance: null,
+    provenanceAsOf: null,
+    startISO: "2026-01-01",
+  };
+
   beforeEach(() => {
+    // One clock for the page's «today»: only `Date`, so promises still settle.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${TODAY}T10:00:00.000Z`));
     calls.readAssets.mockResolvedValue([FLAT]);
   });
-
-  test("the valuation curve and the acquisition cost sit BELOW cobros", async () => {
-    const html = await renderedHtml();
-
-    // The order the ficha has always had: what the flat PAYS comes before the
-    // slower conversation about what it is worth. The family owns that order now,
-    // so it is the thing a re-split could silently invert.
-    const cobros = html.indexOf("<h3>Cobros</h3>");
-    expect(cobros).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Valoración del inmueble</h3>")).toBeGreaterThan(cobros);
-    expect(html.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
-      html.indexOf("<h3>Valoración del inmueble</h3>"),
-    );
-    expect(html).not.toContain('id="operaciones"');
+  afterEach(() => {
+    vi.useRealTimers();
+    // A test that gives the flat a rent or anchors for every render takes them back.
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([]);
+    calls.readValuationAnchors.mockResolvedValue([]);
   });
 
-  test("Cobros is still where the assistant sends a rent's expenses (#1524)", async () => {
+  test("a flat opens on its value, its last appraisal, its rate, its result and its bar", async () => {
+    calls.readValuationAnchors.mockResolvedValueOnce([ACQUISITION, APPRAISAL]);
+    calls.readAcquisitionCostMinor.mockResolvedValueOnce(210_000_00);
     const html = await renderedHtml();
 
-    // «la ficha del inmueble, desplegando «Configuración avanzada» → «Cobros»»: the
-    // property keeps the accordion until #1824 moves it to tabs, as the investment
-    // ficha moved in #1826. When it does, this and the destination change together.
-    const body = html.indexOf('<div class="editAdvancedBody">');
-    expect(body).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(body);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeLessThan(html.indexOf("</details>"));
-    expect(html).toContain("Gastos");
+    expect(html).not.toContain("Configuración avanzada");
+    expect(html).toContain("<h2>Piso de Chamberí</h2>");
+    expect(html).toContain('<span class="fichaInstrument">Inmueble</span>');
+    // No rate: the curve holds the last appraisal flat — the board's figure.
+    expect(html).toMatch(/class="fichaValue">230\.?000\s€/);
+    const latest = figure(html, "Última tasación");
+    expect(latest).toMatch(/230\.?000\s€/);
+    expect(latest).toContain("Tasación · 15/03/2024");
+    expect(figure(html, "Revalorización anual")).toContain("Sin revalorización");
+    // A movement: signed in the text and in the hue (canon §6).
+    const result = figure(html, "Resultado frente al coste");
+    expect(result).toMatch(/class="fichaFigure pos">\+20\.?000\s€/);
+    expect(bar(html)).toContain('class="btn" data-ficha-action="tasacion"');
+    expect(bar(html)).toContain(">Registrar tasación</button>");
+  });
+
+  test("the header's value is the curve's, not the stored column", async () => {
+    // An appraisal of 230.000 € on 15/03/2024 and 3 % a year, compounded by the
+    // day: the curve is past the appraisal and nowhere near the stored 240.000 €.
+    calls.readValuationAnchors.mockResolvedValueOnce([APPRAISAL]);
+    calls.readAnnualAppreciationRate.mockResolvedValueOnce("0.03");
+    calls.readValuationCadence.mockResolvedValueOnce("interpolated");
+    calls.readAcquisitionCostMinor.mockResolvedValueOnce(200_000_00);
+    const html = await renderedHtml();
+
+    // 230.000 × 1,03^(942/366) = 248.180,64 — the worked figure, not the stored one.
+    expect(html).toMatch(/class="fichaValue">248\.?181\s€/);
+    expect(figure(html, "Revalorización anual")).toContain("3 %");
+    // The result is measured against that value, in the header and in the tab.
+    expect(figure(html, "Resultado frente al coste")).toMatch(/\+48\.?181\s€/);
+    expect(tabBody(html)).toMatch(
+      /aria-label="Resultado frente al coste de adquisición"[^>]*>\+48\.?181\s€/,
+    );
+  });
+
+  test("with nothing declared it says so, each gap with its door", async () => {
+    const html = await renderedHtml();
+
+    expect(figure(html, "Última tasación")).toContain("Sin tasaciones");
+    const rate = figure(html, "Revalorización anual");
+    const rateLink = rate.match(/<a [^>]*>Indicar tasa<\/a>/)?.[0] ?? "";
+    expect(rateLink).toContain(`href="${FICHA}"`);
+    expect(rateLink).toContain('data-ficha-tab="valoracion"');
+    expect(rateLink).toContain('data-ficha-field="rate"');
+    const result = figure(html, "Resultado frente al coste");
+    expect(result).toContain("—");
+    expect(result).toContain("Sin coste declarado");
+    const costLink = result.match(/<a [^>]*>Indicar coste<\/a>/)?.[0] ?? "";
+    expect(costLink).toContain('data-ficha-tab="valoracion"');
+    expect(costLink).toContain('data-ficha-field="acquisitionCost"');
+    // …and both fields are on that tab, the one a flat with no cobros opens on.
+    expect(tabBody(html)).toContain('name="rate"');
+    expect(tabBody(html)).toContain('name="acquisitionCost"');
+  });
+
+  test("a flat that never paid anything opens on Valoración, then Cobros", async () => {
+    const html = await renderedHtml();
+    const tabs = tabNav(html);
+
+    expect(tabs.indexOf("Valoración")).toBeLessThan(tabs.indexOf("Cobros"));
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">0</);
+    expect(tabs.indexOf("Datos del activo")).toBeGreaterThan(tabs.indexOf("Cobros"));
+    const body = tabBody(html);
+    expect(body).toContain("<h3>Valoración del inmueble</h3>");
+    expect(body.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
+      body.indexOf("<h3>Valoración del inmueble</h3>"),
+    );
+    expect(bar(html)).not.toContain('data-ficha-action="cobro"');
+    // `holdingCobrosHref` — the contract rentas, FIRE and salud use — lands on Cobros.
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+  });
+
+  test("a rented flat opens on Cobros, where the assistant sends its expenses", async () => {
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([RENT]);
+    const html = await renderedHtml();
+    const tabs = tabNav(html);
+
+    expect(tabs.indexOf("Cobros")).toBeLessThan(tabs.indexOf("Valoración"));
+    expect(tabs).toMatch(/Cobros<span class="fichaTabCount">1</);
+    expect(tabBody(html)).toContain('id="cobros"');
+    expect(tabBody(html)).toContain('aria-label="Gastos de Alquiler Chamberí"');
+    expect(bar(html)).toContain('class="btn btnSecondary" data-ficha-action="cobro"');
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+    // Valoración is a tab away, and the URLs here are built on THIS order.
+    expect(tabBody(await renderedHtml({ pestaña: "valoracion" }))).toContain(
+      "<h3>Valoración del inmueble</h3>",
+    );
+    expect(panel(await renderedHtml({ accion: "tasacion" }))).toContain(
+      `name="currentUrl" value="${FICHA}?pesta%C3%B1a=valoracion"`,
+    );
+  });
+
+  test("«Registrar tasación» opens in the panel, dated today, and lands on Valoración", async () => {
+    const tasacion = panel(await renderedHtml({ accion: "tasacion" }));
+
+    expect(tasacion).toContain('<h3 id="ficha-panel-title">Registrar tasación</h3>');
+    expect(tasacion).toContain('aria-label="Registrar tasación"');
+    const date = tasacion.match(/<input[^>]*name="valuationDate"[^>]*>/)?.[0] ?? "";
+    expect(date).toContain(`value="${TODAY}"`);
+    expect(date).toContain(`max="${TODAY}"`);
+    expect(date).not.toContain("readOnly");
+    // A market appraisal recalibrates the whole curve: a choice, never the default.
+    const market = tasacion.match(/<input[^>]*name="adjustsPriorCurve"[^>]*>/)?.[0] ?? "";
+    expect(market).not.toContain("checked");
+    // Valoración is the default tab of a flat with no cobros: the bare ficha.
+    expect(tasacion).toContain(`name="currentUrl" value="${FICHA}"`);
+    expect(tasacion).toMatch(
+      /<button[^>]*type="submit"[^>]*>Registrar tasación<\/button>/,
+    );
+  });
+
+  test("a refused appraisal reopens the panel with what was typed, and says why once", async () => {
+    const message = "Ya hay una tasación en esa fecha.";
+    const html = await renderedHtml({
+      error: message,
+      form: "anchor",
+      v_anchorValue: "250.000",
+      v_valuationDate: "2024-03-15",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Registrar tasación</h3>');
+    expect(panel(html)).toContain(message);
+    expect(panel(html)).toContain('value="2024-03-15"');
+    expect(panel(html)).toContain('value="250.000"');
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("the rest of Valoración's refusals land on its tab", async () => {
+    calls.readPayoutSchedulesForHolding.mockResolvedValue([RENT]);
+    calls.readValuationAnchors.mockResolvedValue([ACQUISITION, APPRAISAL]);
+    for (const form of ["rate", "cadence", "acquisitionCost", "anchor-anchor_tas"]) {
+      const html = await renderedHtml({ error: "No.", form });
+      expect(tabBody(html), form).toContain("<h3>Valoración del inmueble</h3>");
+      expect(panel(html), form).toBe("");
+    }
+  });
+
+  test("the ficha no longer offers «Actualizar valor»", async () => {
+    const html = await renderedHtml();
+    expect(html).not.toContain("Actualizar valor");
+
+    const datos = tabBody(await renderedHtml({ pestaña: "datos" }));
+    expect(datos).toContain("Lo básico");
+    expect(datos).not.toContain('name="currentValue"');
   });
 
   test("it reads the four housing rows and no ledger", async () => {
@@ -902,15 +1108,99 @@ describe("EditarPage — the housing family (#1607)", () => {
 
     expect(calls.readValuationAnchors).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readAnnualAppreciationRate).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readValuationCadence).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readAcquisitionCostMinor).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readPayoutsForHolding).toHaveBeenCalledWith(ASSET_ID);
     expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readPositions).not.toHaveBeenCalled();
+    expect(calls.readInvestmentAssetById).not.toHaveBeenCalled();
     expect(calls.readDebtModel).not.toHaveBeenCalled();
+    // The header is the curve's, not the hand-set value's freshness.
+    expect(calls.readManualValueHistory).not.toHaveBeenCalled();
   });
 });
 
-describe("EditarPage — the coin-collection family (#1607)", () => {
+/**
+ * The two mirror fichas (#1849): a Numista collection and a Binance rung. What they
+ * share is pinned with the same helpers — the bar, the header's figures, one figure.
+ */
+const mirrorBar = (html: string) =>
+  html.slice(
+    html.indexOf('aria-label="Acciones del activo"'),
+    html.indexOf('class="fichaFigures"'),
+  );
+const mirrorFigures = (html: string) =>
+  html.slice(html.indexOf('class="fichaFigures"'), html.indexOf('class="fichaTabs"'));
+/** The header figure whose label is `label`, up to the next one. */
+const mirrorFigure = (html: string, label: string) => {
+  const row = mirrorFigures(html);
+  const at = row.indexOf(`<dt>${label}</dt>`);
+  if (at === -1) return "";
+  const next = row.indexOf("<dt>", at + 1);
+  return row.slice(at, next === -1 ? undefined : next);
+};
+const mirrorTabs = (html: string) =>
+  html.slice(
+    html.indexOf('aria-label="Secciones de la ficha"'),
+    html.indexOf('class="fichaTabBody"'),
+  );
+const MIRROR_FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
+
+/** A gold coin and two silver ones: three coins, two metals. */
+const COIN_POSITIONS = [
+  {
+    catalogueId: "1493",
+    currency: "EUR",
+    externalId: "ni-1",
+    finenessMillis: 900,
+    grade: "EBC",
+    id: "pos_oro",
+    issueId: null,
+    kind: "coin",
+    liquidityTier: "illiquid",
+    metal: "gold",
+    metalValueMinor: 350_00,
+    name: "20 francos",
+    numismaticFetchedAt: null,
+    numismaticValueMinor: null,
+    obverseThumbUrl: null,
+    purchaseDate: null,
+    purchasePriceMinor: null,
+    quantity: 1,
+    sourceId: "source_numista",
+    weightGrams: 6.45,
+    year: 1907,
+  },
+  {
+    catalogueId: "2200",
+    currency: "EUR",
+    externalId: "ni-2",
+    finenessMillis: 925,
+    grade: "MBC",
+    id: "pos_plata",
+    issueId: null,
+    kind: "coin",
+    liquidityTier: "illiquid",
+    metal: "silver",
+    metalValueMinor: 30_00,
+    name: "Duro",
+    numismaticFetchedAt: null,
+    numismaticValueMinor: null,
+    obverseThumbUrl: null,
+    purchaseDate: null,
+    purchasePriceMinor: null,
+    quantity: 2,
+    sourceId: "source_numista",
+    weightGrams: 25,
+    year: 1870,
+  },
+];
+
+describe("EditarPage — the Numista collection is a mirror ficha with tabs (#1849)", () => {
   beforeEach(() => {
-    calls.readAssets.mockResolvedValue([COINS]);
+    calls.readAssets.mockResolvedValue([
+      { ...COINS, connectedSourceId: "source_numista" },
+    ]);
     calls.listSources.mockResolvedValue([
       {
         adapter: "numista",
@@ -919,27 +1209,123 @@ describe("EditarPage — the coin-collection family (#1607)", () => {
         lastSyncAt: "2026-08-20T10:00:00.000Z",
       },
     ]);
+    calls.readSourcePositions.mockResolvedValue(COIN_POSITIONS);
   });
 
-  test("it mirrors its source and places cobros after it", async () => {
+  test("it opens on the board's value, its coins and its sync, with «Sincronizar» beside the date", async () => {
     const html = await renderedHtml();
 
-    const coins = html.indexOf("Sincronizar Numista");
-    expect(coins).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(coins);
-    // A collection mirrors positions, not operations (ADR 0016): no ledger.
-    expect(html).not.toContain('id="operaciones"');
-    expect(html).not.toContain("<h3>Traspasar</h3>");
+    expect(html).not.toContain("Configuración avanzada");
+    expect(html).toContain("<h2>Colección de plata</h2>");
+    expect(html).toContain(
+      '<span class="fichaInstrument">Colección de monedas · Numista</span>',
+    );
+    // The board row's figure (`asset.currentValue`), not the positions' own sum.
+    expect(html).toMatch(/class="fichaValue">4\.?100\s€/);
+    expect(mirrorFigure(html, "Monedas")).toMatch(/class="fichaFigure[^"]*">3</);
+    const synced = mirrorFigure(html, "Sincronizado");
+    expect(synced).toContain("2026");
+    expect(synced).toContain("Conectado");
+    // The sync is a click beside its date, not a form in the bar.
+    expect(synced).toContain(">Sincronizar Numista</button>");
+    expect(synced).toContain('name="sourceId" value="source_numista"');
+    expect(synced).toContain(`name="currentUrl" value="${MIRROR_FICHA}"`);
+    expect(mirrorBar(html)).not.toContain("Sincronizar");
   });
 
-  test("it reads its source's positions, not an operations ledger", async () => {
-    await renderedHtml();
+  test("there is one value on the ficha: the source's tile and its «Valor» are gone", async () => {
+    const html = await renderedHtml();
 
-    expect(calls.readSourcePositions).toHaveBeenCalledWith("source_numista");
-    expect(calls.readOperations).not.toHaveBeenCalled();
-    expect(calls.readPositions).not.toHaveBeenCalled();
-    // The back-link travels on the asset row; no separate lookup is issued.
-    expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
+    expect(html).not.toContain("coinSourceTile");
+    expect(html).not.toContain("<dt>Valor</dt>");
+  });
+
+  test("a stale valuation says so under the date, with the reason and what is shown", async () => {
+    calls.readPriceCache.mockResolvedValueOnce({
+      assetId: ASSET_ID,
+      currency: "EUR",
+      fetchedAt: "2026-08-19T10:00:00.000Z",
+      freshnessState: "stale",
+      price: "0",
+      source: "numista",
+      staleReason: "Numista no respondió.",
+    });
+
+    const synced = mirrorFigure(await renderedHtml(), "Sincronizado");
+    expect(synced).toContain("Valoración desactualizada");
+    expect(synced).toContain("Numista no respondió.");
+    expect(synced).toContain("Se muestra el último valor conocido");
+    expect(synced).not.toContain("Conectado");
+  });
+
+  test("the bar has no habitual action; «Desconectar Numista» waits in «Más»", async () => {
+    const bar = mirrorBar(await renderedHtml());
+
+    // Nothing is typed into a mirror (ADR 0016): no primary.
+    expect(bar).not.toContain('class="btn" data-ficha-action');
+    expect(bar).toContain(">Más ");
+    expect(bar).not.toContain('data-ficha-action="desconectar"');
+  });
+
+  test("«Desconectar Numista» opens today's choice in the panel, removal landing on the board", async () => {
+    const choice = panel(await renderedHtml({ accion: "desconectar" }));
+
+    expect(choice).toContain('<h3 id="ficha-panel-title">Desconectar Numista</h3>');
+    expect(choice).toMatch(/<button[^>]*value="remove"[^>]*name="mode"/);
+    expect(choice).toContain("Eliminar y conservar histórico");
+    expect(choice).toMatch(/<button[^>]*value="freeze"[^>]*name="mode"/);
+    expect(choice).toContain("Convertir en activo manual");
+    expect(choice).toContain(`name="currentUrl" value="${MIRROR_FICHA}"`);
+    expect(choice).toContain('name="returnToAfterRemove" value="/patrimonio"');
+    // The panel is the confirmation step: no fold inside it.
+    expect(choice).not.toContain("<details");
+  });
+
+  test("a refused disconnect reopens its panel and says why there, once", async () => {
+    const message = "No se pudo desconectar la colección.";
+    const html = await renderedHtml({ error: message, form: "numista-disconnect" });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Desconectar Numista</h3>');
+    expect(panel(html)).toContain(message);
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("«Monedas» opens by default with the strip and the equalizer, then Cobros and Datos", async () => {
+    const html = await renderedHtml();
+    const tabs = mirrorTabs(html);
+
+    expect(tabs).toMatch(/Monedas<span class="fichaTabCount">3</);
+    expect(tabs.indexOf("Cobros")).toBeGreaterThan(tabs.indexOf("Monedas"));
+    expect(tabs.indexOf("Datos del activo")).toBeGreaterThan(tabs.indexOf("Cobros"));
+    expect(tabBody(html)).toContain('aria-label="Reparto por metal de la colección"');
+    expect(tabBody(html)).toContain("coinEqualizer");
+    expect(tabBody(html)).toContain("20 francos");
+    // `holdingCobrosHref` lands on Cobros — the contract rentas, FIRE and salud use.
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+  });
+
+  test("«Añadir cobro» is at hand once it has paid something, and in «Más» before", async () => {
+    expect(mirrorBar(await renderedHtml())).not.toContain('data-ficha-action="cobro"');
+
+    calls.readPayoutsForHolding.mockResolvedValueOnce([
+      { amountMinor: 12_50, dateISO: "2026-06-01", holdingId: ASSET_ID, id: "pay_1" },
+    ]);
+    expect(mirrorBar(await renderedHtml())).toContain(
+      'class="btn btnSecondary" data-ficha-action="cobro"',
+    );
+  });
+
+  test("a collection with no source says so, with no sync and no «Desconectar»", async () => {
+    calls.readAssets.mockResolvedValue([COINS]);
+    calls.listSources.mockResolvedValue([]);
+
+    const html = await renderedHtml();
+
+    expect(mirrorFigure(html, "Sincronizado")).toContain("Sin fuente conectada");
+    expect(html).not.toContain("Sincronizar Numista");
+    // Nothing to disconnect: asking for the panel opens none.
+    expect(panel(await renderedHtml({ accion: "desconectar" }))).toBe("");
+    expect(calls.readSourcePositions).not.toHaveBeenCalled();
   });
 
   test("a collection the v14 backfill filed as `other` still gets this ficha", async () => {
@@ -953,16 +1339,55 @@ describe("EditarPage — the coin-collection family (#1607)", () => {
     const html = await renderedHtml();
 
     expect(html).toContain("Sincronizar Numista");
+    expect(html).toContain("Colección de monedas · Numista");
     expect(html).not.toContain('id="operaciones"');
     // The identity is the source's, so nothing here offers to reclassify it.
-    expect(html).not.toContain('name="instrument"');
+    expect(await renderedHtml({ pestaña: "datos" })).not.toContain('name="instrument"');
+  });
+
+  test("it reads its source's positions and its own valuation freshness, and no ledger", async () => {
+    await renderedHtml();
+
+    expect(calls.readSourcePositions).toHaveBeenCalledWith("source_numista");
+    expect(calls.readPriceCache).toHaveBeenCalledWith(ASSET_ID);
+    // The source the router already resolved travels on: no second listing.
+    expect(calls.listSources).toHaveBeenCalledTimes(1);
+    expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readPositions).not.toHaveBeenCalled();
+    expect(calls.readSnapshotHoldings).not.toHaveBeenCalled();
+    expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
   });
 });
 
-describe("EditarPage — the binance family (#1607)", () => {
+/** A token worth a fraction of a céntimo each, held by the million (#1849). */
+const PEPE = {
+  balance: "1000000",
+  currency: "EUR",
+  externalId: "PEPE:spot",
+  id: "pos_pepe",
+  imageUrl: null,
+  kind: "token",
+  liquidityTier: "market",
+  name: "PEPE",
+  sourceId: "source_binance",
+  symbol: "PEPE",
+  unitPrice: "0.00001",
+  wallet: "spot",
+};
+
+const BTC = {
+  ...PEPE,
+  balance: "0.05",
+  externalId: "BTC:spot",
+  id: "pos_btc",
+  name: "BTC",
+  symbol: "BTC",
+  unitPrice: "56000",
+};
+
+describe("EditarPage — a Binance rung is a mirror ficha with tabs (#1849)", () => {
   beforeEach(() => {
     calls.readAssets.mockResolvedValue([CRYPTO]);
-    calls.readSourceIdForAsset.mockResolvedValue("source_binance");
     calls.listSources.mockResolvedValue([
       {
         adapter: "binance",
@@ -971,21 +1396,106 @@ describe("EditarPage — the binance family (#1607)", () => {
         lastSyncAt: "2026-08-28T09:00:00.000Z",
       },
     ]);
+    calls.readSourcePositions.mockResolvedValue([BTC, PEPE]);
+    calls.readSnapshotHoldings.mockResolvedValue([
+      { dateKey: "2026-05-01" },
+      { dateKey: "2026-03-01" },
+    ]);
   });
 
-  test("a crypto holding WITH a source mirrors tokens instead of a ledger", async () => {
+  test("it opens on the board's value, its tokens, its sync and how far its history reaches", async () => {
     const html = await renderedHtml();
 
-    const tokens = html.indexOf("Sincronizar Binance");
-    expect(tokens).toBeGreaterThan(-1);
-    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(tokens);
-    expect(html).not.toContain('id="operaciones"');
+    expect(html).not.toContain("Configuración avanzada");
+    // Each rung is its own asset (#248): the instrument names which.
+    expect(html).toContain(
+      '<span class="fichaInstrument">Cripto · Binance · Mercado</span>',
+    );
+    expect(html).toMatch(/class="fichaValue">2\.?800\s€/);
+    expect(mirrorFigure(html, "Tokens")).toMatch(/class="fichaFigure[^"]*">2</);
+    const synced = mirrorFigure(html, "Sincronizado");
+    expect(synced).toContain("2026");
+    expect(synced).toContain(">Sincronizar Binance</button>");
+    expect(synced).toContain('name="sourceId" value="source_binance"');
+    expect(synced).toContain(`name="currentUrl" value="${MIRROR_FICHA}"`);
+    expect(mirrorFigure(html, "Histórico desde")).toContain("01/03/2026");
+    expect(html).not.toContain("coinSourceTile");
+    expect(html).not.toContain("<dt>Valor</dt>");
+  });
+
+  test("with no backfilled history it does not claim one", async () => {
+    calls.readSnapshotHoldings.mockResolvedValue([]);
+
+    expect(mirrorFigures(await renderedHtml())).not.toContain("Histórico desde");
+  });
+
+  test("a token worth less than half a céntimo is read at its price, not as «0 €»", async () => {
+    const tokens = tabBody(await renderedHtml());
+
+    expect(tokens).toContain("PEPE");
+    expect(tokens).toContain("0,00001 € / ud.");
+    expect(tokens).not.toMatch(/0,00\s€ \/ ud\./);
+    // The price voice of the ledger: no padding zeros on a whole price.
+    expect(tokens).toMatch(/56\.?000 € \/ ud\./);
+  });
+
+  test("the unit price masks in privacy mode", async () => {
+    url.privacy = true;
+
+    const tokens = tabBody(await renderedHtml());
+    expect(tokens).not.toContain("0,00001");
+    expect(tokens).toContain("*,***** € / ud.");
+  });
+
+  test("«Tokens» opens by default with the list, then Cobros and Datos", async () => {
+    const html = await renderedHtml();
+    const tabs = mirrorTabs(html);
+
+    expect(tabs).toMatch(/Tokens<span class="fichaTabCount">2</);
+    expect(tabs.indexOf("Cobros")).toBeGreaterThan(tabs.indexOf("Tokens"));
+    expect(tabs.indexOf("Datos del activo")).toBeGreaterThan(tabs.indexOf("Cobros"));
+    expect(tabBody(html)).toContain("BTC");
+    expect(tabBody(await renderedHtml({ abrir: "cobros" }))).toContain('id="cobros"');
+  });
+
+  test("«Desconectar Binance» waits in «Más» and opens today's choice in the panel", async () => {
+    const html = await renderedHtml({ accion: "desconectar" });
+
+    expect(mirrorBar(html)).not.toContain('class="btn" data-ficha-action');
+    expect(mirrorBar(html)).toContain(">Más ");
+    const choice = panel(html);
+    expect(choice).toContain('<h3 id="ficha-panel-title">Desconectar Binance</h3>');
+    expect(choice).toContain("Eliminar y conservar histórico");
+    expect(choice).toContain("Convertir en activo manual");
+    expect(choice).toContain(`name="currentUrl" value="${MIRROR_FICHA}"`);
+    expect(choice).toContain('name="returnToAfterRemove" value="/patrimonio"');
+    expect(choice).not.toContain("<details");
+  });
+
+  test("a refused disconnect reopens its panel and says why there, once", async () => {
+    const message = "No se pudo desconectar la cuenta.";
+    const html = await renderedHtml({ error: message, form: "binance-disconnect" });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Desconectar Binance</h3>');
+    expect(panel(html)).toContain(message);
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("it reads its rung's tokens and its curve start, and no ledger", async () => {
+    await renderedHtml();
+
     // The back-link is the asset's OWN `connected_source_id`, not the source's
     // `asset_id` — a source materializes one asset per rung (#248), and this asset
     // is not the one the source row names. It travels on the row the page already
     // read, so the router needs no extra lookup for it (#1691).
     expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
     expect(calls.readSourcePositions).toHaveBeenCalledWith("source_binance");
+    expect(calls.readSnapshotHoldings).toHaveBeenCalledWith({
+      holdingId: ASSET_ID,
+      kind: "asset",
+    });
+    expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readPriceCache).not.toHaveBeenCalled();
   });
 
   test("the SAME instrument with no source keeps its hand-written ledger", async () => {

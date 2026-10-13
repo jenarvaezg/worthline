@@ -21,7 +21,6 @@ import {
   signClass,
 } from "@web/_components/returns-format";
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
-import { currencyMark } from "@web/asistente/document-figures";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
@@ -44,7 +43,7 @@ import { PendingSubmit } from "@web/pending-submit";
 import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { CurrencyCode, DecimalString, HoldingWarningCode } from "@worthline/domain";
+import type { HoldingWarningCode } from "@worthline/domain";
 import {
   costBasisGradeMark,
   declaredSecurityId,
@@ -52,14 +51,12 @@ import {
   detectValueOnlyOpening,
   exposureLookthroughKey,
   formatMoneyMinorPrivacy,
-  formatPrice,
   formatUnits,
   holdingReturns,
   holdingTrashImpact,
   INSTRUMENT_LABELS_ES,
   instrumentOfAsset,
   lastCapturedCurrency,
-  maskMoneyString,
   monthlyCloseValuesByHolding,
   usableCachedPrice,
   VALUE_ONLY_PNL_NOTICE,
@@ -73,6 +70,7 @@ import type {
 import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { bindInvestmentActions } from "./investment-actions";
+import { fichaUnitPrice } from "./unit-price";
 
 /** The investment's own tabs; the page appends «Datos del activo». */
 const TABS = ["operaciones", "rentabilidad", COBROS_TAB] as const;
@@ -92,13 +90,6 @@ const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL" satisfies HoldingWarningCode;
 
 /** The ledger is where a sale or a traspaso past the units held gets fixed. */
 const LEDGER_FIX = { label: "Ver operaciones", tab: "operaciones" } as const;
-
-/** A unit price as the ficha prints it: the ledger's price voice, then the currency. */
-function unitPrice(price: DecimalString, currency: CurrencyCode, privacyMode: boolean) {
-  const formatted = formatPrice(price);
-  const shown = privacyMode ? maskMoneyString(formatted) : formatted;
-  return `${shown} ${currencyMark(currency)}`;
-}
 
 export async function loadInvestmentSurface(
   ctx: AssetFamilyContext,
@@ -301,7 +292,7 @@ export async function loadInvestmentSurface(
         <>
           {formatUnits(position?.currentUnits ?? "0")}
           {valuation.pricePerUnit !== undefined
-            ? ` a ${unitPrice(valuation.pricePerUnit, baseCurrency, privacyMode)}`
+            ? ` a ${fichaUnitPrice(valuation.pricePerUnit, baseCurrency, privacyMode)}`
             : null}
         </>
       ),

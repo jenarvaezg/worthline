@@ -389,6 +389,9 @@ export async function setHousingAcquisitionCostAction(
   })(formData, ..._testArgs);
 }
 
+/** What an anchor form carries back when it is refused: the three fields it types. */
+const ANCHOR_FIELDS = ["valuationDate", "anchorValue", "adjustsPriorCurve"];
+
 export async function addValuationAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
@@ -403,11 +406,7 @@ export async function addValuationAnchorAction(
           redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "anchor",
             message: parsed.error,
-            values: preserveFields(formData, [
-              "valuationDate",
-              "anchorValue",
-              "adjustsPriorCurve",
-            ]),
+            values: preserveFields(formData, ANCHOR_FIELDS),
           }),
         };
       }
@@ -424,8 +423,15 @@ export async function addValuationAnchorAction(
       await executeAddValuationAnchorCommand(store, { input: parsed, today });
       return { ok: true };
     },
+    // A repeated date is refused here, after the parse (the UNIQUE translation of
+    // `datedFact`): it reopens the ficha's «Registrar tasación» panel (#1847), so it
+    // carries what was typed back, as a parse refusal does.
     onError: ({ error }) =>
-      errorRedirectUrl(baseUrl(formData), { formId: "anchor", message: error }),
+      errorRedirectUrl(baseUrl(formData), {
+        formId: "anchor",
+        message: error,
+        values: preserveFields(formData, ANCHOR_FIELDS),
+      }),
     onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_added"),
   })(formData, ..._testArgs);
 }
@@ -507,11 +513,7 @@ export async function updateValuationAnchorAction(
           redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `anchor-${extra.anchorId}`,
             message: parsed.error,
-            values: preserveFields(formData, [
-              "valuationDate",
-              "anchorValue",
-              "adjustsPriorCurve",
-            ]),
+            values: preserveFields(formData, ANCHOR_FIELDS),
           }),
         };
       }

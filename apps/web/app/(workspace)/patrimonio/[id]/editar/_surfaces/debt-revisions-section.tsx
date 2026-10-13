@@ -7,7 +7,7 @@
  * it from the same curve as the balance, so the row added here is said up there too.
  */
 
-import { FreshMark, FreshTableRow } from "@web/_components/fresh-rows";
+import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
   addInterestRateRevisionAction,
@@ -173,7 +173,7 @@ function RevisionRow({
       };
 
   return (
-    <FreshTableRow list={REVISIONS_ROW_LIST} rowKey={revision.id}>
+    <FreshRow as="tr" list={REVISIONS_ROW_LIST} rowKey={revision.id}>
       <td>
         {revision.revisionDate}
         <FreshMark list={REVISIONS_ROW_LIST} rowKey={revision.id} word="nueva" />
@@ -208,6 +208,6 @@ function RevisionRow({
           </details>
         </form>
       </td>
-    </FreshTableRow>
+    </FreshRow>
   );
 }

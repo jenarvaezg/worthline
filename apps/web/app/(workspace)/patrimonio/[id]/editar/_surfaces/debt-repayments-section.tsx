@@ -5,7 +5,7 @@
  * table, each row with its inline edit and its two-step delete, as before.
  */
 
-import { FreshMark, FreshTableRow } from "@web/_components/fresh-rows";
+import { FreshMark, FreshRow } from "@web/_components/fresh-rows";
 import type { FormErrorContext } from "@web/intake";
 import {
   addEarlyRepaymentAction,
@@ -194,7 +194,7 @@ function EarlyRepaymentRow({
       };
 
   return (
-    <FreshTableRow list={REPAYMENTS_ROW_LIST} rowKey={repayment.id}>
+    <FreshRow as="tr" list={REPAYMENTS_ROW_LIST} rowKey={repayment.id}>
       <td>
         {repayment.repaymentDate}
         <FreshMark list={REPAYMENTS_ROW_LIST} rowKey={repayment.id} word="nueva" />
@@ -235,6 +235,6 @@ function EarlyRepaymentRow({
           </details>
         </form>
       </td>
-    </FreshTableRow>
+    </FreshRow>
   );
 }

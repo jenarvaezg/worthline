@@ -526,6 +526,39 @@ describe("addValuationAnchorAction", () => {
     store.close();
   });
 
+  test("a repeated date comes back as the anchor form's, with what was typed (#1847)", async () => {
+    const store = await seedHousing();
+    const entries = {
+      adjustsPriorCurve: "on",
+      anchorValue: "150.000,00",
+      currentUrl: "/patrimonio/wl_hld_piso/editar?pestaña=valoracion",
+      id: "piso",
+      valuationDate: "2026-05-01",
+    };
+    await runAction(addValuationAnchorAction, form(entries), store, CLOCK);
+
+    const url = await runAction(
+      addValuationAnchorAction,
+      form({ ...entries, anchorValue: "160.000,00" }),
+      store,
+      CLOCK,
+    );
+
+    // The ficha's «Registrar tasación» panel reopens on it: the refusal is the
+    // form's own, and the panel shows what was typed rather than a blank form.
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_piso/editar");
+    expect(target.searchParams.get("pestaña")).toBe("valoracion");
+    expect(target.searchParams.get("form")).toBe("anchor");
+    expect(target.searchParams.get("error")).toBeTruthy();
+    expect(target.searchParams.get("v_valuationDate")).toBe("2026-05-01");
+    expect(target.searchParams.get("v_anchorValue")).toBe("160.000,00");
+    expect(target.searchParams.get("v_adjustsPriorCurve")).toBe("on");
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
+
+    store.close();
+  });
+
   test("rejects a non-positive anchor value without persisting anything", async () => {
     const store = await seedHousing();
 

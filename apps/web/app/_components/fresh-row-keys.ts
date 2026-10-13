@@ -17,15 +17,17 @@
 
 /**
  * The lists a ficha points a fresh row in, by name (#1731 review): the ledger, the
- * Cobros grid (one-offs and each schedule's occurrences) and the declared recurring
- * cobros. A schedule adds several occurrences to the grid — or none, if it starts
- * later — so it is pointed at in its own list. A debt's tabs list its rate
- * revisions, its early repayments and its declared balances (#1848).
+ * Cobros grid (one-offs and each schedule's occurrences), the declared recurring
+ * cobros and a property's tasaciones (#1847). A schedule adds several occurrences to
+ * the grid — or none, if it starts later — so it is pointed at in its own list. A
+ * debt's tabs list its rate revisions, its early repayments and its declared
+ * balances (#1848).
  */
 export type RowList =
   | "operaciones"
   | "cobros"
   | "recurrentes"
+  | "tasaciones"
   | "revisiones"
   | "anticipadas"
   | "saldos";

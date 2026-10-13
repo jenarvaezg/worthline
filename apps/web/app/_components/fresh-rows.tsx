@@ -71,36 +71,26 @@ export function useFreshRows(list: RowList): ReadonlySet<string> {
  * it — the piece a server component drops in where a client hook cannot go.
  */
 export function FreshRow({
+  as = "div",
   children,
   className,
   list,
   rowKey,
 }: {
+  /** The element it is: a block, or a table's row (the tasaciones, #1847). */
+  as?: "div" | "tr";
   children: ReactNode;
-  className: string;
+  className?: string;
   list: RowList;
   rowKey: string;
 }) {
   const fresh = useFreshRows(list).has(rowKey);
+  const Row = as;
   return (
-    <div className={className} data-fresh={fresh ? "" : undefined}>
+    <Row className={className} data-fresh={fresh ? "" : undefined}>
       {children}
-    </div>
+    </Row>
   );
-}
-
-/** {@link FreshRow} for a table: the `<tr>` itself carries the tint (#1848). */
-export function FreshTableRow({
-  children,
-  list,
-  rowKey,
-}: {
-  children: ReactNode;
-  list: RowList;
-  rowKey: string;
-}) {
-  const fresh = useFreshRows(list).has(rowKey);
-  return <tr data-fresh={fresh ? "" : undefined}>{children}</tr>;
 }
 
 /** The same mark in words — the tint alone is not a reading (canon §8). */

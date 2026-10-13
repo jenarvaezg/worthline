@@ -164,7 +164,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/LEE ese holding con `get_holding_detail`/);
     // The destination that was missing, with its field and its cadence (ADR 0076).
     expect(prompt).toMatch(/ficha del inmueble/i);
-    expect(prompt).toMatch(/campo Gastos del cobro recurrente/i);
+    // Where on the ficha since #1847: its «Cobros» tab, on the rent's recurring cobro.
+    expect(prompt).toMatch(/pestaña «Cobros»/);
+    expect(prompt).toMatch(/cobro recurrente del alquiler: campo Gastos/i);
     expect(prompt).toMatch(/MISMA cadencia/);
     // The workaround it reached for once cornered, refused by name and for both
     // reasons — it corrupts the ledger AND it does not even fix the calc.
