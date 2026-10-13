@@ -73,12 +73,15 @@ ADR 0062 § Commands own persist-and-ripple orchestration; ADR 0010 § Consequen
 the `transaction` docblock of `StoreContext` in `packages/db/src/store-context.ts`
 and `createUnitOfWork` in `packages/db/src/commands/unit-of-work.ts`.
 
-`ctx.transaction` has two drivers. Locally it hand-rolls `BEGIN`/`COMMIT`/`ROLLBACK`
-on the one connection, because a libsql interactive transaction opens a second
-connection that cannot see a `:memory:` database. Against Turso it opens
-`client.transaction("write")` and points the store's `db` and `client` at it. Nested
-calls flatten into the outermost one. Tests run on `:memory:`, so the remote driver
-is not what a green test proves.
+`ctx.transaction` has one driver for every connection kind: it opens
+`client.transaction("write")` and points the store's `db` and `client` at it. Since
+`@libsql/client` 0.18 a local client is a connection pool — a single connection for
+`:memory:` — that rolls back whatever transaction is left open when a connection
+goes back, so a hand-written `BEGIN`/`COMMIT` across two `execute` calls silently
+runs in autocommit. Nested and concurrent calls flatten into the outermost one:
+they wait until its transaction is open, and it drains them before `COMMIT`. On
+`:memory:` an open transaction holds the only connection, so a write that bypasses
+the redirected `db`/`client` fails with `TRANSACTION_ACTIVE` — tests catch it.
 
 Tells: `db.transaction(`, `client.transaction(`, `client.batch(` or a hand-written
 `BEGIN` outside `store-context.ts` and the two migration ladders, whose rebuilds

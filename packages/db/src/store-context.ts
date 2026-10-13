@@ -125,13 +125,14 @@ export function createStoreContext(
   // One drizzle instance per store lifetime, bound to the shared client.
   const baseDb = openDrizzle(client);
 
-  // Use a single interactive transaction for all connection kinds. The
-  // @libsql/client 0.18.0 pool holds the single in-memory/file connection for
-  // local targets, so an interactive tx sees the same database. Remote targets
-  // also use interactive transactions to ensure atomicity across streams.
+  // One interactive transaction for every connection kind. Since
+  // @libsql/client 0.18 a local client is a connection pool (a single
+  // connection for `:memory:`) that rolls back any transaction left open when a
+  // connection is returned, so a hand-rolled BEGIN/COMMIT cannot survive two
+  // `execute` calls; remote streams never could.
 
-  // The live transaction-scoped targets: the base instances outside a tx (and
-  // always on local), the interactive-tx connection during a remote tx. The
+  // The live transaction-scoped targets: the base instances outside a tx, the
+  // interactive-tx connection during one. The
   // exposed `db`/`client` are STABLE proxies over these, so the many
   // `const { db } = ctx` call sites — which capture before a tx opens — still
   // route their writes onto the tx connection once one is active.
@@ -162,9 +163,11 @@ export function createStoreContext(
   // sees txDepth > 0 but must NOT write yet — the interactive tx already holds
   // the single local connection, so a write through the pooled base client
   // rejects with TRANSACTION_ACTIVE. Joiners await the gate, then run inline.
+  // It only ever resolves: a failed establishment reaches the outer caller
+  // through its own rethrow, and a rejected gate nobody awaits would surface as
+  // an unhandled rejection that kills a plain Node/Bun process.
   let established: Promise<void> | null = null;
   let openEstablishedGate: (() => void) | null = null;
-  let failEstablishedGate: ((err: unknown) => void) | null = null;
 
   // In-flight joined units of work. The outer transaction drains them before
   // COMMIT, so no joined write is left mid-flight on a transaction that just
@@ -221,10 +224,9 @@ export function createStoreContext(
     } catch (err) {
       // Establishment failed: unblock joiners so they can fall back to running
       // their work against the (never redirected) base client, then rethrow.
-      failEstablishedGate?.(err);
+      openEstablishedGate?.();
       established = null;
       openEstablishedGate = null;
-      failEstablishedGate = null;
       throw err;
     }
     currentClient = tx;
@@ -254,14 +256,13 @@ export function createStoreContext(
       currentDb = baseDb;
       established = null;
       openEstablishedGate = null;
-      failEstablishedGate = null;
     }
   };
 
   /**
    * Every audit write — one row or a whole batch — goes through here, in chunked
    * INSERTs (#1435). Reads `currentDb` at call time, so entries written inside a
-   * remote transaction land on the transaction's connection.
+   * transaction land on the transaction's connection.
    */
   const writeAuditEntries = async (entries: readonly AuditEntry[]): Promise<void> => {
     for (const group of chunk(entries, AUDIT_ENTRIES_PER_INSERT)) {
@@ -291,7 +292,7 @@ export function createStoreContext(
         // db/client redirected onto it first (see `established` above), so the
         // join lands on the tx connection and not the held pooled connection.
         const joined = (async () => {
-          if (established) await established.catch(() => {});
+          if (established) await established;
           return work();
         })();
         inFlightJoins.add(joined);
@@ -302,9 +303,8 @@ export function createStoreContext(
         }
       }
       txDepth += 1;
-      established = new Promise<void>((resolve, reject) => {
+      established = new Promise<void>((resolve) => {
         openEstablishedGate = resolve;
-        failEstablishedGate = reject;
       });
       try {
         return await runInteractiveTransaction(work);
