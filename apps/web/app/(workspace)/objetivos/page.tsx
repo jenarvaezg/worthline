@@ -1,6 +1,13 @@
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { Suspense } from "react";
+import {
+  prototypeCatalogFor,
+  prototypeVariantFor,
+  realCatalog,
+  syntheticCatalog,
+} from "./_prototype-1527/prototype-model";
+import SelectorPrototype from "./_prototype-1527/selector-prototype";
 import { ContributionAllocation } from "./contribution-allocation";
 import {
   ALLOCATION_MONTH_PARAM,
@@ -122,6 +129,18 @@ export async function ObjetivosContent({
         <h2>Objetivos</h2>
         <p>Tu independencia financiera y tus metas con fecha</p>
       </header>
+
+      {/* PROTOTIPO #1527 — desechable: solo en desarrollo, solo con `?variante=`. */}
+      {prototypeVariantFor(resolvedSearchParams) ? (
+        <SelectorPrototype
+          catalogs={{
+            real: realCatalog(assets, privacyMode),
+            sintetico: syntheticCatalog(privacyMode),
+          }}
+          initialCatalog={prototypeCatalogFor(resolvedSearchParams)}
+          initialVariant={prototypeVariantFor(resolvedSearchParams) ?? "A"}
+        />
+      ) : null}
 
       {/* Un error sin formulario propio — el guard de la demo, un scope que ya no
           existe — no tiene dónde pintarse dentro de un panel, y sin esta banda la
