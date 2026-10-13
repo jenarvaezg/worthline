@@ -136,7 +136,13 @@ export function VariantD({
 
   return (
     <div className={styles.root}>
-      <div className={styles.chosen}>
+      <aside aria-label="Activos elegidos" className={styles.chosen}>
+        {/* Cabecera solo en escritorio: en el móvil los chips van justo bajo el
+            enunciado y otra mayúscula apilada sería ruido. */}
+        <div className={`${styles.head} ${styles.chosenHead}`}>
+          <span>Elegidos</span>
+          <span className={styles.count}>{chosen.length}</span>
+        </div>
         {chosen.length > 0 ? (
           <ul className={styles.chips}>
             {chosen.map((row) => {
@@ -163,7 +169,7 @@ export function VariantD({
             Aún no has elegido ningún activo. Búscalo o márcalo en la lista.
           </p>
         )}
-      </div>
+      </aside>
 
       <div className={styles.searchBar}>
         <input

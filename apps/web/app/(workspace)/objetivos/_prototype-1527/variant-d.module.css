@@ -4,7 +4,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
-  max-width: 720px;
   /* Hijo de un grid (`.stackForm`): sin esto, el chip más largo fija el ancho
      mínimo de la columna y la página desborda en un móvil. */
   min-width: 0;
@@ -33,6 +32,10 @@
 }
 
 /* ── Elegidos ── */
+
+.chosenHead {
+  display: none;
+}
 
 .chosen {
   display: grid;
@@ -117,9 +120,15 @@
 /* ── Buscador ── */
 
 .searchBar {
+  background: var(--paper);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  /* Pegado arriba: al recorrer los 59 de Mercado el buscador no se pierde. */
+  padding: 8px 0 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .search {
@@ -152,6 +161,9 @@
   font-size: 0.78rem;
   margin: 0;
   min-height: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hint strong {
@@ -180,8 +192,14 @@
 }
 
 .groupHead {
+  background: var(--paper);
   border-bottom: 1px solid var(--line-strong);
   padding: 16px 0 6px;
+  /* Pegada bajo el buscador: a mitad de los 59 de Mercado sigues sabiendo en
+     qué grupo estás. El alto del buscador es fijo (la pista no parte línea). */
+  position: sticky;
+  top: 82px;
+  z-index: 1;
 }
 
 .groupToggle {
@@ -366,5 +384,102 @@
 
   .chip {
     font-size: 0.78rem;
+  }
+}
+
+/* ── Escritorio: libro a la izquierda, lo elegido a la derecha ──
+   El panel de elegidos es la cesta: pegajoso, para que recorrer el libro no
+   esconda lo que ya llevas. Sus filas son las del libro, no pastillas. */
+@media (min-width: 960px) {
+  .root {
+    align-items: start;
+    column-gap: 48px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    row-gap: 10px;
+  }
+
+  .searchBar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .ledger {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .chosen {
+    align-content: start;
+    border-top: var(--rule-heavy);
+    gap: 0;
+    grid-column: 2;
+    grid-row: 2;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    position: sticky;
+    top: 12px;
+  }
+
+  .chosenHead {
+    border-bottom: 1px solid var(--line-strong);
+    display: flex;
+    padding: 16px 0 6px;
+  }
+
+  .chips {
+    display: grid;
+    gap: 0;
+  }
+
+  .chip {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+    color: var(--ink);
+    column-gap: 10px;
+    display: grid;
+    font-size: 0.88rem;
+    grid-template-areas:
+      "name value remove"
+      "code value remove";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    min-height: 40px;
+    padding: 7px 0 7px 2px;
+    row-gap: 2px;
+  }
+
+  .chipName {
+    grid-area: name;
+    line-height: 1.3;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .chip .code {
+    border-color: var(--line-soft);
+    color: var(--muted);
+    grid-area: code;
+    justify-self: start;
+  }
+
+  .chipValue {
+    font-weight: 600;
+    grid-area: value;
+  }
+
+  .chipRemove {
+    color: var(--muted);
+    grid-area: remove;
+  }
+
+  .chipRemove:hover {
+    background: var(--band);
+    color: var(--ink);
+  }
+
+  .chosen .empty {
+    padding: 12px 0;
   }
 }
