@@ -185,24 +185,39 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   const id = new URL(page.url()).hash.slice(1);
 
   await page.goto(`/patrimonio/${id}/editar`);
-  await openAdvancedSettings(page);
-  // The debt-model region lets the user pick the method, which fans out a surface.
-  const debtRegion = page.getByRole("region", { name: "Modelo de deuda" });
-  await expect(debtRegion).toBeVisible();
-  const modelSelect = debtRegion.getByRole("combobox", { name: "Modelo de deuda" });
+  // The debt ficha (#1848): the alta of a mortgage sets it amortizable, and with no
+  // plan yet the stored balance is still the figure — «Actualizar saldo» leads.
+  const state = page.getByRole("region", { name: "Estado de la deuda" });
+  await expect(state).toContainText("Amortizable (préstamo francés)");
+  const balancePanel = await openFichaAction(page, "Actualizar saldo");
+  await balancePanel.getByLabel("Saldo pendiente en EUR").fill("29.500,00");
+  await balancePanel.getByRole("button", { name: "Actualizar saldo" }).click();
+  // It comes back to the ficha, not the board, with the new figure in the header.
+  await expect(page).toHaveURL(new RegExp(`/patrimonio/${id}/editar\\?ok=saved`));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(state.locator(".fichaValue")).toHaveText(/−\s29\.?500\s*€/);
 
-  // amortized: pick amortizable → the plan editor appears.
-  await modelSelect.selectOption("amortizable");
-  await page.getByRole("button", { name: "Guardar modelo" }).click();
-  // Saving the model redirects (?ok=debt_model_saved) and re-renders the region
-  // via RSC. Wait for that navigation to LAND before touching the revealed plan
-  // form — otherwise the in-flight re-render tears down and rebuilds the whole
-  // subtree, detaching inputs and the submit button mid-action (flaked ~1/3).
+  // No model: the header says so, and «Elegir modelo» becomes the habitual action.
+  const clearPanel = await openFichaAction(page, "Modelo de deuda");
+  await clearPanel.getByRole("combobox", { name: "Modelo de deuda" }).selectOption("");
+  await clearPanel.getByRole("button", { name: "Guardar modelo" }).click();
   await expect(page).toHaveURL(/ok=debt_model_saved/);
-  await openAdvancedSettings(page);
+  await expect(state).toContainText("Sin modelo");
+
+  // amortized: choose amortizable → the «Plan» tab appears, open by default.
+  const modelPanel = await openFichaAction(page, "Elegir modelo");
+  await modelPanel
+    .getByRole("combobox", { name: "Modelo de deuda" })
+    .selectOption("amortizable");
+  await modelPanel.getByRole("button", { name: "Guardar modelo" }).click();
+  // Saving the model redirects (?ok=debt_model_saved) and re-renders the ficha via
+  // RSC. Wait for that navigation to LAND before touching the revealed plan form —
+  // otherwise the in-flight re-render tears down and rebuilds the whole subtree,
+  // detaching inputs and the submit button mid-action (flaked ~1/3).
+  await expect(page).toHaveURL(/ok=debt_model_saved/);
   // With no plan yet, the origin-declared plan form starts demoted inside a
   // <details> (current-state entry is the primary path, S2 #677) — expand it.
-  const originalPlanDetails = debtRegion.locator("details", {
+  const originalPlanDetails = page.locator(".fichaTabBody details", {
     hasText: "¿Tienes los datos originales del préstamo?",
   });
   await originalPlanDetails.locator("summary").click();
@@ -221,23 +236,53 @@ test("amortized & anchored: a liability switches debt-model surfaces from the de
   await planForm.getByRole("button", { name: "Guardar plan" }).click();
   await expect(page).toHaveURL(/ok=plan_saved/);
   await expect(page.getByRole("status")).toBeVisible();
-  await openAdvancedSettings(page);
+  // With a plan the balance door is gone: the curve governs the figure (#1290).
+  await expect(state).toContainText("Cuota vigente");
+  await expect(
+    page
+      .getByRole("group", { name: "Acciones de la deuda" })
+      .getByRole("button", { exact: true, name: "Actualizar saldo" }),
+  ).toHaveCount(0);
 
-  // anchored: switch to revolving → the balance-anchor editor appears.
-  await debtRegion
+  // anchored: switch to revolving, from «Más» → «Saldos», with «Registrar saldo».
+  const switchPanel = await openFichaAction(page, "Modelo de deuda");
+  await switchPanel
     .getByRole("combobox", { name: "Modelo de deuda" })
     .selectOption("revolving");
-  await page.getByRole("button", { name: "Guardar modelo" }).click();
+  await switchPanel.getByRole("button", { name: "Guardar modelo" }).click();
   // Same settle-before-interact: wait for the model-save redirect to land so the
-  // balance-anchor form is the stable, post-navigation node.
+  // balance-anchor panel is the stable, post-navigation node.
   await expect(page).toHaveURL(/ok=debt_model_saved/);
-  await openAdvancedSettings(page);
-  await expect(page.getByRole("form", { name: "Registrar saldo" })).toBeVisible();
-  await page.getByLabel("Fecha del saldo").fill(today);
-  await page.getByLabel("Saldo restante en EUR").fill("12500");
-  await page.getByRole("button", { name: "Registrar saldo" }).click();
+  const anchorPanel = await openFichaAction(page, "Registrar saldo");
+  await anchorPanel.getByLabel("Fecha del saldo").fill(today);
+  await anchorPanel.getByLabel("Saldo restante en EUR").fill("12500");
+  await anchorPanel.getByRole("button", { name: "Registrar saldo" }).click();
   await expect(page).toHaveURL(/ok=balance_anchor_added/);
   await expect(page.getByRole("status")).toBeVisible();
-  await openAdvancedSettings(page);
   await expect(page.getByRole("table", { name: "Saldos declarados" })).toBeVisible();
+  await expect(state.locator(".fichaValue")).toHaveText(/−\s12\.?500\s*€/);
+});
+
+test("a refused balance reopens its panel on the debt ficha and says why once (#1848)", async ({
+  page,
+}) => {
+  await addHolding(page, {
+    instrument: "mortgage",
+    name: "Préstamo rechazo",
+    balance: "30000",
+  });
+  await expect(page.getByRole("status")).toHaveText("Deuda añadida.");
+  const id = new URL(page.url()).hash.slice(1);
+
+  await page.goto(`/patrimonio/${id}/editar`);
+  const panel = await openFichaAction(page, "Actualizar saldo");
+  await panel.getByLabel("Saldo pendiente en EUR").fill("mucho");
+  await panel.getByRole("button", { name: "Actualizar saldo" }).click();
+
+  const reopened = page.getByRole("dialog", { name: "Actualizar saldo" });
+  await expect(reopened.getByRole("alert")).toHaveText(
+    "El saldo de la deuda no es válido.",
+  );
+  await expect(page.getByText("El saldo de la deuda no es válido.")).toHaveCount(1);
+  await expect(reopened.getByLabel("Saldo pendiente en EUR")).toHaveValue("mucho");
 });

@@ -89,6 +89,20 @@ export function FreshRow({
   );
 }
 
+/** {@link FreshRow} for a table: the `<tr>` itself carries the tint (#1848). */
+export function FreshTableRow({
+  children,
+  list,
+  rowKey,
+}: {
+  children: ReactNode;
+  list: RowList;
+  rowKey: string;
+}) {
+  const fresh = useFreshRows(list).has(rowKey);
+  return <tr data-fresh={fresh ? "" : undefined}>{children}</tr>;
+}
+
 /** The same mark in words — the tint alone is not a reading (canon §8). */
 export function FreshMark({
   list,

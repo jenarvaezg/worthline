@@ -68,6 +68,11 @@ export interface HoldingFichaProps {
   /** «← Patrimonio»: the holding's row on the board. */
   boardHref: string;
   name: string;
+  /**
+   * What the holding is to its owner, for the regions' names: «Estado del activo»,
+   * or «Estado de la deuda» on a debt's ficha (#1848).
+   */
+  subject?: "activo" | "deuda";
   instrument: string | null;
   /** The value — the one dominant figure of the page. */
   value: string;
@@ -97,9 +102,11 @@ export function HoldingFicha({
   name,
   notice,
   rows,
+  subject = "activo",
   tabs,
   value,
 }: HoldingFichaProps) {
+  const ofHolding = subject === "deuda" ? "de la deuda" : "del activo";
   const spec = useMemo<FichaViewSpec>(
     () => ({
       actions: actions.map((action) => action.key),
@@ -233,7 +240,7 @@ export function HoldingFicha({
 
   const ficha = (
     <div className="ficha" onSubmitCapture={landing.onSubmitCapture} ref={rootRef}>
-      <section aria-label="Estado del activo" className="heroPanel fichaHero">
+      <section aria-label={`Estado ${ofHolding}`} className="heroPanel fichaHero">
         <div className="fichaHeroTop">
           <div className="fichaIdentity">
             <Link className="fichaBack" href={boardHref}>
@@ -241,11 +248,15 @@ export function HoldingFicha({
             </Link>
             <h2>{name}</h2>
             {instrument ? <span className="fichaInstrument">{instrument}</span> : null}
-            <p className="fichaValue">{value}</p>
+            {/* A debt's figure carries the Línea del debe, as its pane does on the
+                board (canon §6): the «−» alone is not what marks a pasivo. */}
+            <p className={subject === "deuda" ? "fichaValue debitCol" : "fichaValue"}>
+              {value}
+            </p>
           </div>
 
           <div
-            aria-label="Acciones del activo"
+            aria-label={`Acciones ${ofHolding}`}
             className="fichaActions"
             ref={actionsRef}
             role="group"

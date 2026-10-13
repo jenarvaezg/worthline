@@ -263,6 +263,7 @@ export default async function EditarPage({
           assets={allAssets.filter((a) => a.type !== "investment")}
           boardHref={boardHref}
           currentUrl={chromeUrl}
+          formError={formError}
           liability={liability}
           members={activeMembers}
           scopeMemberId={ownershipScopeMemberId}
@@ -281,9 +282,14 @@ export default async function EditarPage({
 
   // The page-level band carries only the errors NO section prints itself. The list
   // is the seam: a section that grows its own band adds itself here, and the reader
-  // sees at a glance which forms speak for themselves.
+  // sees at a glance which forms speak for themselves. A tabbed family names the
+  // panel forms of its own that do (#1848).
+  const ownErrorForms = [
+    ...SECTIONS_WITH_OWN_ERROR_BAND,
+    ...(layout.kind === "ficha" ? (layout.ficha.ownErrorForms ?? []) : []),
+  ];
   const errorBand =
-    formError && !SECTIONS_WITH_OWN_ERROR_BAND.includes(formError.formId ?? "") ? (
+    formError && !ownErrorForms.includes(formError.formId ?? "") ? (
       <p className="errorBand" role="alert">
         {formError.message}
       </p>
@@ -291,6 +297,8 @@ export default async function EditarPage({
 
   if (layout.kind === "ficha") {
     const { ficha: tabbed } = layout;
+    // A debt is not an «activo»: the ficha names it as what it is (#1848).
+    const subject = asset ? "activo" : "deuda";
     const holdingFicha = (
       <HoldingFicha
         actions={tabbed.actions}
@@ -304,6 +312,7 @@ export default async function EditarPage({
         // landed, and offers «Añadir otra» after a panel's submit (#1829).
         notice={formOk}
         rows={tabbed.rows ?? {}}
+        subject={subject}
         tabs={[
           ...tabbed.tabs,
           {
@@ -317,7 +326,7 @@ export default async function EditarPage({
               </div>
             ),
             key: FICHA_DATOS_TAB,
-            label: "Datos del activo",
+            label: asset ? "Datos del activo" : "Datos de la deuda",
             shortLabel: "Datos",
           },
         ]}
@@ -326,7 +335,10 @@ export default async function EditarPage({
     );
 
     return (
-      <section className="formPage fichaPage" aria-label="Ficha del activo">
+      <section
+        className="formPage fichaPage"
+        aria-label={asset ? "Ficha del activo" : "Ficha de la deuda"}
+      >
         {warningsBand}
         {errorBand}
         {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}

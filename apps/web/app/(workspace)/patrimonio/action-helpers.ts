@@ -66,6 +66,13 @@ export function localReturnTo(formData: FormData): string | null {
 export const VALUE_FORM_ID = "value";
 
 /**
+ * The `formId` of a debt's hand-set balance form (#1848): «Actualizar saldo», in
+ * the ficha's side panel. Its own for the same reason as {@link VALUE_FORM_ID}:
+ * `edit` lands in «Datos», behind the panel that produced the refusal.
+ */
+export const BALANCE_FORM_ID = "balance";
+
+/**
  * The holding's board anchor: its public `wl_hld_…` id, so a mutation's success
  * redirect lands on the row it just changed (`/patrimonio?ok=saved#wl_hld_…`).
  * That destination belongs to the list, which is why `baseUrl` — the form's own

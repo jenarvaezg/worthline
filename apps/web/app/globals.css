@@ -7832,7 +7832,8 @@ td.rowActions > * {
    el tinte solo no es una lectura (canon §8). */
 #operaciones [data-fresh],
 .cobrosRow[data-fresh],
-.cobrosSchedule[data-fresh] {
+.cobrosSchedule[data-fresh],
+.debtRows [data-fresh] {
   background: var(--green-tint);
   scroll-margin: var(--ficha-sticky-top) 0 var(--ficha-strip-clearance);
 }
@@ -8597,37 +8598,19 @@ td.rowActions > * {
   margin-bottom: 8px;
 }
 
-/* === Debt model editor (PRD #109, slice 10) — reuses housing tokens ====== */
+/* === Debt ficha surfaces (PRD #109; one per tab or panel since #1848) ===== */
 
-.debtModel {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+.debtSurface {
   display: grid;
   gap: 16px;
 }
 
-.debtModel h3 {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin: 0;
-}
-
-.debtModel h4 {
+.debtSurface h4 {
   font-size: 0.74rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
   margin: 8px 0 0;
-}
-
-.debtModelDetail {
-  display: grid;
-  gap: 16px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--line);
 }
 
 /* First-cuota summary (ADR 0019, #190): the exact first cuota with its stub
@@ -8674,17 +8657,17 @@ td.rowActions > * {
   overflow-wrap: anywhere;
 }
 
-.debtModel .anchorEdit {
+.debtSurface .anchorEdit {
   margin-bottom: 8px;
 }
 
-.debtModel .anchorEdit > summary {
+.debtSurface .anchorEdit > summary {
   cursor: pointer;
   color: var(--blue);
   font-size: 0.82rem;
 }
 
-.debtModel .anchorEdit[open] > summary {
+.debtSurface .anchorEdit[open] > summary {
   margin-bottom: 8px;
 }
 

@@ -12,7 +12,7 @@
  */
 
 import type { FormErrorContext } from "@web/intake";
-import { editAssetAction, updateLiabilityBalanceAction } from "@web/patrimonio/actions";
+import { editAssetAction } from "@web/patrimonio/actions";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
 import {
@@ -29,7 +29,6 @@ import type {
   ValuationMethod,
 } from "@worthline/domain";
 import {
-  formatMoneyInput,
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   isRetiredInvestmentPriceProvider,
@@ -44,6 +43,7 @@ import Link from "next/link";
 
 import { AssetValueForm } from "./asset-value-form";
 import { InstrumentPicker } from "./instrument-picker";
+import { LiabilityBalanceForm } from "./liability-balance-form";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
@@ -494,6 +494,7 @@ export function LiabilityEditForm({
   assets,
   boardHref,
   currentUrl,
+  formError = null,
   liability,
   members,
   scopeMemberId,
@@ -505,6 +506,8 @@ export function LiabilityEditForm({
   boardHref: string;
   /** The holding's own public `wl_hld_…` URL, where every form here returns. */
   currentUrl: string;
+  /** The refusal that came back, for the balance form to print its own (#1848). */
+  formError?: FormErrorContext | null;
   liability: Liability;
   members: Member[];
   scopeMemberId: string | undefined;
@@ -578,20 +581,12 @@ export function LiabilityEditForm({
       </form>
 
       {showRawBalanceForm ? (
-        <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={liability.id} />
-          <label>
-            Saldo pendiente (EUR)
-            <input
-              aria-label="Saldo pendiente en EUR"
-              defaultValue={formatMoneyInput(liability.currentBalance.amountMinor)}
-              inputMode="decimal"
-              name="balance"
-            />
-          </label>
-          <PendingSubmit pendingLabel="Actualizando…">Actualizar saldo</PendingSubmit>
-        </form>
+        <LiabilityBalanceForm
+          currentUrl={currentUrl}
+          formError={formError}
+          liability={liability}
+          placement="basics"
+        />
       ) : null}
     </>
   );

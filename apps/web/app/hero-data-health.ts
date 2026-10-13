@@ -245,8 +245,10 @@ function fixSurface(
       // Only MISSING_DEBT_MODEL reaches the hero — MISSING_FIRE_CONFIG and the two
       // identity signals (#1489, #1745) are filtered out upstream (none of them
       // bears on today's figure).
+      // Straight to the debt ficha's «Elegir modelo» panel (#1848): the ficha's
+      // header says the model is missing, and this is the door it names.
       const href = fichaHref();
-      return href ? { href, label: "Ver deuda" } : null;
+      return href ? { href: `${href}?accion=modelo`, label: "Elegir modelo" } : null;
     }
     case "portfolio_reconciliation": {
       // The cartera's own ficha: the composition, the cash and the declared

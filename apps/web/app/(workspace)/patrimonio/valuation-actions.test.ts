@@ -416,6 +416,85 @@ describe("updateLiabilityBalanceAction", () => {
 
     store.close();
   });
+
+  test("from the ficha's panel it comes back to the ficha, not the board (#1848)", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({
+        balance: "8.000,00",
+        currentUrl: "/patrimonio/wl_hld_prestamo/editar",
+        id: "prestamo",
+        returnTo: "/patrimonio/wl_hld_prestamo/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toBe("/patrimonio/wl_hld_prestamo/editar?ok=saved");
+    expect(await liabilityBalance(store, "prestamo")).toBe(8_000_00);
+    store.close();
+  });
+
+  test("with no local return the success lands on the board, as before", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ balance: "8.000,00", id: "prestamo", returnTo: "https://evil.example" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url.split(";")[2]).toMatch(/^\/patrimonio\?ok=saved/);
+    store.close();
+  });
+
+  test("a refused balance comes back as the balance form's, with what was typed (#1848)", async () => {
+    const store = await seedLiability();
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({
+        balance: "no-es-un-numero",
+        currentUrl: "/patrimonio/wl_hld_prestamo/editar",
+        id: "prestamo",
+        returnTo: "/patrimonio/wl_hld_prestamo/editar",
+      }),
+      store,
+      CLOCK,
+    );
+
+    const target = new URL(url.split(";")[2]!, "http://x");
+    expect(target.pathname).toBe("/patrimonio/wl_hld_prestamo/editar");
+    expect(target.searchParams.get("form")).toBe("balance");
+    expect(target.searchParams.get("v_balance")).toBe("no-es-un-numero");
+    store.close();
+  });
+
+  test("the curve guard's refusal is the balance form's too (#1848)", async () => {
+    const store = await seedLiability();
+    await store.liabilities.setDebtModel("prestamo", "informal");
+    await store.liabilities.addBalanceAnchor({
+      anchorDate: "2026-07-01",
+      balanceMinor: 9_000_00,
+      id: "anchor_1",
+      liabilityId: "prestamo",
+    });
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ balance: "8.000,00", id: "prestamo" }),
+      store,
+      CLOCK,
+    );
+
+    expect(new URL(url.split(";")[2]!, "http://x").searchParams.get("form")).toBe(
+      "balance",
+    );
+    store.close();
+  });
 });
 
 describe("addValuationAnchorAction", () => {

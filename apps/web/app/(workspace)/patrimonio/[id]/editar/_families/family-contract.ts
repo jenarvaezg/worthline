@@ -219,6 +219,13 @@ export interface FichaLayout {
   /** By `formId`: the tab or panel whose form prints a refusal that came back. */
   errorTargets: Readonly<Record<string, FichaTarget>>;
   /**
+   * The `formId`s whose form prints its own refusal, inside the panel (#1848): the
+   * page's band leaves them out, so a refusal is said once. Named by the family,
+   * because a `formId` the page's list names for every ficha («cadence») may be
+   * printed by its own form on one ficha and by the band on another.
+   */
+  ownErrorForms?: readonly string[];
+  /**
    * The keys of the rows each tab lists, by list name, so the ficha can point at the
    * one a terminal just added (#1829).
    */

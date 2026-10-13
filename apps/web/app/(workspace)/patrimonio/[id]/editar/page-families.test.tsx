@@ -163,7 +163,13 @@ const calls = vi.hoisted(() => ({
   readSourceIdForAsset: vi.fn(async (): Promise<string | null> => null),
   readSourcePositions: vi.fn(async (): Promise<unknown[]> => []),
   // Liability-side reads — never touched by an asset ficha
+  readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
+  readBalanceAnchors: vi.fn(async (): Promise<unknown[]> => []),
+  readBalanceRebaselines: vi.fn(async (): Promise<unknown[]> => []),
   readDebtModel: vi.fn(async (): Promise<string | null> => null),
+  readDebtValuationCadence: vi.fn(async (): Promise<string | null> => null),
+  readEarlyRepayments: vi.fn(async (): Promise<unknown[]> => []),
+  readInterestRateRevisions: vi.fn(async (): Promise<unknown[]> => []),
   readLiabilities: vi.fn(async (): Promise<unknown[]> => []),
   // A hand-set value's freshness: the audit history and the creation day (#1846)
   readAssetCreatedAtById: vi.fn(async () => new Map<string, string>()),
@@ -210,8 +216,14 @@ vi.mock("@web/page-shell", () => ({
           readSourceIdForAsset: calls.readSourceIdForAsset,
         },
         liabilities: {
+          readAmortizationPlan: calls.readAmortizationPlan,
+          readBalanceAnchors: calls.readBalanceAnchors,
+          readBalanceRebaselines: calls.readBalanceRebaselines,
           readDebtModel: calls.readDebtModel,
+          readEarlyRepayments: calls.readEarlyRepayments,
+          readInterestRateRevisions: calls.readInterestRateRevisions,
           readLiabilities: calls.readLiabilities,
+          readValuationCadence: calls.readDebtValuationCadence,
         },
         managedPortfolios: { readCashContainerName: calls.readCashContainerName },
         operations: {
@@ -987,5 +999,262 @@ describe("EditarPage — the binance family (#1607)", () => {
 
     expect(html).toContain('id="operaciones"');
     expect(html).not.toContain("Sincronizar Binance");
+  });
+});
+
+/**
+ * The debt family (#1848): one describe per model, each pinning its bar and its
+ * tabs — the table of the ticket — and what it reads to paint them. The id names a
+ * liability here: the asset list is empty.
+ */
+const MORTGAGE = {
+  currency: "EUR",
+  currentBalance: { amountMinor: 150_000_00, currency: "EUR" },
+  id: ASSET_ID,
+  name: "Hipoteca Centro",
+  ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+  type: "mortgage",
+};
+
+const DEBT_PLAN = {
+  annualInterestRate: "0.03",
+  disbursementDate: "2020-01-15",
+  firstPaymentDate: "2020-02-15",
+  id: "plan_1",
+  initialCapitalMinor: 200_000_00,
+  liabilityId: ASSET_ID,
+  originalSigningDate: null,
+  termMonths: 240,
+};
+
+const REVISION = {
+  id: "rev_1",
+  newAnnualInterestRate: "0.04",
+  planId: "plan_1",
+  revisionDate: "2023-01-15",
+};
+
+const REPAYMENT = {
+  amountMinor: 10_000_00,
+  id: "rep_1",
+  mode: "reduce-payment",
+  planId: "plan_1",
+  repaymentDate: "2024-03-01",
+};
+
+const ANCHOR = {
+  anchorDate: "2026-07-01",
+  balanceMinor: 1_200_00,
+  id: "anchor_1",
+  liabilityId: ASSET_ID,
+};
+
+describe("EditarPage — the debt family, one ficha per model (#1848)", () => {
+  const FICHA = `/patrimonio/${PUBLIC_ID}/editar`;
+  const debtBar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones de la deuda"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const tabStrip = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Secciones de la ficha"'),
+      html.indexOf('class="fichaTabBody"'),
+    );
+  /** The bar's buttons in view, by `?accion=`, with the habitual one marked. */
+  const shown = (html: string) =>
+    [...debtBar(html).matchAll(/class="(btn[^"]*)" data-ficha-action="([^"]+)"/g)].map(
+      ([, cls, key]) => (cls === "btn" ? `${key}*` : key),
+    );
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-10T10:00:00.000Z"));
+    calls.readAssets.mockResolvedValue([]);
+    calls.readLiabilities.mockResolvedValue([MORTGAGE]);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    calls.readLiabilities.mockResolvedValue([]);
+    calls.readDebtModel.mockResolvedValue(null);
+    calls.readAmortizationPlan.mockResolvedValue(null);
+    calls.readInterestRateRevisions.mockResolvedValue([]);
+    calls.readEarlyRepayments.mockResolvedValue([]);
+    calls.readBalanceAnchors.mockResolvedValue([]);
+    calls.readBalanceRebaselines.mockResolvedValue([]);
+  });
+
+  describe("amortizable with a plan", () => {
+    beforeEach(() => {
+      calls.readDebtModel.mockResolvedValue("amortizable");
+      calls.readAmortizationPlan.mockResolvedValue(DEBT_PLAN);
+      calls.readInterestRateRevisions.mockResolvedValue([REVISION]);
+      calls.readEarlyRepayments.mockResolvedValue([REPAYMENT]);
+    });
+
+    test("anticipada leads, revision and recalibrar at hand; Plan · Revisiones · Anticipadas · Datos", async () => {
+      const html = await renderedHtml();
+
+      expect(shown(html)).toEqual(["anticipada*", "revision", "recalibrar"]);
+      expect(debtBar(html)).toContain("data-ficha-more");
+      const tabs = tabStrip(html);
+      expect(tabs).toMatch(/Plan<\/a>/);
+      expect(tabs).toMatch(/Revisiones<span class="fichaTabCount">1</);
+      expect(tabs).toMatch(/Anticipadas<span class="fichaTabCount">1</);
+      expect(tabs.indexOf("Datos de la deuda")).toBeGreaterThan(
+        tabs.indexOf("Anticipadas"),
+      );
+      // Plan opens by default, with the plan and its cuotas.
+      expect(tabBody(html)).toContain("Actualizar plan");
+      expect(tabBody(html)).toContain("Cuota habitual");
+      // The header: the model, and the cuota in force.
+      expect(html).toContain("Amortizable (préstamo francés)");
+      expect(html).toContain("Cuota vigente");
+      expect(html).toContain('<span class="fichaInstrument">Hipoteca</span>');
+    });
+
+    test("each panel returns to the tab its result shows on", async () => {
+      expect(panel(await renderedHtml({ accion: "anticipada" }))).toContain(
+        `name="currentUrl" value="${FICHA}?pesta%C3%B1a=anticipadas"`,
+      );
+      expect(panel(await renderedHtml({ accion: "revision" }))).toContain(
+        `name="currentUrl" value="${FICHA}?pesta%C3%B1a=revisiones"`,
+      );
+      // Recalibrar lands on Plan, the bare ficha, with its notice.
+      expect(panel(await renderedHtml({ accion: "recalibrar" }))).toContain(
+        `name="currentUrl" value="${FICHA}"`,
+      );
+    });
+
+    test("its tables are tabs, and a refused row edit lands on its tab, unfolded", async () => {
+      const revisiones = tabBody(await renderedHtml({ pestaña: "revisiones" }));
+      expect(revisiones).toContain('aria-label="Revisiones de tipo"');
+      expect(revisiones).toContain("2023-01-15");
+      // Inside the debt surfaces' scope: «Editar» reads as a control (blue summary).
+      expect(revisiones).toMatch(/class="tableScroll debtRows debtSurface"/);
+
+      const refused = await renderedHtml({
+        error: "Tipo no válido.",
+        form: "repayment-rep_1",
+        v_amount: "mucho",
+      });
+      expect(tabBody(refused)).toContain('aria-label="Amortizaciones anticipadas"');
+      expect(tabBody(refused)).toContain('value="mucho"');
+    });
+
+    test("a refused revision reopens its panel and says why there, once", async () => {
+      const html = await renderedHtml({
+        error: "La fecha no puede ser futura.",
+        form: "revision",
+        v_revisionDate: "2030-01-01",
+      });
+
+      expect(panel(html)).toContain(
+        '<h3 id="ficha-panel-title">Registrar revisión de tipo</h3>',
+      );
+      expect(panel(html)).toContain("La fecha no puede ser futura.");
+      expect(html.split("La fecha no puede ser futura.")).toHaveLength(2);
+    });
+
+    test("it reads the plan, its re-baselines, its revisions and repayments — no anchors, no cobros", async () => {
+      await renderedHtml();
+
+      expect(calls.readAmortizationPlan).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readBalanceRebaselines).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readInterestRateRevisions).toHaveBeenCalledWith("plan_1");
+      expect(calls.readEarlyRepayments).toHaveBeenCalledWith("plan_1");
+      expect(calls.readBalanceAnchors).not.toHaveBeenCalled();
+      expect(calls.readPayoutsForHolding).not.toHaveBeenCalled();
+      expect(calls.readOperations).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("amortizable with no curve yet", () => {
+    beforeEach(() => {
+      calls.readDebtModel.mockResolvedValue("amortizable");
+    });
+
+    test("«Actualizar saldo» leads; Plan offers the alta por estado actual", async () => {
+      const html = await renderedHtml();
+
+      expect(shown(html)).toEqual(["saldo-pendiente*"]);
+      expect(tabStrip(html)).not.toContain("Revisiones");
+      expect(tabBody(html)).toContain("Guardar por estado actual");
+      expect(html).toContain("Sin plan");
+      expect(html).toContain("Configurar el plan");
+    });
+  });
+
+  describe("revolving", () => {
+    beforeEach(() => {
+      calls.readDebtModel.mockResolvedValue("revolving");
+      calls.readBalanceAnchors.mockResolvedValue([ANCHOR]);
+    });
+
+    test("«Registrar saldo» leads; Saldos opens by default with its count", async () => {
+      const html = await renderedHtml();
+
+      expect(shown(html)).toEqual(["saldo*"]);
+      expect(tabStrip(html)).toMatch(/Saldos<span class="fichaTabCount">1</);
+      expect(tabBody(html)).toContain('aria-label="Saldos declarados"');
+      expect(html).toContain("Último saldo declarado");
+      expect(html).toContain("del 01/07/2026");
+      expect(panel(await renderedHtml({ accion: "saldo" }))).toContain(
+        `name="currentUrl" value="${FICHA}"`,
+      );
+    });
+
+    test("it reads its anchors and its cadence — no plan", async () => {
+      await renderedHtml();
+
+      expect(calls.readBalanceAnchors).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readDebtValuationCadence).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readAmortizationPlan).not.toHaveBeenCalled();
+      expect(calls.readBalanceRebaselines).not.toHaveBeenCalled();
+    });
+
+    test("the model and its cadence live in «Modelo de deuda»", async () => {
+      const modelo = panel(await renderedHtml({ accion: "modelo" }));
+
+      expect(modelo).toContain('<h3 id="ficha-panel-title">Modelo de deuda</h3>');
+      expect(modelo).toContain('name="debtModel"');
+      expect(modelo).toContain("Cadencia de valoración");
+    });
+  });
+
+  describe("informal with no balance yet", () => {
+    beforeEach(() => {
+      calls.readDebtModel.mockResolvedValue("informal");
+    });
+
+    test("it says so in the header", async () => {
+      const html = await renderedHtml();
+
+      expect(html).toContain("Sin saldos declarados");
+      expect(tabBody(html)).toContain("Sin saldos declarados.");
+    });
+  });
+
+  describe("no model", () => {
+    test("«Elegir modelo» leads, «Actualizar saldo» beside it, and only «Datos de la deuda»", async () => {
+      const html = await renderedHtml();
+
+      expect(shown(html)).toEqual(["modelo*", "saldo-pendiente"]);
+      expect(debtBar(html)).toContain("Elegir modelo");
+      expect(debtBar(html)).not.toContain("data-ficha-more");
+      expect(tabStrip(html)).toContain("Datos de la deuda");
+      expect(tabStrip(html)).not.toContain("Plan");
+      expect(html).toContain("Sin modelo");
+      expect(tabBody(html)).toContain("Lo básico");
+    });
+
+    test("it reads the model and its cadence, and nothing else of the debt", async () => {
+      await renderedHtml();
+
+      expect(calls.readDebtModel).toHaveBeenCalledWith(ASSET_ID);
+      expect(calls.readAmortizationPlan).not.toHaveBeenCalled();
+      expect(calls.readBalanceAnchors).not.toHaveBeenCalled();
+      expect(calls.readInterestRateRevisions).not.toHaveBeenCalled();
+    });
   });
 });

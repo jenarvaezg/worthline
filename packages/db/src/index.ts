@@ -182,6 +182,7 @@ export {
   resolveDataDir,
   runBootstrapHealthcheck,
 } from "./database-target";
+export { type DebtCurveRows, debtBalanceCurveInput } from "./debt-balance-input";
 export type { EarlyRepaymentPlan } from "./early-repayment-plan";
 export {
   deriveEffectivePlan,

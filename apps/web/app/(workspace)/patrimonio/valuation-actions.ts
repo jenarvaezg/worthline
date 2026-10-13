@@ -39,6 +39,7 @@ import {
   systemClock,
 } from "@worthline/domain";
 import {
+  BALANCE_FORM_ID,
   baseUrl,
   boardAnchorResult,
   findAsset,
@@ -138,7 +139,7 @@ export async function updateLiabilityBalanceAction(
         return {
           ok: false,
           redirect: errorRedirectUrl(baseUrl(formData), {
-            formId: "edit",
+            formId: BALANCE_FORM_ID,
             message: "El saldo de la deuda no es válido.",
             values: preserveFields(formData, ["balance"]),
           }),
@@ -159,11 +160,18 @@ export async function updateLiabilityBalanceAction(
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), {
-        formId: "edit",
+        formId: BALANCE_FORM_ID,
         message: error,
         values: preserveFields(formData, ["balance"]),
       }),
-    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
+    // The debt ficha's side panel posts its own URL (#1848): the person stays where
+    // the new balance shows. Without one, the board's row, as before.
+    onSuccess: ({ formData, value }) => {
+      const back = localReturnTo(formData);
+      return back
+        ? successRedirectUrl(back, "saved")
+        : successRedirectUrl("/patrimonio", "saved", value);
+    },
   })(formData, ..._testArgs);
 }
 
