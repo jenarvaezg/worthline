@@ -155,8 +155,10 @@ test("a cobro added from the panel lands on the Cobros tab", async ({ page }) =>
   await expect(page).toHaveURL(/pesta%C3%B1a=cobros.*ok=payout_saved/);
   await expect(page.getByRole("status")).toHaveText("Cobro registrado.");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  // The record rounds its strip to the euro, so the count is the exact signal.
-  await expect(page.getByRole("region", { name: "Cobros" })).toContainText("1 cobro.");
+  // The record rounds its strip to the euro, so the count is the exact signal. What
+  // follows the count depends on the suite's state: once journey 37 declares a
+  // monthly spending, the strip adds «· cobertura sobre …/año» right after it.
+  await expect(page.getByRole("region", { name: "Cobros" })).toContainText(/· 1 cobro\b/);
 });
 
 test("at 390 px the four tabs fit, nothing scrolls sideways, and the panel takes the screen", async ({

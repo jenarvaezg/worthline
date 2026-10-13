@@ -38,6 +38,7 @@ import {
   expect,
   holdingRow,
   openFichaAction,
+  pickHolding,
   test,
   waitForHydration,
 } from "./fixtures";
@@ -132,12 +133,8 @@ async function saveMembers(
   const miembros = region(page, "Miembros");
   await expect(miembros).toBeVisible();
   for (const name of names) {
-    // El input nativo del chip va oculto por el canon (§4: `opacity: 0`), así que
-    // se marca por su etiqueta — el mismo gesto que hace el dedo.
-    const chip = miembros.locator(".chipChoice label", { hasText: name });
-    await expect(chip.locator("input")).not.toBeChecked();
-    await chip.click();
-    await expect(chip.locator("input")).toBeChecked();
+    // Chips o libro según cuántos fondos haya acumulado la suite (#1837).
+    await pickHolding(miembros, name);
   }
   await miembros.getByRole("button", { name: "Guardar cartera" }).click();
   await expect(page).toHaveURL(/ok=cartera_guardada/);
