@@ -98,6 +98,7 @@ export function GoalsSection({
               assets={assets}
               currentUrl={currentUrl}
               formError={formError}
+              privacyMode={privacyMode}
               scopeId={selectedScope.id}
             />
           </div>
@@ -173,6 +174,7 @@ function GoalRow({
         <ChipChoice
           name="assetIds"
           options={assets}
+          privacyMode={privacyMode}
           selectedIds={editAssetIds ?? goal.assetIds}
         />
         <div className="goalFunded">
@@ -222,11 +224,13 @@ function GoalCreateForm({
   assets,
   currentUrl,
   formError,
+  privacyMode,
   scopeId,
 }: {
   assets: ManualAsset[];
   currentUrl: string;
   formError: FormErrorContext | null;
+  privacyMode: boolean;
   scopeId: string;
 }) {
   const cv = formError?.formId === "goal" ? formError.values : {};
@@ -263,7 +267,12 @@ function GoalCreateForm({
       </div>
       <PriorityChoice selected={createPriority} />
       <span className="memberProfileLabel">Elige qué activos financian el objetivo</span>
-      <ChipChoice name="assetIds" options={assets} selectedIds={createAssetIds ?? []} />
+      <ChipChoice
+        name="assetIds"
+        options={assets}
+        privacyMode={privacyMode}
+        selectedIds={createAssetIds ?? []}
+      />
       <PendingSubmit className="createGoalSubmit" pendingLabel="Creando…">
         Crear objetivo
       </PendingSubmit>

@@ -569,6 +569,7 @@ async function FichaContent({
             <ChipChoice
               name="holdingIds"
               options={options}
+              privacyMode={privacyMode}
               selectedIds={(preservedIds ?? roles.detailedHoldingIds).filter(
                 (holdingId) => selectableIds.has(holdingId),
               )}
