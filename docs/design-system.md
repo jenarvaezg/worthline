@@ -179,6 +179,12 @@ y no comparte etiqueta con descartar la propuesta entera.
 
 - `.navTab`: pestaña de registro sin fondo ni radio; activa mediante regla
   inferior. En móvil permanece en una fila con scroll horizontal.
+- La tira de secciones del shell (`.topbarEnd`): hasta 900 px baja a su propia
+  fila bajo la marca, y se desplaza con la barra oculta. El borde que esconde algo
+  se desvanece (#1723): una máscara de 32 px en el lado que oculta contenido, en
+  los dos si oculta en ambos, y ninguna si todo cabe. Sin sombra, sin glifos y sin
+  botones de desplazamiento. Las pestañas de la ficha (`.fichaTabs`) usan la
+  misma tira sin esa señal todavía.
 - `.segmented`: rectángulo de 4px con borde perceptible; la selección invierte
   a tinta.
 - `.btn`: ancho natural, radio 4px y peso 650. Primario = tinta sobre hoja;

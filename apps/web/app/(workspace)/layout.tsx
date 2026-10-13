@@ -1,4 +1,5 @@
 import FeedbackMount from "@web/feedback/feedback-mount";
+import NavStrip from "@web/nav-strip";
 import SectionNav from "@web/section-nav";
 import SectionNavFallback from "@web/section-nav-fallback";
 import SignOutButton from "@web/sign-out-button";
@@ -38,7 +39,8 @@ export default function WorkspaceLayout({
             <p>Patrimonio neto local</p>
           </div>
         </div>
-        <div className="topbarEnd">
+        {/* The scrolling strip fades the edge that hides something (#1723). */}
+        <NavStrip>
           {/* usePathname() in SectionNav would otherwise blank the whole topnav
               until hydrate. Fallback paints the same five links without the
               active-tab marker (#1229). */}
@@ -48,7 +50,7 @@ export default function WorkspaceLayout({
           <Suspense fallback={null}>
             <SignOutButton />
           </Suspense>
-        </div>
+        </NavStrip>
         {/* «Enviar feedback» (#1174): its own grid cell, outside the scrolling
             strip, so on a phone it shares the brand's row instead of hiding at
             the strip's end. It reads the session to decide whether to show, so

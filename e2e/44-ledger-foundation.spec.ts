@@ -19,6 +19,11 @@ async function openResumen(page: Page, viewport: { height: number; width: number
   return { fire, hero, history, liquidity };
 }
 
+/** No horizontal page scroll: the document is no wider than the viewport. */
+function pageFitsViewport(page: Page) {
+  return page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+}
+
 async function sectionStyle(locator: Locator) {
   return locator.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -126,9 +131,7 @@ test("Libro mayor foundation stacks without overflow at 390×844", async ({ page
       return getComputedStyle(element).gridTemplateColumns.split(" ").length;
     }),
   ).toBe(2);
-  expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-  ).toBe(true);
+  expect(await pageFitsViewport(page)).toBe(true);
 
   for (const section of [liquidity, history, fire]) {
     expect(await sectionStyle(section)).toMatchObject({
@@ -138,4 +141,95 @@ test("Libro mayor foundation stacks without overflow at 390×844", async ({ page
       boxShadow: "none",
     });
   }
+});
+
+// #1723: the section strip scrolls with its bar hidden, so the edge that hides
+// something fades (`data-more`) and nothing is cut in repose at 390 px. The
+// suite runs without a session, so «Cerrar sesión» is not in the strip here.
+function sectionStrip(page: Page) {
+  const strip = page.locator(".topbarEnd");
+  const tabs = strip
+    .getByRole("navigation", { name: "Secciones principales" })
+    .getByRole("link");
+  return { strip, tabs };
+}
+
+/**
+ * The strip carries no `data-more` before the island runs, so «no attribute» on its
+ * own proves nothing. Narrow the viewport until the strip overflows and wait for the
+ * island to say so, then come back: only then does the absence mean «all fits».
+ */
+async function expectStripFitsAt(
+  page: Page,
+  strip: Locator,
+  viewport: { height: number; width: number },
+) {
+  await page.setViewportSize({ height: viewport.height, width: 360 });
+  await expect(strip).toHaveAttribute("data-more", "end");
+  await page.setViewportSize(viewport);
+  await expect(strip).not.toHaveAttribute("data-more");
+}
+
+test("the five section tabs fit the strip at 390×844 (#1723)", async ({ page }) => {
+  await openResumen(page, { height: 844, width: 390 });
+  const { strip, tabs } = sectionStrip(page);
+
+  await expect(tabs).toHaveCount(5);
+  const stripBox = await strip.boundingBox();
+  expect(stripBox).not.toBeNull();
+  for (const tab of await tabs.all()) {
+    const box = await tab.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(stripBox!.x - 0.5);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(stripBox!.x + stripBox!.width + 0.5);
+  }
+
+  await expectStripFitsAt(page, strip, { height: 844, width: 390 });
+  expect(await strip.evaluate((element) => getComputedStyle(element).boxShadow)).toBe(
+    "none",
+  );
+  expect(await pageFitsViewport(page)).toBe(true);
+});
+
+test("the strip fades the edge that hides tabs at 360 px (#1723)", async ({ page }) => {
+  await openResumen(page, { height: 800, width: 360 });
+  const { strip } = sectionStrip(page);
+
+  await expect(strip).toHaveAttribute("data-more", "end");
+  expect(
+    await strip.evaluate((element) => getComputedStyle(element).maskImage),
+  ).toContain("linear-gradient");
+
+  await strip.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect(strip).toHaveAttribute("data-more", "start");
+  expect(await pageFitsViewport(page)).toBe(true);
+});
+
+test("the topbar stacks in two rows up to 900 px and the strip fits (#1723)", async ({
+  page,
+}) => {
+  await openResumen(page, { height: 1024, width: 768 });
+  const { strip } = sectionStrip(page);
+  const brand = page.locator(".topbar > .brand");
+
+  const [brandBox, stripBox] = await Promise.all([
+    brand.boundingBox(),
+    strip.boundingBox(),
+  ]);
+  expect(brandBox).not.toBeNull();
+  expect(stripBox).not.toBeNull();
+  expect(stripBox!.y).toBeGreaterThanOrEqual(brandBox!.y + brandBox!.height);
+  expect(
+    await strip.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  await expectStripFitsAt(page, strip, { height: 1024, width: 768 });
+
+  await page.setViewportSize({ height: 1024, width: 901 });
+  const [oneRowBrand, oneRowStrip] = await Promise.all([
+    brand.boundingBox(),
+    strip.boundingBox(),
+  ]);
+  expect(oneRowStrip!.y).toBeLessThan(oneRowBrand!.y + oneRowBrand!.height);
 });

@@ -827,10 +827,11 @@ textarea {
   align-items: center;
   background: transparent;
   border-bottom: var(--rule-heavy);
-  /* Marca | tira de registro | acción (#1174). Rejilla, no flex con wrap: la tira
-     ocupa lo que quede y se desplaza dentro de su columna, así que nada salta de
-     línea según lo larga que sea una etiqueta. La columna de la acción solo
-     existe cuando hay acción (columna implícita), sin hueco fantasma. */
+  /* Marca | tira de registro | acción en una fila desde 901 px (#1174); por
+     debajo se apila en dos (#1723). Rejilla, no flex con wrap: la tira ocupa lo
+     que quede y se desplaza dentro de su columna, así que nada salta de línea
+     según lo larga que sea una etiqueta. La columna de la acción solo existe
+     cuando hay acción (columna implícita), sin hueco fantasma. */
   display: grid;
   gap: 12px 18px;
   grid-auto-columns: auto;
@@ -866,10 +867,12 @@ textarea {
   color: var(--ink);
 }
 
-/* Nav + «Cerrar sesión» comparten una única fila desplazable: en móvil el shell
-   apila y esta tira hace scroll horizontal sin envolver, con el cierre de sesión
-   al final (canon §5, #910). */
+/* Nav + «Cerrar sesión» comparten una única fila desplazable: hasta 900 px el
+   shell apila y esta tira baja a su propia fila, donde hace scroll horizontal sin
+   envolver, con el cierre de sesión al final (canon §5, #910). La barra va
+   oculta, así que el borde que esconde algo se desvanece (#1723). */
 .topbarEnd {
+  --strip-fade: 32px;
   align-items: center;
   display: flex;
   flex-wrap: nowrap;
@@ -881,6 +884,28 @@ textarea {
 
 .topbarEnd::-webkit-scrollbar {
   display: none;
+}
+
+/* El borde que esconde algo se desvanece (#1723, canon §5): `data-more` lo
+   escribe la isla (`nav-strip.tsx`) según qué lado oculta contenido. Una
+   máscara, no una sombra ni un glifo; si todo cabe, no hay atributo ni
+   degradado. */
+.topbarEnd[data-more="end"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--strip-fade)), transparent);
+}
+
+.topbarEnd[data-more="start"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--strip-fade)), transparent);
+}
+
+.topbarEnd[data-more="both"] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--strip-fade),
+    #000 calc(100% - var(--strip-fade)),
+    transparent
+  );
 }
 
 /* «Cerrar sesión» — texto pequeño al final de la fila de registro, no un botón
@@ -3915,6 +3940,31 @@ code {
   .mainGrid {
     grid-template-columns: 1fr;
   }
+
+  /* Hasta 900 px la marca y la acción comparten la primera fila y la tira de
+     registro baja entera a la segunda, donde se desplaza: el botón de feedback
+     no queda escondido al final de la tira (#1174), y en tableta la tira no se
+     queda con lo que dejan la marca y el feedback (#1723). */
+  .topbar {
+    gap: 16px 12px;
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .topbar > .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .topbar > .feedbackLauncher {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .topbar > .topbarEnd {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
 }
 
 @media (max-width: 640px) {
@@ -3955,28 +4005,12 @@ code {
     min-width: 680px;
   }
 
-  /* En móvil la marca y la acción comparten la primera fila y la tira de
-     registro baja entera a la segunda, donde se desplaza: el botón de feedback
-     no queda escondido al final de la tira (#1174). */
-  .topbar {
-    gap: 16px 12px;
-    grid-auto-flow: row;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .topbar > .brand {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .topbar > .feedbackLauncher {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .topbar > .topbarEnd {
-    grid-column: 1 / -1;
-    justify-self: stretch;
+  /* A 390 px caben las cinco pestañas (357 px en una tira de 366) y, con
+     sesión, «Cerrar sesión» empieza entero fuera de la tira: nada queda cortado
+     en reposo (#1723). */
+  .topNav,
+  .topbarEnd {
+    gap: 0 12px;
   }
 
   .topbarMeta {
