@@ -6,7 +6,7 @@
  * fetches run server-side, which page.route() can't intercept): connect with dummy
  * read-only credentials → sync → see a MARKET holding and a TERM-LOCKED holding
  * with their live values → open the market holding's token-grouped detail → see the
- * monthly-history curve's "Datos desde DD/MM/YYYY" start marker.
+ * monthly-history curve's start in the header («Histórico desde DD/MM/YYYY», #1849).
  *
  * The fake serves a fixed account: 0.5 BTC spot (market) + 3 ETH locked Earn
  * (term-locked); BTC 50 000 € / ETH 2 000 € live → 25 000 € market + 6 000 €
@@ -14,7 +14,7 @@
  * start date.
  */
 
-import { expect, openAdvancedSettings, test } from "./fixtures";
+import { expect, openFichaTab, test } from "./fixtures";
 
 test("binance: connect (stubbed API) → market + term-locked holdings → token detail + history curve", async ({
   page,
@@ -79,23 +79,31 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   // es-ES omits the thousands separator below 10 000, so 6 000 renders "6000 €".
   await expect(lockedRow).toContainText(/6000/);
 
-  // 4. The market holding's detail is the read-only connected-source surface: tokens
-  //    grouped by symbol (BTC) + the history curve's "Datos desde" start marker.
+  // 4. The market holding's ficha is the read-only mirror (#1849): the header says
+  //    the board's value, that it is connected and since when the history reaches;
+  //    the «Tokens» tab lists the tokens grouped by symbol (BTC).
   await page.getByRole("link", { name: "Binance", exact: true }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
+  const header = page.getByRole("region", { name: "Estado del activo" });
+  await expect(header).toContainText("Cripto · Binance · Mercado");
+  await expect(header).toContainText(/25\.000/);
+  await expect(header).toContainText("Conectado");
+  await expect(header.getByRole("button", { name: "Sincronizar Binance" })).toBeVisible();
+  await expect(header).toContainText(/Histórico desde\s*\d{2}\/\d{2}\/\d{4}/);
+  await openFichaTab(page, "Tokens");
   const detail = page.getByRole("region", { name: "Cuenta Binance" });
   await expect(detail).toBeVisible();
-  await expect(detail).toContainText("Conectado");
   await expect(detail).toContainText("BTC");
-  await expect(detail).toContainText(/25\.000/);
-  await expect(detail).toContainText(/Datos desde \d{2}\/\d{2}\/\d{4}/);
+  await expect(detail).toContainText(/50\.000 € \/ ud\./);
 
-  // 5. The term-locked holding's detail shows its ETH token (the other rung).
+  // 5. The term-locked holding's ficha shows its ETH token (the other rung).
   await page.goto("/patrimonio");
   await page.getByRole("link", { name: "Binance (bloqueado)", exact: true }).click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  await openAdvancedSettings(page);
+  await expect(page.getByRole("region", { name: "Estado del activo" })).toContainText(
+    "Cripto · Binance · A plazo",
+  );
+  await openFichaTab(page, "Tokens");
   await expect(page.getByRole("region", { name: "Cuenta Binance" })).toContainText("ETH");
 
   // 6. The dashboard renders, populated, with no hydration/console errors (fixture).

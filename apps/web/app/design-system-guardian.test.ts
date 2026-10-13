@@ -706,17 +706,15 @@ describe("Libro mayor design-system guardian (#906)", () => {
     expect(panel?.declarations.get("border-radius")).toBeUndefined();
     expect(panel?.declarations.get("box-shadow")).toBeUndefined();
 
-    // The connected-source tile (Numista/Binance) — shared with the holding
-    // editor — is a ruled ledger entry opened by a heavy rule, never a nested
-    // card: no fill, no perimeter border, no radius.
-    const tile = rules.find(
-      (rule) => rule.file === "globals.css" && rule.selector === ".coinSourceTile",
+    // The disconnect choice (#1849): «Convertir en activo manual» is the safe exit,
+    // so its ink reset must outrank `.confirmDelete … button`'s red (0,2,1) — with
+    // two classes it lost, and both options read as irreversible.
+    const freeze = rules.find(
+      (rule) =>
+        rule.file === "globals.css" &&
+        rule.selector === ".disconnectChoice .disconnectOption .disconnectFreeze",
     );
-    expect(tile?.declarations.get("border-top")).toBe("var(--rule-heavy)");
-    expect(tile?.declarations.get("box-shadow")).toBe("none");
-    expect(tile?.declarations.get("background")).toBeUndefined();
-    expect(tile?.declarations.get("border")).toBeUndefined();
-    expect(tile?.declarations.get("border-radius")).toBeUndefined();
+    expect(freeze?.declarations.get("background")).toBe("var(--ink)");
 
     // Warning-override rows read as a ruled list — each opened by a hairline,
     // not a perimeter border box.

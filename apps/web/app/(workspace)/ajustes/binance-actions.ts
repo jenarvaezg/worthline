@@ -31,12 +31,14 @@ import { runBinanceRefresh } from "./binance-refresh";
 import {
   BINANCE_CONNECT_FORM_ID,
   BINANCE_CREDENTIALS_FORM_ID,
+  BINANCE_DISCONNECT_FORM_ID,
 } from "./connected-source-form-ids";
 import {
   CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
   connectedSourceCredentialsRejectedMessage,
   connectedSourceProviderErrorMessage,
   currentUrlOf,
+  disconnectLanding,
   scopeMemberId,
 } from "./connected-source-helpers";
 import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
@@ -393,8 +395,16 @@ export const disconnectBinanceAction = formAction({
       ? { ok: true, value: { message: "binance_disconnected" } }
       : { ok: false, error: "No se pudo desconectar la cuenta." };
   },
+  // Tagged with its own form so the ficha reopens the panel that sent it (#1849).
   onError: ({ formData, error }) =>
-    errorRedirectUrl(currentUrlOf(formData), { message: error }),
+    errorRedirectUrl(currentUrlOf(formData), {
+      formId: BINANCE_DISCONNECT_FORM_ID,
+      message: error,
+    }),
   onSuccess: ({ formData, value }) =>
-    appendParam(currentUrlOf(formData), "ok", value!.message),
+    appendParam(
+      disconnectLanding(formData, value!.message === "binance_disconnected"),
+      "ok",
+      value!.message,
+    ),
 });

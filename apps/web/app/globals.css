@@ -9683,9 +9683,8 @@ td.rowActions > * {
 }
 
 /* ── Numista coin collection (PRD #160, variant B «Reparto por metal») ─────────
-   The detail surface for a connected-source coin collection: a connected-source
-   tile, a 100 %-stacked composition strip, and a descending equalizer whose
-   bars ARE the content. Coins fold behind per-metal <details> as a minimal
+   The «Monedas» tab of a connected collection's ficha (#1849): a 100 %-stacked
+   composition strip and a descending equalizer whose bars ARE the content. Coins fold behind per-metal <details> as a minimal
    headerless list — never a multi-column table. Server-rendered, no client JS. */
 .coinCollection {
   margin-top: 1.6rem;
@@ -9694,20 +9693,8 @@ td.rowActions > * {
   font-variant-numeric: tabular-nums;
 }
 
-/* Connected-source tile (shared by /ajustes and the holding editor). Canon §4:
-   no nested cards — the tile is a ruled ledger entry opened by a heavy rule,
-   sitting flush on paper with no fill, perimeter border or radius. */
-.coinSourceTile {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 0.9rem;
-  padding: 0.9rem 0 0;
-  border-top: var(--rule-heavy);
-  box-shadow: none;
-}
+/* A connected source's status in Conexiones. The ficha of the holding it mirrors
+   says it under «Sincronizado», in the header's caption voice (#1849). */
 .coinStatusPill {
   display: inline-flex;
   align-items: center;
@@ -9752,33 +9739,6 @@ td.rowActions > * {
 }
 .coinStatusPill.isPending::before {
   background: var(--blue);
-}
-.coinSourceStats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.4rem;
-  margin: 0.6rem 0 0;
-}
-.coinSourceStats div {
-  margin: 0;
-}
-.coinSourceStats dt {
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-.coinSourceStats dd {
-  margin: 0.15rem 0 0;
-  font-weight: 650;
-  font-size: 0.92rem;
-  color: var(--ink);
-}
-.coinSourceActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem 0.9rem;
 }
 .coinSyncForm button {
   background: var(--ink);
@@ -9911,13 +9871,6 @@ td.rowActions > * {
 
 .conexRunTable td {
   font-size: 0.8rem;
-}
-
-/* Dentro de una celda a lo ancho de la tabla, las opciones de desconexión
-   conservan su ancho natural (canon §5): una rejilla suelta las estiraría de
-   margen a margen y un botón rojo de 1130 px no es una alternativa, es un susto. */
-.conexDetailRow .disconnectOption {
-  justify-items: start;
 }
 
 .conexAvailable {
@@ -10143,10 +10096,6 @@ td.rowActions > * {
   color: var(--red);
 }
 
-.coinDisconnect {
-  margin-top: 1.4rem;
-}
-
 /* The disconnect CHOICE (PRD #160 story 21): two stacked options, each a button
    over a one-line explanation. */
 .disconnectChoice {
@@ -10155,9 +10104,13 @@ td.rowActions > * {
   margin-top: 10px;
 }
 
+/* Each button keeps its natural width (canon §5) wherever the choice sits — a
+   Conexiones row or the ficha's side panel (#1849): a loose grid would stretch it
+   margin to margin, and a red button that wide is a fright, not an option. */
 .disconnectOption {
   display: grid;
   gap: 4px;
+  justify-items: start;
 }
 
 .disconnectOption .muted {
@@ -10166,8 +10119,10 @@ td.rowActions > * {
 }
 
 /* Freeze is non-destructive — reset it to the neutral ink button so it reads as
-   the safe alternative to the red remove action (overrides .confirmDelete button). */
-.disconnectChoice .disconnectFreeze {
+   the safe alternative to the red remove action. It must outrank
+   `.confirmDelete:not(.confirmReversible) button` (0,2,1), so it names three
+   classes (0,3,0): with two it lost, and both options read as irreversible. */
+.disconnectChoice .disconnectOption .disconnectFreeze {
   background: var(--ink);
 }
 
@@ -12316,6 +12271,12 @@ td.rowActions > * {
   background: transparent;
   margin: 0;
   padding: 0;
+}
+
+/* Monedas y Tokens (#1849) abren su pestaña como Cobros: sin el margen que las
+   separaba de la tarjeta de la fuente, que subió a la cabecera. */
+.fichaTabBody > .coinCollection {
+  margin-top: 0;
 }
 
 .cobrosEmpty {

@@ -1,36 +1,26 @@
 /**
- * The Numista coin-collection detail surface (PRD #160 / #163, variant B
- * «Reparto por metal»). Rendered on the holding detail page when the asset's
- * instrument is `coin_collection`. Read-only on value — the collection is derived
- * from its positions (ADR 0016), so there is no manual value field; ownership
- * stays editable through the shared AssetEditForm above this surface.
+ * The Numista collection's coins (PRD #160 / #163, variant B «Reparto por metal»):
+ * the «Monedas» tab of its ficha (#1849). Read-only on value — the collection is
+ * derived from its positions (ADR 0016).
  *
- * Three parts, in order:
- *  1. Connected-source tile: status pill + «Sincronizar Numista» + last-sync /
- *     coins / value stats, and a folded Desconectar.
- *  2. Composition strip: a 100 %-stacked bar of the metal split — the signature.
- *  3. Equalizer: one tall bar per metal, descending by value, each a CLOSED
+ * Two parts, in order:
+ *  1. Composition strip: a 100 %-stacked bar of the metal split — the signature.
+ *  2. Equalizer: one tall bar per metal, descending by value, each a CLOSED
  *     `<details>` opening to a minimal headerless list of its coins (name · grade
  *     · year · ×qty · value + basis tag). Never a multi-column table.
  *
+ * What the source's tile used to say — its status, its last sync, its count, its
+ * own «Valor» — went up to the ficha's header (#1849), where the value is the
+ * board's figure and is said once.
+ *
  * Server-rendered, no client JS (ADR 0009): the strip/bars are CSS, the coin
- * lists are native `<details>`, sync/disconnect are form POSTs.
+ * lists are native `<details>`.
  */
 
-import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
-import { syncNumistaAction } from "@web/ajustes/numista-actions";
-import { formatLastSync } from "@web/ajustes/numista-helpers";
-import { PendingSubmit } from "@web/pending-submit";
-import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
-import {
-  coinValue,
-  coinValueGap,
-  formatMoneyMinorPrivacy,
-  groupPositionsByMetal,
-} from "@worthline/domain";
+import { coinValue, coinValueGap, formatMoneyMinorPrivacy } from "@worthline/domain";
 import {
   basisTag,
-  buildCoinCollectionView,
+  type CoinCollectionView,
   coinNumistaUrl,
   coinYear,
   formatSharePct,
@@ -38,79 +28,25 @@ import {
 } from "./coin-collection-view";
 
 export function CoinCollectionSection({
-  positions,
-  sourceId,
-  lastSyncAt,
-  currentUrl,
-  valuationFreshness = null,
-  valuationStaleReason = null,
+  view,
+  hasSource,
   privacyMode = false,
 }: {
-  positions: CoinPosition[];
-  sourceId: string | null;
-  lastSyncAt: string | null;
-  currentUrl: string;
-  /** Freshness of the collection's valuation refresh (PRD #166): "stale"/"failed"
-   *  when the last decoupled refresh hit a Numista outage and kept last-known. */
-  valuationFreshness?: PriceFreshnessState | null;
-  valuationStaleReason?: string | null;
+  view: CoinCollectionView;
+  /** Whether a source can bring coins at all — what the empty state can offer. */
+  hasSource: boolean;
   privacyMode?: boolean;
 }) {
   const eur = (amountMinor: number): string =>
     formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, privacyMode);
-  const groups = groupPositionsByMetal(positions);
-  const totalMinor = groups.reduce((sum, group) => sum + group.subtotalMinor, 0);
-  const view = buildCoinCollectionView(groups, totalMinor);
-
-  // The valuation rides the daily stale-price pass; on an outage it keeps the
-  // last-known value and flags itself stale (ADR 0017) — surface that here.
-  const valuationStale =
-    valuationFreshness === "stale" || valuationFreshness === "failed";
 
   return (
     <section className="coinCollection" aria-label="Colección Numista">
-      {/* ── Connected-source tile ─────────────────────────────────────────── */}
-      <div className="coinSourceTile">
-        <div className="coinSourceStatus">
-          <span className={`coinStatusPill${valuationStale ? " isStale" : ""}`}>
-            {valuationStale ? "Valoración desactualizada" : "Conectado"}
-          </span>
-          <dl className="coinSourceStats">
-            <div>
-              <dt>Última sincronización</dt>
-              <dd>{formatLastSync(lastSyncAt)}</dd>
-            </div>
-            <div>
-              <dt>Monedas</dt>
-              <dd className="coinNum">{view.coinCount}</dd>
-            </div>
-            <div>
-              <dt>Valor</dt>
-              <dd className="coinNum">{eur(view.totalMinor)}</dd>
-            </div>
-          </dl>
-        </div>
-
-        {sourceId ? (
-          <form action={syncNumistaAction} className="coinSyncForm">
-            <input name="currentUrl" type="hidden" value={currentUrl} />
-            <input name="sourceId" type="hidden" value={sourceId} />
-            <PendingSubmit pendingLabel="Sincronizando…">
-              Sincronizar Numista
-            </PendingSubmit>
-          </form>
-        ) : null}
-      </div>
-
-      {valuationStale && valuationStaleReason ? (
-        <p className="infoNote" role="status">
-          {valuationStaleReason} Se muestra el último valor conocido.
-        </p>
-      ) : null}
-
-      {positions.length === 0 ? (
+      {view.rows.length === 0 ? (
         <p className="infoNote">
-          Aún no hay monedas. Pulsa «Sincronizar Numista» para traer tu colección.
+          {hasSource
+            ? "Aún no hay monedas. Pulsa «Sincronizar Numista» para traer tu colección."
+            : "Aún no hay monedas."}
         </p>
       ) : (
         <>
@@ -226,17 +162,6 @@ export function CoinCollectionSection({
           </div>
         </>
       )}
-
-      {/* ── Disconnect (folded) ───────────────────────────────────────────── */}
-      {sourceId ? (
-        <div className="coinDisconnect">
-          <DisconnectNumistaFold
-            currentUrl={currentUrl}
-            sourceId={sourceId}
-            summary="Desconectar Numista"
-          />
-        </div>
-      ) : null}
     </section>
   );
 }
