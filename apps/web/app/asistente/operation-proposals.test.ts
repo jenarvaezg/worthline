@@ -663,6 +663,7 @@ describe("la tarjeta y el libro dicen el mismo importe (#1836)", () => {
     return {
       card: proposal.document.fact.split(" · ").at(-1)?.replace(NBSP, " "),
       ledger: formatDocumentMoney(operationAmountMinor(written)).replace(NBSP, " "),
+      line: proposal.document.line.replace(NBSP, " "),
       notes: proposal.notes,
       written,
     };
@@ -764,6 +765,40 @@ describe("la tarjeta y el libro dicen el mismo importe (#1836)", () => {
     expect(result.notes.join(" ").replace(NBSP, " ")).toContain(
       "10 × 100 € + 5 € de comisión = 1005 €",
     );
+  });
+
+  test("venta dictada con importe y precio, sin participaciones: se derivan 10", async () => {
+    const result = await confirmAndRead(
+      typed("Hoy he vendido por 995 € a 100 € cada una con 5 € de comisión"),
+      "sell",
+    );
+
+    expect(result.written).toMatchObject({ pricePerUnit: "100", units: "10" });
+    expect(result.card).toBe("995 €");
+    expect(result.ledger).toBe("995 €");
+  });
+
+  test("compra pegada con solo el bruto: la comisión se suma y el eco dice lo de hoy", async () => {
+    const result = await confirmAndRead(
+      typed(
+        [
+          "SUSCRIPCION I.I.C.",
+          "Participaciones\tPrecio\tImporte Bruto\tComisiones",
+          "10\t100,00 EUR\t1.000,00 EUR\t5,00 EUR",
+          "Fecha operación: 05/08/2026",
+        ].join("\n"),
+      ),
+      "buy",
+    );
+
+    expect(result.written).toMatchObject({
+      feesMinor: 500,
+      pricePerUnit: "100",
+      units: "10",
+    });
+    expect(result.card).toBe("1005 €");
+    expect(result.ledger).toBe("1005 €");
+    expect(result.line).toContain("· 1005 € ·");
   });
 
   test("venta pegada: bruto 1.000, comisiones 9,95 y efectivo 990,05 dicen 990,05 €", async () => {

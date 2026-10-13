@@ -11,7 +11,13 @@
  * Pure and I/O-free (`docs/interaction-patterns.md`, ADR 0036).
  */
 
-import { formatMoneyMinor, formatMoneyMinorExact, formatUnits } from "@worthline/domain";
+import {
+  formatMoneyMinor,
+  formatMoneyMinorExact,
+  formatUnits,
+  type OperationKind,
+  operationFeeSign,
+} from "@worthline/domain";
 
 /**
  * Money as the document states it: whole euros in the app's reading voice
@@ -55,4 +61,13 @@ export function formatDocumentUnits(units: number | string): string {
 export function formatDocumentUnitPrice(price: number | string): string {
   const value = Number(price);
   return Number.isFinite(value) ? unitPrice.format(value) : String(price);
+}
+
+/**
+ * The sign a commission is printed with beside `participaciones × precio` (#1836):
+ * «+» where the ledger capitalizes it, «−» where it nets it off. Read from the
+ * domain's one sign table, so a card cannot print a sale's fee the purchase's way.
+ */
+export function commissionSignMark(kind: OperationKind): "+" | "−" {
+  return operationFeeSign(kind) === 1 ? "+" : "−";
 }

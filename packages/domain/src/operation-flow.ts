@@ -75,10 +75,11 @@ export function operationAmountMinor(
 /**
  * Which way a kind's fees move its importe, and the one table that says it (#1836):
  * capitalized (+1) on what came IN, netted off (−1) on what went OUT. Both
- * directions of the importe ↔ gross conversion read it, so the assistant's
- * operation lane and the ledger cannot apply different rules to the same sale.
+ * directions of the importe ↔ gross conversion read it, and so does any copy that
+ * prints the commission with its sign, so the assistant's operation lane and the
+ * ledger cannot apply different rules to the same sale.
  */
-function feeSign(kind: OperationKind): 1 | -1 {
+export function operationFeeSign(kind: OperationKind): 1 | -1 {
   switch (kind) {
     case "buy":
     case "transfer_in":
@@ -101,7 +102,7 @@ export function operationAmountFromGrossMinor(input: {
   grossMinor: number;
   feesMinor: number;
 }): number {
-  return input.grossMinor + feeSign(input.kind) * input.feesMinor;
+  return input.grossMinor + operationFeeSign(input.kind) * input.feesMinor;
 }
 
 /**
@@ -116,7 +117,7 @@ export function operationGrossFromAmountMinor(input: {
   amountMinor: number;
   feesMinor: number;
 }): number {
-  return input.amountMinor - feeSign(input.kind) * input.feesMinor;
+  return input.amountMinor - operationFeeSign(input.kind) * input.feesMinor;
 }
 
 /**

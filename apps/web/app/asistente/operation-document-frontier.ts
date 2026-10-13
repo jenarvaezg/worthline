@@ -49,12 +49,15 @@ export const OPERATION_KIND_CLAIMS: ReadonlySet<string> = new Set([
 ]);
 export type OperationKindClaim = "buy" | "sell" | "contribution";
 
+/** The two ledger kinds this lane writes: an observed operation is a buy or a sell. */
+export type LedgerOperationKind = "buy" | "sell";
+
 /**
  * The ledger kind an observed operation is written as (an aportación is a buy). It
  * lives beside the claim it reads so the card's copy and the dictated door can ask it
  * which way the commission moves the importe without importing the builder (#1836).
  */
-export function ledgerOperationKind(kind: OperationKindClaim): "buy" | "sell" {
+export function ledgerOperationKind(kind: OperationKindClaim): LedgerOperationKind {
   return kind === "sell" ? "sell" : "buy";
 }
 

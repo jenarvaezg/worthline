@@ -336,7 +336,7 @@ function receiptReading(
 ): TypedHoldingEventReading {
   const { fees, grossAmount, netAmount: amount, pricePerUnit, units } = figures;
   // Either printed importe pins the money; the gross wins when both are there.
-  const money = grossAmount ?? amount;
+  const printedImporte = grossAmount ?? amount;
   // «Fecha Operación» wins; a paper that labels no date falls back to the day the
   // message names, and silence is still never «hoy».
   const executedAt = figures.executedAt ?? dateInMessage(withoutIsin.rest, today)?.day;
@@ -344,10 +344,13 @@ function receiptReading(
   const missing: TypedHoldingEventGap[] = [];
   // The same rule as the prose reader, for the same reason (ADR 0067, #1325): without a
   // quantity the chain can only derive one from the two money figures together.
-  if (units === undefined && !(money !== undefined && pricePerUnit !== undefined)) {
+  if (
+    units === undefined &&
+    !(printedImporte !== undefined && pricePerUnit !== undefined)
+  ) {
     missing.push("units");
   }
-  if (money === undefined && pricePerUnit === undefined) missing.push("money");
+  if (printedImporte === undefined && pricePerUnit === undefined) missing.push("money");
   if (executedAt === undefined || executedAt === null) missing.push("date");
   if (missing.length > 0) return { missing, status: "incomplete" };
 
@@ -437,7 +440,7 @@ export function holdingEventFromTyped(
   currency: string,
   kind: OperationKindClaim,
 ): ExtractedHoldingEvent {
-  const amount = typedAmount(event, ledgerOperationKind(kind));
+  const amount = typedOperationImporte(event, kind);
   return {
     amount,
     currency,
@@ -458,7 +461,8 @@ export function holdingEventFromTyped(
 
 /**
  * The importe of {@link holdingEventFromTyped}, through the money seam and back to major
- * units.
+ * units. Exported for the card's echo line, which prints it for a paste that states only
+ * its gross — the one importe it stands on.
  *
  * The round trip out of céntimos is the contract's, not a choice: an
  * {@link ExtractedHoldingEvent} states its figures in the document's own major units, and
@@ -466,7 +470,11 @@ export function holdingEventFromTyped(
  * arithmetic itself never leaves integer cents, so the only float here is the last
  * division, which is exact for every amount the ledger can hold.
  */
-function typedAmount(event: TypedHoldingEvent, kind: "buy" | "sell"): number {
+export function typedOperationImporte(
+  event: TypedHoldingEvent,
+  claim: OperationKindClaim,
+): number {
+  const kind = ledgerOperationKind(claim);
   const feesMinor =
     event.fees === undefined ? 0 : multiplyToMinor(String(event.fees), "1");
   if (event.grossAmount !== undefined) {

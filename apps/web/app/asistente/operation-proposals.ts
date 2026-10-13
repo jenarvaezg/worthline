@@ -390,7 +390,7 @@ export async function buildOperationProposal(
                 label: event.label,
                 ...(documentIdentity === null ? {} : { securityId: documentIdentity }),
               })
-            : operationDictatedLine(dictated, terms.currency),
+            : operationDictatedLine(dictated, terms.currency, args.kind),
       },
       draft: { proposalId: proposal.id },
       folio: OPERATION_FOLIO,

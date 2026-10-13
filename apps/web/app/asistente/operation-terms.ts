@@ -38,7 +38,8 @@ import {
 } from "@worthline/domain";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
-import { formatDocumentUnitPrice } from "./document-figures";
+import { commissionSignMark, formatDocumentUnitPrice } from "./document-figures";
+import type { LedgerOperationKind } from "./operation-document-frontier";
 
 export interface OperationTerms {
   /** YYYY-MM-DD, the document's own day. */
@@ -119,7 +120,7 @@ const MISSING_QUANTITY =
  */
 export function resolveOperationTerms(
   event: ExtractedHoldingEvent,
-  kind: "buy" | "sell",
+  kind: LedgerOperationKind,
 ): OperationTermsResolution {
   const amountMinor = Math.abs(toMinor(event.amount));
   if (amountMinor <= 0) {
@@ -234,7 +235,7 @@ export function resolveOperationTerms(
  */
 function printedPriceNotes(
   event: ExtractedHoldingEvent,
-  kind: "buy" | "sell",
+  kind: LedgerOperationKind,
   units: DecimalString,
   amountMinor: number,
   feesMinor: number | undefined,
@@ -259,7 +260,7 @@ function printedPriceNotes(
   const feeSegment =
     feesMinor === undefined
       ? ""
-      : ` ${kind === "sell" ? "−" : "+"} ${euros(feesMinor, event.currency)} de comisión`;
+      : ` ${commissionSignMark(kind)} ${euros(feesMinor, event.currency)} de comisión`;
   return [
     `El documento dice ${euros(amountMinor, event.currency)}, ` +
       `pero ${units} × ${printed.amount} ${event.currency}${feeSegment} son ` +

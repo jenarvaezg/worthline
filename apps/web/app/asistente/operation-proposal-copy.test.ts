@@ -168,6 +168,7 @@ describe("the dictated lane's own lines (#1466)", () => {
             units: "6",
           },
           "EUR",
+          "buy",
         ),
       ),
     ).toBe("30/08/2026 · 6 part. · 312,55 € · total que dices tener 21 · IE00B43VDT70");
@@ -185,9 +186,34 @@ describe("the dictated lane's own lines (#1466)", () => {
             units: "10",
           },
           "EUR",
+          "buy",
         ),
       ),
     ).toBe("30/08/2026 · 10 part. · a 52,09 € por participación");
+  });
+
+  /**
+   * #1836: a paste that prints the gross and no efectivo is echoed with the importe it
+   * stands on — composed with the direction, as a purchase always showed it — so the
+   * echo of a purchase is the string it was, and a sale's is the money it brought back.
+   */
+  it("echoes a gross-only paste with the importe it stands on, by direction", () => {
+    const paste = {
+      currency: "EUR",
+      direction: null,
+      executedAt: "2026-08-30",
+      fees: 5,
+      grossAmount: 1000,
+      pricePerUnit: 100,
+      units: "10",
+    };
+
+    expect(plain(operationDictatedLine(paste, "EUR", "buy"))).toBe(
+      "30/08/2026 · 10 part. · 1005 € · a 100 € por participación · comisión 5 €",
+    );
+    expect(plain(operationDictatedLine(paste, "EUR", "sell"))).toBe(
+      "30/08/2026 · 10 part. · 995 € · a 100 € por participación · comisión 5 €",
+    );
   });
 
   /** #1401's rule: an unmarked currency is read, never assumed in silence. */

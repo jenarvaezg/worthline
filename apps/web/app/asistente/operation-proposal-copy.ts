@@ -21,6 +21,7 @@
 import { operationAmountMinor, type SecurityId } from "@worthline/domain";
 
 import {
+  commissionSignMark,
   currencyMark,
   formatDocumentMoney,
   formatDocumentUnitPrice,
@@ -31,7 +32,7 @@ import {
   ledgerOperationKind,
   type OperationKindClaim,
 } from "./operation-document-frontier";
-import type { TypedHoldingEvent } from "./typed-holding-event";
+import { type TypedHoldingEvent, typedOperationImporte } from "./typed-holding-event";
 
 /**
  * How the operation's kind reads on the card — the DOCUMENT's word, not the ledger's.
@@ -154,17 +155,28 @@ export const OPERATION_DICTATED_CAPTION = "Lo que he leído en tu mensaje";
  * The operation as WORTHLINE READ IT in the message — every figure the person wrote and
  * nothing derived from them. The price the ledger records is not here: it is on the fact
  * line below, where it belongs, and mixing the two would hide which of them was typed.
+ *
+ * One importe is composed rather than copied: a pasted confirmation that prints the
+ * gross and no efectivo is echoed with the importe it stands on, the gross with the
+ * commission added to a purchase and netted off a sale (#1836) — the string a purchase
+ * always showed, and for a sale the money it brought back.
  */
 export function operationDictatedLine(
   dictated: TypedHoldingEvent,
   currency: string,
+  kind: OperationKindClaim,
 ): string {
   const parts = [formatIsoDayEs(dictated.executedAt)];
   if (dictated.units !== undefined) {
     parts.push(`${formatDocumentUnits(dictated.units)} part.`);
   }
-  if (dictated.amount !== undefined) {
-    parts.push(formatDocumentMoney(Math.round(dictated.amount * 100), currency));
+  const importe =
+    dictated.amount ??
+    (dictated.grossAmount === undefined
+      ? undefined
+      : typedOperationImporte(dictated, kind));
+  if (importe !== undefined) {
+    parts.push(formatDocumentMoney(Math.round(importe * 100), currency));
   }
   if (dictated.pricePerUnit !== undefined) {
     parts.push(
@@ -216,7 +228,7 @@ export function operationDerivedAmountNote(derived: {
   const fees =
     derived.feesMinor === undefined || derived.feesMinor === 0
       ? ""
-      : ` ${ledgerOperationKind(derived.kind) === "sell" ? "−" : "+"} ` +
+      : ` ${commissionSignMark(ledgerOperationKind(derived.kind))} ` +
         `${formatDocumentMoney(derived.feesMinor, derived.currency)} de comisión`;
   return (
     `El importe no me lo has dicho, lo he calculado con tus dos cifras: ` +

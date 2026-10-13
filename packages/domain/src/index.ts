@@ -979,6 +979,7 @@ export {
   isDeclaredOpening,
   operationAmountFromGrossMinor,
   operationAmountMinor,
+  operationFeeSign,
   operationGrossFromAmountMinor,
   signedInvestedMinor,
   unhandledOperationKind,
