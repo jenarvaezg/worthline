@@ -872,6 +872,7 @@ textarea {
    envolver, con el cierre de sesión al final (canon §5, #910). La barra va
    oculta, así que el borde que esconde algo se desvanece (#1723). */
 .topbarEnd {
+  --strip-fade: 32px;
   align-items: center;
   display: flex;
   flex-wrap: nowrap;
@@ -890,19 +891,19 @@ textarea {
    máscara, no una sombra ni un glifo; si todo cabe, no hay atributo ni
    degradado. */
 .topbarEnd[data-more="end"] {
-  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--strip-fade)), transparent);
 }
 
 .topbarEnd[data-more="start"] {
-  mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - var(--strip-fade)), transparent);
 }
 
 .topbarEnd[data-more="both"] {
   mask-image: linear-gradient(
     to right,
     transparent,
-    #000 32px,
-    #000 calc(100% - 32px),
+    #000 var(--strip-fade),
+    #000 calc(100% - var(--strip-fade)),
     transparent
   );
 }

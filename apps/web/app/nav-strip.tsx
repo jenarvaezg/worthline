@@ -24,40 +24,37 @@ export default function NavStrip({ children }: Readonly<{ children: ReactNode }>
     const strip = ref.current;
     if (!strip) return;
 
+    // `data-more` is the CSS's name for the verdict: which edges hide something.
     const update = () => {
-      const more = stripOverflow({
-        scrollLeft: strip.scrollLeft,
-        scrollWidth: strip.scrollWidth,
-        clientWidth: strip.clientWidth,
-      });
-      if (more === "none") strip.removeAttribute("data-more");
-      else strip.setAttribute("data-more", more);
+      const overflow = stripOverflow(strip);
+      if (overflow === "none") strip.removeAttribute("data-more");
+      else strip.setAttribute("data-more", overflow);
     };
 
     // The strip's own box changes with the viewport; the nav's changes when the
     // fonts land or the fallback is swapped for the live tabs.
-    const resize = new ResizeObserver(update);
+    const resizeObserver = new ResizeObserver(update);
     const observeBoxes = () => {
-      resize.disconnect();
-      resize.observe(strip);
+      resizeObserver.disconnect();
+      resizeObserver.observe(strip);
       const nav = strip.querySelector("nav");
-      if (nav) resize.observe(nav);
+      if (nav) resizeObserver.observe(nav);
     };
 
     // «Cerrar sesión» and the live tabs stream in after the frame.
-    const mutation = new MutationObserver(() => {
+    const mutationObserver = new MutationObserver(() => {
       observeBoxes();
       update();
     });
 
     observeBoxes();
-    mutation.observe(strip, { childList: true, subtree: true });
+    mutationObserver.observe(strip, { childList: true, subtree: true });
     strip.addEventListener("scroll", update, { passive: true });
     update();
 
     return () => {
-      resize.disconnect();
-      mutation.disconnect();
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
       strip.removeEventListener("scroll", update);
     };
   }, []);

@@ -16,20 +16,20 @@ describe("stripOverflow", () => {
   });
 
   it("is end when the strip overflows and sits at its start", () => {
-    // 390 px with a session: 480 px of content in a 366 px strip (#1723).
-    expect(stripOverflow({ scrollLeft: 0, scrollWidth: 480, clientWidth: 366 })).toBe(
+    // 390 px with a session: 450 px of content in a 366 px strip (#1723).
+    expect(stripOverflow({ scrollLeft: 0, scrollWidth: 450, clientWidth: 366 })).toBe(
       "end",
     );
   });
 
   it("is both when the strip is scrolled halfway", () => {
-    expect(stripOverflow({ scrollLeft: 57, scrollWidth: 480, clientWidth: 366 })).toBe(
+    expect(stripOverflow({ scrollLeft: 42, scrollWidth: 450, clientWidth: 366 })).toBe(
       "both",
     );
   });
 
   it("is start at the end even with a 0.5px remainder", () => {
-    expect(stripOverflow({ scrollLeft: 113.5, scrollWidth: 480, clientWidth: 366 })).toBe(
+    expect(stripOverflow({ scrollLeft: 83.5, scrollWidth: 450, clientWidth: 366 })).toBe(
       "start",
     );
   });

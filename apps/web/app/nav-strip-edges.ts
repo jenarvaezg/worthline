@@ -14,6 +14,13 @@
 /** Which edges of the strip hide something. */
 export type StripOverflow = "none" | "start" | "end" | "both";
 
+/** The three measures the verdict reads — an `HTMLElement` satisfies it as is. */
+export interface StripGeometry {
+  scrollLeft: number;
+  scrollWidth: number;
+  clientWidth: number;
+}
+
 /**
  * Below this many pixels an edge counts as flush. Browsers round `scrollLeft`
  * and the widths independently, so a strip that fits can report 1px of
@@ -21,11 +28,7 @@ export type StripOverflow = "none" | "start" | "end" | "both";
  */
 const SUBPIXEL_TOLERANCE_PX = 1;
 
-export function stripOverflow(geometry: {
-  scrollLeft: number;
-  scrollWidth: number;
-  clientWidth: number;
-}): StripOverflow {
+export function stripOverflow(geometry: StripGeometry): StripOverflow {
   const hiddenStart = geometry.scrollLeft > SUBPIXEL_TOLERANCE_PX;
   const hiddenEnd =
     geometry.scrollWidth - geometry.clientWidth - geometry.scrollLeft >
