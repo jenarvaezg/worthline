@@ -175,9 +175,42 @@ describe("the list", () => {
   test("every stored row can be corrected and deleted", () => {
     const html = render({ incomes: [income()] });
 
-    expect(html).toContain("Corregir la declaración");
+    expect(html).toContain("Corregir o terminar");
     expect(html).toContain('name="incomeId" value="inc_pension"');
     expect(html).toContain('aria-label="Eliminar Pensión pública"');
+  });
+
+  // #1813: una renta sin activo no tiene ficha, así que su importe y sus fechas se
+  // corrigen en su fila de Rentas.
+  test("an income with no asset is corrected whole, its recurrence prefilled as stored", () => {
+    const html = render({
+      incomes: [income({ amountMinor: 162_040, endISO: "2040-10-31" })],
+    });
+
+    expect(html).toContain('name="saveRecurrence" value="1"');
+    expect(html).toMatch(
+      /aria-label="Concepto de Pensión pública"[^>]*value="Pensión pública"/,
+    );
+    expect(html).toMatch(/aria-label="Importe de Pensión pública"[^>]*value="1620,40"/);
+    expect(html).toMatch(
+      /name="startISO"[^>]*value="2030-11-01"|value="2030-11-01"[^>]*name="startISO"/,
+    );
+    expect(html).toMatch(
+      /aria-label="Fecha de fin de Pensión pública"[^>]*value="2040-10-31"/,
+    );
+    // Ending it is named, so ending a life annuity is not a hunt.
+    expect(html).toContain("la fecha de su último cobro");
+  });
+
+  test("a linked income's correction leaves its recurrence to its ficha", () => {
+    const html = render({
+      holdingById: { asset_flat: { href: "/patrimonio/asset_flat", name: "Piso" } },
+      incomes: [income({ holdingId: "asset_flat", label: "Alquiler" })],
+    });
+
+    expect(html).toContain("Corregir la declaración");
+    expect(html).not.toContain('name="saveRecurrence"');
+    expect(html).not.toContain('aria-label="Importe de Alquiler"');
   });
 });
 

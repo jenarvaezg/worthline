@@ -8,7 +8,7 @@
  *     `title` hover with a RELATIVE date + provider ("precio de hace 2 días, vía
  *     Yahoo"), alongside the existing "Valor calculado (unidades × precio)" text;
  *   - the holding detail (/patrimonio/[id]/editar) shows a VISIBLE caption with the
- *     ABSOLUTE date + provider ("Precio actualizado el … · Yahoo").
+ *     provider + the day the price is from ("cotización Yahoo · 10/10/2026", #1828).
  *
  * The cached price is seeded directly through the store (no network): the spec
  * shares the run's DB via WORTHLINE_DB_PATH (set in playwright.config.ts), the same
@@ -78,7 +78,10 @@ test("price refresh: board hover + detail caption show date + provider for a cac
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  // On the header, the first thing the ficha shows — no fold to open any more.
+  // On the header, the first thing the ficha shows — no fold to open any more —
+  // and in the words of the valuation that picked the price (#1828): the provider,
+  // and the day the quote is from. A fresh row with no market day is its fetch's.
   const state = page.getByRole("region", { name: "Estado del activo" });
-  await expect(state).toContainText(/Precio actualizado el \d{1,2} \w+\.? \d{4} · Yahoo/);
+  const [year, month, day] = fetchedAt.slice(0, 10).split("-");
+  await expect(state).toContainText(`cotización Yahoo · ${day}/${month}/${year}`);
 });

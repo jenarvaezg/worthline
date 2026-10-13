@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { FixedFreshRows } from "./fresh-rows";
 import { OperationsBookProvider } from "./operations-book";
 import { OperationsLedger } from "./operations-ledger";
 
@@ -110,6 +111,109 @@ describe("operation rows are readable (#1467)", () => {
 
     expect(html).toContain('value="op_jorge"');
     expect(html).toContain('value="/patrimonio/wl_hld_1/editar"');
+  });
+});
+
+/** The markup with Intl's no-break spaces read as plain ones. */
+const plain = (html: string) => html.replace(/[  ]/g, " ");
+
+/** `count` buys, one a day back from 2026-09-30, newest first by date. */
+function buys(count: number): InvestmentOperation[] {
+  return Array.from({ length: count }, (_, index) => ({
+    assetId: "asset_1",
+    currency: "EUR",
+    executedAt: `2026-09-${String(30 - index).padStart(2, "0")}`,
+    feesMinor: 0,
+    id: `op_${index + 1}`,
+    kind: "buy" as const,
+    pricePerUnit: "100",
+    units: "1",
+  }));
+}
+
+describe("el libro compacto (#1827)", () => {
+  const purchase: InvestmentOperation = {
+    assetId: "asset_1",
+    currency: "EUR",
+    executedAt: "2026-09-12",
+    feesMinor: 100,
+    id: "op_buy",
+    kind: "buy",
+    pricePerUnit: "106.65",
+    units: "5",
+  };
+
+  test("las columnas son Fecha, Tipo, Participaciones, Precio, Comisión e Importe", () => {
+    const html = render([purchase]);
+
+    for (const header of [
+      "Fecha",
+      "Tipo",
+      "Participaciones",
+      "Precio",
+      "Comisión",
+      "Importe",
+    ]) {
+      expect(html).toContain(`>${header}</th>`);
+    }
+  });
+
+  test("cada fila trae su importe, el del dominio, con sus céntimos", () => {
+    expect(plain(render([purchase]))).toContain("534,25 €");
+  });
+
+  test("en el teléfono la fila se lee en dos renglones, sin tabla que desplazar", () => {
+    const html = plain(render([purchase]));
+
+    expect(html).toContain("5 × 106,65 € · comisión 1 €");
+    expect(html).not.toContain("tableScroll");
+  });
+
+  test("«Eliminar» vive dentro de «⋯» y sigue pidiendo confirmación", () => {
+    const html = render([purchase]);
+    const menu = html.slice(
+      html.indexOf('aria-label="Acciones de la operación del 12/09/2026"'),
+    );
+
+    expect(html).toContain('aria-label="Acciones de la operación del 12/09/2026"');
+    expect(menu).toContain('class="confirmDelete"');
+    expect(menu).toContain("<summary>Eliminar</summary>");
+    expect(menu).toContain(">Confirmar</button>");
+  });
+
+  test("con diez o menos no hay nada que desplegar", () => {
+    const html = render(buys(10));
+
+    expect(html.match(/<tr[ >]/g)).toHaveLength(11);
+    expect(html).not.toContain("Ver las");
+  });
+
+  test("con más de diez se ven las diez últimas y «Ver las N operaciones»", () => {
+    const html = render(buys(12));
+
+    // The header row plus ten.
+    expect(html.match(/<tr[ >]/g)).toHaveLength(11);
+    expect(html).toContain("30/09/2026");
+    expect(html).not.toContain("19/09/2026");
+    expect(html).toMatch(/aria-expanded="false"[^>]*>Ver las 12 operaciones</);
+  });
+
+  test("la fila recién registrada se marca, y se ve aunque caiga más allá de la décima (#1829)", () => {
+    // Through the ficha's own path (`useFreshRows("operaciones")`), not a prop.
+    const html = renderToStaticMarkup(
+      <FixedFreshRows fresh={{ operaciones: new Set(["op_12"]) }}>
+        <OperationsBookProvider operations={buys(12)}>
+          <OperationsLedger
+            currentUrl="/patrimonio/wl_hld_1/editar"
+            deleteAction={noop}
+          />
+        </OperationsBookProvider>
+      </FixedFreshRows>,
+    );
+
+    expect(html).toContain("19/09/2026");
+    expect(html.match(/data-fresh=""/g)).toHaveLength(1);
+    expect(html).toContain('<small class="fichaFreshMark">nueva</small>');
   });
 });
 

@@ -123,3 +123,40 @@ instrument — and gains one field:
   twice.
 - **The page is no longer 233 lines** — it carries both layouts until every family has
   moved; the accordion branch and `SurfaceLayout.advanced` go with the last one.
+
+## Amendment (#1827–#1830, #1731 review): what a tabbed ficha carries besides its tabs
+
+The slices that finished the investment ficha added fields to `FichaLayout`. The
+decision above still holds — the family states WHAT it carries, the common pieces say
+how it behaves — and these are the new things it states:
+
+- **`warnings`, `inlineWarnings`, `warningFixes`: a warning is in one place only.**
+  The family reads the holding's active warnings ONCE (`holdingWarnings`, the same
+  collector the board and the health engine run) and hands the list back; the page
+  gives that same list to the band. `inlineWarnings` names the codes the family prints
+  beside the figure they are about (the missing price symbol, next to the price), and
+  the band leaves out exactly those — so a warning can move from the band to its
+  figure but can never be in both, nor in neither. `warningFixes` says, by code, where
+  on the ficha a band warning is fixed (a tab and a field: «Ver operaciones»). Both are
+  typed by `HoldingWarningCode`, the codes `collectWarnings` raises.
+- **`rows`: the row a terminal added is pointed at.** By list (`RowList`:
+  `operaciones`, `cobros`, `recurrentes`), the keys each tab lists; the island compares
+  one render with the next (`fresh-row-keys.ts`) and marks the one new key of a list.
+  A recurring cobro is its own list because it adds several occurrences to the grid,
+  or none yet.
+- **`FichaAction.again`: «Añadir otra».** An action that offers it gets, after its
+  success lands, an offer in the notice to reopen the same form with the date and the
+  currency of the one just sent (`ficha-landing.ts`, `ficha-again.ts`).
+- **`errorTargets`, one per form.** A refusal that comes back on the URL reopens the
+  form that produced it. Forms that share a surface keep distinct `formId`s so their
+  refusals can land in different places — the Cobros entry's one-off and recurring
+  forms reopen the «Añadir cobro» panel, the record's controls print on its tab
+  (`cobro-form-ids.ts`).
+- **One way into the ficha from a link.** `FichaLink` asks for a tab, a field or an
+  action's panel through a cancelable window event that the island claims
+  (`claimFichaOpen`) — an event and not a context because the warnings band sits
+  outside the island. A ficha that does not offer what the link asks for leaves the
+  click to the link's real `href`.
+- **The island is split by concern.** `ficha-view.ts` is the URL contract,
+  `ficha-landing.ts` the landing after a registration, `ficha-strip.tsx` the action
+  bar kept at hand, and `holding-ficha.tsx` the view and the panel.

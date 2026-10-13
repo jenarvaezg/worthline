@@ -25,16 +25,16 @@ import {
 import type { Income } from "@worthline/domain";
 import {
   buildIncomeResult,
-  type IncomeDeclarationPatch,
-  incomeDeclarationFieldsFromForm,
+  type IncomeCorrection,
+  incomeCorrectionFieldsFromForm,
   incomeFieldsFromForm,
-  parseIncomeDeclaration,
+  parseIncomeCorrection,
 } from "./income-form";
 
 /** The mutations an income list can show before the server answers. */
 export type IncomeMutation =
   | { kind: "add"; income: Income }
-  | { kind: "update"; id: string; declaration: IncomeDeclarationPatch }
+  | { kind: "update"; id: string; correction: IncomeCorrection }
   | { kind: "delete"; id: string };
 
 function applyOne(list: readonly Income[], mutation: IncomeMutation): Income[] {
@@ -43,7 +43,7 @@ function applyOne(list: readonly Income[], mutation: IncomeMutation): Income[] {
       return [...list, mutation.income];
     case "update":
       return list.map((income) =>
-        income.id === mutation.id ? { ...income, ...mutation.declaration } : income,
+        income.id === mutation.id ? { ...income, ...mutation.correction } : income,
       );
     case "delete":
       return list.filter((income) => income.id !== mutation.id);
@@ -99,9 +99,9 @@ export function planIncomeSubmit({
 }
 
 /**
- * Plan a submit of a row's «corregir la declaración». Only the fields the form
- * carried are part of the correction — an absent one is left as it is, never
- * mistaken for a chosen «Sin declarar».
+ * Plan a submit of a row's correction. Only the declaration fields the form carried
+ * are part of it — an absent one is left as it is, never mistaken for a chosen «Sin
+ * declarar» — and, on an income with no asset, its whole recurrence (#1813).
  */
 export function planDeclarationUpdate({
   formData,
@@ -110,14 +110,14 @@ export function planDeclarationUpdate({
   formData: FormData;
   today: string;
 }): IncomeSubmitPlan {
-  const result = parseIncomeDeclaration(incomeDeclarationFieldsFromForm(formData), today);
+  const result = parseIncomeCorrection(incomeCorrectionFieldsFromForm(formData), today);
   if (!result.ok) return { kind: "reject", error: result.error };
   return {
     kind: "optimistic",
     mutation: {
       kind: "update",
       id: String(formData.get("incomeId") ?? ""),
-      declaration: result.declaration,
+      correction: result.correction,
     },
   };
 }

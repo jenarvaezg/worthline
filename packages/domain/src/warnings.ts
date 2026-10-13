@@ -1,10 +1,21 @@
 import { compareUnits, type DecimalString } from "./decimal";
 import { valuationMethodOfAsset } from "./holding-method";
-import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentOperation, PositionWarningCode } from "./investment-types";
 import { derivePosition } from "./positions";
 import type { ManualAsset } from "./workspace-types";
 
 export type WarningSeverity = "blocking" | "overrideable";
+
+/**
+ * The codes `collectWarnings` raises on a holding: what a ficha can print beside
+ * its figure or link to the place it is fixed (#1828). `DomainWarning.code` stays a
+ * string — snapshots keep the warnings of their day as JSON, codes since retired
+ * included — so this names the live vocabulary, not every stored one.
+ */
+export type HoldingWarningCode =
+  | "ZERO_VALUE_ASSET"
+  | "MISSING_PROVIDER_SYMBOL"
+  | PositionWarningCode;
 
 export interface DomainWarning {
   code: string;

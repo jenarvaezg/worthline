@@ -24,6 +24,7 @@ siguen en [`interaction-patterns.md`](./interaction-patterns.md).
 | Banding | `--band` | `#eaedde` |
 | Interacción | `--blue` | `#1f4d74` |
 | Movimiento | `--green` / `--red` | `#006f5f` / `#b9442f` |
+| Tinte de confirmación | `--green-tint` | `rgba(0, 111, 95, 0.1)` |
 | Aviso / debe | `--gold` / `--debit-rule` | `#7d5c12` / `#a03a28` |
 | Forma | `--radius` / `--radius-sm` | `6px` / `4px` |
 | Regla de sección | `--rule-heavy` | `2px solid var(--ink)` |
@@ -151,6 +152,22 @@ Su cabecera de estado (`.fichaHero`) es la `.heroPanel` de la página —la úni
 destacada—; las pestañas son `.navTab` con el recuento en gris, y la acción cuyo panel
 está abierto se marca con contorno de tinta, nunca con el azul del foco.
 
+Lo que hay bajo las pestañas son secciones abiertas, nunca otra hoja (#1830). La
+pestaña Rentabilidad enfrenta dos lados bajo una misma regla gruesa partida por un
+filete: «Tu dinero (TIR)» y «El fondo (TWR)», cada uno abierto por su cifra (menor que
+el valor de la cabecera) y seguido de líneas de libro, con rótulo a la izquierda y
+cifra tabular a la derecha. La comparación con el índice va en el lado de la TWR,
+bajo un filete y no como tarjeta. Una medida que falta dice por qué. Un registro vacío
+es una línea con su enlace, no un bloque de ceros.
+
+Cuando la barra de acciones sale de la pantalla (#1829), la ficha conserva su acción
+habitual en una franja fija (`.fichaStrip`): en escritorio es su cabecera condensada
+—nombre, valor, el primario y «Más»— sobre su misma columna y bajo el riel de ámbitos,
+cerrada por regla gruesa y sin sombra; en el teléfono es un solo botón abajo, a la
+izquierda del lanzador del asistente y a su altura. Se aparta mientras hay un panel
+abierto. La fila que un registro acaba de añadir lleva el tinte del aviso de éxito y la
+palabra «nueva» («nuevo» en un cobro, `.fichaFreshMark`): el tinte solo no es una lectura.
+
 Dentro de una propuesta, elegir el destino de una fila (#1373) no es un commit: son
 alternativas, y llevan `.assistantRowChoice` —radios nativos con marca de selección
 de regla lateral y hoja fuerte, el registro de los chips de selección de holding—
@@ -189,6 +206,14 @@ El contrato global está formado por:
 `.section`, `.heroPanel`, `.navTab`, `.segmented`, `.btn`, `.totalRule`,
 `.debitCol`, `.band`, `.coverSurface`, `.coverSheet`, `.coverMasthead` y
 `.sessionBand`.
+
+**Control de texto.** Una acción secundaria dentro de una línea —«Quitar» de un
+lote, el aparte de una fila de propuesta, «Indicar símbolo» y «Cotiza a mano» bajo
+un precio— no es un botón de papel: sin fondo, sin borde, sin alto mínimo, sin
+relleno y subrayado. Es UNA regla de `globals.css` (bajo «Control de texto») cuya
+lista de selectores nombra cada superficie que la usa; cada superficie añade solo su
+tono, su cuerpo y su hover en una regla propia. Una superficie nueva se suma a esa
+lista, no copia las cinco declaraciones (lo fija el test-guardián).
 
 Las páginas consumen estas recetas; no duplican una versión equivalente ad hoc.
 El test-guardián escanea todas las hojas CSS y falla ante tokens deprecados,

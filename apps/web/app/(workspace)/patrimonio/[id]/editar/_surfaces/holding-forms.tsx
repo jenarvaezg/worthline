@@ -189,162 +189,183 @@ export function AssetEditForm({
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="unitSymbol" type="hidden" value={investment.unitSymbol ?? ""} />
 
-          <label>
-            Nombre
-            <input
-              aria-label="Nombre del activo"
-              defaultValue={values["name"] ?? investment.name}
-              name="name"
-            />
-          </label>
+          {/* «Datos del activo» en dos columnas (#1830): lo que el activo ES, y
+              cómo se le pone precio. Un solo formulario: un guardado envía ambas. */}
+          <div className="basicsColumns">
+            <fieldset className="basicsGroup">
+              <legend>Identidad</legend>
 
-          {/* #1512: la misma corrección que en un activo de valor declarado, con
-              la lista de instrumentos que SÍ se valoran con títulos y precio. */}
-          <InstrumentPicker
-            currentInstrument={currentInstrument}
-            liquidityTier={investment.liquidityTier}
-            values={values}
-          />
-
-          <label>
-            Disponibilidad
-            <select
-              defaultValue={values["liquidityTier"] ?? investment.liquidityTier}
-              name="liquidityTier"
-            >
-              <option value="cash">Caja</option>
-              <option value="market">Mercado</option>
-              <option value="term-locked">A plazo</option>
-              <option value="illiquid">Ilíquido</option>
-            </select>
-          </label>
-
-          <label>
-            Proveedor de precios
-            <select
-              defaultValue={values["priceProvider"] ?? investment.priceProvider}
-              name="priceProvider"
-            >
-              {SELECTABLE_INVESTMENT_PRICE_PROVIDERS.map((provider) => (
-                <option key={provider} value={provider}>
-                  {priceSourceLabel(provider)}
-                </option>
-              ))}
-              {/* #1354: un proveedor retirado sigue apareciendo SI la posición ya
-                  lo tiene, etiquetado como tal. Ocultarlo cambiaría el proveedor
-                  guardado en silencio al primer guardado del formulario. */}
-              {isRetiredInvestmentPriceProvider(investment.priceProvider) ? (
-                <option value={investment.priceProvider}>
-                  {retiredPriceSourceLabel(investment.priceProvider)}
-                </option>
-              ) : null}
-            </select>
-          </label>
-
-          {/* «Símbolo de precio», no «del proveedor» (#1746): en la ficha vive al
-              lado del identificador, y lo que hay que leer de un vistazo es qué
-              hace cada uno — este cotiza, el otro identifica (ADR 0011). */}
-          <label>
-            Símbolo de precio
-            <input
-              aria-label="Símbolo de precio"
-              autoComplete="off"
-              defaultValue={values["providerSymbol"] ?? investment.providerSymbol ?? ""}
-              name="providerSymbol"
-            />
-            {/* #1746: dos campos donde antes había uno, y uno derivado del otro. Sin
-                decir de dónde sale cada cual se leen como el mismo dato repetido. */}
-            {identity ? (
-              <small>
-                {priceSymbolProvenance({
-                  kind: identity.field.kind,
-                  providerLabel: priceSourceLabel(investment.priceProvider),
-                })}
-              </small>
-            ) : null}
-          </label>
-
-          {/* #1329: la posición nacida «por valor total» avisa ANTES de que el
-              símbolo entregue la valoración a la cotización, y ofrece la única
-              salida honesta que no es corregir la apertura. */}
-          {valueOnlyOpening ? (
-            <div className="warningBand">
-              <span>{valueOnlySymbolFormNotice(valueOnlyOpening)}</span>
-              <label className="checkLine">
-                <input
-                  defaultChecked={values["valueOnlySymbolAck"] === "on"}
-                  name="valueOnlySymbolAck"
-                  type="checkbox"
-                />{" "}
-                {VALUE_ONLY_ACK_LABEL}: guardar el símbolo sin tocar los títulos.
-              </label>
-            </div>
-          ) : null}
-
-          {/* El identificador que el instrumento PUEDE tener (#1746, decisión 9): el
-              código DGS de un plan, el ISIN del resto, nada en lo que no lleva
-              ninguno. La clase declarada viaja con el envío porque el selector de
-              arriba puede estar reclasificándolo en el mismo guardado (#1512), y
-              entonces el rechazo tiene que poder nombrar el cambio. */}
-          {identity ? (
-            <>
-              <input name="securityIdKind" type="hidden" value={identity.field.kind} />
               <label>
-                {identity.copy.fichaLabel}{" "}
-                <small>· {identity.copy.provenance} (opcional)</small>
+                Nombre
                 <input
-                  aria-label={identity.copy.fichaLabel}
-                  autoComplete="off"
-                  defaultValue={identity.state.value}
-                  name="securityId"
-                  placeholder={identity.copy.placeholder}
+                  aria-label="Nombre del activo"
+                  defaultValue={values["name"] ?? investment.name}
+                  name="name"
                 />
-                <small>{identity.copy.help}</small>
               </label>
-              {identity.state.mismatch ? (
-                <p className="warningBand">{identity.state.mismatch}</p>
-              ) : null}
-            </>
-          ) : null}
 
-          {/* El reintento que promete la señal de salud: un gesto, el MISMO envío de
-              la ficha, así que el símbolo que siembre pasa por las mismas guardas que
-              uno tecleado a mano (el símbolo que no resuelve, y #1329). */}
-          {canSeedPlanSymbol ? (
-            <div className="warningBand">
-              <span>
-                Este plan está identificado por su código DGS pero no cotiza: nadie le ha
-                puesto símbolo de precio. Podemos pedírselo a Finect con el código.
-              </span>
-              {/* En su propia fila: la banda es una rejilla, y un botón suelto
-                  dentro se estiraría de lado a lado. */}
-              <div className="formActions">
-                <PendingSubmit
-                  name="seedPlanSymbol"
-                  pendingLabel="Buscando en Finect…"
-                  value="1"
+              {/* #1512: la misma corrección que en un activo de valor declarado, con
+                  la lista de instrumentos que SÍ se valoran con títulos y precio. */}
+              <InstrumentPicker
+                currentInstrument={currentInstrument}
+                liquidityTier={investment.liquidityTier}
+                values={values}
+              />
+
+              <label>
+                Disponibilidad
+                <select
+                  defaultValue={values["liquidityTier"] ?? investment.liquidityTier}
+                  name="liquidityTier"
                 >
-                  Buscar el símbolo por su código DGS
-                </PendingSubmit>
-              </div>
-            </div>
-          ) : null}
+                  <option value="cash">Caja</option>
+                  <option value="market">Mercado</option>
+                  <option value="term-locked">A plazo</option>
+                  <option value="illiquid">Ilíquido</option>
+                </select>
+              </label>
 
-          <label>
-            Precio manual por unidad (EUR) <small>(opcional)</small>
-            <input
-              defaultValue={
-                values["manualPricePerUnit"] ?? investment.manualPricePerUnit ?? ""
-              }
-              inputMode="decimal"
-              name="manualPricePerUnit"
-            />
-          </label>
+              {/* El identificador que el instrumento PUEDE tener (#1746, decisión 9):
+                  el código DGS de un plan, el ISIN del resto, nada en lo que no lleva
+                  ninguno. La clase declarada viaja con el envío porque el selector de
+                  arriba puede estar reclasificándolo en el mismo guardado (#1512), y
+                  entonces el rechazo tiene que poder nombrar el cambio. */}
+              {identity ? (
+                <>
+                  <input
+                    name="securityIdKind"
+                    type="hidden"
+                    value={identity.field.kind}
+                  />
+                  <label>
+                    {identity.copy.fichaLabel}{" "}
+                    <small>· {identity.copy.provenance} (opcional)</small>
+                    <input
+                      aria-label={identity.copy.fichaLabel}
+                      autoComplete="off"
+                      defaultValue={identity.state.value}
+                      name="securityId"
+                      placeholder={identity.copy.placeholder}
+                    />
+                    <small>{identity.copy.help}</small>
+                  </label>
+                  {identity.state.mismatch ? (
+                    <p className="warningBand">{identity.state.mismatch}</p>
+                  ) : null}
+                </>
+              ) : null}
+            </fieldset>
 
-          <p className="infoNote">
-            Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
-            derivado de las operaciones y del precio disponible.
-          </p>
+            <fieldset className="basicsGroup">
+              <legend>Precio</legend>
+
+              <label>
+                Proveedor de precios
+                <select
+                  defaultValue={values["priceProvider"] ?? investment.priceProvider}
+                  name="priceProvider"
+                >
+                  {SELECTABLE_INVESTMENT_PRICE_PROVIDERS.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {priceSourceLabel(provider)}
+                    </option>
+                  ))}
+                  {/* #1354: un proveedor retirado sigue apareciendo SI la posición
+                      ya lo tiene, etiquetado como tal. Ocultarlo cambiaría el
+                      proveedor guardado en silencio al primer guardado. */}
+                  {isRetiredInvestmentPriceProvider(investment.priceProvider) ? (
+                    <option value={investment.priceProvider}>
+                      {retiredPriceSourceLabel(investment.priceProvider)}
+                    </option>
+                  ) : null}
+                </select>
+              </label>
+
+              {/* «Símbolo de precio», no «del proveedor» (#1746): en la ficha vive
+                  en la columna de al lado del identificador, y lo que hay que leer
+                  de un vistazo es qué hace cada uno — este cotiza, el otro
+                  identifica (ADR 0011). */}
+              <label>
+                Símbolo de precio
+                <input
+                  aria-label="Símbolo de precio"
+                  autoComplete="off"
+                  defaultValue={
+                    values["providerSymbol"] ?? investment.providerSymbol ?? ""
+                  }
+                  name="providerSymbol"
+                />
+                {/* #1746: dos campos donde antes había uno, y uno derivado del
+                    otro. Sin decir de dónde sale cada cual se leen como el mismo
+                    dato repetido. */}
+                {identity ? (
+                  <small>
+                    {priceSymbolProvenance({
+                      kind: identity.field.kind,
+                      providerLabel: priceSourceLabel(investment.priceProvider),
+                    })}
+                  </small>
+                ) : null}
+              </label>
+
+              {/* #1329: la posición nacida «por valor total» avisa ANTES de que el
+                  símbolo entregue la valoración a la cotización, y ofrece la única
+                  salida honesta que no es corregir la apertura. */}
+              {valueOnlyOpening ? (
+                <div className="warningBand">
+                  <span>{valueOnlySymbolFormNotice(valueOnlyOpening)}</span>
+                  <label className="checkLine">
+                    <input
+                      defaultChecked={values["valueOnlySymbolAck"] === "on"}
+                      name="valueOnlySymbolAck"
+                      type="checkbox"
+                    />{" "}
+                    {VALUE_ONLY_ACK_LABEL}: guardar el símbolo sin tocar los títulos.
+                  </label>
+                </div>
+              ) : null}
+
+              {/* El reintento que promete la señal de salud: un gesto, el MISMO
+                  envío de la ficha, así que el símbolo que siembre pasa por las
+                  mismas guardas que uno tecleado a mano (el símbolo que no
+                  resuelve, y #1329). */}
+              {canSeedPlanSymbol ? (
+                <div className="warningBand">
+                  <span>
+                    Este plan está identificado por su código DGS pero no cotiza: nadie le
+                    ha puesto símbolo de precio. Podemos pedírselo a Finect con el código.
+                  </span>
+                  {/* En su propia fila: la banda es una rejilla, y un botón suelto
+                      dentro se estiraría de lado a lado. */}
+                  <div className="formActions">
+                    <PendingSubmit
+                      name="seedPlanSymbol"
+                      pendingLabel="Buscando en Finect…"
+                      value="1"
+                    >
+                      Buscar el símbolo por su código DGS
+                    </PendingSubmit>
+                  </div>
+                </div>
+              ) : null}
+
+              <label>
+                Precio manual por unidad (EUR) <small>(opcional)</small>
+                <input
+                  defaultValue={
+                    values["manualPricePerUnit"] ?? investment.manualPricePerUnit ?? ""
+                  }
+                  inputMode="decimal"
+                  name="manualPricePerUnit"
+                />
+              </label>
+
+              <p className="infoNote">
+                Valor actual: {formatMoneyMinorPrivacy(asset.currentValue, privacyMode)} —
+                derivado de las operaciones y del precio disponible.
+              </p>
+            </fieldset>
+          </div>
 
           <div className="formActions">
             <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>

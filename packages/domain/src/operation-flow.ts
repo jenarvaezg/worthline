@@ -1,5 +1,5 @@
 import { multiplyToMinor } from "./decimal";
-import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentOperation, OperationKind } from "./investment-types";
 
 /**
  * The signed money one operation moved, and the one place the sign of a ledger kind
@@ -44,29 +44,67 @@ export function isDeclaredOpening(
 }
 
 /**
- * Positive = money the holder put IN (a buy, and — under `flow` — the incoming half
- * of a traspaso). Negative = money that came back OUT (a sell, and the outgoing
- * half). Fees are capitalized on the way in and netted off on the way out, exactly
- * as they always were.
+ * The importe of one apunte, as the operations ledger prints it (#1827): the money
+ * the operation moved, unsigned, in minor units of the operation's own currency.
+ *
+ * - What came IN — a buy, and the incoming half of a traspaso — cost units × price
+ *   PLUS its fees, which are capitalized into it (the traspaso's commission lives on
+ *   the `transfer_in`, #1393).
+ * - What went OUT — a sell — brought back units × price LESS its fees, netted off the
+ *   proceeds. The outgoing half of a traspaso is units × price: it carries no fees,
+ *   because the pair's commission has exactly one home, the `transfer_in` (ADR 0082).
+ *
+ * The product goes through big.js and rounds half up to the céntimo; never a `Number`
+ * multiplication in a view. The direction is the kind's to say, so the figure is a
+ * magnitude — except for a sell whose fees exceed what it brought in, which comes out
+ * negative because that is what it was: a sale that cost money.
+ *
+ * {@link signedInvestedMinor} is this figure with its sign, so the ledger's row and
+ * the IRR's cashflow for the same apunte cannot disagree.
  */
-export function signedInvestedMinor(
-  operation: InvestmentOperation,
-  transferPolicy: TransferFlowPolicy,
+export function operationAmountMinor(
+  operation: Pick<InvestmentOperation, "feesMinor" | "kind" | "pricePerUnit" | "units">,
 ): number {
   const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
 
   switch (operation.kind) {
     case "buy":
+    case "transfer_in":
       return grossMinor + operation.feesMinor;
     case "sell":
-      return -(grossMinor - operation.feesMinor);
-    case "transfer_in":
-      return transferPolicy === "zero" ? 0 : grossMinor + operation.feesMinor;
     case "transfer_out":
-      return transferPolicy === "zero" ? 0 : -(grossMinor - operation.feesMinor);
+      return grossMinor - operation.feesMinor;
     default:
       return unhandledOperationKind(operation.kind);
   }
+}
+
+/**
+ * Which way each kind moves the holder's money — in (+1) or back out (−1) — and
+ * whether it is a half of a traspaso, which the `zero` policy leaves out. A fifth
+ * kind stops compiling here until it says both (`satisfies`).
+ */
+const INVESTED_FLOW = {
+  buy: { sign: 1, transfer: false },
+  sell: { sign: -1, transfer: false },
+  transfer_in: { sign: 1, transfer: true },
+  transfer_out: { sign: -1, transfer: true },
+} as const satisfies Record<OperationKind, { sign: 1 | -1; transfer: boolean }>;
+
+/**
+ * Positive = money the holder put IN (a buy, and — under `flow` — the incoming half
+ * of a traspaso). Negative = money that came back OUT (a sell, and the outgoing
+ * half). Fees are capitalized on the way in and netted off on the way out, exactly
+ * as they always were: the magnitude is {@link operationAmountMinor}, the sign is
+ * the kind's ({@link INVESTED_FLOW}).
+ */
+export function signedInvestedMinor(
+  operation: InvestmentOperation,
+  transferPolicy: TransferFlowPolicy,
+): number {
+  const flow = INVESTED_FLOW[operation.kind];
+  if (flow.transfer && transferPolicy === "zero") return 0;
+  return flow.sign * operationAmountMinor(operation);
 }
 
 /**

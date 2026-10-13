@@ -5,6 +5,7 @@ import { formAction } from "@web/form-action";
 import {
   createStableId,
   errorRedirectUrl,
+  isLocalRedirectPath,
   mapDomainViolation,
   parseAvailableFromStrict,
   parseContributionLot,
@@ -320,6 +321,19 @@ export async function restoreLiabilityAction(
   })(formData, ..._testArgs);
 }
 
+/**
+ * Where an acknowledgement asked to come back to (#1731 review): the ficha's
+ * «Cotiza a mano» posts its own URL as `returnTo`, so the success lands there — its
+ * notice beside the price that stopped asking for a symbol — instead of on the
+ * board. Only a path inside the app is followed (the same guard every redirect
+ * here runs, `isLocalRedirectPath`): anything else, or nothing, is the board's
+ * «Es intencional», which lands on the holding's row as it always did.
+ */
+function acknowledgeReturnTo(formData: FormData): string | null {
+  const raw = String(formData.get("returnTo") ?? "").trim();
+  return raw !== "" && isLocalRedirectPath(raw) ? raw : null;
+}
+
 export async function acknowledgeWarningAction(
   formData: FormData,
   ..._testArgs: unknown[]
@@ -346,8 +360,12 @@ export async function acknowledgeWarningAction(
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), { message: error }),
-    onSuccess: ({ value }) =>
-      successRedirectUrl("/patrimonio", "warning_acknowledged", value),
+    onSuccess: ({ formData, value }) => {
+      const back = acknowledgeReturnTo(formData);
+      return back
+        ? successRedirectUrl(back, "warning_acknowledged")
+        : successRedirectUrl("/patrimonio", "warning_acknowledged", value);
+    },
   })(formData, ..._testArgs);
 }
 

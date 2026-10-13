@@ -19,23 +19,28 @@
 
 import { formAction, formActionInlineError } from "@web/form-action";
 import { errorRedirectUrl, preserveFields, successRedirectUrl } from "@web/intake";
+import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { currentUrlOf } from "@web/inversiones/return-url";
+import type { Income } from "@worthline/domain";
 import {
   buildIncomeResult,
   INCOME_FORM_FIELDS,
-  incomeDeclarationFieldsFromForm,
+  incomeCorrectionFieldsFromForm,
   incomeFieldsFromForm,
-  parseIncomeDeclaration,
+  parseIncomeCorrection,
 } from "./income-form";
 
 const INCOME_NOT_FOUND = "Renta no encontrada.";
 
-/** Whether the workspace still holds this income — a stale form may name a gone one. */
-async function incomeExists(
-  store: { payouts: { readPayoutSchedules: () => Promise<Array<{ id: string }>> } },
+const LINKED_RECURRENCE_REFUSED =
+  "Esta renta la genera un activo: su importe y sus fechas se cambian en la ficha de ese activo, en Cobros, porque de ellos salen sus cobros.";
+
+/** The income this workspace holds under that id — a stale form may name a gone one. */
+async function findIncome(
+  store: { payouts: { readPayoutSchedules: () => Promise<Income[]> } },
   incomeId: string,
-): Promise<boolean> {
-  return (await store.payouts.readPayoutSchedules()).some(
+): Promise<Pick<Income, "id" | "holdingId"> | undefined> {
+  return (await store.payouts.readPayoutSchedules()).find(
     (income) => income.id === incomeId,
   );
 }
@@ -45,8 +50,9 @@ async function incomeExists(
  * ficha it was declared on — or null for an income with no asset.
  *
  * The confirmation and the error's section follow the door: the ficha's Cobros
- * section keeps its own words («Cobro recurrente», formId `payout`), the Rentas
- * surface says «Renta» (formId `income`).
+ * entry keeps its own words («Cobro recurrente», the recurring form's own formId, so
+ * a no-JS refusal reopens that form — #1731 review), the Rentas surface says
+ * «Renta» (formId `income`).
  */
 export async function createIncomeAction(
   holdingId: string | null,
@@ -54,7 +60,7 @@ export async function createIncomeAction(
   ..._testArgs: unknown[]
 ) {
   const returnUrl = currentUrlOf(formData);
-  const formId = holdingId === null ? "income" : "payout";
+  const formId = holdingId === null ? "income" : COBRO_FORM_ID.recurring;
 
   return formActionInlineError({
     datedFact: false,
@@ -94,13 +100,19 @@ export async function createStandaloneIncomeAction(
 }
 
 /**
- * Correct the declaration proper of an existing income — nature, basis, provenance
- * and its cut-off, condition — leaving the recurrence untouched. A chosen «Sin
- * declarar» withdraws that declaration back to NULL, while a field the form did not
- * carry is left as it is: absent is not «sin declarar», so a partial form can never
- * wipe a declared `passive`. The provenance is required here exactly as it is at the
+ * Correct an existing income in place. The declaration proper — nature, basis,
+ * provenance and its cut-off, condition — on any income: a chosen «Sin declarar»
+ * withdraws that declaration back to NULL, while a field the form did not carry is
+ * left as it is (absent is not «sin declarar», so a partial form can never wipe a
+ * declared `passive`). The provenance is required here exactly as it is at the
  * door, so correcting an income declared before the door existed is also when it
  * gains one.
+ *
+ * The recurrence — concept, amount, cadence, start, end — only on an income with no
+ * asset (#1813): it has no ficha to be amended on, and no figure derives its past
+ * payouts, so rewriting it rewrites nothing that was derived. A linked income's
+ * recurrence is refused here: its payouts are derived from it, and it is amended
+ * on its holding's ficha.
  */
 export async function updateIncomeDeclarationAction(
   formData: FormData,
@@ -121,21 +133,23 @@ export async function updateIncomeDeclarationAction(
       errorRedirectUrl(returnUrl, { formId: "incomeDeclaration", message: error }),
     onSuccess: () => successRedirectUrl(returnUrl, "income_updated"),
     parse: ({ today }) => {
-      const result = parseIncomeDeclaration(
-        incomeDeclarationFieldsFromForm(formData),
+      const result = parseIncomeCorrection(
+        incomeCorrectionFieldsFromForm(formData),
         today,
       );
-      return result.ok
-        ? { ok: true, value: result.declaration }
-        : { ok: false, error: result.error };
+      return result.ok ? { ok: true, value: result } : { ok: false, error: result.error };
     },
     requireId: false,
     run: async (store, { extra, parsed }) => {
       const incomeId = extra.incomeId!;
-      if (!(await incomeExists(store, incomeId))) {
+      const income = await findIncome(store, incomeId);
+      if (!income) {
         return { ok: false, error: INCOME_NOT_FOUND };
       }
-      await store.payouts.updatePayoutSchedule(incomeId, parsed);
+      if (parsed.correctsRecurrence && income.holdingId !== null) {
+        return { ok: false, error: LINKED_RECURRENCE_REFUSED };
+      }
+      await store.payouts.updatePayoutSchedule(incomeId, parsed.correction);
       return { ok: true };
     },
   })(formData, ..._testArgs);
@@ -160,7 +174,7 @@ export async function deleteIncomeAction(formData: FormData, ..._testArgs: unkno
     requireId: false,
     run: async (store, { extra }) => {
       const incomeId = extra.incomeId!;
-      if (!(await incomeExists(store, incomeId))) {
+      if (!(await findIncome(store, incomeId))) {
         return { ok: false, error: INCOME_NOT_FOUND };
       }
       await store.payouts.deletePayoutSchedule(incomeId);

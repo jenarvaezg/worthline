@@ -91,3 +91,29 @@ spending — in its income half while in force, as its dated line before it star
 and its Rentas row says so instead of «todavía no cuenta». The scope question is
 answered there: with no owner declared, it counts whole in a scope that covers every
 active member and is withheld from a partial one.
+
+## Amendment (#1813) — an income with no holding is corrected whole, in place
+
+The #1673 amendment kept the recurrence out of the correction because amending it
+re-derives past payouts. That is true of a linked income and of nothing else: an
+income with no holding derives no payout (`collectHoldingPayouts` skips it) and the
+sustainable-spending card reads only its state today (ADR 0111). So a life annuity
+that ended, or a pension a new official simulation re-prices before it starts, had
+one way out — delete it and declare it again, losing its id and its history.
+
+- **Corrected in place, not superseded.** The Rentas row edits the same declaration:
+  nothing derived from the old recurrence survives to contradict the new one, so a
+  successor row would only split one income in two. Its id, provenance and cut-off
+  stay unless the correction changes them.
+- **The whole recurrence the door asks:** concept, amount, cadence, start and end,
+  prefilled as stored. Ending it is giving it an end (the date of its last payment);
+  emptying the end reactivates it. Costs, lease terms and exclusions stay out —
+  the Rentas door does not ask them of an income with no holding, and no figure
+  reads its exclusions.
+- **The provenance is required as at the door**, so the correction that brings a
+  new simulation's amount is also where its cut-off date is updated; the form says
+  so beside the amount.
+- **A linked income's recurrence is refused** by the same action: it stays with the
+  ficha's affordances, whose payouts are derived from it. The marker
+  `saveRecurrence=1` says the recurrence travels, so an emptied end reads as «sin
+  fin» and never as a field the form did not carry.

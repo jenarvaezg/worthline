@@ -26,7 +26,10 @@ test("holding ficha shows vs-benchmark card when tracked index is assigned", asy
   // The comparison sits with the returns, in «Rentabilidad» (#1826).
   await openFichaTab(page, "Rentabilidad");
 
-  const benchmark = page.getByLabel("Comparación con MSCI World");
+  // On the fund's side, beside the TWR it compares (#1830).
+  const benchmark = page
+    .getByRole("region", { name: "El fondo TWR" })
+    .getByLabel("Comparación con MSCI World");
   await expect(benchmark).toBeVisible();
   await expect(benchmark).toContainText("vs MSCI World");
   // A freshly added holding has no monthly-close history yet — the card degrades

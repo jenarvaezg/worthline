@@ -318,7 +318,8 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(html).toContain(`href="/patrimonio#${PUBLIC_ID}"`);
     // The value, then units at the price that valued them.
     expect(html).toMatch(/class="fichaValue">12\.?000\s€/);
-    expect(html).toContain("100 × 120 €");
+    // «220 a 118,75 €», as the spec words it (#1731).
+    expect(html).toContain("100 a 120 €");
     expect(html).toContain("Actualizar precio");
     // The board row's figure (#551): 12.000 € against a 10.000 € cost.
     expect(html).toContain("Ganancia total");
@@ -337,11 +338,55 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     // The only ink-filled button is the habitual one (#1732).
     expect(bar).toContain('class="btn" data-ficha-action="operacion"');
     expect(bar).toContain('class="btn btnSecondary" data-ficha-action="traspaso"');
-    expect(bar).toContain('class="btn btnSecondary" data-ficha-action="cobro"');
     expect(bar).toContain("Más");
     // The rarer ones are behind «Más», not in the bar.
     expect(bar).not.toContain('data-ficha-action="extracto"');
     expect(bar).not.toContain('data-ficha-action="correccion"');
+  });
+
+  test("«Añadir cobro» is at hand once the holding has paid something, and in «Más» before (#1829)", async () => {
+    const barOf = (html: string) =>
+      html.slice(
+        html.indexOf('aria-label="Acciones del activo"'),
+        html.indexOf('class="fichaFigures"'),
+      );
+
+    // A fund that never paid anything does not need the button in view.
+    expect(barOf(await renderedHtml())).not.toContain('data-ficha-action="cobro"');
+
+    calls.readPayoutsForHolding.mockResolvedValueOnce([
+      { amountMinor: 12_50, dateISO: "2026-06-01", holdingId: ASSET_ID, id: "pay_1" },
+    ]);
+    expect(barOf(await renderedHtml())).toContain(
+      'class="btn btnSecondary" data-ficha-action="cobro"',
+    );
+  });
+
+  test("the cobro panel asks first which kind, and opens on the one-off (#1829)", async () => {
+    const cobro = panel(await renderedHtml({ accion: "cobro" }));
+
+    expect(cobro).toContain("Un cobro suelto");
+    expect(cobro).toContain("Uno que se repite");
+    // The one-off is the habitual cobro of a fund (a dividend), so it starts chosen.
+    expect(cobro).toMatch(/checked=""[^>]*value="suelto"|value="suelto"[^>]*checked=""/);
+    // Each form in its own pane, the one shown being the chosen one.
+    const oneOff = cobro.indexOf('data-seed-choice="suelto"');
+    const recurring = cobro.indexOf('data-seed-choice="recurrente"');
+    expect(oneOff).toBeGreaterThan(-1);
+    expect(recurring).toBeGreaterThan(oneOff);
+    expect(cobro.slice(oneOff, recurring)).toContain("Registrar un cobro puntual");
+    expect(cobro.slice(recurring)).toContain("Declarar un cobro recurrente");
+  });
+
+  test("a success is said beside the tabs, once (#1829)", async () => {
+    const html = await renderedHtml({ ok: "saved" });
+
+    // Between the state header and the tabs, where the landed row is — the band
+    // that offers «Añadir otra» once the panel's submit is the one that landed.
+    const notice = html.indexOf('role="status">Guardado.</p>');
+    expect(notice).toBeGreaterThan(html.indexOf('aria-label="Estado del activo"'));
+    expect(notice).toBeLessThan(html.indexOf('aria-label="Secciones de la ficha"'));
+    expect(html.split("Guardado.")).toHaveLength(2);
   });
 
   test("four tabs with their counts, and the ledger on show by default", async () => {
@@ -404,7 +449,8 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     // `holdingCobrosHref`: the Cobros tab, its `#cobros` fragment on screen.
     const cobros = tabBody(await renderedHtml({ abrir: "cobros" }));
     expect(cobros).toContain('id="cobros"');
-    expect(cobros).toContain("Renta pasiva");
+    // A fund that never paid anything: the record says so (#1830).
+    expect(cobros).toContain("Este activo no ha pagado nada todavía.");
     // The Papelera's «Lo traspasé a…» exit (#1549): the traspaso, with its intent.
     const traspaso = panel(await renderedHtml({ abrir: "traspaso", archivar: "1" }));
     expect(traspaso).toContain("<h3>Traspasar</h3>");
@@ -416,6 +462,22 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
 
     expect(panel(html)).toContain("<h3>Traer de otra entidad</h3>");
     // Its own band only: the page band used to print it a second time.
+    expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("a refused cobro reopens «Añadir cobro» over its tab, with what was typed (#1731 review)", async () => {
+    const message = "Introduce un importe mayor que cero.";
+    const html = await renderedHtml({
+      error: message,
+      form: "payoutOneOff",
+      v_amount: "0",
+      v_note: "Dividendo",
+    });
+
+    expect(panel(html)).toContain('<h3 id="ficha-panel-title">Añadir cobro</h3>');
+    expect(panel(html)).toContain('value="Dividendo"');
+    expect(tabBody(html)).toContain('id="cobros"');
+    // Once, in the form that produced it: not on the tab, not on the page band.
     expect(html.split(message)).toHaveLength(2);
   });
 
@@ -432,11 +494,157 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(html).toMatch(/Cobros<span class="fichaTabCount">1</);
   });
 
+  test("a fund with no cobros says it in one line, with the door to «Añadir cobro» (#1830)", async () => {
+    const body = tabBody(await renderedHtml({ pestaña: "cobros" }));
+
+    expect(body).toContain("Este activo no ha pagado nada todavía.");
+    // No block of zeros: no renta-pasiva strip, no month grid.
+    expect(body).not.toContain("Renta pasiva");
+    expect(body).not.toContain("cobrosPasiva");
+    // The link opens the «Añadir cobro» panel over this tab — a real href, so it
+    // lands with JS off too.
+    expect(body).toContain(
+      `href="/patrimonio/${PUBLIC_ID}/editar?pesta%C3%B1a=cobros&amp;accion=cobro"`,
+    );
+  });
+
   test("the Rentabilidad tab measures what the header measures", async () => {
     const html = await renderedHtml({ pestaña: "rentabilidad" });
 
     // The same fold, the same 2.000 €: the panel and the header cannot disagree.
     expect(tabBody(html)).toMatch(/2\.?000\s€/);
+    // Two questions faced, the owner's money first (#1830).
+    const body = tabBody(html);
+    expect(body.indexOf("Tu dinero")).toBeGreaterThan(-1);
+    expect(body.indexOf("El fondo")).toBeGreaterThan(body.indexOf("Tu dinero"));
+  });
+});
+
+/**
+ * The header is honest about its price (#1828): it says where the price comes from
+ * and of when, as the valuation that picked it says — never by comparing figures
+ * afterwards — and the one warning about that price sits beside it.
+ */
+describe("EditarPage — the investment header says where its price comes from (#1828)", () => {
+  /** The figures row: from the units to the end of the state header. */
+  const figures = (html: string) =>
+    html.slice(html.indexOf('class="fichaFigures"'), html.indexOf('class="fichaTabs"'));
+  /** The warnings band above the header, when there is one. */
+  const band = (html: string) => {
+    const at = html.indexOf('aria-label="Avisos"');
+    return at === -1
+      ? ""
+      : html.slice(at, html.indexOf('aria-label="Estado del activo"'));
+  };
+  /** The opening tag of the link that reads `text`, or "" when there is none. */
+  const linkTo = (html: string, text: string) =>
+    [...html.matchAll(/<a [^>]*>([^<]*)</g)].find((match) => match[1] === text)?.[0] ??
+    "";
+
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([FUND]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readOperations.mockResolvedValue([OPERATION]);
+    calls.readPositions.mockResolvedValue([POSITION]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+  });
+
+  test("a provider's quote: units at that price, the provider and the day", async () => {
+    const html = figures(await renderedHtml());
+
+    expect(html).toContain("100 a 120 €");
+    // A fresh fetch with no market day of its own is dated by the fetch.
+    expect(html).toContain("cotización Yahoo · 28/08/2026");
+  });
+
+  test("the quote's market day wins over the day it was fetched", async () => {
+    calls.readPriceCache.mockResolvedValue({ ...PRICE, priceDate: "2026-08-27" });
+
+    expect(figures(await renderedHtml())).toContain("cotización Yahoo · 27/08/2026");
+  });
+
+  test("a hand-set price says so, dated by when it was set", async () => {
+    calls.readPriceCache.mockResolvedValue(null);
+    calls.readInvestmentAssetById.mockResolvedValue({
+      ...INVESTMENT,
+      manualPricePerUnit: "110",
+      manualPricedAt: "2026-08-20T09:00:00.000Z",
+    });
+
+    const html = figures(await renderedHtml());
+    expect(html).toContain("100 a 110 €");
+    expect(html).toContain("precio a mano · 20/08/2026");
+  });
+
+  test("a hand-set price equal to the last purchase is not passed off as that purchase", async () => {
+    // The prototype's trap (#1731): the buy was at 100 and so is the hand-set price.
+    calls.readPriceCache.mockResolvedValue(null);
+    calls.readInvestmentAssetById.mockResolvedValue({
+      ...INVESTMENT,
+      manualPricePerUnit: "100.00",
+    });
+
+    const html = figures(await renderedHtml());
+    expect(html).toContain("precio a mano");
+    expect(html).not.toContain("última operación");
+  });
+
+  test("with no price it is valued at what it cost, and says so", async () => {
+    calls.readPriceCache.mockResolvedValue(null);
+
+    const html = await renderedHtml();
+    expect(html).toMatch(/class="fichaValue">10\.?000\s€/);
+    expect(figures(html)).toContain("sin precio: se valora a lo que costó");
+    // The units alone: there is no price to print them at.
+    expect(figures(html)).toContain('<span class="fichaFigure ">100</span>');
+  });
+
+  test("no symbol: the warning sits beside the price, not in the band", async () => {
+    const { providerSymbol: _, ...noSymbol } = FUND;
+    calls.readAssets.mockResolvedValue([noSymbol]);
+
+    const html = await renderedHtml();
+    const row = figures(html);
+
+    expect(row).toContain("Sin cotización automática.");
+    // «Indicar símbolo» opens «Datos del activo» on the symbol field — a real href
+    // for no-JS, and what the island needs to focus the field.
+    const fix = linkTo(row, "Indicar símbolo");
+    expect(fix).toContain('href="/patrimonio/wl_hld_fondo/editar?pesta%C3%B1a=datos"');
+    expect(fix).toContain('data-ficha-tab="datos"');
+    expect(fix).toContain('data-ficha-field="providerSymbol"');
+    // «Cotiza a mano» is today's «Es intencional»: the same override, same code.
+    expect(row).toContain('type="hidden" name="code" value="MISSING_PROVIDER_SYMBOL"');
+    expect(row).toContain(`type="hidden" name="entityId" value="${ASSET_ID}"`);
+    expect(row).toContain(">Cotiza a mano</button>");
+    // …and the band no longer carries it.
+    expect(band(html)).not.toContain("símbolo de proveedor");
+  });
+
+  test("a symbol marked intentional is silent beside the price too", async () => {
+    const { providerSymbol: _, ...noSymbol } = FUND;
+    calls.readAssets.mockResolvedValue([noSymbol]);
+    calls.readWarningOverrides.mockResolvedValue([
+      { code: "MISSING_PROVIDER_SYMBOL", entityId: ASSET_ID },
+    ]);
+
+    expect(figures(await renderedHtml())).not.toContain("Sin cotización automática");
+  });
+
+  test("the other warnings stay in the band, each linking to where it is fixed", async () => {
+    // Sold more than was bought: the ledger is where that gets fixed.
+    calls.readOperations.mockResolvedValue([
+      OPERATION,
+      { ...OPERATION, executedAt: "2026-04-02", id: "op_2", kind: "sell", units: "150" },
+    ]);
+
+    const html = await renderedHtml({ pestaña: "datos" });
+
+    expect(band(html)).toContain("ventas/traspasos por encima");
+    const fix = linkTo(band(html), "Ver operaciones");
+    expect(fix).toContain('href="/patrimonio/wl_hld_fondo/editar"');
+    expect(fix).toContain('data-ficha-tab="operaciones"');
+    expect(band(html)).toContain("Es intencional");
   });
 });
 

@@ -21,6 +21,8 @@
   --hairline: #dde1d0;
   --band: #eaedde;
   --green: #006f5f;
+  /* The tint of a confirmation: the success band, and the row it just added (#1829). */
+  --green-tint: rgba(0, 111, 95, 0.1);
   --blue: #1f4d74;
   --red: #b9442f;
   --gold: #7d5c12;
@@ -1162,7 +1164,7 @@ h3 {
 }
 
 .successBand {
-  background: rgba(0, 111, 95, 0.1);
+  background: var(--green-tint);
   border-color: var(--green);
   color: var(--green);
   /* Confirmation rise-in: discreet fade + small lift, once on appear (#639). */
@@ -5855,6 +5857,144 @@ p.muted {
   margin-top: 8px;
 }
 
+/* #1827 — El libro de operaciones compacto de la ficha. Filas de unos 35 px, las
+   cifras en Iosevka tabular alineadas a la derecha, y «Eliminar» dentro del «⋯» (la
+   receta de kebab de `.balanceActions`/`.balanceMenu`). En el teléfono cada apunte se
+   lee en dos renglones sin desplazamiento lateral: sigue siendo UNA `<tr>`, y es el
+   CSS el que la recoloca; la celda `.opsCalc` es su segundo renglón. */
+.opsLedger table {
+  margin-top: 0;
+  table-layout: auto;
+}
+
+.opsLedger th,
+.opsLedger td {
+  line-height: 1.45;
+  padding: 7px 14px 7px 0;
+  vertical-align: baseline;
+}
+
+.opsLedger th:last-child,
+.opsLedger td:last-child {
+  padding-right: 0;
+}
+
+.opsLedger th.opsNum {
+  text-align: right;
+}
+
+.opsLedger td.opsNum,
+.opsLedger td.opsDate {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.opsLedger td.opsNum {
+  text-align: right;
+}
+
+.opsLedger .opsAmount {
+  font-weight: 650;
+}
+
+.opsLedger .opsCalc {
+  display: none;
+}
+
+.opsLedger .opsMenu {
+  text-align: right;
+  white-space: nowrap;
+  width: 2.5rem;
+}
+
+.opsLedger .balanceActions {
+  display: inline-block;
+}
+
+.opsLedger .balanceMenu {
+  text-align: left;
+  white-space: normal;
+  width: max-content;
+}
+
+.opsLedger .balanceMenu .opCaptureNote {
+  max-width: 24ch;
+  padding: 0 10px;
+}
+
+.opsMore {
+  margin-top: 10px;
+}
+
+@media (max-width: 760px) {
+  .opsLedger thead {
+    display: none;
+  }
+
+  .opsLedger table,
+  .opsLedger tbody {
+    display: block;
+  }
+
+  /* Sin hueco de columna: «fecha · tipo» se lee como una frase, y el importe y el
+     «⋯» toman su aire de su propio margen. */
+  .opsLedger tr {
+    border-bottom: 1px solid var(--hairline);
+    display: grid;
+    gap: 2px 0;
+    grid-template-areas:
+      "date kind amount menu"
+      "calc calc calc menu";
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    padding: 8px 0;
+  }
+
+  .opsLedger td {
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .opsLedger .opsDate {
+    grid-area: date;
+  }
+
+  .opsLedger .opsKind {
+    grid-area: kind;
+  }
+
+  .opsLedger .opsKind::before {
+    color: var(--muted);
+    content: "·";
+    margin: 0 0.45em;
+  }
+
+  .opsLedger .opsSplit {
+    display: none;
+  }
+
+  .opsLedger .opsAmount {
+    grid-area: amount;
+    margin-left: 10px;
+  }
+
+  .opsLedger .opsCalc {
+    color: var(--muted);
+    display: block;
+    font-family: var(--font-numeric);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+    grid-area: calc;
+  }
+
+  .opsLedger .opsMenu {
+    align-self: center;
+    grid-area: menu;
+    margin-left: 6px;
+    width: auto;
+  }
+}
+
 .dangerZone {
   border-top: 1px solid var(--line);
   margin-top: 32px;
@@ -6812,8 +6952,12 @@ p.muted {
   display: none;
 }
 
-.balanceMenu .confirmDelete button {
-  color: var(--red);
+/* La confirmación conserva el relleno rojo del canon (#1729) también en el menú, y
+   gana al fondo neutro de `.balanceMenu button` incluso en hover. Con texto rojo se
+   leía rojo sobre rojo (#1827). */
+.balanceMenu .confirmDelete:not(.confirmReversible) button {
+  background: var(--red);
+  color: var(--paper-strong);
 }
 
 /* Reconciliation footer: Activos − Pasivos = Patrimonio neto. A standard light card
@@ -7155,18 +7299,28 @@ td.rowActions > * {
   text-align: right;
 }
 
-/* «Quitar» es un control de TEXTO, no un botón de papel (design-system §4): la misma
-   receta que `.assistantRowAside button`, escrita aquí porque aquella vive anidada
-   bajo `.assistantProposal` y no se puede citar desde fuera de ese bloque. */
-.lotRow button {
+/* ── Control de texto (design-system §7) ─────────────────────────────────────
+   Una acción secundaria dentro de una línea —«Quitar» de un lote, el aparte de una
+   fila de propuesta, «Indicar símbolo» y «Cotiza a mano» bajo un precio— es un
+   control de TEXTO, no un botón de papel: sin fondo, sin borde, sin alto mínimo,
+   subrayado. UNA receta: cada superficie se suma a esta lista y pone en su propia
+   regla solo su tono, su cuerpo y su hover (#1731 review). */
+.lotRow button,
+.assistantProposal .assistantRowAside button,
+.fichaPriceNotice a,
+.fichaPriceNotice button {
   background: transparent;
   border: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
   min-height: 0;
   padding: 0;
   text-decoration: underline;
+}
+
+/* «Quitar», en gris de apoyo: quitar una fila no es descartar la propuesta. */
+.lotRow button {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .lotRow button:hover:not(:disabled) {
@@ -7431,10 +7585,48 @@ td.rowActions > * {
   min-width: 0;
 }
 
-/* «Datos del activo» guarda la medida que tenía la columna de la ficha; su
-   reparto en dos columnas es #1830. */
+/* «Datos del activo» guarda la medida que tenía la columna de la ficha. */
 .fichaDatos {
   max-width: 640px;
+}
+
+/* ── #1830 «Lo básico» en dos columnas: lo que el activo ES y cómo cotiza ─────
+   Un solo formulario; cada columna es un grupo con su rótulo de etiqueta pequeña.
+   En el teléfono vuelven a ser una. */
+.basicsColumns {
+  align-items: start;
+  display: grid;
+  gap: 18px 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.basicsGroup {
+  border: 0;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.basicsGroup legend {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  padding: 0 0 6px;
+  text-transform: uppercase;
+}
+
+/* Una fecha no necesita la medida de un párrafo. */
+.fichaDatos .holdingAvailability input[type="date"] {
+  max-width: 16rem;
+}
+
+@media (max-width: 760px) {
+  .basicsColumns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .fichaPanel {
@@ -7524,6 +7716,194 @@ td.rowActions > * {
     top: 0;
     width: 100vw;
   }
+}
+
+/* ── Añadir sin buscar (#1829) ───────────────────────────────────────────────
+   La franja que mantiene «Registrar operación» a mano cuando la barra de acciones
+   ha salido de la pantalla, el aviso de éxito con «Añadir otra», la fila recién
+   registrada y la pregunta de «Añadir cobro». */
+
+/* Las dos medidas de las que cuelga todo lo que se trae a la vista (#1731 review):
+   lo que el riel de ámbitos y la franja tapan arriba en escritorio, y lo que tapa
+   al lado o debajo un control fijo de 48 px a 20 px del borde —el lanzador del
+   asistente, el botón del teléfono—, con 16 px de aire. */
+:root {
+  --ficha-sticky-top: 128px;
+  --ficha-strip-clearance: 84px;
+}
+
+/* En escritorio, arriba: la cabecera de la ficha condensada, sobre su misma
+   columna y bajo el riel de ámbitos, que también se queda pegado (#47). Papel
+   cerrado por la regla gruesa, como el masthead del shell — sin sombra (canon §4).
+   La isla mide columna y riel (`--ficha-strip-*`); el panel lateral (70) la tapa. */
+.fichaStrip {
+  background: var(--paper);
+  border-bottom: var(--rule-heavy);
+  left: var(--ficha-strip-left, 24px);
+  position: fixed;
+  top: var(--ficha-strip-top, 0px);
+  width: var(--ficha-strip-width, calc(100% - 48px));
+  z-index: 60;
+}
+
+.fichaStripInner {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.fichaStripName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fichaStripValue {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+/* El aviso de éxito, junto a las pestañas donde aterrizó el resultado. */
+.fichaNotice {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+  /* Lo que el riel de ámbitos y la franja tapan arriba al traerlo a la vista. */
+  scroll-margin-top: var(--ficha-sticky-top);
+}
+
+.fichaNotice p {
+  margin: 0;
+}
+
+.fichaNoticeAgain {
+  font-size: 0.82rem;
+  min-height: 32px;
+  padding: 0.3rem 0.85rem;
+}
+
+/* La fila recién registrada: el tinte del aviso de éxito y la palabra «nueva» —
+   el tinte solo no es una lectura (canon §8). */
+#operaciones [data-fresh],
+.cobrosRow[data-fresh],
+.cobrosSchedule[data-fresh] {
+  background: var(--green-tint);
+  scroll-margin: var(--ficha-sticky-top) 0 var(--ficha-strip-clearance);
+}
+
+/* En tinta: sobre el verde del mapa de calor, un contorno verde no llega al 3:1. */
+.cobrosCell[data-fresh-month] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* Mientras la franja se ve, lo que se enfoca con el teclado no queda debajo de
+   ella: arriba en escritorio (riel de ámbitos + franja), abajo en el teléfono. */
+:root:has(.fichaStrip:not([hidden])) {
+  scroll-padding-top: var(--ficha-sticky-top);
+}
+
+.fichaFreshMark {
+  color: var(--green);
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+/* «Añadir cobro» pregunta primero: el `.segmented` de radios y solo el formulario
+   elegido. Sin `:has()` se ven los dos, que es lo que había. */
+.cobroKind {
+  margin: 4px 0 14px;
+  padding: 0;
+}
+
+.cobroKindChoice:has(input[name="cobroKind"][value="suelto"]:checked)
+  [data-seed-choice="recurrente"],
+.cobroKindChoice:has(input[name="cobroKind"][value="recurrente"]:checked)
+  [data-seed-choice="suelto"] {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  /* En el teléfono la franja es un solo botón abajo, a la izquierda del lanzador
+     del asistente (48 px a 20 px del borde) y a su altura, sin taparlo. */
+  .fichaStrip {
+    background: transparent;
+    border-bottom: 0;
+    bottom: 20px;
+    left: 16px;
+    right: var(--ficha-strip-clearance);
+    top: auto;
+    width: auto;
+  }
+
+  .fichaStripInner {
+    padding: 0;
+  }
+
+  .fichaStripName,
+  .fichaStripValue,
+  .fichaStrip .fichaMore {
+    display: none;
+  }
+
+  .fichaStripPrimary {
+    flex: 1 1 auto;
+    min-height: 48px;
+  }
+
+  /* El final de la ficha no se queda debajo del botón fijo. */
+  .ficha {
+    padding-bottom: 72px;
+  }
+
+  :root:has(.fichaStrip:not([hidden])) {
+    scroll-padding-bottom: var(--ficha-strip-clearance);
+    scroll-padding-top: 0;
+  }
+}
+
+/* ── La cabecera honesta (#1828) ────────────────────────────────────────────
+   Bajo el precio, de dónde sale y de cuándo, con el pie de cifra de siempre
+   (`.priceRefreshCaption`). El aviso del símbolo va justo debajo, en el oro de
+   aviso, y sus dos salidas —arreglarlo o declararlo intencional— son controles de
+   texto (la receta de «Control de texto»), en el azul de interacción y las dos
+   iguales al pasar por encima. La hoja destacada no se llena de botones por un
+   aviso. */
+.fichaPriceNotice {
+  align-items: baseline;
+  color: var(--gold);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 650;
+  gap: 2px 6px;
+}
+
+.fichaPriceNotice form {
+  display: inline;
+  margin: 0;
+}
+
+.fichaPriceNotice a,
+.fichaPriceNotice button {
+  color: var(--blue);
+  font-size: inherit;
+  font-weight: inherit;
+  text-underline-offset: 2px;
+}
+
+.fichaPriceNotice a:hover,
+.fichaPriceNotice button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ink);
 }
 
 .infoNote {
@@ -11376,15 +11756,11 @@ td.rowActions > * {
 .assistantRowAside {
   display: flex;
 }
+/* El control de texto (la receta de «Control de texto»), en gris de apoyo. */
 .assistantProposal .assistantRowAside button {
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 600;
-  min-height: 0;
-  text-decoration: underline;
   text-underline-offset: 2px;
 }
 .assistantProposal .assistantRowAside button:hover:not(:disabled) {
@@ -11773,45 +12149,141 @@ td.rowActions > * {
   font-weight: 700;
 }
 
-/* The ficha's full three-measure returns panel. */
+/* ── #1830 La pestaña Rentabilidad: «Tu dinero (TIR)» frente a «El fondo (TWR)» ──
+   Dos secciones abiertas lado a lado, bajo una misma regla gruesa partida por un
+   filete: no son hojas (la única de la página es la cabecera). Cada lado abre con
+   su cifra —menor que el valor de la cabecera, que es la dominante— y debajo sus
+   líneas de libro: rótulo a la izquierda, cifra tabular a la derecha. */
 .returnsPanel {
-  margin-top: 18px;
-}
-.returnsPanel h3 {
-  margin: 0 0 10px;
-}
-.returnsMeasures,
-.returnsSplit {
   display: grid;
-  gap: 6px 18px;
-  margin: 0 0 10px;
+  gap: 14px;
+  margin-top: 4px;
 }
-.returnsSplit {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  padding-top: 10px;
-  border-top: 1px solid var(--hairline);
+
+.returnsFaceoff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.returnsMeasure {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0;
+
+.returnsSide {
+  align-content: start;
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 20px 0 0;
 }
-.returnsMeasure dt {
-  font-size: 0.72rem;
-  color: var(--muted);
+
+.returnsSide + .returnsSide {
+  border-left: 1px solid var(--line-soft);
+  padding: 12px 0 0 20px;
 }
-.returnsMeasure dd {
-  margin: 0;
-  font-weight: 600;
+
+.returnsSide abbr {
+  text-decoration: underline dotted;
+}
+
+.returnsHeadline {
+  font-family: var(--font-numeric);
+  font-size: 1.45rem;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 4px;
 }
+
+.returnsHeadline small {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.returnsLede {
+  color: var(--muted);
+  font-size: 0.82rem;
+  max-width: 44ch;
+}
+
+.returnsLines {
+  display: grid;
+  margin: 8px 0 0;
+}
+
+.returnsLine {
+  align-items: baseline;
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px 0;
+}
+
+.returnsLine dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.returnsLine dd {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin: 0;
+  text-align: right;
+}
+
+/* «Sin declarar» no es una cifra: no toma la voz numérica (#1505). */
+.returnsLine dd.contextUnknown {
+  font-family: var(--font-body);
+}
+
+/* La comparación con el índice, en el lado de la TWR que compara: una subsección
+   abierta bajo un filete, no una tarjeta encima de otra. */
+.returnsSide .benchmarkCard {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 10px;
+  padding: 12px 0 0;
+}
+
+@media (max-width: 760px) {
+  .returnsFaceoff {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 22px;
+  }
+
+  .returnsSide,
+  .returnsSide + .returnsSide {
+    border-left: 0;
+    padding: 12px 0 0;
+  }
+}
+
 .returnsCaveats {
   margin: 0;
   padding-left: 16px;
   font-size: 0.72rem;
   color: var(--muted);
   line-height: 1.5;
+}
+
+/* ── #1830 Cobros en la ficha con pestañas ───────────────────────────────────
+   En la pestaña, el registro es una sección abierta como las otras pestañas: la
+   hoja destacada de la página es la cabecera. Sin cobros, una línea con su enlace. */
+.fichaTabBody > .cobros {
+  background: transparent;
+  margin: 0;
+  padding: 0;
+}
+
+.cobrosEmpty {
+  margin: 4px 0 0;
+}
+
+.cobrosEmpty a {
+  color: var(--blue);
 }
 
 /* ── Cobros surface (PRD #652 S1, folded from S0 variant C2) ─────────────── */

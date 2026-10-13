@@ -66,7 +66,10 @@ test("record an operation, then delete it", async ({ page }) => {
   });
   const release = await delayServerActions(page, 2000);
 
-  const opDelete = opsPanel.locator("tbody tr").first().locator("details.confirmDelete");
+  // «Eliminar» lives inside the row's «⋯» since #1827: open it, then the two steps.
+  const opRow = opsPanel.locator("tbody tr").first();
+  await opRow.getByLabel(/^Acciones de la operación del /).click();
+  const opDelete = opRow.locator("details.confirmDelete");
   await opDelete.locator("summary").click();
   await opDelete.getByRole("button", { name: "Confirmar" }).click();
 

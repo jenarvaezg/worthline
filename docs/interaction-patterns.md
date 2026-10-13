@@ -146,6 +146,17 @@ rechazo en el cliente con el mismo parser puro del servidor antes de enviar nada
 demás caminos de error siguen redirigiendo; migrarlos es trabajo pendiente, y el
 patrón ya está probado.
 
+**Lo que pasa después de un éxito no toca el terminal (#1829).** El panel lateral de la
+ficha aterriza en la pestaña del resultado, señala la fila nueva y ofrece «Añadir otra»
+sin empujar ninguna URL mientras el envío vuela: recuerda lo que salió del panel y
+reconoce su éxito cuando la URL aterriza en su `currentUrl` más su `ok`
+(`_ficha/ficha-again.ts`). La fila nueva sale de los datos —la única que este render
+lista y el anterior no; varias a la vez son una carga, no «la fila nueva»
+(`fresh-row-keys.ts`)—, no de adivinar qué formulario escribió qué. Y
+como el panel se superpone a la página, su envío no guarda el scroll de detrás: una
+superficie que decide dónde aterriza lo dice con `data-own-landing` y el guardián de
+scroll de #1296 la deja en paz.
+
 **Excepción: un éxito que no cambia nada de la página también vuelve como
 estado.** «Enviar feedback» (#1174) escribe en el control plane y en el correo,
 nunca en el workspace, así que no hay nada que revalidar; un redirect solo

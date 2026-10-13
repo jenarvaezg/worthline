@@ -436,6 +436,17 @@ const investmentMetaSchema = z.object({
   priceProvider: investmentPriceProviderSchema.optional(),
   providerSymbol: nonEmptyString.optional(),
   manualPricePerUnit: nonEmptyString.optional(),
+  /**
+   * The instant the hand-set price was set — rewritten on every price change since
+   * #1828, so the ficha can date the price with it.
+   */
+  manualPriceSetAt: nonEmptyString.optional(),
+  /**
+   * The pre-#1731 field, accepted FOREVER so an old backup keeps restoring (ADR
+   * 0104) but never restored: it was stamped only at the alta, so it may date a
+   * price with the day the holding was created. The v73 rung cleared the stamps in
+   * every database for the same reason; a restore must not bring them back.
+   */
   manualPricedAt: nonEmptyString.optional(),
 });
 

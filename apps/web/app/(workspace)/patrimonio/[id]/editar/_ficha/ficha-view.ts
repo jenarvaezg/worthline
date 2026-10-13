@@ -66,8 +66,9 @@ export interface SearchParamsReader {
   get(name: string): string | null;
 }
 
-function defaultTab(spec: FichaViewSpec): string {
-  return spec.tabs[0] ?? "";
+/** The tab the bare URL shows: the first. One rule for every URL built or read. */
+function defaultTab(tabs: readonly string[]): string {
+  return tabs[0] ?? "";
 }
 
 function offered(list: readonly string[], value: string | null | undefined) {
@@ -98,7 +99,7 @@ export function readFichaView(
     ) ??
     offered(spec.tabs, abrir) ??
     offered(spec.tabs, target.tab) ??
-    defaultTab(spec);
+    defaultTab(spec.tabs);
   const action =
     offered(spec.actions, params.get(FICHA_ACTION_PARAM)) ??
     offered(spec.actions, abrir) ??
@@ -129,13 +130,58 @@ export function writeFichaView(
   }
 
   // `set` keeps a param where it already was, so a toggle does not reshuffle the URL.
-  if (next.tab === defaultTab(spec)) params.delete(FICHA_TAB_PARAM);
+  if (next.tab === defaultTab(spec.tabs)) params.delete(FICHA_TAB_PARAM);
   else params.set(FICHA_TAB_PARAM, next.tab);
   if (next.action === null) params.delete(FICHA_ACTION_PARAM);
   else params.set(FICHA_ACTION_PARAM, next.action);
 
   const qs = params.toString();
   return qs ? `?${qs}` : "";
+}
+
+/**
+ * «Datos del activo»: the tab every tabbed ficha ends with — «Lo básico», the
+ * availability, the Zona de peligro. Named here because a family links INTO it
+ * («Indicar símbolo», #1828) while the page is the one that appends it.
+ */
+export const FICHA_DATOS_TAB = "datos";
+
+/**
+ * The ask a link into the ficha sends it: show this tab, open this action's panel,
+ * focus this field. A cancelable window event — `FichaLink` dispatches it, the
+ * island claims it with `preventDefault` — so one mechanism serves a link outside
+ * the island (the warnings band, #1828) and one printed inside a server-rendered tab
+ * (Cobros' «Añadir un cobro», #1830) alike (#1731 review).
+ */
+export const FICHA_OPEN_EVENT = "worthline:ficha-open";
+
+/**
+ * What a link into the ficha asks for: a tab, an action's panel, or both, and the
+ * `name` of a field to focus in the tab.
+ */
+export interface FichaOpenRequest {
+  tab?: string;
+  action?: string;
+  field?: string;
+}
+
+/**
+ * The view change a link asks for, or null when this ficha has no such tab or
+ * offers no such action — then the click is not claimed and the link navigates.
+ * Showing a tab alone closes the open panel: a fix is on the tab, not behind a
+ * sheet. An action opens its panel over the tab it names, or over the one on show.
+ */
+export function claimFichaOpen(
+  request: FichaOpenRequest,
+  spec: FichaViewSpec,
+): Partial<FichaView> | null {
+  const { action, tab } = request;
+  if (tab !== undefined && !spec.tabs.includes(tab)) return null;
+  if (action !== undefined) {
+    if (!spec.actions.includes(action)) return null;
+    return tab === undefined ? { action } : { action, tab };
+  }
+  return tab === undefined ? null : { action: null, tab };
 }
 
 /**
@@ -148,6 +194,23 @@ export function fichaTabUrl(
   tabs: readonly string[],
   tab: string,
 ): string {
-  if (tab === (tabs[0] ?? "")) return basePath;
+  if (tab === defaultTab(tabs)) return basePath;
   return `${basePath}?${new URLSearchParams({ [FICHA_TAB_PARAM]: tab })}`;
+}
+
+/**
+ * The ficha open on `tab` with `action`'s panel over it (#1830): the real `href` of
+ * a link printed inside a tab that opens an action — Cobros' «Añadir un cobro» —
+ * so it still lands with JS off, in a new tab or from a copied link.
+ */
+export function fichaActionUrl(
+  basePath: string,
+  tabs: readonly string[],
+  tab: string,
+  action: string,
+): string {
+  const params = new URLSearchParams();
+  if (tab !== defaultTab(tabs)) params.set(FICHA_TAB_PARAM, tab);
+  params.set(FICHA_ACTION_PARAM, action);
+  return `${basePath}?${params}`;
 }
