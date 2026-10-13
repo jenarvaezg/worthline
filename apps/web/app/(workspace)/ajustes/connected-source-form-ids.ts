@@ -15,3 +15,18 @@ export const BINANCE_CONNECT_FORM_ID = "binance";
 /** El pliegue de cambiar credenciales de una fuente YA conectada (#1225). */
 export const NUMISTA_CREDENTIALS_FORM_ID = "numista-credentials";
 export const BINANCE_CREDENTIALS_FORM_ID = "binance-credentials";
+
+/**
+ * Desconectar una fuente (#1849). En la ficha de su activo el formulario vive en el
+ * panel lateral: su rechazo tiene que reabrirlo y pintarse dentro, no en la banda
+ * de la página que el panel tapa en móvil.
+ */
+export const NUMISTA_DISCONNECT_FORM_ID = "numista-disconnect";
+export const BINANCE_DISCONNECT_FORM_ID = "binance-disconnect";
+
+/**
+ * Adónde vuelve «Eliminar y conservar histórico» cuando no puede volver a la página
+ * desde la que se envió: desde la ficha del activo, que ese modo borra, al tablero
+ * (#1849). Sin él, a `currentUrl`, como desde Conexiones.
+ */
+export const RETURN_AFTER_REMOVE_FIELD = "returnToAfterRemove";

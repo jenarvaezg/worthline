@@ -1,100 +1,42 @@
 /**
- * The Binance crypto holding detail surface (PRD #245, ADR 0021). Rendered on the
- * holding detail page when the asset's instrument is `crypto` AND it is backed by
- * a connected `binance` source (a MANUAL crypto investment keeps its operations
- * editor instead). Read-only on value — the holding is derived from its token
- * positions valued live (ADR 0021), so there is no manual value field; ownership
- * stays editable through the shared AssetEditForm above this surface.
+ * A Binance rung's tokens (PRD #245, ADR 0021): the «Tokens» tab of its ficha
+ * (#1849). Read-only on value — the holding is derived from its token positions
+ * valued live (ADR 0021).
  *
- * Two parts, in order:
- *  1. Connected-source tile: status pill + «Sincronizar Binance» + last-sync /
- *     tokens / value stats, mirroring the Numista tile.
- *  2. Token list: one row per token, GROUPED across wallets (#247) — a token held
- *     on spot · funding · flexible Earn shows once with the summed value and a
- *     wallet caption (symbol · unit price · wallets | balance | live value),
- *     sorted by value desc; an unpriceable token shows a "valor 0" warning tag.
+ * One row per token, GROUPED across wallets (#247) — a token held on spot ·
+ * funding · flexible Earn shows once with the summed value and a wallet caption
+ * (symbol · unit price · wallets | balance | live value), sorted by value desc; an
+ * unpriceable token shows a "valor 0" warning tag.
  *
- * Server-rendered, no client JS (ADR 0009): the list is plain markup, sync /
- * disconnect are form POSTs. Reuses the coin-collection CSS classes (the same
- * tile/list/tag treatment) so the two connected sources read identically.
+ * The unit price is read in the ledger's price voice (`fichaUnitPrice`), never
+ * rounded to the céntimo: a token worth a fraction of one read «0 € / ud.» (#1849).
+ * What the source's tile used to say went up to the ficha's header.
+ *
+ * Server-rendered, no client JS (ADR 0009). Reuses the coin-collection CSS classes
+ * (the same list/tag treatment) so the two connected sources read identically.
  */
 
-import { syncBinanceAction } from "@web/ajustes/binance-actions";
-import { formatLastSync } from "@web/ajustes/binance-helpers";
-import DisconnectBinanceFold from "@web/ajustes/disconnect-binance-fold";
-import { PendingSubmit } from "@web/pending-submit";
-import type { TokenPosition } from "@worthline/domain";
+import { fichaUnitPrice } from "@web/patrimonio/[id]/editar/_families/unit-price";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import {
-  buildBinanceHoldingView,
-  formatBinanceSince,
+  type BinanceHoldingView,
   formatWallets,
   tokenBasisTag,
 } from "./binance-holding-view";
 
 export function BinanceHoldingSection({
-  positions,
-  sourceId,
-  lastSyncAt,
-  sinceDateKey,
-  currentUrl,
+  view,
   privacyMode = false,
 }: {
-  positions: TokenPosition[];
-  sourceId: string | null;
-  lastSyncAt: string | null;
-  /** The earliest snapshot dateKey carrying this asset's frozen row — how far back
-   *  the reconstructed monthly history reaches (PRD #245 S5, #250). Null until a
-   *  backfill has run. Rendered as "Datos desde DD/MM/YYYY" when present. */
-  sinceDateKey: string | null;
-  currentUrl: string;
+  view: BinanceHoldingView;
   privacyMode?: boolean;
 }) {
   const eur = (amountMinor: number): string =>
     formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, privacyMode);
-  const view = buildBinanceHoldingView(positions);
-  const since = formatBinanceSince(sinceDateKey);
 
   return (
     <section className="coinCollection" aria-label="Cuenta Binance">
-      {/* ── Connected-source tile ─────────────────────────────────────────── */}
-      <div className="coinSourceTile">
-        <div className="coinSourceStatus">
-          <span className="coinStatusPill">Conectado</span>
-          <dl className="coinSourceStats">
-            <div>
-              <dt>Última sincronización</dt>
-              <dd>{formatLastSync(lastSyncAt)}</dd>
-            </div>
-            <div>
-              <dt>Tokens</dt>
-              <dd className="coinNum">{view.tokenCount}</dd>
-            </div>
-            <div>
-              <dt>Valor</dt>
-              <dd className="coinNum">{eur(view.totalMinor)}</dd>
-            </div>
-            {since ? (
-              <div>
-                <dt>Histórico</dt>
-                <dd>{since}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </div>
-
-        {sourceId ? (
-          <form action={syncBinanceAction} className="coinSyncForm">
-            <input name="currentUrl" type="hidden" value={currentUrl} />
-            <input name="sourceId" type="hidden" value={sourceId} />
-            <PendingSubmit pendingLabel="Sincronizando…">
-              Sincronizar Binance
-            </PendingSubmit>
-          </form>
-        ) : null}
-      </div>
-
-      {positions.length === 0 ? (
+      {view.rows.length === 0 ? (
         <p className="infoNote">
           Aún no hay tokens. Pulsa «Sincronizar Binance» para traer tus saldos.
         </p>
@@ -128,7 +70,7 @@ export function BinanceHoldingSection({
                   {row.symbol}
                   <small>
                     {row.unitPrice !== null
-                      ? ` · ${eur(Math.round(Number(row.unitPrice) * 100))} / ud.`
+                      ? ` · ${fichaUnitPrice(row.unitPrice, "EUR", privacyMode)} / ud.`
                       : " · sin precio"}
                     {wallets ? ` · ${wallets}` : ""}
                   </small>
@@ -143,13 +85,6 @@ export function BinanceHoldingSection({
           })}
         </div>
       )}
-
-      {/* ── Disconnect (folded) — remove vs freeze-into-stored (S6 #251) ────── */}
-      {sourceId ? (
-        <div className="coinDisconnect">
-          <DisconnectBinanceFold currentUrl={currentUrl} sourceId={sourceId} />
-        </div>
-      ) : null}
     </section>
   );
 }

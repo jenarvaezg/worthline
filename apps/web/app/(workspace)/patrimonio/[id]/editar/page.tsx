@@ -16,6 +16,10 @@
  * surface needs is the family's own business.
  */
 
+import {
+  BINANCE_DISCONNECT_FORM_ID,
+  NUMISTA_DISCONNECT_FORM_ID,
+} from "@web/ajustes/connected-source-form-ids";
 import { isDemoMode } from "@web/demo/write-guard";
 import {
   holdingBoardHref,
@@ -54,6 +58,9 @@ const SECTIONS_WITH_OWN_ERROR_BAND = [
   "externalEntry",
   // «Actualizar valor» prints its own, in «Lo básico» or in the panel (#1846).
   VALUE_FORM_ID,
+  // «Desconectar» prints its own, in the mirror ficha's panel (#1849).
+  NUMISTA_DISCONNECT_FORM_ID,
+  BINANCE_DISCONNECT_FORM_ID,
 ];
 
 /**

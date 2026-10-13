@@ -7,9 +7,12 @@
  * `fetch` for the signed balances + CoinGecko price), and disconnect's cascade.
  */
 
+import { holdingFamily } from "@web/patrimonio/[id]/editar/_families/holding-family";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db/testing";
+import { instrumentOfAsset, valuationMethodOfAsset } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { BINANCE_DISCONNECT_FORM_ID } from "./connected-source-form-ids";
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
@@ -302,6 +305,77 @@ describe("disconnectBinanceAction", () => {
     // (now deleted) source any more.
     expect(await store.connectedSources.readSourceIdForAsset(assetId)).toBeNull();
     expect(await store.connectedSources.readSourceIdForAsset(termLockedId)).toBeNull();
+  });
+});
+
+describe("disconnectBinanceAction from a rung's ficha (#1849)", () => {
+  const FICHA = "/patrimonio/wl_hld_binance/editar";
+  /** Where the redirect lands: the path and query the digest carries. */
+  const landing = (digest: string) => digest.split(";")[2] ?? "";
+
+  test("«Eliminar y conservar histórico» lands on the board with its notice, not on the 404 of the ficha it removed", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectBinanceAction,
+      form({
+        currentUrl: FICHA,
+        mode: "remove",
+        returnToAfterRemove: "/patrimonio",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toBe("/patrimonio?ok=binance_disconnected");
+  });
+
+  test("«Convertir en activo manual» comes back to the ficha, which is a stored holding now", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId, assetId } = await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectBinanceAction,
+      form({
+        currentUrl: FICHA,
+        mode: "freeze",
+        returnToAfterRemove: "/patrimonio",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toBe(`${FICHA}?ok=binance_frozen`);
+    const frozen = (await store.assets.readAssets()).find((a) => a.id === assetId)!;
+    expect(
+      holdingFamily({
+        connectedSourceAdapter: null,
+        instrument: instrumentOfAsset(frozen),
+        kind: "asset",
+        method: valuationMethodOfAsset(frozen),
+      }),
+    ).toBe("stored");
+  });
+
+  test("a refusal comes back to the ficha, tagged so its panel reopens", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+
+    const digest = await runAction(
+      disconnectBinanceAction,
+      form({
+        currentUrl: FICHA,
+        mode: "remove",
+        returnToAfterRemove: "/patrimonio",
+        sourceId: "source_gone",
+      }),
+      store,
+    );
+
+    expect(landing(digest)).toMatch(new RegExp(`^${FICHA}\\?`));
+    expect(landing(digest)).toContain(`form=${BINANCE_DISCONNECT_FORM_ID}`);
+    expect(landing(digest)).toContain("error=");
   });
 });
 

@@ -1,5 +1,6 @@
 import { localRedirectPath, parseScopeCookie, SCOPE_COOKIE_NAME } from "@web/intake";
 import { cookies } from "next/headers";
+import { RETURN_AFTER_REMOVE_FIELD } from "./connected-source-form-ids";
 
 export const BASE = "/ajustes";
 export const CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE =
@@ -25,6 +26,20 @@ export function connectedSourceCredentialsRejectedMessage(providerLabel: string)
 
 export function currentUrlOf(formData: FormData): string {
   return localRedirectPath(String(formData.get("currentUrl") ?? ""), BASE);
+}
+
+/**
+ * Adónde aterriza una desconexión que salió bien (#1849). «Convertir en activo
+ * manual» vuelve a la página desde la que se envió: el activo sigue ahí, ya de
+ * valor guardado. «Eliminar y conservar histórico» también, salvo que el formulario
+ * diga otro destino ({@link RETURN_AFTER_REMOVE_FIELD}): desde la ficha del activo,
+ * que ese modo borra, volver a ella era un 404. Solo se sigue una ruta de la app.
+ */
+export function disconnectLanding(formData: FormData, removed: boolean): string {
+  const current = currentUrlOf(formData);
+  return removed
+    ? localRedirectPath(String(formData.get(RETURN_AFTER_REMOVE_FIELD) ?? ""), current)
+    : current;
 }
 
 export async function scopeMemberId(): Promise<string | undefined> {
