@@ -259,8 +259,6 @@ export async function loadHousingSurface(
   const tabs = ownTabs.map((key) => (key === COBROS_TAB ? cobros.tab : valoracion));
 
   return holdingSurface("housing", {
-    // The value form left: «Registrar tasación» is this ficha's door for the fact.
-    basics: { showValueForm: false },
     ficha: {
       actions,
       errorTargets: {
@@ -276,6 +274,8 @@ export async function loadHousingSurface(
       },
       figures,
       instrument: INSTRUMENT_LABELS_ES[instrumentOfAsset(asset)],
+      // «Registrar tasación» prints its own refusal, in its panel (#1847).
+      ownErrorForms: [ANCHOR_FORM_ID],
       rows: { ...payoutsPanel.rows, tasaciones: anchors.map((anchor) => anchor.id) },
       tabs,
       value: money(value.amountMinor),

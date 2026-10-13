@@ -187,10 +187,9 @@ describe("EditarPage — one id vocabulary (#1318)", () => {
 });
 
 describe("EditarPage — a debt's ficha is a state header with tabs (#1848)", () => {
-  test("no «Configuración avanzada»: its own tabs, then «Datos de la deuda»", async () => {
+  test("its own tabs, then «Datos de la deuda»", async () => {
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     expect(html).toContain('aria-label="Ficha de la deuda"');
     expect(html).toContain('aria-label="Estado de la deuda"');
     expect(html).toContain('aria-label="Acciones de la deuda"');

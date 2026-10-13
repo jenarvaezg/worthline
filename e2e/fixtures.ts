@@ -232,22 +232,6 @@ export async function openFichaTab(page: import("@playwright/test").Page, label:
   await expect(tab).toHaveAttribute("aria-current", "true");
 }
 
-/**
- * Expand the edit page's progressive-disclosure block before using advanced forms.
- * Only the fichas that still keep «Configuración avanzada» — a property, a
- * connected source; an investment's ficha has tabs and a side panel since #1826, a
- * debt's since #1848.
- */
-export async function openAdvancedSettings(page: import("@playwright/test").Page) {
-  const advanced = page.locator("details.editAdvanced");
-  await expect(advanced).toBeVisible();
-  await waitForHydration(advanced);
-  if (!(await advanced.evaluate((el: HTMLDetailsElement) => el.open))) {
-    await advanced.getByText("Configuración avanzada", { exact: true }).click();
-  }
-  await expect(advanced).toHaveJSProperty("open", true);
-}
-
 /** Open a holding row's ⋯ actions popover (the menu hides Editar/Eliminar/ack). */
 export async function openHoldingMenu(
   page: import("@playwright/test").Page,

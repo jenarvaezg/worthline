@@ -120,7 +120,6 @@ export async function loadStoredSurface(
           asset={asset}
           currentUrl={valueUrl}
           formError={formError}
-          placement="panel"
           readOnly={isDemo}
           returnTo={valueUrl}
         />
@@ -133,8 +132,6 @@ export async function loadStoredSurface(
   ];
 
   return holdingSurface("stored", {
-    // The value form is the bar's now: «Lo básico» keeps the identity only.
-    basics: { showValueForm: false },
     ficha: {
       actions,
       errorTargets: {
@@ -144,6 +141,8 @@ export async function loadStoredSurface(
       },
       figures,
       instrument: INSTRUMENT_LABELS_ES[instrumentOfAsset(asset)],
+      // «Actualizar valor» prints its own refusal, in its panel (#1846).
+      ownErrorForms: [VALUE_FORM_ID],
       rows: payoutsPanel.rows,
       tabs: [cobros.tab],
       // The board row's figure, untransformed, in the holding's own currency.

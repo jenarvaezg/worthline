@@ -35,13 +35,13 @@ describe("holding public id vocabulary", () => {
     expect(holdingBoardHref("wl_hld_aaaa")).toBe("/patrimonio#wl_hld_aaaa");
   });
 
-  test("the operations deep-link unfolds the advanced block, not just the fragment", () => {
+  test("the operations deep-link opens its tab, not just the fragment", () => {
     expect(holdingOperationsHref("wl_hld_aaaa")).toBe(
       "/patrimonio/wl_hld_aaaa/editar?abrir=operaciones#operaciones",
     );
   });
 
-  test("the cobros deep-link unfolds the advanced block, not just the fragment", () => {
+  test("the cobros deep-link opens its tab, not just the fragment", () => {
     expect(holdingCobrosHref("wl_hld_aaaa")).toBe(
       "/patrimonio/wl_hld_aaaa/editar?abrir=cobros#cobros",
     );

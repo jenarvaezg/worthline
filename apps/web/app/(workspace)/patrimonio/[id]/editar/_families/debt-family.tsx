@@ -299,7 +299,6 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
         currentUrl={currentUrl}
         formError={formError}
         liability={liability}
-        placement="panel"
         readOnly={isDemo}
         returnTo={currentUrl}
       />
@@ -381,8 +380,6 @@ export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSu
   };
 
   return holdingSurface("debt", {
-    // «Actualizar saldo» is the bar's now (#1848): «Lo básico» keeps the identity.
-    basics: { showRawBalanceForm: false },
     ficha: {
       actions,
       errorTargets: {

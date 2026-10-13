@@ -268,6 +268,5 @@ async function rentedFlatTabs() {
     scopeId: undefined,
   });
   const surface = await loadHousingSurface({ ...ficha, asset, payoutsPanel });
-  if (surface.layout.kind !== "ficha") throw new Error("a property's ficha has tabs");
-  return surface.layout.ficha.tabs;
+  return surface.ficha.tabs;
 }

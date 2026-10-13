@@ -350,11 +350,11 @@ describe("OwnershipInputs", () => {
 });
 
 /**
- * The raw «Saldo pendiente» form writes `liabilities.current_balance_minor`, a
- * field the engine only reads as a fallback (#1290). Rendering it for a debt with
- * a modelled curve is a write into the void: the user "saves" and no figure moves.
+ * «Lo básico» of a debt is its identity only. The raw «Saldo pendiente» door is the
+ * bar's «Actualizar saldo» (#1848), offered while the stored field governs the
+ * figure (#1290) — `page.test.tsx` pins that rule; here, that it left this form.
  */
-describe("LiabilityEditForm — raw balance door (#1290)", () => {
+describe("LiabilityEditForm — the identity, without the balance (#1290, #1850)", () => {
   const liability: Liability = {
     currency: "EUR",
     currentBalance: { amountMinor: 587_918, currency: "EUR" },
@@ -364,8 +364,8 @@ describe("LiabilityEditForm — raw balance door (#1290)", () => {
     type: "debt",
   };
 
-  const render = (showRawBalanceForm: boolean): string =>
-    renderToStaticMarkup(
+  test("it exposes no raw balance input, and never prints the stored figure", () => {
+    const markup = renderToStaticMarkup(
       <LiabilityEditForm
         assets={[]}
         boardHref="/patrimonio#wl_hld_liab"
@@ -373,34 +373,16 @@ describe("LiabilityEditForm — raw balance door (#1290)", () => {
         liability={liability}
         members={[{ id: "m1", name: "Jose" }]}
         scopeMemberId="m1"
-        showRawBalanceForm={showRawBalanceForm}
         values={{}}
       />,
     );
 
-  test("a debt whose figure comes from the stored field keeps the form", () => {
-    const markup = render(true);
-
-    expect(markup).toContain("Saldo pendiente (EUR)");
-    expect(markup).toContain('name="balance"');
-    expect(markup).toContain("Actualizar saldo");
-  });
-
-  test("a debt with a modelled curve exposes no raw balance input", () => {
-    const markup = render(false);
-
+    expect(markup).toContain("Nombre de la deuda");
     expect(markup).not.toContain("Saldo pendiente");
     expect(markup).not.toContain('name="balance"');
     expect(markup).not.toContain("Actualizar saldo");
-    // The identity form still renders — only the balance door is gone.
-    expect(markup).toContain("Nombre de la deuda");
-  });
-
-  test("the stale stored figure never reaches the page for a curved debt", () => {
-    // 5.879,18 € is the zombie from the report: shown while the curve said
-    // 5.494,98 €. It must not be printed anywhere on the surface.
-    expect(render(false)).not.toContain("5879,18");
-    expect(render(true)).toContain("5879,18");
+    // 5.879,18 € is the zombie from the #1290 report.
+    expect(markup).not.toContain("5879,18");
   });
 });
 

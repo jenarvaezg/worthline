@@ -1,13 +1,12 @@
 /**
- * The Cobros panel — the one advanced surface every ASSET carries, whatever its
- * family (PRD #652 S1, #656, ADR 0054).
+ * The Cobros panel — the one surface every ASSET carries, whatever its family
+ * (PRD #652 S1, #656, ADR 0054).
  *
  * A payout is a pure attribution record: this holding paid its owner. It is never
  * a figure, so it belongs to no valuation family — a rented flat, a dividend fund
  * and a term deposit all take the same panel. The family decides only WHERE it
  * sits in its own order, which is why this loader returns the pieces instead of
- * rendering itself into the page: the whole section for a ficha that keeps the
- * accordion, or its record and its entry forms for a tabbed one (#1826), each
+ * rendering itself into the page: its record and its entry forms (#1826), each
  * returning to whichever URL the family says its result shows on.
  *
  * It also hands back the payouts themselves, dated as the return engine reads
@@ -34,7 +33,6 @@ import {
   CobrosEntry,
   type CobrosProps,
   CobrosRecord,
-  CobrosSection,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
 import { buildCobroRows } from "@web/patrimonio/[id]/editar/_surfaces/cobros-view";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
@@ -57,7 +55,7 @@ export async function loadPayoutsPanel(
     scopeId: string | undefined;
   },
 ): Promise<PayoutsPanel> {
-  const { currentUrl, formError, id, isDemo, privacyMode, store, today } = ficha;
+  const { formError, id, isDemo, privacyMode, store, today } = ficha;
   const { asset, overrides, scopeId } = input;
 
   const [payouts, schedules, fireConfig] = await Promise.all([
@@ -150,6 +148,5 @@ export async function loadPayoutsPanel(
       cobros: buildCobroRows(payouts, schedules, today).map((row) => row.key),
       recurrentes: schedules.map((schedule) => schedule.id),
     },
-    section: <CobrosSection {...props(currentUrl)} />,
   };
 }

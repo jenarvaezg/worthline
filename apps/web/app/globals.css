@@ -5494,9 +5494,9 @@ code {
 /* Plegable de fontanería (#1729): lo que solo importa cuando algo va mal —la URL
    de la base de datos, la clave interna del healthcheck y su valor en crudo— no
    desaparece, se pliega. Registro de papel: una regla que lo abre y un resumen que
-   lo nombra. No es `.editAdvanced`: aquel resumen es un encabezado de sección de
-   formulario (tinta, 1 rem, 650) y este es una etiqueta pequeña dentro de un panel
-   de ajustes, del mismo peso que los `dt` de la lista que pliega. */
+   lo nombra. Su resumen no es un encabezado de sección de formulario (tinta, 1 rem,
+   650) sino una etiqueta pequeña dentro de un panel de ajustes, del mismo peso que
+   los `dt` de la lista que pliega. */
 .techDetails {
   border-top: 1px solid var(--line);
   margin-top: 14px;
@@ -7297,14 +7297,13 @@ td.rowActions > * {
   color: var(--blue);
 }
 
-/* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico» y que el
-   plegable, no dentro de ellos, así que comparte su ritmo y su encabezado en vez de
-   repetir una receta equivalente al lado (design-system §7). */
+/* Disponibilidad declarada (#1528): vive al mismo nivel que «Lo básico», no dentro,
+   así que comparte su ritmo y su encabezado en vez de repetir una receta
+   equivalente al lado (design-system §7). */
 /* `.holdingLots` (#1676) entra en el mismo grupo y no en una regla equivalente al
    lado: la escalera de lotes es la superficie de disponibilidad con más resolución, y
    dos recetas idénticas se separan en cuanto una de las dos se toca. */
 .editBasic,
-.editAdvanced,
 .holdingAvailability,
 .holdingLots {
   margin-top: 18px;
@@ -7393,7 +7392,6 @@ td.rowActions > * {
   margin: 0 0 12px;
 }
 
-.editAdvanced,
 .holdingAvailability,
 .holdingLots {
   border-top: 1px solid var(--line);
@@ -7414,19 +7412,6 @@ td.rowActions > * {
   font-size: 0.875rem;
   color: var(--ink);
   margin: 0;
-}
-
-.editAdvanced > summary {
-  color: var(--ink);
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.editAdvancedBody {
-  display: grid;
-  gap: 16px;
-  margin-top: 16px;
 }
 
 /* ── La ficha con pestañas (#1826, variante B2 de #1737) ─────────────────────
@@ -8203,12 +8188,6 @@ td.rowActions > * {
   font-size: 0.78rem;
   color: var(--muted);
   font-style: italic;
-}
-
-.updateValueForm {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
 }
 
 /* Housing valuation editor (PRD #108): rate + anchors on /patrimonio/[id]/editar. */
@@ -12278,10 +12257,6 @@ td.rowActions > * {
   box-shadow: none;
   padding: 20px;
   margin-bottom: 16px;
-}
-.cobros h3 {
-  margin: 0 0 4px;
-  font-size: 1.05rem;
 }
 .cobros h4 {
   margin: 0 0 4px;

@@ -111,14 +111,13 @@ test("stored: a cash asset edits its current value from the detail page", async 
   const ficha = `/patrimonio/${id}/editar`;
   await page.goto(ficha);
   // Stored ficha (#1846): a state header with the value and when it was put up to
-  // date — no operations, no curve, no «Configuración avanzada».
+  // date — no operations, no curve.
   const state = page.getByRole("region", { name: "Estado del activo" });
   await expect(state.locator(".fichaValue")).toHaveText(/5\.?000\s*€/);
   await expect(state.locator(".fichaFigures")).toContainText("Puesto al día");
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toHaveCount(0);
-  await expect(page.locator("details.editAdvanced")).toHaveCount(0);
 
   // «Actualizar valor» is the bar's habitual action, in the side panel.
   let panel = await openFichaAction(page, "Actualizar valor");
@@ -160,12 +159,11 @@ test("appreciating: a property edits its valuation curve from the detail page", 
 
   await page.goto(`/patrimonio/${id}/editar`);
   // Housing ficha (#1847): a state header with the curve's value, its last
-  // appraisal and its rate — no «Configuración avanzada».
+  // appraisal and its rate.
   const state = page.getByRole("region", { name: "Estado del activo" });
   await expect(state.locator(".fichaValue")).toHaveText(/220\.?000\s*€/);
   await expect(state.locator(".fichaFigures")).toContainText("Última tasación");
   await expect(state.locator(".fichaFigures")).toContainText("Adquisición · 10/01/2021");
-  await expect(page.locator("details.editAdvanced")).toHaveCount(0);
 
   // With no cobros it opens on «Valoración», the curve with its rate field.
   await expect(

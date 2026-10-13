@@ -31,7 +31,6 @@ const NO_PAYOUTS: PayoutsPanel = {
   entry: () => null,
   record: () => null,
   rows: { cobros: [], recurrentes: [] },
-  section: null,
 };
 
 async function seedFlat(): Promise<PersistenceTestStore> {
@@ -83,8 +82,7 @@ async function fichaOf(store: PersistenceTestStore) {
     today: TODAY,
   };
   const surface = await loadHousingSurface(ctx);
-  if (surface.layout.kind !== "ficha") throw new Error("a property's ficha has tabs");
-  return { asset, ficha: surface.layout.ficha };
+  return { asset, ficha: surface.ficha };
 }
 
 describe("the property's ficha quotes its board row (#1847)", () => {

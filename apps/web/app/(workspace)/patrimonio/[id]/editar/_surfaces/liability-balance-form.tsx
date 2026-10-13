@@ -2,12 +2,10 @@
  * «Actualizar saldo»: the hand-set `current_balance_minor` of a debt — the ONLY
  * balance a debt without a modelled curve has (#1290).
  *
- * The sibling of `AssetValueForm` (#1846), for a debt. On the debt's tabbed ficha it
- * is an action of the bar and lives in the side panel (#1848), posting the ficha's
- * URL as `returnTo` so the success stays where the new balance shows; in «Lo
- * básico» (a ficha still on the accordion) it posts none, and the success lands on
- * the board's row as it always did. Either way its refusal is its own
- * (`BALANCE_FORM_ID`), printed HERE, once, with what was typed.
+ * The sibling of `AssetValueForm` (#1846), for a debt. On the debt's ficha it is an
+ * action of the bar and lives in the side panel (#1848), posting the ficha's URL as
+ * `returnTo` so the success stays where the new balance shows. Its refusal is its
+ * own (`BALANCE_FORM_ID`), printed HERE, once, with what was typed.
  *
  * Offered only while the stored balance governs the debt's figure
  * (`storedBalanceGovernsDebtFigure`); the server action re-checks it.
@@ -26,7 +24,6 @@ export function LiabilityBalanceForm({
   currentUrl,
   formError,
   liability,
-  placement,
   readOnly = false,
   returnTo,
 }: {
@@ -34,22 +31,17 @@ export function LiabilityBalanceForm({
   currentUrl: string;
   formError: FormErrorContext | null;
   liability: Liability;
-  /** In «Lo básico» it is ruled off from the identity form above it. */
-  placement: "basics" | "panel";
   /** Demo: the write-guard rejects it, so the submit is not offered (§10). */
   readOnly?: boolean;
-  /** Where the success returns; absent, the board's row. */
-  returnTo?: string;
+  /** Where the success returns: the ficha, where the new balance shows. */
+  returnTo: string;
 }) {
   const refusal = formError?.formId === BALANCE_FORM_ID ? formError : null;
 
   return (
-    <form
-      action={updateLiabilityBalanceAction}
-      className={placement === "basics" ? "stackForm updateValueForm" : "stackForm"}
-    >
+    <form action={updateLiabilityBalanceAction} className="stackForm">
       <input name="currentUrl" type="hidden" value={currentUrl} />
-      {returnTo ? <input name="returnTo" type="hidden" value={returnTo} /> : null}
+      <input name="returnTo" type="hidden" value={returnTo} />
       <input name="id" type="hidden" value={liability.id} />
       {refusal ? (
         <p className="errorBand" id={ERROR_ID} role="alert">

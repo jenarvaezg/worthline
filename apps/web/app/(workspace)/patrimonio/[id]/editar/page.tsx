@@ -5,9 +5,9 @@
  * The page does four things and no more: resolve which holding the public
  * `wl_hld_…` id names (#1318), load the surface family that holding belongs to
  * (`_families/holding-surface`), render the chrome every ficha shares — the
- * feedback bands, «Lo básico», the Zona de peligro — and lay the family out the
- * way the family says: its body inside the «Configuración avanzada» disclosure, or
- * (#1826) the tabbed ficha, where that chrome becomes the «Datos del activo» tab.
+ * feedback bands, «Lo básico», the Zona de peligro — and lay the family out as the
+ * one ficha every family has had since #1850: a state header, a bar and tabs
+ * (#1826), where that chrome becomes the «Datos del activo» tab.
  *
  * What it deliberately does NOT do is branch on the instrument. It used to: a
  * dozen booleans re-tested at every read and again at every section, every family's
@@ -16,10 +16,6 @@
  * surface needs is the family's own business.
  */
 
-import {
-  BINANCE_DISCONNECT_FORM_ID,
-  NUMISTA_DISCONNECT_FORM_ID,
-} from "@web/ajustes/connected-source-form-ids";
 import { isDemoMode } from "@web/demo/write-guard";
 import {
   holdingBoardHref,
@@ -31,12 +27,9 @@ import { parseFormError, resolveOkMessage } from "@web/intake";
 import { COBRO_FORM_ID } from "@web/inversiones/cobro-form-ids";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
-import { VALUE_FORM_ID } from "@web/patrimonio/action-helpers";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadAvailabilityPanel } from "./_chrome/availability-panel";
 import { loadDangerPanel } from "./_chrome/danger-panel";
-import { holdingWarnings } from "./_chrome/holding-warnings";
 import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
 import type { FichaContext } from "./_families/family-contract";
@@ -45,37 +38,24 @@ import type { FichaTarget } from "./_ficha/ficha-view";
 import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
-import { ANCHOR_FORM_ID } from "./_surfaces/housing-valuation-section";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
 
-/** The forms that render their own error band, next to the field that produced it. */
-const SECTIONS_WITH_OWN_ERROR_BAND = [
-  "operation",
-  ...Object.values(COBRO_FORM_ID),
-  "transfer",
-  TRASH_FORM_ID,
-  // «Traer de otra entidad» prints its own band (#1518): without it here, its
-  // refusal was printed twice.
-  "externalEntry",
-  // «Actualizar valor» prints its own, in «Lo básico» or in the panel (#1846).
-  VALUE_FORM_ID,
-  // «Registrar tasación» prints its own, in the property's panel (#1847).
-  ANCHOR_FORM_ID,
-  // «Desconectar» prints its own, in the mirror ficha's panel (#1849).
-  NUMISTA_DISCONNECT_FORM_ID,
-  BINANCE_DISCONNECT_FORM_ID,
-];
+/**
+ * The chrome's forms that print their own refusal, next to the field that produced
+ * it: the Cobros panel and the Papelera, which the page loads for every ficha. A
+ * family's own forms that do the same are the family's to name
+ * (`FichaLayout.ownErrorForms`), so the page imports no family's form ids.
+ */
+const CHROME_FORMS_WITH_OWN_ERROR_BAND = [...Object.values(COBRO_FORM_ID), TRASH_FORM_ID];
 
 /**
- * The chrome's own forms, all of which live in «Datos del activo» on a tabbed ficha.
- * A family that moved one of them out says so in its own targets, which win: the
- * value form is in «Lo básico» unless the family's bar offers it (#1846).
+ * The chrome's own forms, all of which live in «Datos del activo». A family's
+ * targets are its own and are merged over these.
  */
 const CHROME_ERROR_TARGETS: Readonly<Record<string, FichaTarget>> = {
   availableFrom: { tab: FICHA_DATOS_TAB },
   edit: { tab: FICHA_DATOS_TAB },
   [TRASH_FORM_ID]: { tab: FICHA_DATOS_TAB },
-  [VALUE_FORM_ID]: { tab: FICHA_DATOS_TAB },
 };
 
 /**
@@ -179,25 +159,12 @@ export default async function EditarPage({
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
-  // On a tabbed ficha the chrome's forms live in «Datos del activo», so that is
-  // where their terminals return (#1826); elsewhere, to the ficha as it was.
-  const layout = surface.layout;
-  const fichaTabKeys =
-    layout.kind === "ficha"
-      ? [...layout.ficha.tabs.map((tab) => tab.key), FICHA_DATOS_TAB]
-      : null;
-  const chromeUrl = fichaTabKeys
-    ? fichaTabUrl(currentUrl, fichaTabKeys, FICHA_DATOS_TAB)
-    : currentUrl;
+  // The chrome's forms live in «Datos del activo», so that is where their terminals
+  // return (#1826).
+  const layout = surface.ficha;
+  const fichaTabKeys = [...layout.tabs.map((tab) => tab.key), FICHA_DATOS_TAB];
+  const chromeUrl = fichaTabUrl(currentUrl, fichaTabKeys, FICHA_DATOS_TAB);
   const chromeContext = { ...ficha, currentUrl: chromeUrl };
-
-  // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
-  // unfolded and the archive intent in the URL (#1549) — the traspaso surface is
-  // inside a collapsed <details>, so a bare fragment would reveal nothing. (A
-  // tabbed ficha reads the same `?abrir=` in its island, `_ficha/ficha-view.ts`.)
-  const abrir = resolvedSearchParams?.abrir;
-  const advancedOpen =
-    abrir === "operaciones" || abrir === "traspaso" || abrir === "cobros";
 
   // «Lo básico» is the one form the page itself owns, so its action is bound here.
   async function boundUpdateInvestmentAction(formData: FormData) {
@@ -216,34 +183,21 @@ export default async function EditarPage({
     trashImpact: surface.trashImpact,
   });
 
-  // A tabbed ficha prints some warnings beside their figure and links the rest to
-  // the tab where each is fixed (#1828); the accordion keeps its band as it was.
-  const bandPlacement =
-    layout.kind === "ficha" && fichaTabKeys
-      ? {
-          exclude: layout.ficha.inlineWarnings ?? [],
-          fixes: Object.fromEntries(
-            Object.entries(layout.ficha.warningFixes ?? {}).map(([code, fix]) => [
-              code,
-              { ...fix, href: fichaTabUrl(currentUrl, fichaTabKeys, fix.tab) },
-            ]),
-          ),
-        }
-      : {};
-
-  // The holding's active warnings, read once (#1731 review): a tabbed family already
-  // read them to place its inline ones; the accordion's are read here.
-  const warnings =
-    layout.kind === "ficha"
-      ? layout.ficha.warnings
-      : holdingWarnings({ asset, id, operations: surface.operations, overrides });
-
+  // The ficha prints some warnings beside their figure and links the rest to the
+  // tab where each is fixed (#1828). Its family read them once (#1731 review), to
+  // place its inline ones; the band prints the rest of the same list.
   const warningsBand = (
     <WarningsBand
       currentUrl={currentUrl}
+      exclude={layout.inlineWarnings ?? []}
+      fixes={Object.fromEntries(
+        Object.entries(layout.warningFixes ?? {}).map(([code, fix]) => [
+          code,
+          { ...fix, href: fichaTabUrl(currentUrl, fichaTabKeys, fix.tab) },
+        ]),
+      )}
       id={id}
-      warnings={warnings}
-      {...bandPlacement}
+      warnings={layout.warnings}
     />
   );
 
@@ -260,10 +214,8 @@ export default async function EditarPage({
           isCoinCollection={surface.basics.isCoinCollection}
           members={activeMembers}
           method={surface.basics.method}
-          formError={formError}
           privacyMode={privacyMode}
           scopeMemberId={ownershipScopeMemberId}
-          showValueForm={surface.basics.showValueForm}
           updateInvestmentAction={boundUpdateInvestmentAction}
           valueOnlyOpening={surface.basics.valueOnlyOpening}
           values={formError?.formId === "edit" ? formError.values : {}}
@@ -273,30 +225,20 @@ export default async function EditarPage({
           assets={allAssets.filter((a) => a.type !== "investment")}
           boardHref={boardHref}
           currentUrl={chromeUrl}
-          formError={formError}
           liability={liability}
           members={activeMembers}
           scopeMemberId={ownershipScopeMemberId}
-          showRawBalanceForm={surface.basics.showRawBalanceForm}
           values={formError?.formId === "edit" ? formError.values : {}}
         />
       ) : null}
     </section>
   );
 
-  const okBand = formOk ? (
-    <p className="successBand" role="status">
-      {formOk}
-    </p>
-  ) : null;
-
-  // The page-level band carries only the errors NO section prints itself. The list
-  // is the seam: a section that grows its own band adds itself here, and the reader
-  // sees at a glance which forms speak for themselves. A tabbed family names the
-  // panel forms of its own that do (#1848).
+  // The page-level band carries only the errors NO form prints itself: the chrome's
+  // that do are listed above, and the family names its own (#1848, #1850).
   const ownErrorForms = [
-    ...SECTIONS_WITH_OWN_ERROR_BAND,
-    ...(layout.kind === "ficha" ? (layout.ficha.ownErrorForms ?? []) : []),
+    ...CHROME_FORMS_WITH_OWN_ERROR_BAND,
+    ...(layout.ownErrorForms ?? []),
   ];
   const errorBand =
     formError && !ownErrorForms.includes(formError.formId ?? "") ? (
@@ -305,86 +247,51 @@ export default async function EditarPage({
       </p>
     ) : null;
 
-  if (layout.kind === "ficha") {
-    const { ficha: tabbed } = layout;
-    // A debt is not an «activo»: the ficha names it as what it is (#1848).
-    const subject = asset ? "activo" : "deuda";
-    const holdingFicha = (
-      <HoldingFicha
-        actions={tabbed.actions}
-        basePath={currentUrl}
-        boardHref={boardHref}
-        errorTargets={{ ...CHROME_ERROR_TARGETS, ...tabbed.errorTargets }}
-        figures={tabbed.figures}
-        instrument={tabbed.instrument}
-        name={(asset ?? liability)?.name ?? ""}
-        // The success notice sits inside the ficha, beside the tabs where the result
-        // landed, and offers «Añadir otra» after a panel's submit (#1829).
-        notice={formOk}
-        rows={tabbed.rows ?? {}}
-        subject={subject}
-        tabs={[
-          ...tabbed.tabs,
-          {
-            content: (
-              <div className="fichaDatos">
-                {basicsSection}
-                {availabilityPanel}
-                {/* Last on purpose: the two-step delete, with the truth about what
-                    it withdraws, is the one thing on this tab nobody comes for. */}
-                {dangerPanel}
-              </div>
-            ),
-            key: FICHA_DATOS_TAB,
-            label: asset ? "Datos del activo" : "Datos de la deuda",
-            shortLabel: "Datos",
-          },
-        ]}
-        value={tabbed.value}
-      />
-    );
-
-    return (
-      <section
-        className="formPage fichaPage"
-        aria-label={asset ? "Ficha del activo" : "Ficha de la deuda"}
-      >
-        {warningsBand}
-        {errorBand}
-        {tabbed.wrap ? tabbed.wrap(holdingFicha) : holdingFicha}
-      </section>
-    );
-  }
+  // A debt is not an «activo»: the ficha names it as what it is (#1848).
+  const subject = asset ? "activo" : "deuda";
+  const holdingFicha = (
+    <HoldingFicha
+      actions={layout.actions}
+      basePath={currentUrl}
+      boardHref={boardHref}
+      errorTargets={{ ...CHROME_ERROR_TARGETS, ...layout.errorTargets }}
+      figures={layout.figures}
+      instrument={layout.instrument}
+      name={(asset ?? liability)?.name ?? ""}
+      // The success notice sits inside the ficha, beside the tabs where the result
+      // landed, and offers «Añadir otra» after a panel's submit (#1829).
+      notice={formOk}
+      rows={layout.rows ?? {}}
+      subject={subject}
+      tabs={[
+        ...layout.tabs,
+        {
+          content: (
+            <div className="fichaDatos">
+              {basicsSection}
+              {availabilityPanel}
+              {/* Last on purpose: the two-step delete, with the truth about what
+                  it withdraws, is the one thing on this tab nobody comes for. */}
+              {dangerPanel}
+            </div>
+          ),
+          key: FICHA_DATOS_TAB,
+          label: asset ? "Datos del activo" : "Datos de la deuda",
+          shortLabel: "Datos",
+        },
+      ]}
+      value={layout.value}
+    />
+  );
 
   return (
-    <>
-      {okBand}
-
-      <section className="formPage" aria-label="Editar holding">
-        <div className="panelHeader">
-          <h2>Editar {asset ? "activo" : "deuda"}</h2>
-          <Link href={boardHref}>← Volver</Link>
-        </div>
-
-        {warningsBand}
-
-        {errorBand}
-
-        {basicsSection}
-
-        {/* Fuera del plegable a propósito: cuando la fecha NO está declarada, esta
-            superficie es lo único que lo dice, y un aviso escondido tras un
-            «Configuración avanzada» no avisa de nada. */}
-        {availabilityPanel}
-
-        <details suppressHydrationWarning className="editAdvanced" open={advancedOpen}>
-          <summary>Configuración avanzada</summary>
-          <div className="editAdvancedBody">{layout.body}</div>
-        </details>
-
-        {/* Danger zone — two-step delete, with the truth about what it withdraws */}
-        {dangerPanel}
-      </section>
-    </>
+    <section
+      className="formPage fichaPage"
+      aria-label={asset ? "Ficha del activo" : "Ficha de la deuda"}
+    >
+      {warningsBand}
+      {errorBand}
+      {layout.wrap ? layout.wrap(holdingFicha) : holdingFicha}
+    </section>
   );
 }

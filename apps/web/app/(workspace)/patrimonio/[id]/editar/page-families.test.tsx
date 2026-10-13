@@ -357,10 +357,9 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     calls.readPriceCache.mockResolvedValue(PRICE);
   });
 
-  test("it opens on its state and its bar, and there is no «Configuración avanzada»", async () => {
+  test("it opens on its state and its bar", async () => {
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     expect(html).toContain('aria-label="Estado del activo"');
     expect(html).toContain("<h2>Fondo Azul</h2>");
     expect(html).toContain("← Patrimonio");
@@ -512,6 +511,21 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
     expect(panel(html)).toContain("<h3>Traer de otra entidad</h3>");
     // Its own band only: the page band used to print it a second time.
     expect(html.split(message)).toHaveLength(2);
+  });
+
+  test("a refused operation or traspaso reopens its panel and says why there, once", async () => {
+    const message = "La fecha no puede ser futura.";
+    for (const [form, title] of [
+      ["operation", "Registrar operación"],
+      ["transfer", "Traspasar"],
+    ] as const) {
+      const html = await renderedHtml({ error: message, form });
+
+      expect(panel(html), form).toContain(title);
+      // The family names the forms that speak for themselves (#1850): the page band
+      // leaves them out.
+      expect(html.split(message), form).toHaveLength(2);
+    }
   });
 
   test("a refused cobro reopens «Añadir cobro» over its tab, with what was typed (#1731 review)", async () => {
@@ -733,7 +747,6 @@ describe("EditarPage — the stored ficha is a state header with tabs (#1846)", 
     );
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     expect(html).toContain("<h2>Cuenta nómina</h2>");
     expect(html).toContain('<span class="fichaInstrument">Cuenta corriente</span>');
     // The board row's figure: the stored value, untransformed.
@@ -828,8 +841,6 @@ describe("EditarPage — the stored ficha is a state header with tabs (#1846)", 
     // A refusal returns to the ficha; so does the success (`returnTo`).
     expect(valor).toContain(`name="currentUrl" value="${FICHA}"`);
     expect(valor).toContain(`name="returnTo" value="${FICHA}"`);
-    // Alone in the panel there is no identity form above it to be ruled off from.
-    expect(valor).not.toContain("updateValueForm");
   });
 
   test("the value form left «Lo básico»: the panel is its one place", async () => {
@@ -957,7 +968,6 @@ describe("EditarPage — the housing ficha is a state header with tabs (#1847)",
     calls.readAcquisitionCostMinor.mockResolvedValueOnce(210_000_00);
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     expect(html).toContain("<h2>Piso de Chamberí</h2>");
     expect(html).toContain('<span class="fichaInstrument">Inmueble</span>');
     // No rate: the curve holds the last appraisal flat — the board's figure.
@@ -1215,7 +1225,6 @@ describe("EditarPage — the Numista collection is a mirror ficha with tabs (#18
   test("it opens on the board's value, its coins and its sync, with «Sincronizar» beside the date", async () => {
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     expect(html).toContain("<h2>Colección de plata</h2>");
     expect(html).toContain(
       '<span class="fichaInstrument">Colección de monedas · Numista</span>',
@@ -1406,7 +1415,6 @@ describe("EditarPage — a Binance rung is a mirror ficha with tabs (#1849)", ()
   test("it opens on the board's value, its tokens, its sync and how far its history reaches", async () => {
     const html = await renderedHtml();
 
-    expect(html).not.toContain("Configuración avanzada");
     // Each rung is its own asset (#248): the instrument names which.
     expect(html).toContain(
       '<span class="fichaInstrument">Cripto · Binance · Mercado</span>',

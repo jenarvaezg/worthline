@@ -41,7 +41,6 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
 
   // 2. Open the ficha — a flat that never paid anything opens on «Valoración».
   await page.goto(ficha);
-  await expect(page.locator("details.editAdvanced")).toHaveCount(0);
   const state = page.getByRole("region", { name: "Estado del activo" });
   await expect(state.locator(".fichaValue")).toHaveText(/200\.?000\s*€/);
   await expect(state.locator(".fichaFigures")).toContainText("Revalorización anual");

@@ -77,8 +77,7 @@ async function ficha(store: PersistenceTestStore, id: string): Promise<FichaLayo
     store: store as never,
     today: TODAY,
   });
-  if (surface.layout.kind !== "ficha") throw new Error("a debt has a tabbed ficha");
-  return surface.layout.ficha;
+  return surface.ficha;
 }
 
 /** The board row's figure for the debt, in the row's notation for a pasivo. */

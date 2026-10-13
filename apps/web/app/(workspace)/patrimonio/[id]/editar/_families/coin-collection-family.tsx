@@ -156,6 +156,8 @@ export async function loadCoinCollectionSurface(
       },
       figures,
       instrument: "Colección de monedas · Numista",
+      // «Desconectar» prints its own refusal, in its panel (#1849).
+      ownErrorForms: [NUMISTA_DISCONNECT_FORM_ID],
       rows: payoutsPanel.rows,
       tabs: [
         {

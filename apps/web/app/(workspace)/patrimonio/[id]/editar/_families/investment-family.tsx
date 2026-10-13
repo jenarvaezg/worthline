@@ -495,6 +495,9 @@ export async function loadInvestmentSurface(
       figures,
       inlineWarnings: [SYMBOL_WARNING],
       instrument: INSTRUMENT_LABELS_ES[instrument],
+      // The forms that print their own refusal, in their panel: the page band would
+      // say it a second time — «Traer de otra entidad» used to (#1518).
+      ownErrorForms: ["operation", "transfer", "externalEntry"],
       // What each tab lists, so the row a terminal adds is pointed at (#1829).
       rows: {
         ...payoutsPanel.rows,
@@ -574,7 +577,6 @@ export async function loadInvestmentSurface(
     manualLedger: hasManualLedger
       ? { transferHref: `${currentUrl}?abrir=traspaso&archivar=1#traspaso` }
       : null,
-    operations,
     // What the Papelera would take with it (#1365). Reads the position this
     // family already derived — no extra I/O — so the figure in the confirmation
     // is the same one the ficha shows above it.

@@ -172,6 +172,8 @@ export async function loadBinanceSurface(
       figures,
       // Each rung is its own asset (#248): the instrument says which.
       instrument: `Cripto · Binance · ${LIQUIDITY_TIER_LABELS[asset.liquidityTier]}`,
+      // «Desconectar» prints its own refusal, in its panel (#1849).
+      ownErrorForms: [BINANCE_DISCONNECT_FORM_ID],
       rows: payoutsPanel.rows,
       tabs: [
         {

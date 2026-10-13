@@ -160,3 +160,22 @@ how it behaves — and these are the new things it states:
 - **The island is split by concern.** `ficha-view.ts` is the URL contract,
   `ficha-landing.ts` the landing after a registration, `ficha-strip.tsx` the action
   bar kept at hand, and `holding-ficha.tsx` the view and the panel.
+
+## Amendment (#1850): every family is on the tabbed ficha
+
+With the stored (#1846), housing (#1847), debt (#1848) and mirror (#1849) families
+moved, no family returns a `body`, so the accordion went with the last of them, as the
+#1826 amendment said it would:
+
+- **One layout.** `HoldingSurface` carries `ficha: FichaLayout`; `SurfaceLayout` and
+  its `advanced` branch are gone, and the page has one render path — it no longer
+  looks at a layout kind.
+- **What only the accordion used is gone with it.** `PayoutsPanel.section` and
+  `CobrosSection` (the Cobros panel is its record and its entry only), and the value
+  and balance forms of «Lo básico» with their `showValueForm` / `showRawBalanceForm`
+  flags: «Actualizar valor» and «Actualizar saldo» are actions of the bar, and «Lo
+  básico» is the holding's identity.
+- **A family names its own self-printing forms.** The page's list of forms that print
+  their own refusal keeps only the chrome's (the Cobros panel, the Papelera); a
+  family's own (`operation`, `transfer`, a valuation anchor, a disconnect…) are in its
+  `FichaLayout.ownErrorForms`, so the page imports no family's form ids.
