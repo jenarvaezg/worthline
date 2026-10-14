@@ -408,10 +408,10 @@ describe("provenance triage (#1508)", () => {
   it("says «o sin declarar» wherever a lens folds the undeclared rows in", () => {
     // The counter must not assert «de confianza baja» about a row that merely
     // lacks a declaration — the lens groups them, the wording keeps them apart.
-    expect(CATALOG_LENSES["confianza-baja"].countLabel(2)).toBe(
+    expect(CATALOG_LENSES["confianza-baja"].countLabel?.(2)).toBe(
       "2 de confianza baja o sin declarar",
     );
-    expect(CATALOG_LENSES["corte-antiguo"].countLabel(2)).toBe(
+    expect(CATALOG_LENSES["corte-antiguo"].countLabel?.(2)).toBe(
       `2 con corte de más de ${STALE_AS_OF_MONTHS} meses o sin fecha`,
     );
     expect(CATALOG_FILTER_OPTIONS.map((option) => option.label)).toEqual([
@@ -419,7 +419,51 @@ describe("provenance triage (#1508)", () => {
       "Por categorizar",
       "Baja o sin declarar",
       "Corte antiguo o sin fecha",
+      "Sin TER",
     ]);
+  });
+});
+
+describe("the «Sin TER» lens (#1839)", () => {
+  const missing = profile({
+    identity: { kind: "isin", isin: "IE00B4L5Y983" },
+    displayName: "World sin TER",
+    ter: null,
+  });
+  const declaredZero = profile({
+    identity: { kind: "isin", isin: "US9229087690" },
+    displayName: "TER cero declarado",
+    ter: "0",
+  });
+  const declared = profile({
+    identity: { kind: "provider", priceProvider: "yahoo", providerSymbol: "VWCE.DE" },
+    displayName: "All-World",
+    ter: "0.0022",
+  });
+
+  it("keeps only the rows with no TER — a declared 0 is a fact, not a gap", () => {
+    expect(
+      visibleProfiles(
+        [declared, declaredZero, missing],
+        { filter: "sin-ter", query: "", sort: null },
+        TODAY,
+      ).map((p) => p.displayName),
+    ).toEqual(["World sin TER"]);
+    expect(CATALOG_LENSES["sin-ter"].defaultSort).toBe("identidad");
+    // A share has no TER by right (ADR 0109), so this lens never gets a counter.
+    expect(CATALOG_LENSES["sin-ter"].countLabel).toBeNull();
+  });
+
+  it("round-trips through the URL", () => {
+    expect(
+      catalogSearchString({
+        filter: "sin-ter",
+        query: "",
+        sort: null,
+        selectedKey: null,
+      }),
+    ).toBe("?filtro=sin-ter");
+    expect(parseCatalogParams({ filtro: "sin-ter" }).filter).toBe("sin-ter");
   });
 });
 

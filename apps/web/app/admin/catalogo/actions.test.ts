@@ -7,7 +7,11 @@
  * a domain contract violation surfaces as `{ status: "error" }`, never a throw.
  */
 import type { ControlPlaneStore } from "@worthline/db";
-import type { GlobalExposureProfile } from "@worthline/domain";
+import {
+  type CreateGlobalExposureProfileInput,
+  createValidatedGlobalExposureProfileInput,
+  type GlobalExposureProfile,
+} from "@worthline/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type FakeSession = { user?: { email?: string | null } } | null;
@@ -173,6 +177,24 @@ describe("saveCatalogProfileAction", () => {
     expect(result).toEqual({
       status: "error",
       message: "Global exposure profile identity already exists.",
+    });
+  });
+
+  it("rejects a TER typed as a percentage with the domain's own message (#1839)", async () => {
+    asAdmin();
+    // The real store validates through the domain before writing; so does this one.
+    storeSpies.create.mockImplementationOnce(
+      async (input: CreateGlobalExposureProfileInput) =>
+        createValidatedGlobalExposureProfileInput(input),
+    );
+    const fd = createForm();
+    fd.set("ter", "0.22");
+
+    const result = await saveCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(result).toMatchObject({
+      status: "error",
+      message: expect.stringContaining("0,22 % se escribe 0.0022"),
     });
   });
 

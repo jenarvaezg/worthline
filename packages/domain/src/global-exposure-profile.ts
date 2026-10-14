@@ -310,14 +310,27 @@ function isBreakdownEmpty(breakdowns: GlobalExposureProfileBreakdowns): boolean 
   );
 }
 
+/**
+ * The highest TER a catalog row may declare, as a fraction (5 %). No fund the
+ * catalog covers costs more; above it the admin almost surely typed a
+ * percentage (`0.22` meaning 0,22 %), and since #1717 that TER multiplies euros
+ * on /patrimonio.
+ */
+const MAX_GLOBAL_EXPOSURE_PROFILE_TER = "0.05";
+
 function normalizeTer(value: DecimalString | null | undefined): DecimalString | null {
   const normalized = trimToNull(value);
   if (normalized === null) {
     return null;
   }
   const parsed = new Big(normalized);
-  if (parsed.lt(0) || parsed.gt(1)) {
-    throw new Error("Exposure profile TER must be between 0 and 1.");
+  if (parsed.lt(0)) {
+    throw new Error("El TER no puede ser negativo.");
+  }
+  if (parsed.gt(MAX_GLOBAL_EXPOSURE_PROFILE_TER)) {
+    throw new Error(
+      `El TER va como fracción: 0,22 % se escribe 0.0022. Por encima de ${MAX_GLOBAL_EXPOSURE_PROFILE_TER} (5 %) no es un TER plausible.`,
+    );
   }
   return parsed.toString() as DecimalString;
 }
