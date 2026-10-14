@@ -55,13 +55,13 @@ import {
   instrumentOfAsset,
   investmentReturnsById,
   lookThroughExposure,
-  managedPortfolioMemberRoles,
   monthlyCloseValuesByHolding,
   netUnitsByAsset,
   portfolioCost,
   projectPortfolio,
   resolveAssetClassBreakdown,
   returnsByAssetClassView,
+  undetailedAggregateIdsOf,
   usableCachedPrice,
 } from "@worthline/domain";
 
@@ -102,7 +102,7 @@ export interface PatrimonioExposureContext {
    * resolved by member identity — the cost lens reads them as the TER gap rather
    * than by their `other` label (#1810).
    */
-  undetailedAggregateIds: Set<string>;
+  undetailedAggregateIds: ReadonlySet<string>;
   baseCurrency: CurrencyCode;
   today: string;
 }
@@ -299,16 +299,7 @@ export async function loadPatrimonio(
   // EVERY portfolio's aggregate, not only the selected scope's: it is an identity
   // of the holding, and a scope that shows the row must still read it as funds
   // nobody enumerated (#1810) — an id absent from the projection is just unused.
-  const typeByHoldingId = new Map(assets.map((asset) => [asset.id, asset.type]));
-  const undetailedAggregateIds = new Set(
-    managedPortfolios.flatMap((portfolio) => {
-      const { undetailedHoldingId } = managedPortfolioMemberRoles(
-        portfolio.holdingIds,
-        typeByHoldingId,
-      );
-      return undetailedHoldingId === null ? [] : [undetailedHoldingId];
-    }),
-  );
+  const undetailedAggregateIds = undetailedAggregateIdsOf(managedPortfolios, assets);
 
   return {
     exposureContext: {

@@ -48,10 +48,18 @@ export function readPortfolioCost(cost: PortfolioCost): PortfolioCostReading {
     : { kind: "notApplicable" };
 }
 
-/** The declared share of gross as a whole percent, never a misleading «0 %». */
+/**
+ * The declared share of what charges a TER — con TER / (con TER + sin declarar),
+ * #1840 — as a whole percent, never a misleading «0 %» or «100 %»: a sliver
+ * declared reads «menos del 1 %», a sliver left undeclared «más del 99 %», and
+ * only a fully declared base reads «100 %».
+ */
 function formatDeclaredShare(share: DecimalString): string {
   const label = formatExposureWeight(share);
-  return Number(share) > 0 && label === "0 %" ? "menos del 1 %" : label;
+  const value = Number(share);
+  if (value > 0 && label === "0 %") return "menos del 1 %";
+  if (value < 1 && label === "100 %") return "más del 99 %";
+  return label;
 }
 
 const TER_COVERAGE_LABELS: CoverageLabels = {

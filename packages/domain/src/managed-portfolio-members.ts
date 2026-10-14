@@ -98,6 +98,28 @@ export function managedPortfolioMemberRoles(
 }
 
 /**
+ * The ids of EVERY managed portfolio's "(sin detallar)" aggregate, each one
+ * resolved by member identity through `managedPortfolioMemberRoles` — never by
+ * the `other` label it is stored under (#1810). An id absent from a given view
+ * is simply unused there.
+ */
+export function undetailedAggregateIdsOf(
+  portfolios: readonly { holdingIds: readonly string[] }[],
+  assets: readonly { id: string; type: string }[],
+): ReadonlySet<string> {
+  const typeByHoldingId = new Map(assets.map((asset) => [asset.id, asset.type]));
+  return new Set(
+    portfolios.flatMap((portfolio) => {
+      const { undetailedHoldingId } = managedPortfolioMemberRoles(
+        portfolio.holdingIds,
+        typeByHoldingId,
+      );
+      return undetailedHoldingId === null ? [] : [undetailedHoldingId];
+    }),
+  );
+}
+
+/**
  * What the aggregate should be left at once some of the composition is detailed
  * (#1551): the declared balance minus the funds already typed.
  *

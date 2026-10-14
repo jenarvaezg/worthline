@@ -184,6 +184,7 @@ const KEY_EXPORTS = [
   "computeManagedPortfolioFigures",
   "assertManagedPortfolioInput",
   "managedPortfolioMemberRoles",
+  "undetailedAggregateIdsOf",
   "undetailedMemberName",
   "undetailedRemainderMinor",
   "assertUndetailedValueInput",

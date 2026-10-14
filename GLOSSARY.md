@@ -317,11 +317,12 @@ A holding whose profile declares a TER is **declared**, and a declared TER is pr
 the **instrument** label says; a fund, ETF, index or **pension plan** with none is
 **undeclared** — the gap, never summed as 0, which would print a cheaper portfolio than the
 one held; so is a **managed portfolio**'s **undetailed aggregate**, by member identity and
-not by its `other` label (#1810); cash, **property**, crypto, metals, coins and a directly held share have no ongoing
-charge and are **not applicable**. A lens, never a figure: the **TER never enters a return**,
-because a fund's NAV is already net of it and subtracting it again would charge it twice — a
-guardian with a closed list of the files allowed to reach the lens or read a TER enforces it.
-Other fees the model does not know (custody, brokerage) are not part of it.
+not by its `other` label (#1810); cash, **property**, crypto, metals, coins and a directly
+held share have no ongoing charge and are **not applicable**. A lens, never a figure: the
+**TER never enters a return**, because a fund's NAV is already net of it and subtracting it
+again would charge it twice — a guardian with a closed list of the files allowed to reach the
+lens or read a TER enforces it. Other fees the model does not know (custody, brokerage) are
+not part of it.
 _Avoid_: comisiones (custody and brokerage are not counted), TER «estimado» (an undeclared TER
 is never estimated: the gap shows in the catalog).
 

@@ -59,6 +59,40 @@ describe("readPortfolioCost", () => {
     expect(reading).toMatchObject({ kind: "declared", shareLabel: "menos del 1 %" });
   });
 
+  test("a sliver left undeclared never reads as «el 100 % de lo que cobra TER»", () => {
+    const reading = readPortfolioCost(
+      cost({
+        annualCost: eur(399_00),
+        coverage: {
+          declared: eur(199_500_00),
+          notApplicable: eur(250_000_00),
+          undeclared: eur(500_00),
+        },
+        declaredShare: "0.9975",
+        weightedTer: "0.002",
+      }),
+    );
+
+    expect(reading).toMatchObject({ kind: "declared", shareLabel: "más del 99 %" });
+  });
+
+  test("only a fully declared base reads «100 %»", () => {
+    const reading = readPortfolioCost(
+      cost({
+        annualCost: eur(400_00),
+        coverage: {
+          declared: eur(200_000_00),
+          notApplicable: eur(250_000_00),
+          undeclared: eur(0),
+        },
+        declaredShare: "1",
+        weightedTer: "0.002",
+      }),
+    );
+
+    expect(reading).toMatchObject({ kind: "declared", shareLabel: "100 %" });
+  });
+
   test("funds with no TER declared read as the gap, never as a free portfolio", () => {
     const reading = readPortfolioCost(
       cost({ coverage: { declared: eur(0), notApplicable: eur(0), undeclared: eur(1) } }),
