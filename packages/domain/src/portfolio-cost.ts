@@ -57,7 +57,11 @@ export interface PortfolioCost {
   annualCost: MoneyMinor;
   /** The value-weighted mean TER of the declared part (6 dp), or null with none. */
   weightedTer: DecimalString | null;
-  /** The fraction of gross whose TER is declared (4 dp). */
+  /**
+   * The fraction of what charges a TER whose TER is declared (4 dp):
+   * declared / (declared + undeclared), #1840. What is not applicable can add no
+   * euro to the cost, so it is not in the base; `"0"` when nothing charges one.
+   */
   declaredShare: DecimalString;
   coverage: PortfolioCostCoverage;
 }
@@ -103,7 +107,7 @@ export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
       notApplicable: { amountMinor: notApplicableMinor, currency },
       undeclared: { amountMinor: undeclaredMinor, currency },
     },
-    declaredShare: ratioOrZero(declaredMinor, input.grossAssets.amountMinor),
+    declaredShare: ratioOrZero(declaredMinor, declaredMinor + undeclaredMinor),
     // A mean over nothing does not exist: printing 0 % would claim a free
     // portfolio when the truth is that no TER is known.
     weightedTer:

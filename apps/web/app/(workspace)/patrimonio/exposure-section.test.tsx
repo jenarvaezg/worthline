@@ -319,13 +319,26 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
     );
   }
 
-  test("reads the yearly cost, the mean TER and the share of gross it rests on", () => {
+  test("reads the yearly cost, the mean TER and the share of what charges a TER", () => {
     expect(priced.annualCost.amountMinor).toBe(150_00);
     const html = renderCost(priced);
     expect(html).toContain("Coste de la cartera");
     expect(html).toMatch(/Tu cartera cuesta <b>~150[\s\u00a0]€\/año<\/b>/);
-    expect(html).toContain("TER medio 0,17 %");
-    expect(html).toContain("sobre el 90 % del bruto con dato");
+    expect(html).toMatch(/TER medio <span class="exposureCostFigure">0,17 %<\/span>/);
+    expect(html).toMatch(
+      /sobre el <span class="exposureCostFigure">90 %<\/span> de lo que cobra TER/,
+    );
+  });
+
+  test("sets only the two figures in the numeric face, the prose stays in text (#1840)", () => {
+    const html = renderCost(priced);
+    const figures = [
+      ...html.matchAll(/<span class="exposureCostFigure">([^<]*)<\/span>/g),
+    ].map((match) => match[1]);
+    expect(figures).toEqual(["0,17 %", "90 %"]);
+    expect(html).toContain('<span class="exposureCostDetail">');
+    // The old base, written so that `git grep` of the retired copy stays empty.
+    expect(html).not.toMatch(/del bruto con\s+dato/);
   });
 
   test("shows the three-way TER coverage with the undeclared remainder visible", () => {
@@ -345,7 +358,7 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
   test("privacy mode masks the euros but keeps the percentages", () => {
     const html = renderCost(priced, true);
     expect(html).not.toMatch(/~150/);
-    expect(html).toContain("TER medio 0,17 %");
+    expect(html).toMatch(/TER medio <span class="exposureCostFigure">0,17 %<\/span>/);
   });
 
   test("with no TER declared it names the gap instead of pricing the portfolio at 0", () => {

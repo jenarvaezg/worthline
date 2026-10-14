@@ -81,14 +81,31 @@ month is on no list.
 ## Consequences
 
 - The exposure section shows «Tu cartera cuesta ~X €/año (TER medio Y %, sobre el
-  Z % del bruto con dato)» with Con TER / No aplica / Sin declarar beneath it, once,
-  outside the full-portfolio / equity lens, like the currency risk.
+  Z % de lo que cobra TER)» with Con TER / No aplica / Sin declarar beneath it, once,
+  outside the full-portfolio / equity lens, like the currency risk. Z is over
+  declared + undeclared (see the #1840 amendment).
 - Adding a new place that reads the TER — an agent tool, a simulator (#1714) — is a
   one-line, reviewed change to the guardian's list, not a silent import.
 - Passing the real denomination into the look-through rows also makes a directly
   held foreign position show as currency risk on /patrimonio, as ADR 0039 always
   described.
-- Open: the denominator of «sobre el Z % del bruto» is the whole gross, cash
-  included, as the ticket words it; whether it should be declared + undeclared is
-  left to the product owner.
+- Resolved by the #1840 amendment: the coverage share was first over the whole
+  gross, cash included; it is now over declared + undeclared.
 - Other fees the model does not know (custody, brokerage) are not part of the cost.
+
+## Amendment (#1840): the coverage share is over what charges a TER
+
+`declaredShare` is `declared / (declared + undeclared)`; what is **not applicable**
+is out of the base. With `declared + undeclared = 0` it stays `"0"`, as there is no
+mean to print. The field keeps its name.
+
+Why: what is not applicable cannot add a euro to the cost, so it says nothing about
+how complete the figure is. Over the whole gross a complete portfolio never reads
+100 %: a 250.000 € flat next to 80.000 € in funds that all declare a TER read as
+24 % of gross with a figure, which reads as 76 % without one. The line
+now says «sobre el Z % de lo que cobra TER», the same words as «Nada en esta cartera
+cobra TER». A managed portfolio's undetailed aggregate (#1810) is undeclared, so it
+is in the base.
+
+The Con TER / No aplica / Sin declarar trio in euros stays over the gross: it is the
+look-through's coverage readout, and the house still shows there as not applicable.

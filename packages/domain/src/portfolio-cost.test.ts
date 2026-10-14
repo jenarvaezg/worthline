@@ -121,12 +121,82 @@ describe("portfolioCost", () => {
 
     expect(cost.annualCost).toEqual(eur(100_00));
     expect(cost.weightedTer).toBe("0.002");
-    expect(cost.declaredShare).toBe("0.5");
+    // Every euro that could charge a TER declares one (#1840).
+    expect(cost.declaredShare).toBe("1");
     expect(cost.coverage).toEqual({
       declared: eur(50_000_00),
       notApplicable: eur(50_000_00),
       undeclared: eur(0),
     });
+  });
+
+  test("the coverage share is over what charges a TER: a flat never reads as a gap (#1840)", () => {
+    // A 250.000 € flat next to 80.000 € in funds that all declare a TER: over the
+    // whole gross this read «24 %», as if 76 % had no figure. Over what charges a
+    // TER, the portfolio is fully covered.
+    const cost = portfolioCost({
+      grossAssets: eur(330_000_00),
+      holdings: [
+        holding("flat", "property", 250_000_00),
+        holding("world", "fund", 50_000_00, isin("IE00B4L5Y983")),
+        holding("sp500", "etf", 30_000_00, isin("IE00B5BMR087")),
+      ],
+      profiles: profilesOf(
+        profile("IE00B4L5Y983", "0.0022"),
+        profile("IE00B5BMR087", "0.0012"),
+      ),
+      undetailedAggregateIds: new Set(),
+    });
+
+    expect(cost.declaredShare).toBe("1");
+    expect(cost.coverage.notApplicable).toEqual(eur(250_000_00));
+  });
+
+  test("the share's gap is only the undeclared part, never the not applicable one (#1840)", () => {
+    // 60.000 € with a TER + 20.000 € of a fund nobody declared + a 250.000 € flat:
+    // 60.000 over the 80.000 € that charge a TER is 75 %.
+    const cost = portfolioCost({
+      grossAssets: eur(330_000_00),
+      holdings: [
+        holding("world", "fund", 60_000_00, isin("IE00B4L5Y983")),
+        holding("bonds", "fund", 20_000_00, isin("IE00B3F81409")),
+        holding("flat", "property", 250_000_00),
+      ],
+      profiles: profilesOf(profile("IE00B4L5Y983", "0.0022")),
+      undetailedAggregateIds: new Set(),
+    });
+
+    expect(cost.declaredShare).toBe("0.75");
+  });
+
+  test("a managed portfolio's undetailed aggregate is part of the share's base (#1810, #1840)", () => {
+    // 30.000 € with a TER + 10.000 € of a portfolio's «(sin detallar)» aggregate:
+    // the aggregate is funds nobody enumerated, so it counts against the share;
+    // the portfolio's 2.000 € cash box charges nothing, so it does not.
+    const cost = portfolioCost({
+      grossAssets: eur(42_000_00),
+      holdings: [
+        holding("world", "fund", 30_000_00, isin("IE00B4L5Y983")),
+        holding("aggregate", "other", 10_000_00),
+        holding("box", "current_account", 2_000_00),
+      ],
+      profiles: profilesOf(profile("IE00B4L5Y983", "0.002")),
+      undetailedAggregateIds: new Set(["aggregate"]),
+    });
+
+    expect(cost.declaredShare).toBe("0.75");
+  });
+
+  test("with nothing that charges a TER the share stays 0, never a division by zero (#1840)", () => {
+    const cost = portfolioCost({
+      grossAssets: eur(10_000_00),
+      holdings: [holding("cash", "current_account", 10_000_00)],
+      profiles: profilesOf(),
+      undetailedAggregateIds: new Set(),
+    });
+
+    expect(cost.declaredShare).toBe("0");
+    expect(cost.weightedTer).toBeNull();
   });
 
   test("a «solo saldo» managed portfolio is a TER gap, never something that charges none (#1810)", () => {
