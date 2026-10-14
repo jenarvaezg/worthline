@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   assertUndetailedValueInput,
   managedPortfolioMemberRoles,
+  undetailedAggregateIdsOf,
   undetailedMemberName,
   undetailedRemainderMinor,
 } from "./managed-portfolio-members";
@@ -45,6 +46,37 @@ describe("managedPortfolioMemberRoles", () => {
     expect(managedPortfolioMemberRoles(["cash", "f1"], types).undetailedHoldingId).toBe(
       null,
     );
+  });
+});
+
+describe("undetailedAggregateIdsOf", () => {
+  const assets = [
+    { id: "cash-a", type: "cash" },
+    { id: "agg-a", type: "manual" },
+    { id: "f1", type: "investment" },
+    { id: "cash-b", type: "cash" },
+    { id: "f2", type: "investment" },
+    { id: "agg-c", type: "manual" },
+    { id: "watch", type: "manual" },
+  ];
+
+  test("collects every portfolio's aggregate, by member identity", () => {
+    const ids = undetailedAggregateIdsOf(
+      [
+        { holdingIds: ["cash-a", "agg-a", "f1"] },
+        { holdingIds: ["cash-b", "f2"] },
+        { holdingIds: ["agg-c", "gone"] },
+      ],
+      assets,
+    );
+
+    // A portfolio born detailed adds nothing, a member no longer live is not an
+    // aggregate, and an `other` held outside any portfolio is never one.
+    expect([...ids].sort()).toEqual(["agg-a", "agg-c"]);
+  });
+
+  test("no portfolios, no aggregates", () => {
+    expect(undetailedAggregateIdsOf([], assets).size).toBe(0);
   });
 });
 

@@ -887,6 +887,7 @@ export type { ManagedPortfolioMemberRoles } from "./managed-portfolio-members";
 export {
   assertUndetailedValueInput,
   managedPortfolioMemberRoles,
+  undetailedAggregateIdsOf,
   undetailedMemberName,
   undetailedRemainderMinor,
 } from "./managed-portfolio-members";

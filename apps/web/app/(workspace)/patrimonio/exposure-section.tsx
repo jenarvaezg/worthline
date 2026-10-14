@@ -139,9 +139,10 @@ function PortfolioCostBlock({
           <p className="exposureCostLine">
             Tu cartera cuesta{" "}
             <b>~{formatMoneyMinorPrivacy(reading.annualCost, privacyMode)}/año</b>{" "}
-            <span>
-              (TER medio {reading.terLabel}, sobre el {reading.shareLabel} del bruto con
-              dato)
+            <span className="exposureCostDetail">
+              (TER medio <span className="exposureCostFigure">{reading.terLabel}</span>,
+              sobre el <span className="exposureCostFigure">{reading.shareLabel}</span> de
+              lo que cobra TER)
             </span>
           </p>
           <p className="exposureCostNote">

@@ -26,6 +26,7 @@ const calls = vi.hoisted(() => ({
       payoutsByAsset: new Map(),
       projection: null,
       today: "2026-06-27",
+      undetailedAggregateIds: new Set<string>(),
     },
     groups: [],
     hasHoldings: true,

@@ -8432,8 +8432,16 @@ td.rowActions > * {
   font-weight: 650;
 }
 
-.exposureCostLine span {
+/* The parenthesis is prose in the text face (canon §3); only its two figures —
+   the mean TER and the coverage share — take the numeric face, tabular and
+   unbolded: the bold belongs to the €/año (#1840). */
+.exposureCostDetail {
   color: var(--muted);
+}
+
+.exposureCostFigure {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
 }
 
 .exposureCostNote {

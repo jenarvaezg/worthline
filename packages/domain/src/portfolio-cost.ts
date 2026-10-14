@@ -30,12 +30,21 @@ import type { MoneyMinor } from "./money";
 export type PortfolioCostInput = Pick<
   ExposureLookthroughInput,
   "grossAssets" | "holdings" | "profiles"
->;
+> & {
+  /**
+   * The holdings that are a managed portfolio's undetailed aggregate (#1551) —
+   * by MEMBER IDENTITY, from `managedPortfolioMemberRoles`, never by the `other`
+   * label they are stored under (#1810). It is money invested in funds nobody
+   * enumerated, so without a TER it is the gap, not something that charges none.
+   */
+  undetailedAggregateIds: ReadonlySet<string>;
+};
 
 /**
  * The look-through's three-way coverage in TER words: `declared` carries a TER,
  * `notApplicable` has no fund wrapper to charge one, `undeclared` is a fund whose
- * TER nobody declared — the gap, never counted as 0.
+ * TER nobody declared (or a managed portfolio's undetailed aggregate, #1810) —
+ * the gap, never counted as 0.
  */
 export interface PortfolioCostCoverage {
   declared: MoneyMinor;
@@ -48,7 +57,11 @@ export interface PortfolioCost {
   annualCost: MoneyMinor;
   /** The value-weighted mean TER of the declared part (6 dp), or null with none. */
   weightedTer: DecimalString | null;
-  /** The fraction of gross whose TER is declared (4 dp). */
+  /**
+   * The fraction of what charges a TER whose TER is declared (4 dp):
+   * declared / (declared + undeclared), #1840. What is not applicable can add no
+   * euro to the cost, so it is not in the base; `"0"` when nothing charges one.
+   */
   declaredShare: DecimalString;
   coverage: PortfolioCostCoverage;
 }
@@ -59,8 +72,9 @@ const SHARE_DECIMALS = 4;
 /**
  * Price the portfolio's year. A TER the catalog declares is priced whatever the
  * instrument label says — it is a fact about the security, and the label may be
- * wrong (ADR 0109). Without one, a fund wrapper is the gap and anything else has
- * no ongoing charge to declare.
+ * wrong (ADR 0109). Without one, a fund wrapper or a managed portfolio's
+ * undetailed aggregate (funds nobody enumerated, #1810) is the gap, and anything
+ * else has no ongoing charge to declare.
  */
 export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   const currency = input.grossAssets.currency;
@@ -72,7 +86,10 @@ export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   for (const holding of input.holdings) {
     const ter = resolveExposureProfile(holding, input.profiles)?.ter;
     if (ter == null) {
-      if (FUND_WRAPPER_INSTRUMENTS.has(holding.instrument)) {
+      if (
+        FUND_WRAPPER_INSTRUMENTS.has(holding.instrument) ||
+        input.undetailedAggregateIds.has(holding.id)
+      ) {
         undeclaredMinor += holding.valueMinor;
       } else {
         notApplicableMinor += holding.valueMinor;
@@ -90,7 +107,7 @@ export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
       notApplicable: { amountMinor: notApplicableMinor, currency },
       undeclared: { amountMinor: undeclaredMinor, currency },
     },
-    declaredShare: ratioOrZero(declaredMinor, input.grossAssets.amountMinor),
+    declaredShare: ratioOrZero(declaredMinor, declaredMinor + undeclaredMinor),
     // A mean over nothing does not exist: printing 0 % would claim a free
     // portfolio when the truth is that no TER is known.
     weightedTer:

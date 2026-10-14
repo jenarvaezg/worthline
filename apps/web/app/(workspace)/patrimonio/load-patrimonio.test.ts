@@ -459,6 +459,38 @@ describe("loadPatrimonio — portfolio cost", () => {
 
     store.close();
   });
+
+  test("a «solo saldo» managed portfolio's aggregate reads as a TER gap, its cash box as not applicable (#1810)", async () => {
+    const store = await createInMemoryStore();
+    const workspace = await makeWorkspace(store);
+    await makeCashAsset(store);
+    const scope = householdScope(workspace);
+    await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      name: "Cartera MyInvestor",
+      scopeId: "household",
+      undetailedValueMinor: 20_000_00,
+    });
+
+    const result = await loadPatrimonio({
+      store,
+      workspace,
+      selectedScope: scope,
+      today: TODAY,
+      selectedGroup: "direction",
+    });
+    const { portfolioCost } = deriveExposureAndReturns(result.exposureContext, []);
+
+    // The 20.000 € are funds nobody enumerated: the gap. The 100.000 € of cash
+    // (and the portfolio's own empty box) charge no TER.
+    expect(portfolioCost.coverage).toEqual({
+      declared: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 100_000_00, currency: "EUR" },
+      undeclared: { amountMinor: 20_000_00, currency: "EUR" },
+    });
+
+    store.close();
+  });
 });
 
 function terProfile(key: string, ter: string): ExposureProfile {
