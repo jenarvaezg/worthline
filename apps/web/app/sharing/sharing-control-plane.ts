@@ -12,12 +12,13 @@
 
 import { withControlPlaneStore } from "@web/control-plane-store";
 import { tursoPortFromEnv } from "@web/turso-port";
-import type {
-  ControlPlaneStore,
-  RevokeWorkspaceDeps,
-  ShareWorkspaceDeps,
-  WorkspaceSharedWithUser,
-  WorkspaceViewer,
+import {
+  type ControlPlaneStore,
+  findOwnedWorkspace,
+  type RevokeWorkspaceDeps,
+  type ShareWorkspaceDeps,
+  type WorkspaceSharedWithUser,
+  type WorkspaceViewer,
 } from "@worthline/db";
 
 /** The ports the sharing commands need (`shareWorkspaceReadOnly`, `revokeWorkspaceReadOnly`). */
@@ -84,13 +85,14 @@ export async function loadWorkspaceSharing(
 ): Promise<WorkspaceSharing> {
   return withControlPlaneStore<WorkspaceSharing, SharingReadPort>(
     async (controlPlane) => {
-      const user = await controlPlane.findUserByEmail(email);
-      if (!user) return { sharedWithMe: [], viewers: [] };
-      const [[owned], sharedWithMe] = await Promise.all([
-        controlPlane.listOwnedWorkspacesForUser(user.id),
-        controlPlane.listWorkspacesSharedWithUser(user.id),
+      const owned = await findOwnedWorkspace(controlPlane, email);
+      if (!owned) return { sharedWithMe: [], viewers: [] };
+      // An identity that owns nothing yet — someone only invited, before their
+      // own workspace exists — still has what was shared with it.
+      const [viewers, sharedWithMe] = await Promise.all([
+        owned.workspace ? controlPlane.listViewersOfWorkspace(owned.workspace.id) : [],
+        controlPlane.listWorkspacesSharedWithUser(owned.user.id),
       ]);
-      const viewers = owned ? await controlPlane.listViewersOfWorkspace(owned.id) : [];
       return { sharedWithMe, viewers };
     },
     {

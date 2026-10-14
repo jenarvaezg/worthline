@@ -1,4 +1,5 @@
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
+import { comparableEmail } from "@web/comparable-email";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { DEFAULT_APP_PATH } from "@web/return-to";
 import { VIEWING_COOKIE_NAME } from "@web/viewing/viewing-cookie";
@@ -8,11 +9,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { controlPlaneTargetFromEnv, withControlPlaneStore } from "./control-plane-store";
-import {
-  normalizeAdminEmail,
-  resolveStoreTarget,
-  type StoreTarget,
-} from "./store-resolver";
+import { resolveStoreTarget, type StoreTarget } from "./store-resolver";
 
 function isAuthConfigured(env: Record<string, string | undefined>): boolean {
   return Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
@@ -65,7 +62,7 @@ export async function readSessionEmail(): Promise<string | null> {
 
   const { auth } = await import("@web/auth");
   const session = await auth();
-  return session?.user?.email ? normalizeAdminEmail(session.user.email) : null;
+  return session?.user?.email ? comparableEmail(session.user.email) : null;
 }
 
 /**
@@ -137,7 +134,7 @@ export async function lookupViewerAccess(input: {
   env: Record<string, string | undefined>;
 }): Promise<ViewerAccess | null> {
   const { workspaceId, env } = input;
-  const viewerEmail = normalizeAdminEmail(input.sessionEmail);
+  const viewerEmail = comparableEmail(input.sessionEmail);
   if (!workspaceId || !viewerEmail) return null;
 
   const target = controlPlaneTargetFromEnv(env);

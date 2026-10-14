@@ -1,4 +1,6 @@
+import { comparableEmail } from "@web/comparable-email";
 import { type PersonaId, parsePersonaId } from "@web/demo/persona";
+import type { ViewerAccess } from "@worthline/db";
 
 export type StoreTarget =
   | {
@@ -85,29 +87,7 @@ export interface ResolveStoreTargetInput {
    * and only with a non-empty read-only token — a viewer never falls back to the
    * group token.
    */
-  viewedWorkspace?:
-    | {
-        workspaceId: string;
-        dbUrl: string;
-        readOnlyToken: string;
-        ownerEmail: string;
-        viewerEmail: string;
-      }
-    | null
-    | undefined;
-}
-
-/**
- * Normalize an email for the admin comparison (#697) — and the viewer's (#1843):
- * trim + lowercase.
- * Shared by every admin-email comparison (this file, `guard-admin.ts`, and the
- * session-email read in `read-store-target.ts`) so a stray capital or trailing
- * space in the deployed `WORTHLINE_ADMIN_EMAIL` — or an unusually-cased
- * session email — never compares a normalized value against a raw one and
- * silently 404s the real admin.
- */
-export function normalizeAdminEmail(value: string | null | undefined): string {
-  return (value ?? "").trim().toLowerCase();
+  viewedWorkspace?: ViewerAccess | null | undefined;
 }
 
 /**
@@ -139,9 +119,9 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   // a stale or forged signal to leak through. A non-admin (or logged-out)
   // session with the impersonate cookie set falls straight through to the
   // branches below, resolving EXACTLY as if the cookie were absent.
-  const adminEmail = normalizeAdminEmail(env.WORTHLINE_ADMIN_EMAIL);
+  const adminEmail = comparableEmail(env.WORTHLINE_ADMIN_EMAIL);
   const isAdmin =
-    Boolean(adminEmail) && normalizeAdminEmail(session?.user?.email) === adminEmail;
+    Boolean(adminEmail) && comparableEmail(session?.user?.email) === adminEmail;
 
   if (isAdmin && impersonateWorkspace) {
     return {
@@ -157,11 +137,11 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   // own workspace. The access must name THIS session's email — a lookup made for
   // anyone else, or a cookie with no grant behind it (null), resolves exactly as
   // if the cookie were absent. Only the read-only token is ever used.
-  const sessionEmail = normalizeAdminEmail(session?.user?.email);
+  const sessionEmail = comparableEmail(session?.user?.email);
   if (
     viewedWorkspace &&
     sessionEmail !== "" &&
-    normalizeAdminEmail(viewedWorkspace.viewerEmail) === sessionEmail &&
+    comparableEmail(viewedWorkspace.viewerEmail) === sessionEmail &&
     viewedWorkspace.readOnlyToken !== ""
   ) {
     return {

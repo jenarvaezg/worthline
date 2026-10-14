@@ -13,8 +13,8 @@
  * distinguishing "wrong user" from "route doesn't exist".
  */
 
+import { comparableEmail } from "@web/comparable-email";
 import { readSessionEmail } from "@web/read-store-target";
-import { normalizeAdminEmail } from "@web/store-resolver";
 import { notFound } from "next/navigation";
 
 export interface AdminContext {
@@ -23,7 +23,7 @@ export interface AdminContext {
 }
 
 export async function guardAdmin(): Promise<AdminContext> {
-  const adminEmail = normalizeAdminEmail(process.env.WORTHLINE_ADMIN_EMAIL);
+  const adminEmail = comparableEmail(process.env.WORTHLINE_ADMIN_EMAIL);
   if (!adminEmail) {
     notFound();
   }

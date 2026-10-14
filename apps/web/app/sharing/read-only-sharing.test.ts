@@ -1,7 +1,15 @@
+import {
+  MAX_VIEWER_EMAIL_LENGTH,
+  MAX_VIEWERS_PER_WORKSPACE,
+  VIEWER_EMAIL_SHAPE,
+} from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import {
   applyViewerMutation,
+  EMAIL_SHAPE,
+  MAX_EMAIL_LENGTH,
+  MAX_VIEWERS,
   planShare,
   SHARE_FAILURE_MESSAGE,
   type SharingActionResult,
@@ -257,6 +265,18 @@ describe("planning a share before the round trip (#1844)", () => {
   });
 });
 
+describe("the client's copy of the door's rules (#1718)", () => {
+  // Copied because the client island cannot load `@worthline/db`'s runtime; if
+  // the door's rules move, the copy must move with them or the section would
+  // promise a share the server refuses (or refuse one it would accept).
+  test("the cap, the email shape and its length are the door's own", () => {
+    expect(MAX_VIEWERS).toBe(MAX_VIEWERS_PER_WORKSPACE);
+    expect(EMAIL_SHAPE.source).toBe(VIEWER_EMAIL_SHAPE.source);
+    expect(EMAIL_SHAPE.flags).toBe(VIEWER_EMAIL_SHAPE.flags);
+    expect(MAX_EMAIL_LENGTH).toBe(MAX_VIEWER_EMAIL_LENGTH);
+  });
+});
+
 describe("every refusal of the sharing door reads as Spanish (#1844)", () => {
   test("each typed refusal has its own message", () => {
     expect(shareRefusalMessage("invalid-email")).toBe(
@@ -265,9 +285,18 @@ describe("every refusal of the sharing door reads as Spanish (#1844)", () => {
     expect(shareRefusalMessage("self-share")).toBe(
       "Ese es tu propio email: tu espacio ya lo ves tú.",
     );
-    expect(shareRefusalMessage("already-granted")).toBe("Esa persona ya tiene acceso.");
+    expect(shareRefusalMessage("already-viewer")).toBe("Esa persona ya tiene acceso.");
     expect(shareRefusalMessage("viewer-limit")).toBe(
       "Ya hay 5 personas con acceso, el máximo. Quita a alguien antes de dar acceso a otra.",
+    );
+  });
+
+  test("a grant of another kind is not «ya tiene acceso»: it says what it is (#1718)", () => {
+    expect(shareRefusalMessage("conflicting-grant")).toBe(
+      "Esa persona tiene otro tipo de acceso a tu espacio, y desde aquí no se puede convertir en solo lectura.",
+    );
+    expect(shareRefusalMessage("conflicting-grant")).not.toBe(
+      shareRefusalMessage("already-viewer"),
     );
   });
 

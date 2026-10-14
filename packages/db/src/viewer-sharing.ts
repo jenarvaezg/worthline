@@ -1,4 +1,9 @@
-import type { TenancyDirectory } from "./control-plane";
+import { comparableEmail } from "./comparable-email";
+import type {
+  ControlPlaneUser,
+  ControlPlaneWorkspace,
+  TenancyDirectory,
+} from "./control-plane";
 import type { TursoPort } from "./provisioner";
 
 /**
@@ -24,14 +29,17 @@ export const MAX_VIEWERS_PER_WORKSPACE = 5;
  * - `viewer-limit`: the workspace already has {@link MAX_VIEWERS_PER_WORKSPACE}.
  * - `no-owned-workspace`: the identity owns no workspace (a viewer grant is not
  *   ownership).
- * - `already-granted`: the identity holds a non-viewer grant on the workspace.
+ * - `conflicting-grant`: the identity already holds a grant of another kind on
+ *   the workspace (a legacy `orphaned-owner`, an unknown role). It is NOT «already
+ *   a viewer» — that is a success with `created: false` — and it cannot be turned
+ *   into one from the sharing door.
  */
 export type ShareWorkspaceRefusal =
   | "invalid-email"
   | "self-share"
   | "viewer-limit"
   | "no-owned-workspace"
-  | "already-granted";
+  | "conflicting-grant";
 
 export class ShareWorkspaceRefusedError extends Error {
   readonly reason: ShareWorkspaceRefusal;
@@ -66,38 +74,61 @@ export interface SharedWorkspace {
 /**
  * A pragmatic shape check, not RFC 5322: one `@`, a non-empty local part, a
  * dotted domain, no whitespace. Google verifies the address at sign-in; this
- * only keeps typos and junk out of the users table.
+ * only keeps typos and junk out of the users table. Exported so the web's copy
+ * (which the client island needs without this package's runtime) is pinned to
+ * these values by a test.
  */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_EMAIL_LENGTH = 254;
+export const VIEWER_EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const MAX_VIEWER_EMAIL_LENGTH = 254;
 
-/** Trimmed and lower-cased: the one comparable form of an email address. */
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+/** The identity behind an email and the workspace it owns, if any. */
+export interface OwnedWorkspaceLookup {
+  user: ControlPlaneUser;
+  /** Null when the identity owns nothing — a viewer grant is not ownership. */
+  workspace: ControlPlaneWorkspace | null;
+}
+
+/**
+ * The identity an email names and the ONE workspace it owns (#733: at most
+ * one), or null when the control plane does not know the email. The way every
+ * sharing entry point resolves «the owner's workspace» from the session's email,
+ * so none takes a workspace id a form could forge.
+ */
+export async function findOwnedWorkspace(
+  controlPlane: Pick<TenancyDirectory, "findUserByEmail" | "listOwnedWorkspacesForUser">,
+  email: string,
+): Promise<OwnedWorkspaceLookup | null> {
+  const user = await controlPlane.findUserByEmail(email);
+  if (!user) return null;
+  const [workspace] = await controlPlane.listOwnedWorkspacesForUser(user.id);
+  return { user, workspace: workspace ?? null };
 }
 
 export async function shareWorkspaceReadOnly(
   { controlPlane, turso }: ShareWorkspaceDeps,
   input: { ownerEmail: string; viewerEmail: string },
 ): Promise<SharedWorkspace> {
-  const viewerEmail = normalizeEmail(input.viewerEmail);
-  if (viewerEmail.length > MAX_EMAIL_LENGTH || !EMAIL_SHAPE.test(viewerEmail)) {
+  const viewerEmail = comparableEmail(input.viewerEmail);
+  if (
+    viewerEmail.length > MAX_VIEWER_EMAIL_LENGTH ||
+    !VIEWER_EMAIL_SHAPE.test(viewerEmail)
+  ) {
     throw new ShareWorkspaceRefusedError("invalid-email");
   }
-  if (viewerEmail === normalizeEmail(input.ownerEmail)) {
+  if (viewerEmail === comparableEmail(input.ownerEmail)) {
     throw new ShareWorkspaceRefusedError("self-share");
   }
 
-  const owner = await controlPlane.findUserByEmail(input.ownerEmail);
-  const [workspace] = owner
-    ? await controlPlane.listOwnedWorkspacesForUser(owner.id)
-    : [];
-  if (!owner || !workspace) {
+  const owned = await findOwnedWorkspace(controlPlane, input.ownerEmail);
+  if (!owned?.workspace) {
     throw new ShareWorkspaceRefusedError("no-owned-workspace");
   }
+  const { user: owner, workspace } = owned;
 
   const viewers = await controlPlane.listViewersOfWorkspace(workspace.id);
-  const existing = viewers.find((viewer) => normalizeEmail(viewer.email) === viewerEmail);
+  const existing = viewers.find(
+    (viewer) => comparableEmail(viewer.email) === viewerEmail,
+  );
   if (existing) {
     return {
       created: false,
@@ -137,7 +168,7 @@ export async function shareWorkspaceReadOnly(
     case "already-viewer":
       return sharedWith(workspace.id, viewer, false);
     case "conflicting-grant":
-      throw new ShareWorkspaceRefusedError("already-granted");
+      throw new ShareWorkspaceRefusedError("conflicting-grant");
     case "viewer-limit":
       throw new ShareWorkspaceRefusedError("viewer-limit");
   }
@@ -167,9 +198,7 @@ export async function revokeWorkspaceReadOnly(
   { controlPlane }: RevokeWorkspaceDeps,
   input: { ownerEmail: string; viewerUserId: string },
 ): Promise<boolean> {
-  const owner = await controlPlane.findUserByEmail(input.ownerEmail);
-  if (!owner) return false;
-  const [workspace] = await controlPlane.listOwnedWorkspacesForUser(owner.id);
+  const workspace = (await findOwnedWorkspace(controlPlane, input.ownerEmail))?.workspace;
   if (!workspace) return false;
   return controlPlane.revokeViewerGrant(workspace.id, input.viewerUserId);
 }

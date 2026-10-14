@@ -65,16 +65,18 @@ export async function shareReadOnlyAccessAction(
   ..._testArgs: unknown[]
 ): Promise<FormActionState> {
   const injected = testArgFromActionArgs(_testArgs, isSharingPortsOverride)?.sharingPorts;
+  // What was typed, read once: the share sends it and a refusal hands it back, so
+  // the owner never retypes it.
+  const viewerEmail = String(formData.get("viewerEmail") ?? "");
 
   return formActionInlineError<undefined, undefined>({
     datedFact: false,
     guardUrl: () => AJUSTES_URL,
     requireId: false,
-    run: async (_store, { formData: fd }) => {
+    run: async () => {
       const ownerEmail = await ownerEmailOfSession();
       if (!ownerEmail) return { error: OWN_ACCOUNT_ONLY_MESSAGE, ok: false };
 
-      const viewerEmail = String(fd.get("viewerEmail") ?? "");
       try {
         const shared = await withSharingPorts(
           (ports) => shareWorkspaceReadOnly(ports, { ownerEmail, viewerEmail }),
@@ -84,7 +86,7 @@ export async function shareReadOnlyAccessAction(
         // the same person is a mistake worth saying.
         return shared.created
           ? { ok: true }
-          : { error: shareRefusalMessage("already-granted"), ok: false };
+          : { error: shareRefusalMessage("already-viewer"), ok: false };
       } catch (error) {
         if (error instanceof ShareWorkspaceRefusedError) {
           return { error: shareRefusalMessage(error.reason), ok: false };
@@ -93,16 +95,12 @@ export async function shareReadOnlyAccessAction(
         return { error: SHARE_FAILURE_MESSAGE, ok: false };
       }
     },
-    // What was typed comes back, so a refusal never makes the owner retype it.
-    onError: ({ error, formData: fd }) => ({
-      error,
-      values: { viewerEmail: String(fd.get("viewerEmail") ?? "") },
-    }),
-    onErrorUrl: ({ error, formData: fd }) =>
+    onError: ({ error }) => ({ error, values: { viewerEmail } }),
+    onErrorUrl: ({ error }) =>
       errorRedirectUrl(AJUSTES_URL, {
         formId: READ_ONLY_ACCESS_FORM_ID,
         message: error,
-        values: { viewerEmail: String(fd.get("viewerEmail") ?? "") },
+        values: { viewerEmail },
       }),
     onSuccess: () => appendParam(AJUSTES_URL, "ok", "read_only_access_granted"),
   })(formData, ..._testArgs);

@@ -73,7 +73,8 @@ describe("«Acceso de solo lectura» (#1844)", () => {
   test.each([
     ["an invalid email", shareRefusalMessage("invalid-email")],
     ["oneself", shareRefusalMessage("self-share")],
-    ["someone who already has access", shareRefusalMessage("already-granted")],
+    ["someone who already has access", shareRefusalMessage("already-viewer")],
+    ["someone with a grant of another kind", shareRefusalMessage("conflicting-grant")],
     ["the limit of five", shareRefusalMessage("viewer-limit")],
     ["a failure to create the access", SHARE_FAILURE_MESSAGE],
   ])("shows the refusal for %s inline, beside the door, with what was typed", (_l, message) => {

@@ -14,14 +14,21 @@
  * to the client island without the persistence package.
  */
 
+import { comparableEmail } from "@web/comparable-email";
 import type { ShareWorkspaceRefusal } from "@worthline/db";
 import { formatDateKeyEs } from "@worthline/domain";
 
-/**
- * At most this many viewers per workspace — the #1718 triage's cap, mirrored from
- * `MAX_VIEWERS_PER_WORKSPACE` (`viewer-sharing.ts`), which the door enforces
- * atomically; the copy here only spares a round trip.
+/*
+ * The door's rules, copied: `MAX_VIEWERS`, `EMAIL_SHAPE` and `MAX_EMAIL_LENGTH`
+ * mirror `MAX_VIEWERS_PER_WORKSPACE`, `VIEWER_EMAIL_SHAPE` and
+ * `MAX_VIEWER_EMAIL_LENGTH` (`packages/db/src/viewer-sharing.ts`). Copied, not
+ * imported, because this module ships to the client island and `@worthline/db`
+ * has no subpath the browser can load without pulling libsql in; a test
+ * (`read-only-sharing.test.ts`) pins the copies to the originals. The door
+ * enforces them atomically either way — the copies only spare a round trip.
  */
+
+/** At most this many viewers per workspace — the #1718 triage's cap. */
 export const MAX_VIEWERS = 5;
 
 /** One person who may view the owner's workspace, as the list shows them. */
@@ -61,8 +68,10 @@ export function applyViewerMutation(
       return [...rows, { email: mutation.email, since: mutation.since, userId: null }];
     case "remove":
       return rows.filter((row) => row.userId !== mutation.userId);
-    default:
-      return [...rows];
+    default: {
+      const unhandled: never = mutation;
+      return unhandled;
+    }
   }
 }
 
@@ -82,8 +91,19 @@ export const SHARE_FAILURE_MESSAGE =
 export const REVOKE_FAILURE_MESSAGE =
   "No se pudo quitar el acceso. Inténtalo de nuevo en un momento.";
 
-const REFUSAL_MESSAGES: Readonly<Record<ShareWorkspaceRefusal, string>> = {
-  "already-granted": "Esa persona ya tiene acceso.",
+/**
+ * Why a share is turned away, as the section words it: every typed refusal of
+ * the door, plus `already-viewer` — the door's idempotent success
+ * (`created: false`), which to the owner who typed the address is a mistake
+ * worth saying. Distinct from `conflicting-grant`: that person holds a grant of
+ * another kind, and «ya tiene acceso» would be false.
+ */
+export type ShareRefusalReason = ShareWorkspaceRefusal | "already-viewer";
+
+const REFUSAL_MESSAGES: Readonly<Record<ShareRefusalReason, string>> = {
+  "already-viewer": "Esa persona ya tiene acceso.",
+  "conflicting-grant":
+    "Esa persona tiene otro tipo de acceso a tu espacio, y desde aquí no se puede convertir en solo lectura.",
   "invalid-email": "Escribe un email válido, como nombre@ejemplo.com.",
   // The owner has nothing to fix: a session that reached this door owns a
   // workspace (ADR 0030), so this is the system's failure, not theirs.
@@ -92,22 +112,17 @@ const REFUSAL_MESSAGES: Readonly<Record<ShareWorkspaceRefusal, string>> = {
   "viewer-limit": `Ya hay ${MAX_VIEWERS} personas con acceso, el máximo. Quita a alguien antes de dar acceso a otra.`,
 };
 
-/** The message for a typed refusal of the sharing door. */
-export function shareRefusalMessage(reason: ShareWorkspaceRefusal): string {
+/** The message for a refusal of the sharing door, or for an address already on the list. */
+export function shareRefusalMessage(reason: ShareRefusalReason): string {
   return REFUSAL_MESSAGES[reason];
 }
 
 /**
- * The same pragmatic shape the door checks (`viewer-sharing.ts`): one `@`, a
- * non-empty local part, a dotted domain, no whitespace, at most 254 characters.
+ * The same pragmatic shape the door checks: one `@`, a non-empty local part, a
+ * dotted domain, no whitespace, at most 254 characters.
  */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_EMAIL_LENGTH = 254;
-
-/** Trimmed and lower-cased: the one comparable form of an email address. */
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+export const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const MAX_EMAIL_LENGTH = 254;
 
 /** What a share does: show the new row at once, or say why not without a round trip. */
 export type SharePlan =
@@ -124,15 +139,15 @@ export function planShare({
   ownerEmail: string;
   viewers: readonly ViewerRow[];
 }): SharePlan {
-  const viewerEmail = normalizeEmail(email);
+  const viewerEmail = comparableEmail(email);
   if (viewerEmail.length > MAX_EMAIL_LENGTH || !EMAIL_SHAPE.test(viewerEmail)) {
     return { error: shareRefusalMessage("invalid-email"), kind: "reject" };
   }
-  if (viewerEmail === normalizeEmail(ownerEmail)) {
+  if (viewerEmail === comparableEmail(ownerEmail)) {
     return { error: shareRefusalMessage("self-share"), kind: "reject" };
   }
-  if (viewers.some((viewer) => normalizeEmail(viewer.email) === viewerEmail)) {
-    return { error: shareRefusalMessage("already-granted"), kind: "reject" };
+  if (viewers.some((viewer) => comparableEmail(viewer.email) === viewerEmail)) {
+    return { error: shareRefusalMessage("already-viewer"), kind: "reject" };
   }
   if (viewers.length >= MAX_VIEWERS) {
     return { error: shareRefusalMessage("viewer-limit"), kind: "reject" };

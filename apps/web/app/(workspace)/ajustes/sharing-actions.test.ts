@@ -183,6 +183,31 @@ describe("«Dar acceso» (#1844)", () => {
     });
   });
 
+  test("refuses a grant of another kind honestly — never as «ya tiene acceso» (#1718)", async () => {
+    const conflicting = {
+      ...controlPlane,
+      recordViewerGrant: async () => "conflicting-grant" as const,
+    };
+
+    expect(
+      await settle(
+        shareReadOnlyAccessAction(
+          shareForm("legacy@example.com"),
+          await createInMemoryStore(),
+          {
+            sharingPorts: { controlPlane: conflicting, turso: fakeTurso() },
+          },
+        ),
+      ),
+    ).toEqual({
+      error:
+        "Esa persona tiene otro tipo de acceso a tu espacio, y desde aquí no se puede convertir en solo lectura.",
+      ok: false,
+      values: { viewerEmail: "legacy@example.com" },
+    });
+    expect(await viewerEmails()).toEqual([]);
+  });
+
   test("refuses a sixth viewer", async () => {
     for (const name of ["a", "b", "c", "d", "e"]) await share(`${name}@example.com`);
 

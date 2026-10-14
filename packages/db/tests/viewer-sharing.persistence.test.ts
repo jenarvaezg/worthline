@@ -470,7 +470,7 @@ describe("shareWorkspaceReadOnly · races and legacy rows (#1841)", () => {
     }
   });
 
-  test("a recipient with a legacy grant on the workspace is refused as already-granted", async () => {
+  test("a recipient with a legacy grant on the workspace is refused as a conflicting grant, not as a viewer", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worthline-share-legacy-"));
     tempDirs.push(dir);
     const url = `file:${join(dir, "control-plane.sqlite")}`;
@@ -494,7 +494,7 @@ describe("shareWorkspaceReadOnly · races and legacy rows (#1841)", () => {
             { ownerEmail: "ana@example.com", viewerEmail: "legacy@example.com" },
           ),
         ),
-      ).toBe("already-granted");
+      ).toBe("conflicting-grant");
       expect(await reopened.listViewersOfWorkspace(workspace.id)).toEqual([]);
     } finally {
       reopened.close();

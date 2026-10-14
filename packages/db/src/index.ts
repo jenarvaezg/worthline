@@ -366,7 +366,10 @@ export {
   syncRunInstant,
 } from "./sync-run-store";
 export {
+  findOwnedWorkspace,
+  MAX_VIEWER_EMAIL_LENGTH,
   MAX_VIEWERS_PER_WORKSPACE,
+  type OwnedWorkspaceLookup,
   type RevokeWorkspaceDeps,
   revokeWorkspaceReadOnly,
   type SharedWorkspace,
@@ -374,6 +377,7 @@ export {
   type ShareWorkspaceRefusal,
   ShareWorkspaceRefusedError,
   shareWorkspaceReadOnly,
+  VIEWER_EMAIL_SHAPE,
 } from "./viewer-sharing";
 export type { ImportWorkspaceResult } from "./workspace-document-store";
 export type { InitializeWorkspaceInput, MemberOwnerships } from "./workspace-store";

@@ -1,11 +1,11 @@
 "use server";
 
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
+import { comparableEmail } from "@web/comparable-email";
 import { isWriteBlocked } from "@web/demo/write-guard";
 import { sendEmail } from "@web/email/send-email";
 import { readSessionEmail, readStoreTarget } from "@web/read-store-target";
 import { SITE_URL } from "@web/site-url";
-import { normalizeAdminEmail } from "@web/store-resolver";
 
 import { deliverFeedback } from "./deliver-feedback";
 import { canSendFeedback } from "./feedback-eligibility";
@@ -74,7 +74,7 @@ export async function submitFeedbackAction(
       log: console,
       // The maintainer IS the admin: the one address that can open the /admin
       // alert the mail links to.
-      maintainerEmail: normalizeAdminEmail(process.env.WORTHLINE_ADMIN_EMAIL),
+      maintainerEmail: comparableEmail(process.env.WORTHLINE_ADMIN_EMAIL),
       raiseAlert: raiseMaintainerAlert,
       sendEmail: (message) => sendEmail(message),
       siteUrl: SITE_URL,

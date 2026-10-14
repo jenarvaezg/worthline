@@ -1,3 +1,4 @@
+import { comparableEmail } from "@db/comparable-email";
 import { openSecret, sealSecret } from "@db/crypto";
 import type { Client } from "@libsql/client";
 
@@ -304,11 +305,6 @@ function toWorkspaceWithOwner(
     ...toWorkspace(row),
     ownerEmail: row["owner_email"] == null ? null : String(row["owner_email"]),
   };
-}
-
-/** Trimmed and lower-cased: the one comparable form of an email address. */
-function comparableEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 const GRANT_COLUMNS = "user_id, workspace_id, role, created_at";

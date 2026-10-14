@@ -1,8 +1,8 @@
 import { appCookieOptions } from "@web/app-cookie";
+import { comparableEmail } from "@web/comparable-email";
 import { SCOPE_COOKIE_NAME } from "@web/intake";
 import { lookupViewerAccess, readSessionEmail } from "@web/read-store-target";
 import { seeOtherRedirect } from "@web/return-to";
-import { normalizeAdminEmail } from "@web/store-resolver";
 import type { NextRequest, NextResponse } from "next/server";
 
 import { VIEWING_COOKIE_MAX_AGE_SECONDS, VIEWING_COOKIE_NAME } from "./viewing-cookie";
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     sessionEmail,
     workspaceId,
   });
-  if (!access || normalizeAdminEmail(access.viewerEmail) !== sessionEmail) {
+  if (!access || comparableEmail(access.viewerEmail) !== sessionEmail) {
     return seeOtherRedirect("/ajustes");
   }
 
