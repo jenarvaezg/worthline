@@ -36,8 +36,9 @@ export interface TursoPort {
    */
   createDatabaseToken(name: string): Promise<{ jwt: string }>;
   /**
-   * Delete a database created by this port — best-effort cleanup of the
-   * loser's orphan after a first-login race (#733). Optional: without it the
+   * Delete a database created by this port — best-effort cleanup of an
+   * orphan: the loser's after a first-login race (#733), or one whose
+   * provision failed after it was created (#1807). Optional: without it the
    * orphan database simply lingers, which was the pre-#733 status quo.
    */
   deleteDatabase?(name: string): Promise<void>;
@@ -271,45 +272,51 @@ async function createOwnedWorkspace(
   }
 
   const { name, url } = await turso.createDatabase(newDbName());
-  const { jwt } = await turso.createDatabaseToken(name);
-  await openAndMigrate({
-    url,
-    authToken: jwt,
-  });
-  const workspace = await controlPlane.createWorkspace({
-    dbName: name,
-    dbUrl: url,
-    dbAuthToken: jwt,
-  });
+  // From here on a billable database exists. A failure before the workspace
+  // row points at it leaves it reachable by nobody, and the caller gives the
+  // day's claim back — so it must not outlive the failure (#1807).
+  let workspace: ControlPlaneWorkspace;
+  try {
+    const { jwt } = await turso.createDatabaseToken(name);
+    await openAndMigrate({
+      url,
+      authToken: jwt,
+    });
+    workspace = await controlPlane.createWorkspace({
+      dbName: name,
+      dbUrl: url,
+      dbAuthToken: jwt,
+    });
+  } catch (error) {
+    await deleteDatabaseBestEffort(turso, name, "after a failed provision");
+    throw error;
+  }
   try {
     await controlPlane.recordGrant(user.id, workspace.id);
   } catch (error) {
-    if (!isOwnerGrantConflict(error)) {
-      throw error;
-    }
-    // Lost the first-login race (#733): a concurrent provision already owns a
-    // grant for this user (grants_one_owner_per_user). Clean up our orphan
-    // and hand back the winner's workspace so both logins converge. Each
-    // cleanup is independently best-effort: a dangling workspace row is the
-    // pre-#733 failure mode the admin surface tolerates (#697), and a
-    // lingering database only costs until an operator acts on the warning.
+    // Either way the workspace is an orphan nobody will own. On a lost
+    // first-login race (#733) a concurrent provision already owns a grant for
+    // this user (grants_one_owner_per_user) and its workspace is handed back
+    // so both logins converge; on any other failure the error goes up, and the
+    // database must not outlive it (#1807). Each cleanup is independently
+    // best-effort: a dangling workspace row is the pre-#733 failure mode the
+    // admin surface tolerates (#697), and a lingering database only costs until
+    // an operator acts on the warning.
+    const lostTheRace = isOwnerGrantConflict(error);
+    const context = lostTheRace
+      ? "after losing the first-login race"
+      : "after a failed provision";
     try {
       await controlPlane.deleteWorkspace(workspace.id);
     } catch (cleanupError) {
       console.warn(
-        `provisioner: could not delete orphan workspace row ${workspace.id} after losing the first-login race`,
+        `provisioner: could not delete orphan workspace row ${workspace.id} ${context}`,
         cleanupError,
       );
     }
-    if (turso.deleteDatabase) {
-      try {
-        await turso.deleteDatabase(name);
-      } catch (cleanupError) {
-        console.warn(
-          `provisioner: could not delete orphan database ${name} after losing the first-login race`,
-          cleanupError,
-        );
-      }
+    await deleteDatabaseBestEffort(turso, name, context);
+    if (!lostTheRace) {
+      throw error;
     }
     const [winner] = await controlPlane.listWorkspacesForUser(user.id);
     if (!winner) {
@@ -334,6 +341,29 @@ async function createOwnedWorkspace(
     });
   }
   return { workspace, created: true };
+}
+
+/**
+ * Delete a database no workspace will ever use. Best-effort: the provision's
+ * outcome is already decided, and a database that survives only costs until an
+ * operator acts on the warning, which names it.
+ */
+async function deleteDatabaseBestEffort(
+  turso: TursoPort,
+  name: string,
+  context: string,
+): Promise<void> {
+  if (!turso.deleteDatabase) {
+    return;
+  }
+  try {
+    await turso.deleteDatabase(name);
+  } catch (cleanupError) {
+    console.warn(
+      `provisioner: could not delete orphan database ${name} ${context}`,
+      cleanupError,
+    );
+  }
 }
 
 /**
