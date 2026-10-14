@@ -113,11 +113,14 @@ async function openViewerStore(
   } catch (error) {
     if (!(error instanceof WorkspaceSchemaBehindError)) throw error;
   }
-  await bringViewerSchemaUpToDate(principal.workspaceId);
+  await bringViewerSchemaUpToDate(principal);
   return readOnlyOpen();
 }
 
-async function bringViewerSchemaUpToDate(workspaceId: string): Promise<void> {
+async function bringViewerSchemaUpToDate(
+  principal: AuthenticatedPrincipal,
+): Promise<void> {
+  const { workspaceId } = principal;
   const workspace = await withControlPlaneStore<
     Awaited<ReturnType<TenancyDirectory["getWorkspaceWithOwner"]>>,
     Pick<TenancyDirectory, "getWorkspaceWithOwner">
@@ -127,6 +130,13 @@ async function bringViewerSchemaUpToDate(workspaceId: string): Promise<void> {
   if (!workspace?.dbAuthToken) {
     throw new Error(
       `Shared workspace ${workspaceId} has no full-access credential in the control plane.`,
+    );
+  }
+  // The full token opens whatever URL it is paired with: the maintenance must
+  // land on the very base the viewer was refused on, never on another one.
+  if (workspace.dbUrl !== principal.dbUrl) {
+    throw new Error(
+      `Shared workspace ${workspaceId} lives elsewhere in the control plane than the viewer was sent.`,
     );
   }
   await withAuthorizedStore(

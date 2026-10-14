@@ -243,6 +243,19 @@ describe("authorization port · viewer principal (#1842)", () => {
     expect(mocks.createWorthlineStoreUnsafe).toHaveBeenCalledTimes(1);
   });
 
+  test("a control-plane base that is not the principal's throws, with no full-access open", async () => {
+    mocks.createWorthlineStoreUnsafe.mockImplementationOnce(async () => {
+      throw new WorkspaceSchemaBehindError(SCHEMA_VERSION - 1);
+    });
+    mocks.getWorkspaceWithOwner.mockResolvedValueOnce({
+      ...OWNER_ROW,
+      dbUrl: "libsql://someone-else.turso.io",
+    });
+
+    await expect(openAuthorizedStore(viewer)).rejects.toThrow();
+    expect(mocks.createWorthlineStoreUnsafe).toHaveBeenCalledTimes(1);
+  });
+
   test("any other open failure propagates untouched, with no maintenance", async () => {
     mocks.createWorthlineStoreUnsafe.mockImplementationOnce(async () => {
       throw new Error("network");

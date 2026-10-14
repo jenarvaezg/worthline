@@ -41,6 +41,11 @@ describe("readOnlyClient · what passes", () => {
     "  \n\tSELECT label FROM t ORDER BY id",
     "SELECT label FROM t ORDER BY id;",
     "SELECT label FROM t ORDER BY id ;  \n",
+    // After the final `;`, only whitespace and comments.
+    "SELECT label FROM t ORDER BY id; -- c",
+    "SELECT label FROM t ORDER BY id; /* c */ \n -- d\n",
+    // A sigil inside a literal is just text.
+    "SELECT label FROM t WHERE label <> '$a(x)' ORDER BY id",
   ])("a SELECT reads through: %j", async (sql) => {
     const result = await guarded.execute(sql);
     expect(result.rows.map((row) => row["label"])).toEqual(["uno", "dos"]);
@@ -131,6 +136,17 @@ describe("readOnlyClient · what is refused before it reaches the base", () => {
     "SELECT 1;DELETE FROM t",
     "SELECT 1; -- trailing\nDELETE FROM t",
     "SELECT ';' ; DELETE FROM t",
+    "SELECT 1; -- c\n/* c */ DELETE FROM t",
+    "SELECT 1; /* c */ DELETE FROM t",
+    // A Tcl-style variable `$name(...)` swallows a quote the scanner would
+    // otherwise read as opening a literal — and so would hide the second
+    // statement. Any bind-variable sigil outside a literal fails closed.
+    "SELECT $a(';) ; DELETE FROM t --'",
+    "SELECT :a(';) ; DELETE FROM t --'",
+    "SELECT @a(';) ; DELETE FROM t --'",
+    "SELECT #a(';) ; DELETE FROM t --'",
+    "SELECT label FROM t WHERE id = $id",
+    "SELECT label FROM t WHERE id = :id",
     // A keyword that merely starts with SELECT is not SELECT.
     "SELECTED FROM t",
     // Pragmas: only argument-free reads of the allow-list.

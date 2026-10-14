@@ -26,7 +26,10 @@ export const READ_ONLY_WORKSPACE_CODE = "WORKSPACE_READ_ONLY";
  *   - `PRAGMA [schema.]name` with no argument, for a name in
  *     {@link READ_ONLY_PRAGMAS} (a pragma with no `=` can still act —
  *     `optimize`, `wal_checkpoint` — so the name is checked too);
- *   - and only ONE statement: text after the first top-level `;` refuses.
+ *   - and only ONE statement: anything but whitespace and comments after the
+ *     first top-level `;` refuses;
+ *   - no bind-variable sigil (`$ : @ #`) outside a literal — see
+ *     {@link VARIABLE_SIGILS}; values bind positionally with `?`.
  * `executeMultiple`, `migrate`, `sync` and any transaction that is not `"read"`
  * are refused outright; a `"read"` transaction hands back a handle under the
  * same rule.
@@ -78,15 +81,54 @@ const READ_ONLY_PRAGMAS = new Set([
 const PRAGMA_READ = /^PRAGMA\s+(?:[A-Za-z_]\w*\s*\.\s*)?([A-Za-z_]\w*)$/i;
 
 /**
+ * Bind-variable sigils. SQLite's tokenizer lets a variable carry a Tcl-style
+ * `(...)` suffix (`$a(';)`) that swallows a quote this scanner would read as
+ * opening a literal — hiding a second statement behind it. Drizzle binds with
+ * `?`, so no store read uses them: one outside a literal fails closed.
+ */
+const VARIABLE_SIGILS = new Set(["$", ":", "@", "#"]);
+
+/**
+ * The index just past the comment starting at `index`, or null when no comment
+ * starts there. An unterminated comment runs to the end of the text, as in SQLite.
+ */
+function skipComment(sql: string, index: number): number | null {
+  if (sql.startsWith("--", index)) {
+    const close = sql.indexOf("\n", index + 2);
+    return close === -1 ? sql.length : close + 1;
+  }
+  if (sql.startsWith("/*", index)) {
+    const close = sql.indexOf("*/", index + 2);
+    return close === -1 ? sql.length : close + 2;
+  }
+  return null;
+}
+
+/** Whether `sql` from `index` on is nothing but whitespace and comments. */
+function onlyTrivia(sql: string, index: number): boolean {
+  let cursor = index;
+  while (cursor < sql.length) {
+    if (/\s/.test(sql[cursor] ?? "")) {
+      cursor += 1;
+      continue;
+    }
+    const afterComment = skipComment(sql, cursor);
+    if (afterComment === null) return false;
+    cursor = afterComment;
+  }
+  return true;
+}
+
+/**
  * The first statement of `sql` (up to its first top-level `;`), or null when
- * anything but whitespace follows that `;`. Quoted strings and identifiers and
- * comments are skipped, so a `;` inside them does not end the statement.
+ * anything but whitespace and comments follows that `;`, or when a bind-variable
+ * sigil appears outside a literal. Quoted strings and identifiers and comments
+ * are skipped, so a `;` inside them does not end the statement.
  */
 function singleStatement(sql: string): string | null {
   let index = 0;
   while (index < sql.length) {
-    const char = sql[index];
-    const next = sql[index + 1];
+    const char = sql[index] ?? "";
     if (char === "'" || char === '"' || char === "`") {
       const close = sql.indexOf(char, index + 1);
       if (close === -1) return sql;
@@ -99,20 +141,14 @@ function singleStatement(sql: string): string | null {
       index = close + 1;
       continue;
     }
-    if (char === "-" && next === "-") {
-      const close = sql.indexOf("\n", index + 2);
-      if (close === -1) return sql;
-      index = close + 1;
+    const afterComment = skipComment(sql, index);
+    if (afterComment !== null) {
+      index = afterComment;
       continue;
     }
-    if (char === "/" && next === "*") {
-      const close = sql.indexOf("*/", index + 2);
-      if (close === -1) return sql;
-      index = close + 2;
-      continue;
-    }
+    if (VARIABLE_SIGILS.has(char)) return null;
     if (char === ";") {
-      return sql.slice(index + 1).trim() === "" ? sql.slice(0, index) : null;
+      return onlyTrivia(sql, index + 1) ? sql.slice(0, index) : null;
     }
     index += 1;
   }
