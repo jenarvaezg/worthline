@@ -27,14 +27,24 @@ import { migrate } from "./migrate";
  * against a local `file:` database with zero network.
  */
 
+/**
+ * What a minted database token may do (#1841): `full-access` is the owner's and
+ * the system's; `read-only` is what a viewer opens a shared workspace with.
+ */
+export type TursoTokenAuthorization = "full-access" | "read-only";
+
 export interface TursoPort {
   /** Create a database and return its name and libSQL URL. */
   createDatabase(name: string): Promise<{ name: string; url: string }>;
   /**
-   * Mint a JWT scoped to a single database (#1185). Prefer this over a shared
-   * group token when opening that workspace's libSQL URL.
+   * Mint a JWT scoped to a single database (#1185) with the given authorization
+   * (#1841). Prefer this over a shared group token when opening that
+   * workspace's libSQL URL.
    */
-  createDatabaseToken(name: string): Promise<{ jwt: string }>;
+  createDatabaseToken(
+    name: string,
+    authorization: TursoTokenAuthorization,
+  ): Promise<{ jwt: string }>;
   /**
    * Delete a database created by this port — best-effort cleanup of an
    * orphan: the loser's after a first-login race (#733), or one whose
@@ -176,10 +186,11 @@ export async function provisionWorkspaceForUser(
 
   // A returning identity is resolved BEFORE the cap is consulted, and with a
   // read that creates nothing: whatever the day's count, an existing user's
-  // sign-in never touches the cap (#1175).
+  // sign-in never touches the cap (#1175). Only an OWNED workspace counts: an
+  // identity that merely views someone else's is provisioned its own (#1841).
   const known = await controlPlane.findUserByEmail(email);
   if (known) {
-    const [existing] = await controlPlane.listWorkspacesForUser(known.id);
+    const [existing] = await controlPlane.listOwnedWorkspacesForUser(known.id);
     if (existing) {
       return existing;
     }
@@ -266,7 +277,7 @@ async function createOwnedWorkspace(
 
   // Re-checked here, right before the cost: a concurrent first login of the
   // same identity may have finished since the caller's read.
-  const [existing] = await controlPlane.listWorkspacesForUser(user.id);
+  const [existing] = await controlPlane.listOwnedWorkspacesForUser(user.id);
   if (existing) {
     return { workspace: existing, created: false };
   }
@@ -277,7 +288,7 @@ async function createOwnedWorkspace(
   // day's claim back — so it must not outlive the failure (#1807).
   let workspace: ControlPlaneWorkspace;
   try {
-    const { jwt } = await turso.createDatabaseToken(name);
+    const { jwt } = await turso.createDatabaseToken(name, "full-access");
     await openAndMigrate({
       url,
       authToken: jwt,
@@ -318,7 +329,7 @@ async function createOwnedWorkspace(
     if (!lostTheRace) {
       throw error;
     }
-    const [winner] = await controlPlane.listWorkspacesForUser(user.id);
+    const [winner] = await controlPlane.listOwnedWorkspacesForUser(user.id);
     if (!winner) {
       throw error;
     }

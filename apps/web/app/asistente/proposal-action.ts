@@ -4,10 +4,7 @@ import {
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
-import {
-  DEMO_DISABLED_MESSAGE,
-  IMPERSONATION_READONLY_MESSAGE,
-} from "@web/demo/write-guard";
+import { blockedWriteMessage } from "@web/demo/write-guard";
 import { readStoreTarget } from "@web/read-store-target";
 import { type WorthlineStore } from "@web/store";
 import type { AssistantProposal, AssistantProposalKind } from "@worthline/db";
@@ -65,21 +62,14 @@ export type ProposalParseResult<Data = undefined> =
   | { ok: false; message: string };
 
 /**
- * The demo / impersonation write barrier shared by every proposal action (ADR
- * 0044 / 0057): a demo persona or an admin impersonation is read-only, so the
- * write is blocked with a friendly message rather than executed. Returns null
- * when the write may proceed. This is the ONE copy that replaces the nine inline
- * ones.
+ * The write barrier shared by every proposal action (ADR 0044 / 0057): a demo
+ * persona, an admin impersonation or a viewer (#1843) is read-only, so the write
+ * is blocked with the classifier's message rather than executed. Returns null
+ * when the write may proceed. It asks `blockedWriteMessage`, never re-spells it.
  */
 export async function guardProposalWrite(): Promise<ProposalBlocked | null> {
-  const target = await readStoreTarget();
-  if (target.kind === "demo") {
-    return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
-  }
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    return { status: "blocked", message: IMPERSONATION_READONLY_MESSAGE };
-  }
-  return null;
+  const message = blockedWriteMessage(await readStoreTarget());
+  return message === null ? null : { status: "blocked", message };
 }
 
 /**

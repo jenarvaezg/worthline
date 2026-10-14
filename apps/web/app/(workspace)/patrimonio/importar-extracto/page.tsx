@@ -1,4 +1,4 @@
-import { isDemoMode } from "@web/demo/write-guard";
+import { guardViewerPage, isDemoMode } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import { PAYWALL_STATEMENT_MESSAGE } from "@web/entitlements/paywall-copy";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
@@ -44,6 +44,10 @@ export async function ImportarExtractoContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
+  // Importing is ingestion into the owner's book, under the owner's plan (#1843,
+  // ADR 0112): a viewer is sent to the figures, like every other write door.
+  await guardViewerPage("/app");
+
   const resolvedSearchParams = await searchParams;
   const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);

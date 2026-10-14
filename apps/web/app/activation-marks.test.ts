@@ -85,4 +85,29 @@ describe("activation marks (#1131, PRD #1160 S1)", () => {
     expect(await store.readWorkspaceEntitlement(workspaceId)).toBeNull();
     store.close();
   });
+
+  it("never stamps for a viewer or an impersonating admin — only the owner's own session (#1843)", async () => {
+    const { url, workspaceId } = await controlPlaneWithWorkspace();
+    vi.stubEnv("WORTHLINE_CONTROL_PLANE_DB_URL", url);
+
+    const base = {
+      kind: "authenticated",
+      workspaceId,
+      dbUrl: "file:ws.sqlite",
+      token: "t",
+    } as const;
+    const viewer: StoreTarget = { ...base, sharedByEmail: "owner@example.com" };
+    const impersonating: StoreTarget = {
+      ...base,
+      impersonatedEmail: "owner@example.com",
+    };
+    for (const target of [viewer, impersonating]) {
+      await markFirstHoldingBestEffort(target);
+      await markOnboardedBestEffort(target);
+    }
+
+    const store = await createControlPlaneStore({ url });
+    expect(await store.readWorkspaceEntitlement(workspaceId)).toBeNull();
+    store.close();
+  });
 });

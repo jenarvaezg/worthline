@@ -1,5 +1,6 @@
 import { CHECKOUT_TIER_PARAM, CHECKOUT_TRANSACTION_PARAM } from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
+import { guardViewerPage } from "@web/demo/write-guard";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
@@ -35,11 +36,15 @@ export default function PagarPage({
   );
 }
 
-async function PagarContent({
+export async function PagarContent({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // A viewer never opens a checkout for the workspace it views (#1843, ADR
+  // 0112): the plan is the owner's to buy. Back to `/premium`, nothing created.
+  await guardViewerPage("/premium");
+
   const resolvedSearchParams = await searchParams;
   await resolvePageShell({ searchParams: resolvedSearchParams });
 

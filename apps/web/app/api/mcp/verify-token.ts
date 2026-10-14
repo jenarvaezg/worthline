@@ -356,32 +356,45 @@ async function envResolveEmail(subject: string, env: Env): Promise<VerifiedEmail
   }
 }
 
-/** The production control-plane lookup: email → user → exactly one granted workspace. */
+type McpTenancy = Pick<
+  TenancyDirectory,
+  "findUserByEmail" | "listOwnedWorkspacesForUser"
+>;
+
+/**
+ * Email → user → exactly one OWNED workspace (#1841, ADR 0112). The MCP is the
+ * owner's only: a viewer grant is never listed, so a caller who also views
+ * someone else's workspace resolves to their own, and one who only views
+ * resolves to nothing.
+ */
+export async function resolveOwnedMcpWorkspace(
+  controlPlane: McpTenancy,
+  email: string,
+): Promise<McpWorkspaceRef | null> {
+  const user = await controlPlane.findUserByEmail(email);
+  if (!user) return null;
+  const workspaces = await controlPlane.listOwnedWorkspacesForUser(user.id);
+  if (workspaces.length > 1) {
+    console.warn("[mcp-auth] reject: caller owns multiple workspaces", {
+      workspaceCount: workspaces.length,
+    });
+  }
+  return selectSingleMcpWorkspace(
+    workspaces.map((entry) => ({
+      workspaceId: entry.id,
+      dbUrl: entry.dbUrl,
+      dbAuthToken: entry.dbAuthToken,
+    })),
+  );
+}
+
+/** The production control-plane lookup, opened from env. */
 async function envResolveWorkspace(
   claims: McpTokenClaims,
   env: Env,
 ): Promise<McpWorkspaceRef | null> {
-  return withOptionalControlPlaneStore<
-    McpWorkspaceRef | null,
-    Pick<TenancyDirectory, "findUserByEmail" | "listWorkspacesForUser">
-  >(
-    async (controlPlane) => {
-      const user = await controlPlane.findUserByEmail(claims.email);
-      if (!user) return null;
-      const workspaces = await controlPlane.listWorkspacesForUser(user.id);
-      if (workspaces.length > 1) {
-        console.warn("[mcp-auth] reject: caller has multiple granted workspaces", {
-          workspaceCount: workspaces.length,
-        });
-      }
-      return selectSingleMcpWorkspace(
-        workspaces.map((entry) => ({
-          workspaceId: entry.id,
-          dbUrl: entry.dbUrl,
-          dbAuthToken: entry.dbAuthToken,
-        })),
-      );
-    },
+  return withOptionalControlPlaneStore<McpWorkspaceRef | null, McpTenancy>(
+    (controlPlane) => resolveOwnedMcpWorkspace(controlPlane, claims.email),
     { env },
   );
 }

@@ -38,7 +38,7 @@ import {
 import { isAssistantSurface } from "@web/asistente/screen-context";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { MAX_STEPS, TOOL_PROMPT_BUDGET } from "@web/asistente/turn-prompt-budget";
-import { ownWorkspaceId } from "@web/demo/write-guard";
+import { ownWorkspaceId, viewsSharedWorkspace } from "@web/demo/write-guard";
 import { readStoreTarget } from "@web/read-store-target";
 import {
   createUIMessageStreamResponse,
@@ -80,6 +80,12 @@ export async function POST(request: Request): Promise<Response> {
   const target = await readStoreTarget();
   if (target.kind === "unauthenticated") {
     return jsonError("unauthenticated", 401);
+  }
+  // A viewer of a shared workspace has no chat in v1 (#1843, ADR 0112): a turn
+  // writes drafts into the owner's workspace and spends the owner's quota. Refused
+  // before anything is resolved, counted or opened.
+  if (viewsSharedWorkspace(target)) {
+    return jsonError("read_only", 403);
   }
 
   // Config check first: a misconfigured deploy must not burn callers' quota.

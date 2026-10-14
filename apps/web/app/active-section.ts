@@ -15,6 +15,21 @@ export const NAV_SECTIONS: Array<{ id: AppSection; label: string; href: string }
   { id: "ajustes", label: "Ajustes", href: "/ajustes" },
 ];
 
+/**
+ * The sections the topnav offers (#1844). While viewing a workspace someone else
+ * shared, «Ajustes» is not one of them: settings are the owner's, and the page
+ * itself sends a viewer back to /app (ADR 0112).
+ */
+export function navSectionsFor({
+  viewingSharedWorkspace,
+}: {
+  viewingSharedWorkspace: boolean;
+}): Array<{ id: AppSection; label: string; href: string }> {
+  return viewingSharedWorkspace
+    ? NAV_SECTIONS.filter((section) => section.id !== "ajustes")
+    : NAV_SECTIONS;
+}
+
 /** Match a pathname against a section root: exact, or a `/`-delimited child. */
 function isUnder(pathname: string, root: string): boolean {
   return pathname === root || pathname.startsWith(`${root}/`);

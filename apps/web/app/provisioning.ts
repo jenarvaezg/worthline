@@ -6,7 +6,7 @@ import {
 } from "@web/provisioning-cap";
 import { handOffSignInWorkspace, takeSignInWorkspace } from "@web/sign-in-handoff";
 import { scheduleWelcomeEmail } from "@web/trial-emails/trial-email-wiring";
-import { createTursoPort } from "@web/turso-port";
+import { tursoPortFromEnv } from "@web/turso-port";
 import {
   type ControlPlaneStore,
   DailyProvisioningCapRefusedError,
@@ -158,21 +158,6 @@ export async function workspaceForSessionToken(
     );
   }
   return outcome.workspace;
-}
-
-function tursoPortFromEnv(env: Env): TursoPort {
-  const tursoOrg = env["TURSO_ORG"];
-  const tursoToken = env["TURSO_API_TOKEN"];
-  if (!env["WORTHLINE_CONTROL_PLANE_DB_URL"] || !tursoOrg || !tursoToken) {
-    throw new Error(
-      "Hosted provisioning requires WORTHLINE_CONTROL_PLANE_DB_URL, TURSO_ORG, and TURSO_API_TOKEN.",
-    );
-  }
-  return createTursoPort({
-    org: tursoOrg,
-    token: tursoToken,
-    ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
-  });
 }
 
 /**

@@ -15,6 +15,9 @@
  * exercised via the contract parity tests in `packages/db/src/job-queue.test.ts`.
  */
 
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { StoreTarget } from "@web/store-resolver";
 import {
   type ControlPlaneStore,
@@ -316,5 +319,34 @@ describe("enqueueSourceSyncOrInline — durable when a control plane exists, els
       target: AUTHENTICATED,
     });
     expect(runInline).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing for a viewer or an impersonating admin — no job, no inline write (#1843)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worthline-sync-viewer-"));
+    const controlPlanePath = join(dir, "cp.sqlite");
+    try {
+      for (const target of [
+        { ...AUTHENTICATED, sharedByEmail: "owner@example.com" },
+        { ...AUTHENTICATED, impersonatedEmail: "owner@example.com" },
+      ] satisfies StoreTarget[]) {
+        for (const env of [
+          { WORTHLINE_CONTROL_PLANE_DB_URL: `file:${controlPlanePath}` },
+          {},
+        ]) {
+          const runInline = vi.fn(async () => {});
+          await enqueueSourceSyncOrInline({
+            descriptor: sourceSync,
+            env,
+            runInline,
+            target,
+          });
+          expect(runInline).not.toHaveBeenCalled();
+        }
+      }
+      // An enqueue would have opened (and so created) the control plane.
+      expect(existsSync(controlPlanePath)).toBe(false);
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 });

@@ -1352,7 +1352,10 @@ h3 {
   animation: wl-shake var(--dur-base) var(--ease-standard);
 }
 
-.rowForm .formError {
+/* The reason for a refusal takes the whole row under the field and its button —
+   in a row form and in the inline form of «Acceso de solo lectura» (#1844). */
+.rowForm .formError,
+.inlineForm .formError {
   grid-column: 1 / -1;
 }
 
@@ -5533,8 +5536,11 @@ code {
 }
 
 /* Canon §3: warning-override rows read as a ruled ledger list — each entry
-   opened by a hairline, no perimeter border box. */
-.overrideRow {
+   opened by a hairline, no perimeter border box. The rows of «Acceso de solo
+   lectura» and «Compartidos contigo» (#1844) are the same ledger line; only
+   their columns differ (below, under #1844). */
+.overrideRow,
+.sharingRow {
   align-items: center;
   border-top: 1px solid var(--line-soft);
   display: grid;
@@ -5594,6 +5600,38 @@ p.muted {
   .overrideEntity {
     display: none;
   }
+}
+
+/* === #1844 acceso de solo lectura ===
+   «Acceso de solo lectura» y «Compartidos contigo»: la línea de libro de los
+   overrides (`.overrideRow, .sharingRow`), con el email a la izquierda y su acción
+   a la derecha. `minmax(0, 1fr)`: un email largo se parte, no empuja la acción
+   fuera del panel. */
+.sharingList {
+  display: grid;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.sharingRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.sharingWho {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sharingEmail {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sharingSince {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 /* === #58 inversiones === */

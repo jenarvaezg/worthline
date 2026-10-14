@@ -27,15 +27,14 @@ export function createTursoPort(config: TursoPortConfig): TursoPort {
       );
       return { name: db.name, url: `libsql://${db.hostname}` };
     },
-    async createDatabaseToken(name) {
+    async createDatabaseToken(name, authorization) {
       const { createClient } = await import("@tursodatabase/api");
       const client = createClient({ org: config.org, token: config.token });
       // No expiration: the JWT is stored on the control-plane workspace row and
       // reused like the old group token was — rotated by operators via the
-      // backfill / Platform API when needed (#1185).
-      const token = await client.databases.createToken(name, {
-        authorization: "full-access",
-      });
+      // backfill / Platform API when needed (#1185). `read-only` is the
+      // viewer's credential (#1841); provisioning always asks `full-access`.
+      const token = await client.databases.createToken(name, { authorization });
       return { jwt: token.jwt };
     },
     async deleteDatabase(name) {
@@ -44,4 +43,24 @@ export function createTursoPort(config: TursoPortConfig): TursoPort {
       await client.databases.delete(name);
     },
   };
+}
+
+/**
+ * The real port from env, for the two hosted surfaces that reach Turso's Platform
+ * API: provisioning on first sign-in, and the owner's first share minting the
+ * workspace's read-only token (#1844). Throws naming what is missing.
+ */
+export function tursoPortFromEnv(env: Record<string, string | undefined>): TursoPort {
+  const tursoOrg = env["TURSO_ORG"];
+  const tursoToken = env["TURSO_API_TOKEN"];
+  if (!env["WORTHLINE_CONTROL_PLANE_DB_URL"] || !tursoOrg || !tursoToken) {
+    throw new Error(
+      "Reaching Turso's Platform API (provisioning a workspace, or minting its read-only token to share it) requires WORTHLINE_CONTROL_PLANE_DB_URL, TURSO_ORG, and TURSO_API_TOKEN.",
+    );
+  }
+  return createTursoPort({
+    org: tursoOrg,
+    token: tursoToken,
+    ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
+  });
 }

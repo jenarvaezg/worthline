@@ -108,12 +108,19 @@ export type {
   RaiseMaintainerAlertInput,
   UpdateMaintainerAlertStatusInput,
 } from "./control-plane/maintainer-alert-log";
-export type {
-  ControlPlaneGrant,
-  ControlPlaneUser,
-  ControlPlaneWorkspace,
-  ControlPlaneWorkspaceWithOwner,
-  TenancyDirectory,
+export {
+  type ControlPlaneGrant,
+  type ControlPlaneUser,
+  type ControlPlaneWorkspace,
+  type ControlPlaneWorkspaceWithOwner,
+  GRANT_ROLES,
+  type GrantRole,
+  parseGrantRole,
+  type RecordViewerGrantOutcome,
+  type TenancyDirectory,
+  type ViewerAccess,
+  type WorkspaceSharedWithUser,
+  type WorkspaceViewer,
 } from "./control-plane/tenancy-directory";
 export {
   TRIAL_EMAIL_KINDS,

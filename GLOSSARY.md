@@ -55,19 +55,31 @@ decides whose holdings are aggregated.
 _Avoid_: account, member, login, owner.
 
 **Grant**:
-A single row tying one **user** to one **workspace** with a role (`owner` today),
-recording that the user may open that workspace. Access is the set of grants:
-inviting a second user to a household is just another grant — no data moves,
-because each workspace database is keyed by workspace, never by user. Lives in the
-**control plane**, never inside a workspace database.
+A single row tying one **user** to one **workspace** with a role (`owner` or
+`viewer`), recording that the user may open that workspace. Any other stored role
+grants nothing. Access is the set of grants: giving another user access is just
+another grant — no data moves, because each workspace database is keyed by
+workspace, never by user. Every user owns exactly one workspace, and only owner
+grants ever resolve as the user's own (ADR 0112). Lives in the **control plane**,
+never inside a workspace database.
 _Avoid_: permission, membership (a grant is access, not a tracked **member**).
+
+**Viewer** (UI: «acceso de solo lectura»):
+A **user** holding a `viewer` **grant** on a workspace someone else owns. Sees every
+figure and record of that workspace and writes nothing: the owner gives and takes
+the access from their own workspace, at most five viewers each, and the viewer opens
+it with a read-only database credential. A viewer still owns their own workspace;
+viewing never makes a workspace theirs (ADR 0112). Viewing is a session the viewer
+enters and leaves; every request re-checks the grant, so a revoked viewer is back in
+their own workspace on the next one.
+_Avoid_: guest, read-only member, co-owner, shared user.
 
 **Control plane**:
 The one small libSQL database that maps **users** → **workspaces** → **grants** and
 records each workspace's database name/URL. It is the only place that knows which
 workspace a signed-in user owns; each per-workspace database holds exactly one
-`id = 'default'` row and knows nothing of users. On first login a user with no grant
-is _provisioned_ a fresh workspace database here (ADR 0030). Provisioning is the one
+`id = 'default'` row and knows nothing of users. On first login a user with no owner
+grant is _provisioned_ a fresh workspace database here (ADR 0030). Provisioning is the one
 step a **daily provisioning cap** (UI: «cupo diario de altas», #1175) can refuse: it
 meters new workspaces per UTC day, never a returning user's sign-in. Outside production
 it is off unless the deployment sets it; a production deploy without it refuses new

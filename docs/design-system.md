@@ -44,8 +44,10 @@ para líquido, azules para el resto y oro para vivienda. `--shadow`,
 - **Híbrido**: onboarding usa `.coverMasthead` sobre cuerpo de papel.
 - **Papel**: Resumen, histórico, patrimonio, objetivos, ajustes, admin,
   asistente y errores recuperables.
-- **Banda de sesión**: demo e impersonación usan `.sessionBand` y semántica de
-  aviso; no se disfrazan de cubierta.
+- **Banda de sesión**: demo, impersonación y el viewer de un espacio compartido
+  (#1844) usan `.sessionBand` y semántica de aviso; no se disfrazan de cubierta.
+  La impersonación va en oro (`data-tone="warning"`), porque es un estado que hay
+  que notar; la demo y el viewer en el tono neutro, porque son estados legítimos.
 
 La textura física (el grano) pertenece al registro de cubierta — la landing y
 las superficies `.coverSurface`. El papel de trabajo es plano; no lleva

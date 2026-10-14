@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
 import { createMaintainerAlertLog } from "./maintainer-alert-log";
 
-export const CP_SCHEMA_VERSION = 10;
+export const CP_SCHEMA_VERSION = 11;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -385,5 +385,25 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );`);
     await writeControlPlaneSchemaVersion(client, 10);
+  }
+
+  if (version < 11) {
+    // Read-only Turso token per workspace (#1841, ADR 0112): what a viewer
+    // opens the shared workspace with, so the full token never enters a
+    // viewer's session. Nullable with no backfill: it is minted the first time
+    // the owner shares. Same shape as v6 — fresh installs get the column from
+    // TENANCY_SCHEMA's CREATE TABLE, the ALTER is for existing control planes.
+    try {
+      await client.execute("ALTER TABLE workspaces ADD COLUMN db_read_only_token TEXT");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        !/duplicate column name:\s*db_read_only_token/i.test(message) &&
+        !/no such table:\s*workspaces/i.test(message)
+      ) {
+        throw err;
+      }
+    }
+    await writeControlPlaneSchemaVersion(client, 11);
   }
 }

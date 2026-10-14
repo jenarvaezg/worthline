@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { NAV_SECTIONS, sectionForPath } from "./active-section";
+import { NAV_SECTIONS, navSectionsFor, sectionForPath } from "./active-section";
+
+describe("navSectionsFor (#1844)", () => {
+  it("offers every section in one's own workspace", () => {
+    expect(navSectionsFor({ viewingSharedWorkspace: false })).toEqual(NAV_SECTIONS);
+  });
+
+  it("drops Ajustes while viewing someone else's workspace: settings are the owner's", () => {
+    expect(
+      navSectionsFor({ viewingSharedWorkspace: true }).map((section) => section.label),
+    ).toEqual(["Resumen", "Patrimonio", "Histórico", "Objetivos"]);
+  });
+});
 
 describe("sectionForPath", () => {
   it("maps each top-level tab route to its section", () => {

@@ -1,4 +1,6 @@
+import { comparableEmail } from "@web/comparable-email";
 import { type PersonaId, parsePersonaId } from "@web/demo/persona";
+import type { ViewerAccess } from "@worthline/db";
 
 export type StoreTarget =
   | {
@@ -14,6 +16,15 @@ export type StoreTarget =
        * impersonation are unaffected.
        */
       impersonatedEmail?: string;
+      /**
+       * Set only when this session views a workspace SHARED with it (#1718):
+       * the owner's email. Its presence makes the port open the workspace
+       * read-only (#1842), and `token` is then the read-only Turso token of the
+       * viewer grant — the owner's full token never travels on a target. Set
+       * by the viewer session (#1843, from `viewedWorkspace`); absent on every
+       * other resolution.
+       */
+      sharedByEmail?: string;
     }
   | { kind: "demo"; persona: PersonaId; now: string }
   | { kind: "local" }
@@ -67,18 +78,16 @@ export interface ResolveStoreTargetInput {
       }
     | null
     | undefined;
-}
-
-/**
- * Normalize an email for the admin comparison (#697): trim + lowercase.
- * Shared by every admin-email comparison (this file, `guard-admin.ts`, and the
- * session-email read in `read-store-target.ts`) so a stray capital or trailing
- * space in the deployed `WORTHLINE_ADMIN_EMAIL` — or an unusually-cased
- * session email — never compares a normalized value against a raw one and
- * silently 404s the real admin.
- */
-export function normalizeAdminEmail(value: string | null | undefined): string {
-  return (value ?? "").trim().toLowerCase();
+  /**
+   * The viewer access resolved from the `wl_viewing` cookie's workspace id
+   * through `readViewerAccess` for this session's email (#1843, ADR 0112), or
+   * null/undefined when there is none. Like `impersonateWorkspace`, it grants
+   * nothing by itself: it is honored only when its `viewerEmail` is the email of
+   * THIS call's `session`, recompared here rather than trusted from the caller,
+   * and only with a non-empty read-only token — a viewer never falls back to the
+   * group token.
+   */
+  viewedWorkspace?: ViewerAccess | null | undefined;
 }
 
 /**
@@ -91,7 +100,14 @@ function workspaceDbToken(scoped: string | null | undefined, groupToken: string)
 }
 
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
-  const { env, session, personaCookie, mcpWorkspace, impersonateWorkspace } = input;
+  const {
+    env,
+    session,
+    personaCookie,
+    mcpWorkspace,
+    impersonateWorkspace,
+    viewedWorkspace,
+  } = input;
   const authConfigured = Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
 
   // Control-plane / legacy fallback token. Workspace data-plane opens prefer
@@ -103,9 +119,9 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
   // a stale or forged signal to leak through. A non-admin (or logged-out)
   // session with the impersonate cookie set falls straight through to the
   // branches below, resolving EXACTLY as if the cookie were absent.
-  const adminEmail = normalizeAdminEmail(env.WORTHLINE_ADMIN_EMAIL);
+  const adminEmail = comparableEmail(env.WORTHLINE_ADMIN_EMAIL);
   const isAdmin =
-    Boolean(adminEmail) && normalizeAdminEmail(session?.user?.email) === adminEmail;
+    Boolean(adminEmail) && comparableEmail(session?.user?.email) === adminEmail;
 
   if (isAdmin && impersonateWorkspace) {
     return {
@@ -114,6 +130,26 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
       dbUrl: impersonateWorkspace.dbUrl,
       token: workspaceDbToken(impersonateWorkspace.dbAuthToken, groupToken),
       impersonatedEmail: impersonateWorkspace.email,
+    };
+  }
+
+  // A viewer session (#1843, ADR 0112): below impersonation, above the session's
+  // own workspace. The access must name THIS session's email — a lookup made for
+  // anyone else, or a cookie with no grant behind it (null), resolves exactly as
+  // if the cookie were absent. Only the read-only token is ever used.
+  const sessionEmail = comparableEmail(session?.user?.email);
+  if (
+    viewedWorkspace &&
+    sessionEmail !== "" &&
+    comparableEmail(viewedWorkspace.viewerEmail) === sessionEmail &&
+    viewedWorkspace.readOnlyToken !== ""
+  ) {
+    return {
+      kind: "authenticated",
+      workspaceId: viewedWorkspace.workspaceId,
+      dbUrl: viewedWorkspace.dbUrl,
+      token: viewedWorkspace.readOnlyToken,
+      sharedByEmail: viewedWorkspace.ownerEmail,
     };
   }
 

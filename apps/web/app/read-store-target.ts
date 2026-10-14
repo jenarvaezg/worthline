@@ -1,17 +1,15 @@
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
+import { comparableEmail } from "@web/comparable-email";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { DEFAULT_APP_PATH } from "@web/return-to";
-import type { TenancyDirectory } from "@worthline/db";
+import { VIEWING_COOKIE_NAME } from "@web/viewing/viewing-cookie";
+import type { TenancyDirectory, ViewerAccess } from "@worthline/db";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { controlPlaneTargetFromEnv, withControlPlaneStore } from "./control-plane-store";
-import {
-  normalizeAdminEmail,
-  resolveStoreTarget,
-  type StoreTarget,
-} from "./store-resolver";
+import { resolveStoreTarget, type StoreTarget } from "./store-resolver";
 
 function isAuthConfigured(env: Record<string, string | undefined>): boolean {
   return Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
@@ -64,7 +62,7 @@ export async function readSessionEmail(): Promise<string | null> {
 
   const { auth } = await import("@web/auth");
   const session = await auth();
-  return session?.user?.email ? normalizeAdminEmail(session.user.email) : null;
+  return session?.user?.email ? comparableEmail(session.user.email) : null;
 }
 
 /**
@@ -120,13 +118,47 @@ export async function lookupImpersonationTarget(input: {
 }
 
 /**
+ * Resolve the viewer access the `wl_viewing` cookie points at, for THIS
+ * session's email (#1843, ADR 0112) — one `readViewerAccess` query — or null
+ * whenever there is nothing to resolve: no cookie, no signed-in email, or no
+ * control plane. Without the cookie it opens nothing, so an owner who never
+ * views anyone else's workspace pays no extra round trip.
+ *
+ * The lookup is keyed by the session's own email, so it can only ever find a
+ * grant made to that identity; `resolveStoreTarget` still recompares the email
+ * before honoring the result, and is the one that decides.
+ */
+export async function lookupViewerAccess(input: {
+  workspaceId: string | undefined;
+  sessionEmail: string | null | undefined;
+  env: Record<string, string | undefined>;
+}): Promise<ViewerAccess | null> {
+  const { workspaceId, env } = input;
+  const viewerEmail = comparableEmail(input.sessionEmail);
+  if (!workspaceId || !viewerEmail) return null;
+
+  const target = controlPlaneTargetFromEnv(env);
+  if (!target) return null;
+
+  return withControlPlaneStore<
+    ViewerAccess | null,
+    Pick<TenancyDirectory, "readViewerAccess">
+  >((controlPlane) => controlPlane.readViewerAccess({ viewerEmail, workspaceId }), {
+    target,
+  });
+}
+
+/**
  * Read the request-scoped store target from the current session, env, the
- * persona cookie, and (for an admin session) the impersonation cookie. This is
- * the server-side entry point: server components, actions, and route handlers
- * call this to decide which workspace (if any) to open — an authenticated
- * user's real workspace, that workspace overridden by an admin's impersonation
- * target, a logged-out demo persona, or the local no-auth single-user store
- * (ADR 0030).
+ * persona cookie, (for an admin session) the impersonation cookie and the viewer
+ * cookie. This is the server-side entry point: server components, actions, and
+ * route handlers call this to decide which workspace (if any) to open — an
+ * authenticated user's real workspace, that workspace overridden by an admin's
+ * impersonation target or by a workspace shared with the user (#1843), a
+ * logged-out demo persona, or the local no-auth single-user store (ADR 0030).
+ *
+ * Under `cache`, so the viewer grant is read once per request — and on EVERY
+ * request: revoking it takes effect on the next one (ADR 0112).
  *
  * `next-auth` is loaded lazily and only when auth is configured, so local and
  * demo runs — and their tests — never pull the auth stack into Node/Vitest.
@@ -146,8 +178,19 @@ export const readStoreTarget = cache(async (): Promise<StoreTarget> => {
     workspaceId: impersonateCookie,
     env,
   });
+  const viewedWorkspace = await lookupViewerAccess({
+    workspaceId: await readCookie(VIEWING_COOKIE_NAME),
+    sessionEmail: session?.user?.email,
+    env,
+  });
 
-  return resolveStoreTarget({ env, session, personaCookie, impersonateWorkspace });
+  return resolveStoreTarget({
+    env,
+    session,
+    personaCookie,
+    impersonateWorkspace,
+    viewedWorkspace,
+  });
 });
 
 /**

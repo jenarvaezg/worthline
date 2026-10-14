@@ -6,7 +6,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@web/demo/write-guard", () => ({ isWriteBlocked: vi.fn() }));
+// Stub only the request-reading guard; keep the real pure classifier, which
+// `canSendFeedback` asks (#1843).
+vi.mock("@web/demo/write-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@web/demo/write-guard")>()),
+  isWriteBlocked: vi.fn(),
+}));
 vi.mock("@web/read-store-target", () => ({
   readSessionEmail: vi.fn(),
   readStoreTarget: vi.fn(),

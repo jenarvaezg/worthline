@@ -331,3 +331,146 @@ describe("resolveStoreTarget", () => {
     });
   });
 });
+
+/**
+ * The viewer session (#1843, ADR 0112). `viewedWorkspace` is what the
+ * `wl_viewing` cookie resolved to through `readViewerAccess` for THIS session's
+ * email — or nothing. The resolver re-checks that the access belongs to the
+ * session it is resolving, never trusting the caller to have done so.
+ */
+describe("resolveStoreTarget · viewer", () => {
+  const ENV = {
+    AUTH_GOOGLE_ID: "google-id",
+    AUTH_GOOGLE_SECRET: "google-secret",
+    WORTHLINE_ADMIN_EMAIL: "admin@example.com",
+    WORTHLINE_DB_AUTH_TOKEN: "group-token",
+  };
+
+  const LUCIA_SESSION = {
+    user: { email: "lucia@example.com" },
+    workspace: {
+      id: "ws-lucia",
+      dbUrl: "libsql://wl-lucia.turso.io",
+      dbAuthToken: "full-lucia",
+    },
+  };
+
+  const OWN_LUCIA = {
+    kind: "authenticated",
+    workspaceId: "ws-lucia",
+    dbUrl: "libsql://wl-lucia.turso.io",
+    token: "full-lucia",
+  } as const;
+
+  const JORGE_FOR_LUCIA = {
+    workspaceId: "ws-jorge",
+    dbUrl: "libsql://wl-jorge.turso.io",
+    readOnlyToken: "read-only-jorge",
+    ownerEmail: "jorge@example.com",
+    viewerEmail: "lucia@example.com",
+  };
+
+  test("a session with its own viewer grant opens the shared workspace with the read-only token", () => {
+    expect(
+      resolveStoreTarget({
+        env: ENV,
+        session: LUCIA_SESSION,
+        viewedWorkspace: JORGE_FOR_LUCIA,
+      }),
+    ).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-jorge",
+      dbUrl: "libsql://wl-jorge.turso.io",
+      token: "read-only-jorge",
+      sharedByEmail: "jorge@example.com",
+    });
+  });
+
+  test("the session email is compared trimmed and case-insensitively", () => {
+    const result = resolveStoreTarget({
+      env: ENV,
+      session: { ...LUCIA_SESSION, user: { email: " Lucia@Example.com " } },
+      viewedWorkspace: { ...JORGE_FOR_LUCIA, viewerEmail: "LUCIA@example.com" },
+    });
+    expect(result).toMatchObject({ sharedByEmail: "jorge@example.com" });
+  });
+
+  test("no access resolved (forged cookie, revoked grant) opens the session's own workspace", () => {
+    expect(
+      resolveStoreTarget({ env: ENV, session: LUCIA_SESSION, viewedWorkspace: null }),
+    ).toEqual(OWN_LUCIA);
+  });
+
+  test("an access that belongs to another email is ignored — the session's own workspace", () => {
+    expect(
+      resolveStoreTarget({
+        env: ENV,
+        session: LUCIA_SESSION,
+        viewedWorkspace: { ...JORGE_FOR_LUCIA, viewerEmail: "mallory@example.com" },
+      }),
+    ).toEqual(OWN_LUCIA);
+  });
+
+  test("an access without a read-only token is ignored — never the group token", () => {
+    expect(
+      resolveStoreTarget({
+        env: ENV,
+        session: LUCIA_SESSION,
+        viewedWorkspace: { ...JORGE_FOR_LUCIA, readOnlyToken: "" },
+      }),
+    ).toEqual(OWN_LUCIA);
+  });
+
+  test("no session with an access resolves as unauthenticated", () => {
+    expect(
+      resolveStoreTarget({ env: ENV, session: null, viewedWorkspace: JORGE_FOR_LUCIA }),
+    ).toEqual({ kind: "unauthenticated" });
+  });
+
+  test("a demo persona with an access stays the demo", () => {
+    expect(
+      resolveStoreTarget({
+        env: ENV,
+        session: null,
+        personaCookie: "familia",
+        viewedWorkspace: JORGE_FOR_LUCIA,
+      }),
+    ).toEqual({ kind: "demo", persona: "familia", now: "" });
+  });
+
+  test("an admin with both cookies impersonates — impersonation outranks the viewer", () => {
+    const result = resolveStoreTarget({
+      env: ENV,
+      session: {
+        user: { email: "admin@example.com" },
+        workspace: { id: "ws-admin", dbUrl: "libsql://wl-admin.turso.io" },
+      },
+      impersonateWorkspace: {
+        workspaceId: "ws-target",
+        dbUrl: "libsql://wl-target.turso.io",
+        email: "target@example.com",
+        dbAuthToken: "full-target",
+      },
+      viewedWorkspace: { ...JORGE_FOR_LUCIA, viewerEmail: "admin@example.com" },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-target",
+      dbUrl: "libsql://wl-target.turso.io",
+      token: "full-target",
+      impersonatedEmail: "target@example.com",
+    });
+  });
+
+  test("an admin viewing a workspace shared with them (no impersonation) is a viewer", () => {
+    const result = resolveStoreTarget({
+      env: ENV,
+      session: { user: { email: "admin@example.com" } },
+      viewedWorkspace: { ...JORGE_FOR_LUCIA, viewerEmail: "admin@example.com" },
+    });
+    expect(result).toMatchObject({
+      sharedByEmail: "jorge@example.com",
+      token: "read-only-jorge",
+    });
+  });
+});

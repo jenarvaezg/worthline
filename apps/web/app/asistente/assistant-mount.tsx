@@ -1,7 +1,5 @@
-import {
-  DEMO_DISABLED_MESSAGE,
-  IMPERSONATION_READONLY_MESSAGE,
-} from "@web/demo/write-guard";
+import { blockedWriteMessage, viewsSharedWorkspace } from "@web/demo/write-guard";
+import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { readStoreTarget } from "@web/read-store-target";
 
 import AssistantLauncher from "./assistant-launcher";
@@ -12,6 +10,10 @@ import AssistantLauncher from "./assistant-launcher";
  * (bounded by the coarse rate limit, ADR 0051). Mounted in the root layout
  * so the panel survives in-app navigation (S0 decision, #628).
  *
+ * A viewer of a shared workspace gets no launcher at all (#1843, ADR 0112): a
+ * turn would write drafts into the owner's workspace and spend the owner's
+ * quota, and `/api/chat` answers 403 to it anyway.
+ *
  * Renders the lightweight {@link AssistantLauncher} rather than the layer
  * directly (#1192): the heavy chat engine is `next/dynamic`-imported and only
  * loads when the panel is first opened, keeping it out of every workspace
@@ -19,20 +21,16 @@ import AssistantLauncher from "./assistant-launcher";
  */
 export default async function AssistantMount() {
   const target = await readStoreTarget();
-  if (target.kind === "unauthenticated") {
+  if (target.kind === "unauthenticated" || viewsSharedWorkspace(target)) {
     return null;
   }
 
-  const mutationsDisabled =
-    target.kind === "demo" ||
-    (target.kind === "authenticated" && target.impersonatedEmail !== undefined);
+  const blocked = blockedWriteMessage(target);
 
   return (
     <AssistantLauncher
-      mutationsDisabled={mutationsDisabled}
-      mutationsDisabledMessage={
-        target.kind === "demo" ? DEMO_DISABLED_MESSAGE : IMPERSONATION_READONLY_MESSAGE
-      }
+      mutationsDisabled={blocked !== null}
+      mutationsDisabledMessage={blocked ?? DEMO_DISABLED_MESSAGE}
     />
   );
 }

@@ -2,7 +2,10 @@ import type { StoreTarget } from "@web/store-resolver";
 import type { WorkspaceEntitlement } from "@worthline/db";
 import { describe, expect, it } from "vitest";
 
-import { shouldEnterOnboarding } from "./onboarding-redirect";
+import {
+  readOnboardingEntryRedirect,
+  shouldEnterOnboarding,
+} from "./onboarding-redirect";
 
 const NOW = "2026-07-23T10:00:00.000Z";
 
@@ -68,5 +71,13 @@ describe("shouldEnterOnboarding", () => {
       impersonatedEmail: "user@example.com",
     };
     expect(shouldEnterOnboarding(impersonating, entitlement({}))).toBe(false);
+  });
+
+  it("never sends a viewer into the owner's onboarding (#1843)", async () => {
+    const viewer: StoreTarget = { ...authenticated, sharedByEmail: "owner@example.com" };
+    expect(shouldEnterOnboarding(viewer, entitlement({}))).toBe(false);
+    expect(shouldEnterOnboarding(viewer, null)).toBe(false);
+    // No control-plane read is even attempted for a viewer.
+    expect(await readOnboardingEntryRedirect(viewer)).toBeNull();
   });
 });

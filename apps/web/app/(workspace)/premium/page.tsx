@@ -5,6 +5,7 @@ import {
 } from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { readBillingEntitlement } from "@web/billing/read-billing-entitlement";
+import { guardViewerPage } from "@web/demo/write-guard";
 import { appendParam } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
@@ -66,6 +67,10 @@ export async function PremiumContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // The plan, its subscription and its billing portal are the owner's (#1843,
+  // ADR 0112): a viewer is sent to the figures before anything is read.
+  await guardViewerPage("/app");
+
   const resolvedSearchParams = await searchParams;
   // Preserve the workspace guard (redirect to /empezar when uninitialized) that
   // the shared layout also enforces; the read is request-cached (#1190).

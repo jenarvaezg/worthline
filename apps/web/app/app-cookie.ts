@@ -1,7 +1,8 @@
 /**
  * Baseline options for worthline's own non-auth cookies (#1180): the scope
  * (`wl_scope`), privacy mode (`wl_privacy`), the demo persona
- * (`wl_demo_persona`) and admin impersonation (`wl_impersonate`).
+ * (`wl_demo_persona`), admin impersonation (`wl_impersonate`) and the viewer
+ * session (`wl_viewing`, #1843).
  *
  * They all want the SAME transport posture, and each of them used to spell it
  * out at its own `cookies().set(...)` call — which is how `secure` came to be

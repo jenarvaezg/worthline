@@ -1,3 +1,4 @@
+import { guardViewerPage } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_CONNECT_SOURCE_MESSAGE,
@@ -45,6 +46,10 @@ export async function ConexionesContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
+  // The owner's connections and credentials (#1843, ADR 0112): a viewer is sent
+  // to the figures before anything is read.
+  await guardViewerPage("/app");
+
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);

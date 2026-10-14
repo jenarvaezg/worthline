@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildDailyCaptureDeps } from "@web/api/cron/snapshot/daily-capture-deps";
 import { openControlPlaneStore, withControlPlaneStore } from "@web/control-plane-store";
+import { workspaceWriteBlockedMessage } from "@web/demo/write-guard";
 import { openAuthorizedStore } from "@web/principal";
 import type { StoreTarget } from "@web/store-resolver";
 import {
@@ -301,7 +302,8 @@ export function productionSyncQueue(env: Env = process.env): ProductionSyncQueue
  * pre-S4 inline persist, so dev with zero infra is unchanged.
  *
  * The manual-refresh throttle is enforced by the caller BEFORE this runs, so
- * enqueuing never bypasses it.
+ * enqueuing never bypasses it. A read-only authenticated target (a viewer, an
+ * impersonating admin — #1843) does neither: it returns without a trace.
  */
 export async function enqueueSourceSyncOrInline(params: {
   descriptor: SyncJobDescriptor;
@@ -311,6 +313,11 @@ export async function enqueueSourceSyncOrInline(params: {
   env?: Env;
 }): Promise<void> {
   const env = params.env ?? process.env;
+  // A viewer or an impersonating admin syncs nothing (#1843): no job in the
+  // owner's queue, no inline write — whatever order the caller ran its guards in.
+  if (workspaceWriteBlockedMessage(params.target) !== null) {
+    return;
+  }
   if (params.target.kind === "authenticated" && isDurableQueueConfigured(env)) {
     await productionSyncQueue(env).enqueue({
       descriptor: params.descriptor,

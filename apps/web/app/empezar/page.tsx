@@ -1,8 +1,12 @@
+import { viewsSharedWorkspace } from "@web/demo/write-guard";
 import FeedbackMount from "@web/feedback/feedback-mount";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { parseFormError } from "@web/intake";
 import LegalLinks from "@web/legal/legal-links";
+import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import { readWorkspacesSharedWithSession } from "@web/viewing/shared-with-session";
+import SharedWithYou from "@web/viewing/shared-with-you";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -61,6 +65,18 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
     redirect("/app");
   }
 
+  // A viewer whose shared workspace is still empty lands here from `/app`
+  // (#1843, ADR 0112). Creating it is the owner's, so a static notice and the way
+  // back replace the form — sending it back to `/app` would loop.
+  if (viewsSharedWorkspace(await readStoreTarget())) {
+    return <EmptySharedWorkspace />;
+  }
+
+  // Someone who was only invited lands here too: their own workspace is
+  // provisioned empty on the first sign-in, so `/app` sends them to create it.
+  // The way into what was shared with them is offered beside that (#1844).
+  const sharedWithMe = await readWorkspacesSharedWithSession();
+
   const params = await searchParams;
   const activePath = params.path === "hogar" ? "hogar" : "solo";
   const errorCtx = parseFormError(params as Record<string, string | undefined>);
@@ -84,6 +100,8 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
           <FeedbackMount />
         </Suspense>
       </header>
+
+      <SharedWithYou className="empezarSection" workspaces={sharedWithMe} />
 
       <section className="empezarSection" aria-label="Crear workspace">
         <div className="empezarHeader">
@@ -179,6 +197,37 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
       </section>
 
       {/* El onboarding tiene shell propia: sin esto se quedaría sin pie legal (#1172). */}
+      <div className="legalBar coverSurface">
+        <LegalLinks />
+      </div>
+    </main>
+  );
+}
+
+/** What a viewer sees of a shared workspace nobody has created yet (#1843). */
+function EmptySharedWorkspace() {
+  return (
+    <main className="workspace empezarPage">
+      <header className="coverSurface coverMasthead empezarMasthead">
+        <div>
+          <p className="empezarEyebrow">Acceso de solo lectura</p>
+          <h1>worthline</h1>
+        </div>
+      </header>
+
+      <section className="empezarSection" aria-label="Espacio compartido vacío">
+        <div className="empezarHeader">
+          <h2>Este espacio todavía está vacío</h2>
+          <p className="empezarTrust">
+            Quien te lo ha compartido aún no ha empezado a usarlo. Cuando lo haga, verás
+            aquí sus cifras.
+          </p>
+        </div>
+        <form action="/viewing/exit" method="post">
+          <button type="submit">Volver a mi espacio</button>
+        </form>
+      </section>
+
       <div className="legalBar coverSurface">
         <LegalLinks />
       </div>

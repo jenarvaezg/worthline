@@ -1,3 +1,4 @@
+import { comparableEmail } from "@db/comparable-email";
 import { openSecret, sealSecret } from "@db/crypto";
 import type { Client } from "@libsql/client";
 
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   db_name TEXT NOT NULL UNIQUE,
   db_url TEXT NOT NULL,
   db_auth_token TEXT,
+  db_read_only_token TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS grants (
@@ -27,7 +29,8 @@ CREATE TABLE IF NOT EXISTS grants (
 -- Self-healing for pre-#733 duplicates: demote every owner grant that has an
 -- older sibling for the same user (rowid breaks created_at ties), so the
 -- unique index below can always be created on an existing database. Matches
--- prior behavior — later logins already picked the oldest grant.
+-- prior behavior — later logins already picked the oldest grant. The demoted
+-- role is not a GrantRole, so it grants nothing (#1841, ADR 0112).
 UPDATE grants SET role = 'orphaned-owner'
 WHERE role = 'owner' AND EXISTS (
   SELECT 1 FROM grants older
@@ -36,11 +39,24 @@ WHERE role = 'owner' AND EXISTS (
       OR (older.created_at = grants.created_at AND older.rowid < grants.rowid))
 );
 -- One owned workspace per user (#733): the database-level arbiter for the
--- provisioner's check-then-create race. Partial so a future sharing flow can
--- still grant the same user other workspaces under non-owner roles.
+-- provisioner's check-then-create race. Partial so the same user can still be
+-- granted other workspaces as a viewer (#1841, ADR 0112).
 CREATE UNIQUE INDEX IF NOT EXISTS grants_one_owner_per_user
   ON grants(user_id) WHERE role = 'owner';
 `;
+
+/**
+ * The roles a grant can carry (#1841, ADR 0112). `owner` opens the workspace
+ * with the full token; `viewer` opens it read-only. Any other stored value — the
+ * legacy `orphaned-owner` the #733 healing writes among them — grants nothing.
+ */
+export const GRANT_ROLES = ["owner", "viewer"] as const;
+export type GrantRole = (typeof GRANT_ROLES)[number];
+
+/** Fail-closed reading of a stored role: anything but a known role is null. */
+export function parseGrantRole(value: unknown): GrantRole | null {
+  return GRANT_ROLES.find((role) => role === value) ?? null;
+}
 
 export interface ControlPlaneUser {
   id: string;
@@ -59,35 +75,79 @@ export interface ControlPlaneWorkspace {
    * fallback until every row is filled.
    */
   dbAuthToken: string | null;
+  /**
+   * Whether the workspace already has a read-only Turso token (#1841). Only the
+   * presence travels here: the token itself is read through
+   * {@link TenancyDirectory.readViewerAccess}, and only for a viewer.
+   */
+  hasReadOnlyToken: boolean;
   createdAt: string;
 }
 
 export interface ControlPlaneGrant {
   userId: string;
   workspaceId: string;
-  role: string;
+  role: GrantRole;
   createdAt: string;
 }
 
-/** A workspace plus its owner's email — the oldest grant; v1 is always exactly
- * one owner per workspace. `ownerEmail` is null only for a dangling workspace
- * with no grant row (should not happen post-provisioning, but the admin
- * surface must not crash on it, #697). */
+/** A workspace plus its owner's email — the oldest `owner` grant (#1841: a
+ * viewer is never the owner). `ownerEmail` is null for a dangling workspace with
+ * no owner grant (should not happen post-provisioning, but the admin surface
+ * must not crash on it, #697). */
 export interface ControlPlaneWorkspaceWithOwner extends ControlPlaneWorkspace {
   ownerEmail: string | null;
 }
 
+/** One viewer of a workspace, for its owner's list (#1841). */
+export interface WorkspaceViewer {
+  userId: string;
+  email: string;
+  createdAt: string;
+}
+
+/** A workspace someone else owns and shared with this user (#1841). */
+export interface WorkspaceSharedWithUser {
+  workspaceId: string;
+  ownerEmail: string;
+  createdAt: string;
+}
+
+/** What {@link TenancyDirectory.recordViewerGrant} did (#1841). */
+export type RecordViewerGrantOutcome =
+  | "recorded"
+  | "already-viewer"
+  | "conflicting-grant"
+  | "viewer-limit";
+
+/**
+ * What a viewer needs to open a shared workspace read-only (#1841): where it
+ * lives and the read-only token. Never the full token.
+ */
+export interface ViewerAccess {
+  workspaceId: string;
+  dbUrl: string;
+  readOnlyToken: string;
+  ownerEmail: string;
+  viewerEmail: string;
+}
+
 /**
  * Tenancy directory (ADR 0030): users → workspaces → grants. The only concern
- * that knows which workspace a signed-in user owns.
+ * that knows which workspace a signed-in user owns, and who may view it
+ * (ADR 0112).
  */
 export interface TenancyDirectory {
-  /** Idempotent by email: the same address always maps to the same user row. */
+  /**
+   * Idempotent by email: the same address always maps to the same user row,
+   * whatever its case (#1841) — an existing row is reused as first written.
+   */
   findOrCreateUser(email: string): Promise<ControlPlaneUser>;
   /**
-   * Read an existing user by email without creating one — null when unknown.
-   * The MCP auth path resolves a caller this way so it never provisions; that
-   * stays on first web sign-in (ADR 0030 / ADR 0034).
+   * Read an existing user by email, case-insensitively (#1841), without
+   * creating one — null when unknown. The MCP auth path resolves a caller this
+   * way so it never provisions; that stays on first web sign-in (ADR 0030 /
+   * ADR 0034).
    */
   findUserByEmail(email: string): Promise<ControlPlaneUser | null>;
   /** Register a freshly provisioned workspace database. */
@@ -103,6 +163,13 @@ export interface TenancyDirectory {
    */
   setWorkspaceDbAuthToken(workspaceId: string, dbAuthToken: string): Promise<void>;
   /**
+   * Seal the workspace's read-only Turso JWT (#1841) — set ONCE: when a
+   * concurrent writer already stored one, it is kept. Resolves the token in
+   * force, which is the one every viewer opens with. Sealed at rest exactly
+   * like `db_auth_token`.
+   */
+  setWorkspaceReadOnlyToken(workspaceId: string, readOnlyToken: string): Promise<string>;
+  /**
    * Remove a workspace row. The provisioner's loser-side cleanup after losing
    * the first-login race (#733) — the loser never got a grant, so only the
    * workspace row exists.
@@ -112,12 +179,55 @@ export interface TenancyDirectory {
   recordGrant(
     userId: string,
     workspaceId: string,
-    role?: string,
+    role?: GrantRole,
   ): Promise<ControlPlaneGrant>;
-  /** Read a single grant, or null when the user has no access to the workspace. */
+  /**
+   * Grant `userId` a viewer role on the workspace only while it has fewer than
+   * `maxViewers` viewers, in ONE statement, so concurrent shares cannot exceed
+   * the cap (#1841). When nothing was written it says why: the user already
+   * views it, already holds another grant on it (owner, or a legacy role that
+   * grants nothing), or the cap is full.
+   */
+  recordViewerGrant(
+    userId: string,
+    workspaceId: string,
+    maxViewers: number,
+  ): Promise<RecordViewerGrantOutcome>;
+  /**
+   * Read a single grant, or null when the user has no access to the workspace —
+   * including a row whose role is not a {@link GrantRole} (fail closed).
+   */
   readGrant(userId: string, workspaceId: string): Promise<ControlPlaneGrant | null>;
-  /** Every workspace the user has been granted, oldest grant first. */
-  listWorkspacesForUser(userId: string): Promise<ControlPlaneWorkspace[]>;
+  /**
+   * The workspaces the user OWNS (`role = 'owner'`), oldest grant first — at
+   * most one, by `grants_one_owner_per_user`. The only resolution the
+   * provisioner and the MCP use, so a viewer grant can never come back as owned
+   * (#1841, ADR 0112). No method returns owned and shared workspaces together.
+   */
+  listOwnedWorkspacesForUser(userId: string): Promise<ControlPlaneWorkspace[]>;
+  /** The viewers of a workspace, oldest grant first — never its owner (#1841). */
+  listViewersOfWorkspace(workspaceId: string): Promise<WorkspaceViewer[]>;
+  /**
+   * The workspaces other people own and shared with this user, oldest grant
+   * first (#1841). A workspace with no owner grant is not listed.
+   */
+  listWorkspacesSharedWithUser(userId: string): Promise<WorkspaceSharedWithUser[]>;
+  /**
+   * The read-only access of `viewerEmail` to `workspaceId`, in one query, or
+   * null unless a `viewer` grant exists AND the workspace has a read-only token
+   * (#1841). The email is compared trimmed and lower-cased. Never returns the
+   * full token.
+   */
+  readViewerAccess(input: {
+    viewerEmail: string;
+    workspaceId: string;
+  }): Promise<ViewerAccess | null>;
+  /**
+   * Remove a viewer grant. Only ever deletes a `role = 'viewer'` row, so the
+   * owner's grant survives even when called with the owner's id. True when a
+   * grant was removed.
+   */
+  revokeViewerGrant(workspaceId: string, userId: string): Promise<boolean>;
   /**
    * Every workspace across all users, oldest first. The daily-capture cron's
    * global enumeration seam (ADR 0037) — a system actor with no session, so it
@@ -140,6 +250,22 @@ export interface TenancyDirectory {
   listWorkspacesWithOwners(): Promise<ControlPlaneWorkspaceWithOwner[]>;
 }
 
+/** The workspace columns every workspace read selects, from `workspaces w`. */
+const WORKSPACE_COLUMNS = `w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at,
+  (w.db_read_only_token IS NOT NULL AND w.db_read_only_token != '') AS has_read_only_token`;
+
+/** Correlated subquery: the oldest OWNER grant's email for a given workspace —
+ * shared by every query that names a workspace's owner. Filtering the role is
+ * what keeps a viewer from ever reading as the owner (#1841): impersonation,
+ * billing, trial emails and the sync queue all resolve the owner through it. */
+const OWNER_EMAIL_SUBQUERY = `(
+  SELECT ou.email FROM grants og
+  JOIN users ou ON ou.id = og.user_id
+  WHERE og.workspace_id = w.id AND og.role = 'owner'
+  ORDER BY og.created_at ASC, og.rowid ASC
+  LIMIT 1
+) AS owner_email`;
+
 function toUser(row: Record<string, unknown>): ControlPlaneUser {
   return {
     id: String(row["id"]),
@@ -155,15 +281,19 @@ function toWorkspace(row: Record<string, unknown>): ControlPlaneWorkspace {
     dbName: String(row["db_name"]),
     dbUrl: String(row["db_url"]),
     dbAuthToken: sealed == null || sealed === "" ? null : openSecret(String(sealed)),
+    hasReadOnlyToken: Number(row["has_read_only_token"]) === 1,
     createdAt: String(row["created_at"]),
   };
 }
 
-function toGrant(row: Record<string, unknown>): ControlPlaneGrant {
+/** A grant row, or null when its role is not a {@link GrantRole} (fail closed). */
+function toGrant(row: Record<string, unknown>): ControlPlaneGrant | null {
+  const role = parseGrantRole(row["role"]);
+  if (!role) return null;
   return {
     userId: String(row["user_id"]),
     workspaceId: String(row["workspace_id"]),
-    role: String(row["role"]),
+    role,
     createdAt: String(row["created_at"]),
   };
 }
@@ -177,15 +307,7 @@ function toWorkspaceWithOwner(
   };
 }
 
-/** Correlated subquery: the oldest grant's owner email for a given workspace —
- * shared by the single-workspace and list-all queries below. */
-const OWNER_EMAIL_SUBQUERY = `(
-  SELECT u.email FROM grants g
-  JOIN users u ON u.id = g.user_id
-  WHERE g.workspace_id = w.id
-  ORDER BY g.created_at ASC
-  LIMIT 1
-) AS owner_email`;
+const GRANT_COLUMNS = "user_id, workspace_id, role, created_at";
 
 export function createTenancyDirectory(
   client: Client,
@@ -193,12 +315,9 @@ export function createTenancyDirectory(
 ): TenancyDirectory {
   return {
     async findOrCreateUser(email) {
-      const existing = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      if (existing.rows.length > 0) {
-        return toUser(existing.rows[0]!);
+      const existing = await findUserRow(client, email);
+      if (existing) {
+        return existing;
       }
       // ON CONFLICT: two concurrent first logins may both pass the select
       // above (#733); whichever insert lands second becomes a no-op and both
@@ -207,18 +326,14 @@ export function createTenancyDirectory(
         sql: "INSERT INTO users (id, email) VALUES (?, ?) ON CONFLICT(email) DO NOTHING",
         args: [newId(), email],
       });
-      const created = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      return toUser(created.rows[0]!);
+      const created = await findUserRow(client, email);
+      if (!created) {
+        throw new Error("findOrCreateUser: the user row just written is unreadable.");
+      }
+      return created;
     },
     async findUserByEmail(email) {
-      const result = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
+      return findUserRow(client, email);
     },
     async createWorkspace({ dbName, dbUrl, dbAuthToken }) {
       const id = newId();
@@ -229,7 +344,7 @@ export function createTenancyDirectory(
         args: [id, dbName, dbUrl, sealed],
       });
       const created = await client.execute({
-        sql: "SELECT id, db_name, db_url, db_auth_token, created_at FROM workspaces WHERE id = ?",
+        sql: `SELECT ${WORKSPACE_COLUMNS} FROM workspaces w WHERE w.id = ?`,
         args: [id],
       });
       return toWorkspace(created.rows[0]!);
@@ -239,6 +354,28 @@ export function createTenancyDirectory(
         sql: "UPDATE workspaces SET db_auth_token = ? WHERE id = ?",
         args: [sealSecret(dbAuthToken), workspaceId],
       });
+    },
+    async setWorkspaceReadOnlyToken(workspaceId, readOnlyToken) {
+      const written = await client.execute({
+        sql: `UPDATE workspaces SET db_read_only_token = ?
+              WHERE id = ? AND (db_read_only_token IS NULL OR db_read_only_token = '')`,
+        args: [sealSecret(readOnlyToken), workspaceId],
+      });
+      if (written.rowsAffected > 0) {
+        return readOnlyToken;
+      }
+      // A concurrent first share sealed its token first: that one is in force.
+      const stored = await client.execute({
+        sql: "SELECT db_read_only_token FROM workspaces WHERE id = ?",
+        args: [workspaceId],
+      });
+      const sealed = stored.rows[0]?.["db_read_only_token"];
+      if (sealed == null || sealed === "") {
+        throw new Error(
+          `setWorkspaceReadOnlyToken: workspace ${workspaceId} does not exist.`,
+        );
+      }
+      return openSecret(String(sealed));
     },
     async deleteWorkspace(workspaceId) {
       await client.execute({
@@ -251,39 +388,127 @@ export function createTenancyDirectory(
         sql: "INSERT INTO grants (user_id, workspace_id, role) VALUES (?, ?, ?)",
         args: [userId, workspaceId, role],
       });
-      const created = await client.execute({
-        sql: "SELECT user_id, workspace_id, role, created_at FROM grants WHERE user_id = ? AND workspace_id = ?",
+      const grant = await readGrantRow(client, userId, workspaceId);
+      if (!grant) {
+        throw new Error(`recordGrant: the ${role} grant just written is unreadable.`);
+      }
+      return grant;
+    },
+    async recordViewerGrant(userId, workspaceId, maxViewers) {
+      // One statement: the count and the insert are atomic, so two concurrent
+      // shares cannot both see room for the last place.
+      const written = await client.execute({
+        sql: `INSERT INTO grants (user_id, workspace_id, role)
+              SELECT ?, ?, 'viewer'
+              WHERE (SELECT count(*) FROM grants
+                     WHERE workspace_id = ? AND role = 'viewer') < ?
+              ON CONFLICT(user_id, workspace_id) DO NOTHING`,
+        args: [userId, workspaceId, workspaceId, maxViewers],
+      });
+      if (written.rowsAffected > 0) {
+        return "recorded";
+      }
+      // Nothing written: a row for this pair blocked it, or the cap is full.
+      // The raw role is read on purpose — a legacy role grants nothing, but it
+      // still occupies the pair.
+      const existing = await client.execute({
+        sql: "SELECT role FROM grants WHERE user_id = ? AND workspace_id = ?",
         args: [userId, workspaceId],
       });
-      return toGrant(created.rows[0]!);
+      const row = existing.rows[0];
+      if (!row) return "viewer-limit";
+      return row["role"] === "viewer" ? "already-viewer" : "conflicting-grant";
     },
     async readGrant(userId, workspaceId) {
-      const result = await client.execute({
-        sql: "SELECT user_id, workspace_id, role, created_at FROM grants WHERE user_id = ? AND workspace_id = ?",
-        args: [userId, workspaceId],
-      });
-      return result.rows.length > 0 ? toGrant(result.rows[0]!) : null;
+      return readGrantRow(client, userId, workspaceId);
     },
-    async listWorkspacesForUser(userId) {
+    async listOwnedWorkspacesForUser(userId) {
       const result = await client.execute({
-        sql: `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at
+        sql: `SELECT ${WORKSPACE_COLUMNS}
               FROM workspaces w
               JOIN grants g ON g.workspace_id = w.id
-              WHERE g.user_id = ?
-              ORDER BY g.created_at ASC`,
+              WHERE g.user_id = ? AND g.role = 'owner'
+              ORDER BY g.created_at ASC, g.rowid ASC`,
         args: [userId],
       });
       return result.rows.map((row) => toWorkspace(row));
     },
+    async listViewersOfWorkspace(workspaceId) {
+      const result = await client.execute({
+        sql: `SELECT u.id AS user_id, u.email, g.created_at
+              FROM grants g
+              JOIN users u ON u.id = g.user_id
+              WHERE g.workspace_id = ? AND g.role = 'viewer'
+              ORDER BY g.created_at ASC, g.rowid ASC`,
+        args: [workspaceId],
+      });
+      return result.rows.map((row) => ({
+        createdAt: String(row["created_at"]),
+        email: String(row["email"]),
+        userId: String(row["user_id"]),
+      }));
+    },
+    async listWorkspacesSharedWithUser(userId) {
+      const result = await client.execute({
+        sql: `SELECT workspace_id, created_at, owner_email FROM (
+                SELECT w.id AS workspace_id, g.created_at, g.rowid AS grant_rowid,
+                  ${OWNER_EMAIL_SUBQUERY}
+                FROM grants g
+                JOIN workspaces w ON w.id = g.workspace_id
+                WHERE g.user_id = ? AND g.role = 'viewer'
+              )
+              WHERE owner_email IS NOT NULL
+              ORDER BY created_at ASC, grant_rowid ASC`,
+        args: [userId],
+      });
+      return result.rows.map((row) => ({
+        createdAt: String(row["created_at"]),
+        ownerEmail: String(row["owner_email"]),
+        workspaceId: String(row["workspace_id"]),
+      }));
+    },
+    async readViewerAccess({ viewerEmail, workspaceId }) {
+      const result = await client.execute({
+        sql: `SELECT id, db_url, db_read_only_token, viewer_email, owner_email FROM (
+                SELECT w.id, w.db_url, w.db_read_only_token, u.email AS viewer_email,
+                  ${OWNER_EMAIL_SUBQUERY}
+                FROM grants g
+                JOIN users u ON u.id = g.user_id
+                JOIN workspaces w ON w.id = g.workspace_id
+                WHERE g.workspace_id = ? AND g.role = 'viewer'
+                  AND lower(u.email) = ?
+                  AND w.db_read_only_token IS NOT NULL AND w.db_read_only_token != ''
+              )
+              WHERE owner_email IS NOT NULL
+              LIMIT 1`,
+        args: [workspaceId, comparableEmail(viewerEmail)],
+      });
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        dbUrl: String(row["db_url"]),
+        ownerEmail: String(row["owner_email"]),
+        readOnlyToken: openSecret(String(row["db_read_only_token"])),
+        viewerEmail: String(row["viewer_email"]),
+        workspaceId: String(row["id"]),
+      };
+    },
+    async revokeViewerGrant(workspaceId, userId) {
+      const result = await client.execute({
+        sql: "DELETE FROM grants WHERE workspace_id = ? AND user_id = ? AND role = 'viewer'",
+        args: [workspaceId, userId],
+      });
+      return result.rowsAffected > 0;
+    },
     async listAllWorkspaces() {
       const result = await client.execute(
-        "SELECT id, db_name, db_url, db_auth_token, created_at FROM workspaces ORDER BY created_at ASC",
+        `SELECT ${WORKSPACE_COLUMNS} FROM workspaces w ORDER BY w.created_at ASC`,
       );
       return result.rows.map((row) => toWorkspace(row));
     },
     async getWorkspaceWithOwner(workspaceId) {
       const result = await client.execute({
-        sql: `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+        sql: `SELECT ${WORKSPACE_COLUMNS}, ${OWNER_EMAIL_SUBQUERY}
               FROM workspaces w
               WHERE w.id = ?`,
         args: [workspaceId],
@@ -292,11 +517,39 @@ export function createTenancyDirectory(
     },
     async listWorkspacesWithOwners() {
       const result = await client.execute(
-        `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+        `SELECT ${WORKSPACE_COLUMNS}, ${OWNER_EMAIL_SUBQUERY}
          FROM workspaces w
          ORDER BY w.created_at ASC`,
       );
       return result.rows.map((row) => toWorkspaceWithOwner(row));
     },
   };
+}
+
+/**
+ * The user row for an email, compared trimmed and lower-cased (#1841). Should
+ * legacy rows differ only by case, the oldest wins — deterministically.
+ */
+async function findUserRow(
+  client: Client,
+  email: string,
+): Promise<ControlPlaneUser | null> {
+  const result = await client.execute({
+    sql: `SELECT id, email, created_at FROM users WHERE lower(email) = ?
+          ORDER BY created_at ASC, rowid ASC LIMIT 1`,
+    args: [comparableEmail(email)],
+  });
+  return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
+}
+
+async function readGrantRow(
+  client: Client,
+  userId: string,
+  workspaceId: string,
+): Promise<ControlPlaneGrant | null> {
+  const result = await client.execute({
+    sql: `SELECT ${GRANT_COLUMNS} FROM grants WHERE user_id = ? AND workspace_id = ?`,
+    args: [userId, workspaceId],
+  });
+  return result.rows.length > 0 ? toGrant(result.rows[0]!) : null;
 }

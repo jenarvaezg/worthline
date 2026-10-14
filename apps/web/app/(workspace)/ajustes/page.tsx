@@ -1,4 +1,4 @@
-import { isDemoMode } from "@web/demo/write-guard";
+import { guardViewerPage, isDemoMode } from "@web/demo/write-guard";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
@@ -16,6 +16,7 @@ import {
 } from "./actions";
 import AjustesSkeleton from "./ajustes-skeleton";
 import { CONNECTION_ADAPTERS } from "./conexiones/connection-rows";
+import { readOnlySharingSections } from "./read-only-sharing";
 
 /**
  * Month names for the optional birth-month picker (#1415). With the month known
@@ -68,6 +69,10 @@ export async function AjustesContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
+  // Settings are the owner's — members, reset, import, connections, who may view
+  // (#1843, ADR 0112): a viewer is sent to the figures before anything is read.
+  await guardViewerPage("/app");
+
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
@@ -89,6 +94,13 @@ export async function AjustesContent({
   ).length;
   const allAssets = await store.assets.readAssets();
   const overrides = await store.readWarningOverrides();
+  // Read here with the rest, not streamed in afterwards: a section that pops into
+  // the grid would push the panels below it (#1844). Null for anyone who is not an
+  // owner in their own workspace.
+  const sharingSections = await readOnlySharingSections({
+    formError,
+    today: new Date().toISOString().slice(0, 10),
+  });
 
   // The overrides list used to print the raw internal id (`asset_activo_cero_…`)
   // at the user. It reads as noise to a human and it is the retired vocabulary on
@@ -368,6 +380,11 @@ export async function AjustesContent({
             Gestionar conexiones →
           </Link>
         </section>
+
+        {/* ── Acceso de solo lectura y Compartidos contigo (#1844) ─────
+            Solo para quien actúa en su propio espacio; la demo, la
+            impersonación y el viewer no ven ningún control de compartir. */}
+        {sharingSections}
 
         {/* ── Overrides de avisos ──────────────────────────────────── */}
         <section className="ajustesPanel section" aria-label="Overrides de avisos">

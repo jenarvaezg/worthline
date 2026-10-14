@@ -85,6 +85,13 @@ export default function PrivacidadDocument({ identity }: LegalDocumentProps) {
           workspace y le llega por correo.
         </li>
         <li>
+          <strong>El acceso compartido</strong>: si das acceso de solo lectura a otra
+          persona desde Ajustes, se guarda el correo que escribes, para dejarla entrar
+          cuando inicie sesión con esa dirección, y la fecha en que se lo diste. No se le
+          envía ningún correo. Verá tus cifras y fichas sin poder cambiar nada, y en
+          cuanto le quitas el acceso deja de verlas y su correo sale de tu lista.
+        </li>
+        <li>
           <strong>Los correos sobre tu prueba</strong>: al crear la cuenta, uno de
           bienvenida; durante la prueba de premium, un aviso antes de que termine y otro
           cuando termina. Van a tu correo de inicio de sesión, no llevan nada de tu

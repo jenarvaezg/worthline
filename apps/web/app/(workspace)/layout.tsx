@@ -1,11 +1,11 @@
 import FeedbackMount from "@web/feedback/feedback-mount";
 import NavStrip from "@web/nav-strip";
-import SectionNav from "@web/section-nav";
 import SectionNavFallback from "@web/section-nav-fallback";
 import SignOutButton from "@web/sign-out-button";
 import WorkspaceFooter from "@web/workspace-footer";
 import WorkspaceLegalFooter from "@web/workspace-legal-footer";
 import WorkspaceScopeBar from "@web/workspace-scope-bar";
+import WorkspaceSectionNav from "@web/workspace-section-nav";
 import { Suspense } from "react";
 
 /**
@@ -45,7 +45,7 @@ export default function WorkspaceLayout({
               until hydrate. Fallback paints the same five links without the
               active-tab marker (#1229). */}
           <Suspense fallback={<SectionNavFallback />}>
-            <SectionNav />
+            <WorkspaceSectionNav />
           </Suspense>
           <Suspense fallback={null}>
             <SignOutButton />

@@ -126,7 +126,9 @@ export {
   type ExposureProfileCatalog,
   type ExposureProfileCatalogAdmin,
   type FailJobInput,
+  GRANT_ROLES,
   type GrantPremiumInput,
+  type GrantRole,
   type JobError,
   type JobRecord,
   type JobStatus,
@@ -139,8 +141,10 @@ export {
   type MaintainerAlertStatus,
   type MaintainerAlertWithOccurrences,
   type ProviderCooldown,
+  parseGrantRole,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
+  type RecordViewerGrantOutcome,
   type RenewJobLeaseInput,
   type StartTrialInput,
   type TenancyDirectory,
@@ -152,9 +156,12 @@ export {
   type UpdateMaintainerAlertStatusInput,
   type UpdateWorkspaceBillingInput,
   type UsageLimits,
+  type ViewerAccess,
   type VisionCallDailyUsage,
   type VisionCallUsage,
   type WorkspaceDailyTokenUsage,
+  type WorkspaceSharedWithUser,
+  type WorkspaceViewer,
 } from "./control-plane";
 export type {
   AnchorOnlyCorrectionPlan,
@@ -181,6 +188,7 @@ export {
   resolveDatabaseTarget,
   resolveDataDir,
   runBootstrapHealthcheck,
+  WorkspaceSchemaBehindError,
 } from "./database-target";
 export { type DebtCurveRows, debtBalanceCurveInput } from "./debt-balance-input";
 export type { EarlyRepaymentPlan } from "./early-repayment-plan";
@@ -261,7 +269,14 @@ export {
   provisionWorkspaceForUser,
   type StartedTrial,
   type TursoPort,
+  type TursoTokenAuthorization,
 } from "./provisioner";
+export {
+  isReadOnlyStatement,
+  isReadOnlyWorkspaceError,
+  READ_ONLY_WORKSPACE_CODE,
+  ReadOnlyWorkspaceError,
+} from "./read-only-client";
 export type {
   DailyCaptureBenchmarkFailure,
   DailyCaptureBenchmarkPrice,
@@ -350,5 +365,19 @@ export {
   type SyncTrigger,
   syncRunInstant,
 } from "./sync-run-store";
+export {
+  findOwnedWorkspace,
+  MAX_VIEWER_EMAIL_LENGTH,
+  MAX_VIEWERS_PER_WORKSPACE,
+  type OwnedWorkspaceLookup,
+  type RevokeWorkspaceDeps,
+  revokeWorkspaceReadOnly,
+  type SharedWorkspace,
+  type ShareWorkspaceDeps,
+  type ShareWorkspaceRefusal,
+  ShareWorkspaceRefusedError,
+  shareWorkspaceReadOnly,
+  VIEWER_EMAIL_SHAPE,
+} from "./viewer-sharing";
 export type { ImportWorkspaceResult } from "./workspace-document-store";
 export type { InitializeWorkspaceInput, MemberOwnerships } from "./workspace-store";

@@ -1,10 +1,12 @@
 import AssistantLayer from "@web/asistente/assistant-layer";
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
+import { blockedWriteMessage, guardViewerPage } from "@web/demo/write-guard";
 import { canSendFeedback } from "@web/feedback/feedback-eligibility";
 import FeedbackLauncher from "@web/feedback/feedback-launcher";
 import { readOnboardingEntryRedirect } from "@web/onboarding-redirect";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import SharedWithSession from "@web/viewing/shared-with-session";
 import { redirect } from "next/navigation";
 import { markOnboardingCompleteAction, skipOnboardingAction } from "./actions";
 
@@ -25,6 +27,8 @@ export const instant = false;
  * Server gate:
  *  - unauthenticated (auth enabled, not signed in) → the sign-in page, returning
  *    here afterwards.
+ *  - a viewer of a shared workspace (#1843) → the dashboard, before anything is
+ *    read: onboarding is the owner's, and it is the assistant, closed to viewers.
  *  - an authenticated workspace with no record yet → `/empezar`, to declare who
  *    it is (solo/hogar) before onboarding can populate it.
  *  - an authenticated workspace that has already onboarded — or an impersonating
@@ -38,6 +42,8 @@ export default async function BienvenidaPage() {
     redirect(`/login?returnTo=${encodeURIComponent(ONBOARDING_PATH)}`);
   }
 
+  await guardViewerPage("/app");
+
   if (target.kind === "authenticated") {
     const workspace = await withStore((store) => store.workspace.readWorkspace());
     if (!workspace) {
@@ -48,15 +54,14 @@ export default async function BienvenidaPage() {
     }
   }
 
-  const mutationsDisabled =
-    target.kind === "demo" ||
-    (target.kind === "authenticated" && target.impersonatedEmail !== undefined);
-
   return (
     <AssistantLayer
-      mutationsDisabled={mutationsDisabled}
+      mutationsDisabled={blockedWriteMessage(target) !== null}
       onboardingCompleteAction={markOnboardingCompleteAction}
       onboardingMastheadAction={canSendFeedback(target) ? <FeedbackLauncher /> : null}
+      // Someone who was only invited lands here after their first sign-in, so the
+      // way into what was shared with them is here too (#1844).
+      onboardingAside={<SharedWithSession />}
       onboardingSkipAction={skipOnboardingAction}
       variant="onboarding"
     />
