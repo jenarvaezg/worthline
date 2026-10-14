@@ -84,7 +84,7 @@ async function main(): Promise<void> {
         console.log(`  · would mint token for ${workspace.dbName} (${workspace.id})`);
         continue;
       }
-      const { jwt } = await turso.createDatabaseToken(workspace.dbName);
+      const { jwt } = await turso.createDatabaseToken(workspace.dbName, "full-access");
       await controlPlane.setWorkspaceDbAuthToken(workspace.id, jwt);
       minted += 1;
       console.log(`  ✓ ${workspace.dbName} (${workspace.id})`);

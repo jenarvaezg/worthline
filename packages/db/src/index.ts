@@ -126,7 +126,9 @@ export {
   type ExposureProfileCatalog,
   type ExposureProfileCatalogAdmin,
   type FailJobInput,
+  GRANT_ROLES,
   type GrantPremiumInput,
+  type GrantRole,
   type JobError,
   type JobRecord,
   type JobStatus,
@@ -139,8 +141,10 @@ export {
   type MaintainerAlertStatus,
   type MaintainerAlertWithOccurrences,
   type ProviderCooldown,
+  parseGrantRole,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
+  type RecordViewerGrantOutcome,
   type RenewJobLeaseInput,
   type StartTrialInput,
   type TenancyDirectory,
@@ -152,9 +156,12 @@ export {
   type UpdateMaintainerAlertStatusInput,
   type UpdateWorkspaceBillingInput,
   type UsageLimits,
+  type ViewerAccess,
   type VisionCallDailyUsage,
   type VisionCallUsage,
   type WorkspaceDailyTokenUsage,
+  type WorkspaceSharedWithUser,
+  type WorkspaceViewer,
 } from "./control-plane";
 export type {
   AnchorOnlyCorrectionPlan,
@@ -262,6 +269,7 @@ export {
   provisionWorkspaceForUser,
   type StartedTrial,
   type TursoPort,
+  type TursoTokenAuthorization,
 } from "./provisioner";
 export {
   isReadOnlyStatement,
@@ -357,5 +365,15 @@ export {
   type SyncTrigger,
   syncRunInstant,
 } from "./sync-run-store";
+export {
+  MAX_VIEWERS_PER_WORKSPACE,
+  type RevokeWorkspaceDeps,
+  revokeWorkspaceReadOnly,
+  type SharedWorkspace,
+  type ShareWorkspaceDeps,
+  type ShareWorkspaceRefusal,
+  ShareWorkspaceRefusedError,
+  shareWorkspaceReadOnly,
+} from "./viewer-sharing";
 export type { ImportWorkspaceResult } from "./workspace-document-store";
 export type { InitializeWorkspaceInput, MemberOwnerships } from "./workspace-store";

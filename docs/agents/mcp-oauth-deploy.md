@@ -13,13 +13,13 @@
   (hosted). No/invalid token → `401` + `WWW-Authenticate … resource_metadata="…"`. Local no-auth
   and the demo (persona cookie) paths stay open.
 - `verifyMcpToken` validates the JWT (signature vs JWKS, issuer, **audience = the resource id**,
-  expiry, pinned **RS256**), then resolves the caller's **email** and maps it to a workspace.
+  expiry, pinned **RS256**), then resolves the caller's **email** and maps it to **exactly one owned workspace** — a viewer grant on someone else's never counts, the MCP is the owner's only (ADR 0112).
 - **Email resolution — the non-obvious part.** WorkOS access tokens carry only the `sub`
   (the WorkOS user id), **not** an `email` claim, and OIDC `userinfo` 401s because the MCP
   client's token lacks the `openid` scope (the DCR/CIMD flow can't be forced to request it).
   So worthline fetches the email from the **WorkOS User Management directory** —
   `GET https://api.workos.com/user_management/users/{sub}` with the secret `WORKOS_API_KEY`
-  (scope-independent). That email keys the control plane → the user's workspace.
+  (scope-independent). That email keys the control plane → the workspace the user owns.
 - **`email_verified` is REQUIRED, and asserted (#1180).** Because the tenant is resolved BY
   EMAIL, an unverified address is an account-takeover vector: whoever registers someone
   else's unconfirmed address at the AS would otherwise resolve to *their* workspace. So
@@ -100,7 +100,7 @@ the same WorkOS environment, or the directory lookup hits the wrong env and ever
 | Login screen never appears, flow dies at `authorize`                                            | Google provider not configured in that env, or `redirect_uri_mismatch` in Google Cloud              |
 | `[mcp-auth] reject: JWT validation failed` (`claim: aud`/`iss`)                                 | env vars from the wrong WorkOS environment, or `WORTHLINE_MCP_RESOURCE_URL` ≠ advertised `resource` |
 | `[mcp-auth] WorkOS user lookup failed status=401`                                               | `WORKOS_API_KEY` missing or from the wrong environment                                              |
-| `[mcp-auth] reject: no granted workspace`                                                       | the caller never signed into worthline web (no control-plane user/workspace for that email)         |
+| `[mcp-auth] reject: no granted workspace`                                                       | the caller never signed into worthline web (no control-plane user or owned workspace for that email) |
 | `[mcp-auth] reject: the caller's email is not verified`                                          | the WorkOS user's email is unverified (`source: directory`) or the token's `email_verified` claim is absent/false (`source: token_claim`) — verify it in WorkOS; do not relax the check (#1180) |
 
 ## Custom domains (future polish)
