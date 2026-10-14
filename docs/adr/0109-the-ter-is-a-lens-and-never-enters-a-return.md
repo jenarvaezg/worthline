@@ -45,7 +45,11 @@ month is on no list.
    look-through instrument but the directly held share (`FUND_WRAPPER_INSTRUMENTS`,
    derived from `INVESTMENT_PROFILE_INSTRUMENTS`) — without one is **undeclared**:
    the gap, never summed as 0, which would print a cheaper portfolio than the one
-   held. Cash, property, crypto, metals, coins and a directly held share have no
+   held. So is a managed portfolio's **undetailed aggregate** (#1810): it is
+   stored as an `other`, but it is funds nobody enumerated, so it is decided by
+   member identity (`managedPortfolioMemberRoles`), never by the label — an
+   `other` outside a portfolio stays not applicable, and the portfolio's cash box
+   is cash. Cash, property, crypto, metals, coins and a directly held share have no
    ongoing charge and are **not applicable**. With nothing declared there is no
    mean to print: it is `null`, never «0 %».
 

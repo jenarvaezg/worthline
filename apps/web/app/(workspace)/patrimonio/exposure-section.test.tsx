@@ -88,7 +88,12 @@ const equity = lookThroughExposure({
 });
 
 // The portfolio-cost lens reads the look-through's very input (#1717).
-const cost = portfolioCost({ grossAssets, holdings, profiles });
+const cost = portfolioCost({
+  grossAssets,
+  holdings,
+  profiles,
+  undetailedAggregateIds: new Set(),
+});
 
 function render(initialLens: "all" | "equity"): string {
   return renderToStaticMarkup(
@@ -147,7 +152,12 @@ describe("ExposureSection", () => {
     expect(unknownFull.geography.coverage.unknown.amountMinor).toBe(100_000);
     const html = renderToStaticMarkup(
       <ExposureSection
-        cost={portfolioCost({ grossAssets, holdings: lone, profiles: new Map() })}
+        cost={portfolioCost({
+          grossAssets,
+          holdings: lone,
+          profiles: new Map(),
+          undetailedAggregateIds: new Set(),
+        })}
         currentUrl="/patrimonio"
         equity={unknownFull}
         full={unknownFull}
@@ -233,6 +243,7 @@ describe("ExposureSection", () => {
           grossAssets: { amountMinor: 50_000, currency: EUR },
           holdings: usd,
           profiles: new Map(),
+          undetailedAggregateIds: new Set(),
         })}
         currentUrl="/patrimonio"
         equity={usdFull}
@@ -286,6 +297,7 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
     grossAssets: costGross,
     holdings: costHoldings,
     profiles: costProfiles,
+    undetailedAggregateIds: new Set(),
   });
   const costLook = lookThroughExposure({
     baseCurrency: EUR,
@@ -342,6 +354,7 @@ describe("ExposureSection — coste de la cartera (#1717)", () => {
         grossAssets: costGross,
         holdings: costHoldings,
         profiles: new Map(),
+        undetailedAggregateIds: new Set(),
       }),
     );
     expect(html).toContain("Coste de la cartera");

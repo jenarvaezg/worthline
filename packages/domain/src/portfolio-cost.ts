@@ -30,12 +30,21 @@ import type { MoneyMinor } from "./money";
 export type PortfolioCostInput = Pick<
   ExposureLookthroughInput,
   "grossAssets" | "holdings" | "profiles"
->;
+> & {
+  /**
+   * The holdings that are a managed portfolio's undetailed aggregate (#1551) —
+   * by MEMBER IDENTITY, from `managedPortfolioMemberRoles`, never by the `other`
+   * label they are stored under (#1810). It is money invested in funds nobody
+   * enumerated, so without a TER it is the gap, not something that charges none.
+   */
+  undetailedAggregateIds: ReadonlySet<string>;
+};
 
 /**
  * The look-through's three-way coverage in TER words: `declared` carries a TER,
  * `notApplicable` has no fund wrapper to charge one, `undeclared` is a fund whose
- * TER nobody declared — the gap, never counted as 0.
+ * TER nobody declared (or a managed portfolio's undetailed aggregate, #1810) —
+ * the gap, never counted as 0.
  */
 export interface PortfolioCostCoverage {
   declared: MoneyMinor;
@@ -59,8 +68,9 @@ const SHARE_DECIMALS = 4;
 /**
  * Price the portfolio's year. A TER the catalog declares is priced whatever the
  * instrument label says — it is a fact about the security, and the label may be
- * wrong (ADR 0109). Without one, a fund wrapper is the gap and anything else has
- * no ongoing charge to declare.
+ * wrong (ADR 0109). Without one, a fund wrapper or a managed portfolio's
+ * undetailed aggregate (funds nobody enumerated, #1810) is the gap, and anything
+ * else has no ongoing charge to declare.
  */
 export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   const currency = input.grossAssets.currency;
@@ -72,7 +82,10 @@ export function portfolioCost(input: PortfolioCostInput): PortfolioCost {
   for (const holding of input.holdings) {
     const ter = resolveExposureProfile(holding, input.profiles)?.ter;
     if (ter == null) {
-      if (FUND_WRAPPER_INSTRUMENTS.has(holding.instrument)) {
+      if (
+        FUND_WRAPPER_INSTRUMENTS.has(holding.instrument) ||
+        input.undetailedAggregateIds.has(holding.id)
+      ) {
         undeclaredMinor += holding.valueMinor;
       } else {
         notApplicableMinor += holding.valueMinor;

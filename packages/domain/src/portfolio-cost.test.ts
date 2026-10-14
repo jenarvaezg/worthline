@@ -55,6 +55,7 @@ describe("portfolioCost", () => {
         profile("IE00B4L5Y983", "0.0022"),
         profile("IE00B5BMR087", "0.0012"),
       ),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.annualCost).toEqual(eur(180_00));
@@ -85,6 +86,7 @@ describe("portfolioCost", () => {
         profile("IE00B4L5Y983", "0.0022"),
         profile("IE00B3F81409", null),
       ),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.annualCost).toEqual(eur(132_00));
@@ -114,6 +116,7 @@ describe("portfolioCost", () => {
         // A share's catalog row describes its sector and region, never a TER.
         profile("US0378331005", null),
       ),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.annualCost).toEqual(eur(100_00));
@@ -126,6 +129,55 @@ describe("portfolioCost", () => {
     });
   });
 
+  test("a «solo saldo» managed portfolio is a TER gap, never something that charges none (#1810)", () => {
+    // A MyInvestor portfolio registered by its balance alone: 20.000 € invested
+    // in funds nobody enumerated, plus the 500 € waiting in its cash box. The
+    // aggregate is an `other` holding, but what it IS is invested money — the
+    // gap; the box is still cash, which charges nothing.
+    const cost = portfolioCost({
+      grossAssets: eur(20_500_00),
+      holdings: [
+        holding("aggregate", "other", 20_000_00),
+        holding("box", "current_account", 500_00),
+      ],
+      profiles: profilesOf(),
+      undetailedAggregateIds: new Set(["aggregate"]),
+    });
+
+    expect(cost.weightedTer).toBeNull();
+    expect(cost.annualCost).toEqual(eur(0));
+    expect(cost.coverage).toEqual({
+      declared: eur(0),
+      notApplicable: eur(500_00),
+      undeclared: eur(20_000_00),
+    });
+  });
+
+  test("funds with a TER next to the undetailed aggregate leave the aggregate as the gap (#1810)", () => {
+    // 30.000 € at 0,2 % = 60 €/año; the 10.000 € nobody detailed must show as
+    // undeclared, not quietly as «No aplica». An `other` held OUTSIDE any
+    // portfolio (a watch, say) is decided by what it is, so it stays not
+    // applicable — the label alone never makes a gap.
+    const cost = portfolioCost({
+      grossAssets: eur(45_000_00),
+      holdings: [
+        holding("world", "fund", 30_000_00, isin("IE00B4L5Y983")),
+        holding("aggregate", "other", 10_000_00),
+        holding("watch", "other", 5_000_00),
+      ],
+      profiles: profilesOf(profile("IE00B4L5Y983", "0.002")),
+      undetailedAggregateIds: new Set(["aggregate"]),
+    });
+
+    expect(cost.annualCost).toEqual(eur(60_00));
+    expect(cost.weightedTer).toBe("0.002");
+    expect(cost.coverage).toEqual({
+      declared: eur(30_000_00),
+      notApplicable: eur(5_000_00),
+      undeclared: eur(10_000_00),
+    });
+  });
+
   test("a TER the catalog declares wins, whatever the instrument says", () => {
     // A holding typed `stock` that is really a fund wrapper: the declared TER is
     // a fact about the security, so it is priced rather than waved away.
@@ -133,6 +185,7 @@ describe("portfolioCost", () => {
       grossAssets: eur(10_000_00),
       holdings: [holding("mislabelled", "stock", 10_000_00, isin("IE00B4L5Y983"))],
       profiles: profilesOf(profile("IE00B4L5Y983", "0.002")),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.annualCost).toEqual(eur(20_00));
@@ -144,6 +197,7 @@ describe("portfolioCost", () => {
       grossAssets: eur(10_000_00),
       holdings: [holding("world", "fund", 10_000_00, isin("IE00B4L5Y983"))],
       profiles: new Map(),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.weightedTer).toBeNull();
@@ -157,6 +211,7 @@ describe("portfolioCost", () => {
       grossAssets: eur(0),
       holdings: [],
       profiles: new Map(),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.weightedTer).toBeNull();
@@ -169,6 +224,7 @@ describe("portfolioCost", () => {
       grossAssets: eur(10_000_00),
       holdings: [holding("free", "etf", 10_000_00, isin("IE00B4L5Y983"))],
       profiles: profilesOf(profile("IE00B4L5Y983", "0")),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.weightedTer).toBe("0");
@@ -189,6 +245,7 @@ describe("portfolioCost", () => {
         holding("etf", "etf", 10_000_00, { providerSymbol: "VWCE.DE", securityId: null }),
       ],
       profiles: profilesOf(profile("dgs:N0000", "0.003"), profile("VWCE.DE", "0.0022")),
+      undetailedAggregateIds: new Set(),
     });
 
     // 20.000 € × 0,3 % + 10.000 € × 0,22 % = 60 € + 22 € = 82 €.
@@ -205,6 +262,7 @@ describe("portfolioCost", () => {
         { ...holding("usd-etf", "etf", 9_000_00, isin("IE00B5BMR087")), currency: "USD" },
       ],
       profiles: profilesOf(profile("IE00B5BMR087", "0.0007")),
+      undetailedAggregateIds: new Set(),
     });
 
     expect(cost.annualCost).toEqual(eur(6_30));

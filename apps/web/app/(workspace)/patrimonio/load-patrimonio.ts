@@ -55,6 +55,7 @@ import {
   instrumentOfAsset,
   investmentReturnsById,
   lookThroughExposure,
+  managedPortfolioMemberRoles,
   monthlyCloseValuesByHolding,
   netUnitsByAsset,
   portfolioCost,
@@ -96,6 +97,12 @@ export interface PatrimonioExposureContext {
   cachedPriceByAsset: AssetProjectionContext["cachedPriceByAsset"];
   manualPriceByAsset: AssetProjectionContext["manualPriceByAsset"];
   operationsByAsset: AssetProjectionContext["operationsByAsset"];
+  /**
+   * The holding ids that are a managed portfolio's undetailed aggregate (#1551),
+   * resolved by member identity — the cost lens reads them as the TER gap rather
+   * than by their `other` label (#1810).
+   */
+  undetailedAggregateIds: Set<string>;
   baseCurrency: CurrencyCode;
   today: string;
 }
@@ -289,6 +296,20 @@ export async function loadPatrimonio(
     ? groupPortfolio(projection, selectedGroup, scopedPortfolios)
     : [];
 
+  // EVERY portfolio's aggregate, not only the selected scope's: it is an identity
+  // of the holding, and a scope that shows the row must still read it as funds
+  // nobody enumerated (#1810) — an id absent from the projection is just unused.
+  const typeByHoldingId = new Map(assets.map((asset) => [asset.id, asset.type]));
+  const undetailedAggregateIds = new Set(
+    managedPortfolios.flatMap((portfolio) => {
+      const { undetailedHoldingId } = managedPortfolioMemberRoles(
+        portfolio.holdingIds,
+        typeByHoldingId,
+      );
+      return undetailedHoldingId === null ? [] : [undetailedHoldingId];
+    }),
+  );
+
   return {
     exposureContext: {
       assets,
@@ -302,6 +323,7 @@ export async function loadPatrimonio(
       payoutsByAsset,
       projection,
       today,
+      undetailedAggregateIds,
     },
     groups,
     hasHoldings: assets.length > 0 || liabilities.length > 0,
@@ -353,6 +375,7 @@ export function deriveExposureAndReturns(
     payoutsByAsset,
     projection,
     today,
+    undetailedAggregateIds,
   } = ctx;
 
   // Both the per-class returns and the exposure look-through key by the same
@@ -433,8 +456,9 @@ export function deriveExposureAndReturns(
   // What the portfolio costs a year (#1717, ADR 0109): the look-through's very
   // input, so its coverage is over the same gross and a position the FX layer
   // excluded is out of both alike. A lens, never a figure: the returns above
-  // never see a TER (the NAV is already net of it).
-  const cost = portfolioCost(exposureInput);
+  // never see a TER (the NAV is already net of it). The undetailed aggregates
+  // ride along so the funds nobody enumerated read as the gap (#1810).
+  const cost = portfolioCost({ ...exposureInput, undetailedAggregateIds });
 
   return { exposureEquity, exposureFull, portfolioCost: cost, returnsByClass };
 }
