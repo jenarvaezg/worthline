@@ -44,3 +44,23 @@ export function createTursoPort(config: TursoPortConfig): TursoPort {
     },
   };
 }
+
+/**
+ * The real port from env, for the two hosted surfaces that reach Turso's Platform
+ * API: provisioning on first sign-in, and the owner's first share minting the
+ * workspace's read-only token (#1844). Throws naming what is missing.
+ */
+export function tursoPortFromEnv(env: Record<string, string | undefined>): TursoPort {
+  const tursoOrg = env["TURSO_ORG"];
+  const tursoToken = env["TURSO_API_TOKEN"];
+  if (!env["WORTHLINE_CONTROL_PLANE_DB_URL"] || !tursoOrg || !tursoToken) {
+    throw new Error(
+      "Hosted provisioning requires WORTHLINE_CONTROL_PLANE_DB_URL, TURSO_ORG, and TURSO_API_TOKEN.",
+    );
+  }
+  return createTursoPort({
+    org: tursoOrg,
+    token: tursoToken,
+    ...(env["TURSO_GROUP"] ? { group: env["TURSO_GROUP"] } : {}),
+  });
+}

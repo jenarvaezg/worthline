@@ -1,0 +1,141 @@
+/**
+ * The pure half of «Acceso de solo lectura» (#1844, S4 of #1718, ADR 0112):
+ * the owner's viewer list folded with the mutations still in flight, the plan of
+ * a share before any round trip, and the Spanish words for every refusal of the
+ * sharing door (`shareWorkspaceReadOnly`, #1841).
+ *
+ * Giving and taking access are optimistic (interaction-patterns §4): the row IS
+ * the address the owner typed, so the optimistic row is the stored one. A refusal
+ * the client can already see — not an email, oneself, someone on the list, the
+ * list full — is decided here before anything is sent, so a row never appears
+ * only to vanish. The server stays the authority and decides all of them again.
+ *
+ * Pure (no React, no `@worthline/db` runtime), so it unit-tests in node and ships
+ * to the client island without the persistence package.
+ */
+
+import type { ShareWorkspaceRefusal } from "@worthline/db";
+import { formatDateKeyEs } from "@worthline/domain";
+
+/**
+ * At most this many viewers per workspace — the #1718 triage's cap, mirrored from
+ * `MAX_VIEWERS_PER_WORKSPACE` (`viewer-sharing.ts`), which the door enforces
+ * atomically; the copy here only spares a round trip.
+ */
+export const MAX_VIEWERS = 5;
+
+/** One person who may view the owner's workspace, as the list shows them. */
+export interface ViewerRow {
+  /** Null while the share is in flight: there is nothing to take back yet. */
+  userId: string | null;
+  email: string;
+  /** The calendar day access was given (`YYYY-MM-DD`). */
+  since: string;
+}
+
+/** What the owner can do to the list before the server answers. */
+export type ViewerMutation =
+  | { kind: "add"; email: string; since: string }
+  | { kind: "remove"; userId: string };
+
+/** The control plane's viewers (`listViewersOfWorkspace`) as list rows. */
+export function viewerRowsFrom(
+  viewers: readonly { userId: string; email: string; createdAt: string }[],
+): ViewerRow[] {
+  return viewers.map((viewer) => ({
+    email: viewer.email,
+    // `CURRENT_TIMESTAMP` («2026-10-01 09:30:00») or an ISO instant: the day is
+    // the first ten characters either way, and the list names no time of day.
+    since: viewer.createdAt.slice(0, 10),
+    userId: viewer.userId,
+  }));
+}
+
+/** The list with one pending mutation applied, as a fresh array. */
+export function applyViewerMutation(
+  rows: readonly ViewerRow[],
+  mutation: ViewerMutation,
+): ViewerRow[] {
+  switch (mutation.kind) {
+    case "add":
+      return [...rows, { email: mutation.email, since: mutation.since, userId: null }];
+    case "remove":
+      return rows.filter((row) => row.userId !== mutation.userId);
+    default:
+      return [...rows];
+  }
+}
+
+/** «desde el 01/10/2026» — the list's date column. */
+export function viewerSinceLabel(since: string): string {
+  return `desde el ${formatDateKeyEs(since)}`;
+}
+
+/** The form id a no-JS refusal names, so /ajustes puts the error in the section. */
+export const READ_ONLY_ACCESS_FORM_ID = "readOnlyAccess";
+
+/** Said when the share failed for a reason that is not the person's to fix. */
+export const SHARE_FAILURE_MESSAGE =
+  "No se pudo dar el acceso. Inténtalo de nuevo en un momento.";
+
+/** Said when taking access back failed. */
+export const REVOKE_FAILURE_MESSAGE =
+  "No se pudo quitar el acceso. Inténtalo de nuevo en un momento.";
+
+const REFUSAL_MESSAGES: Readonly<Record<ShareWorkspaceRefusal, string>> = {
+  "already-granted": "Esa persona ya tiene acceso.",
+  "invalid-email": "Escribe un email válido, como nombre@ejemplo.com.",
+  // The owner has nothing to fix: a session that reached this door owns a
+  // workspace (ADR 0030), so this is the system's failure, not theirs.
+  "no-owned-workspace": SHARE_FAILURE_MESSAGE,
+  "self-share": "Ese es tu propio email: tu espacio ya lo ves tú.",
+  "viewer-limit": `Ya hay ${MAX_VIEWERS} personas con acceso, el máximo. Quita a alguien antes de dar acceso a otra.`,
+};
+
+/** The message for a typed refusal of the sharing door. */
+export function shareRefusalMessage(reason: ShareWorkspaceRefusal): string {
+  return REFUSAL_MESSAGES[reason];
+}
+
+/**
+ * The same pragmatic shape the door checks (`viewer-sharing.ts`): one `@`, a
+ * non-empty local part, a dotted domain, no whitespace, at most 254 characters.
+ */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_LENGTH = 254;
+
+/** Trimmed and lower-cased: the one comparable form of an email address. */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/** What a share does: show the new row at once, or say why not without a round trip. */
+export type SharePlan =
+  | { kind: "optimistic"; email: string }
+  | { kind: "reject"; error: string };
+
+/** Plan a share of the owner's workspace with `email`. */
+export function planShare({
+  email,
+  ownerEmail,
+  viewers,
+}: {
+  email: string;
+  ownerEmail: string;
+  viewers: readonly ViewerRow[];
+}): SharePlan {
+  const viewerEmail = normalizeEmail(email);
+  if (viewerEmail.length > MAX_EMAIL_LENGTH || !EMAIL_SHAPE.test(viewerEmail)) {
+    return { error: shareRefusalMessage("invalid-email"), kind: "reject" };
+  }
+  if (viewerEmail === normalizeEmail(ownerEmail)) {
+    return { error: shareRefusalMessage("self-share"), kind: "reject" };
+  }
+  if (viewers.some((viewer) => normalizeEmail(viewer.email) === viewerEmail)) {
+    return { error: shareRefusalMessage("already-granted"), kind: "reject" };
+  }
+  if (viewers.length >= MAX_VIEWERS) {
+    return { error: shareRefusalMessage("viewer-limit"), kind: "reject" };
+  }
+  return { email: viewerEmail, kind: "optimistic" };
+}

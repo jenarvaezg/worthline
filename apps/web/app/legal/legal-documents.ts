@@ -71,8 +71,8 @@ export const LEGAL_DOCUMENTS: readonly LegalDocument[] = [
     title: "Política de privacidad",
     // Sentry (#1175) y Resend (#1174) pasan a encargados activos; se declaran los
     // informes de error y el feedback. #1173: los correos del ciclo de prueba y su
-    // «no recibir recordatorios».
-    updatedAt: "2026-10-11",
+    // «no recibir recordatorios». #1844: el acceso de solo lectura compartido.
+    updatedAt: "2026-10-14",
   },
   {
     shortTitle: "Reembolsos",

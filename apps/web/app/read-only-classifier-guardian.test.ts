@@ -18,9 +18,9 @@
  *   - `demo/write-guard.ts` — the classifier itself;
  *   - `store-resolver.ts` — declares the markers and sets them on a target;
  *   - `principal.ts` — the port opens a viewer's store read-only (#1842);
- *   - `admin/impersonation-banner.tsx` — the band shows WHOSE workspace it is,
- *     which is the marker's value, not a write decision. The viewer's band (S4,
- *     #1844) joins this list for the same reason.
+ *   - `admin/impersonation-banner.tsx` and `viewing/viewing-banner.tsx` (#1844) —
+ *     each band shows WHOSE workspace it is, which is the marker's value, not a
+ *     write decision.
  *
  * Any mention counts — a property read, a destructuring, an `in` check — once
  * comments are stripped, so prose that names a marker never trips it.
@@ -42,6 +42,7 @@ const ALLOWED: ReadonlySet<string> = new Set([
   "apps/web/app/store-resolver.ts",
   "apps/web/app/principal.ts",
   "apps/web/app/admin/impersonation-banner.tsx",
+  "apps/web/app/viewing/viewing-banner.tsx",
 ]);
 
 /** The read-only markers a source names in code (comments stripped). */

@@ -6,6 +6,7 @@ import FeedbackLauncher from "@web/feedback/feedback-launcher";
 import { readOnboardingEntryRedirect } from "@web/onboarding-redirect";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import SharedWithSession from "@web/viewing/shared-with-session";
 import { redirect } from "next/navigation";
 import { markOnboardingCompleteAction, skipOnboardingAction } from "./actions";
 
@@ -60,6 +61,9 @@ export default async function BienvenidaPage() {
       mutationsDisabled={blockedWriteMessage(target) !== null}
       onboardingCompleteAction={markOnboardingCompleteAction}
       onboardingMastheadAction={canSendFeedback(target) ? <FeedbackLauncher /> : null}
+      // Someone who was only invited lands here after their first sign-in, so the
+      // way into what was shared with them is here too (#1844).
+      onboardingAside={<SharedWithSession />}
       onboardingSkipAction={skipOnboardingAction}
       variant="onboarding"
     />

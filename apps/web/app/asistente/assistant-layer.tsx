@@ -453,6 +453,7 @@ export default function AssistantLayer({
   onboardingSkipAction,
   onboardingCompleteAction,
   onboardingMastheadAction,
+  onboardingAside,
 }: {
   mutationsDisabled?: boolean;
   mutationsDisabledMessage?: string;
@@ -474,6 +475,12 @@ export default function AssistantLayer({
    * finds it in the same top bar the assistant names.
    */
   onboardingMastheadAction?: React.ReactNode;
+  /**
+   * What the estreno body carries above the conversation — «Compartidos contigo»
+   * (#1844), the way into a workspace shared with someone who was only invited.
+   * Server-rendered by the route; null renders nothing.
+   */
+  onboardingAside?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(initialOpen);
   const [draft, setDraft] = useState("");
@@ -629,6 +636,7 @@ export default function AssistantLayer({
         </header>
 
         <div className="onboardingBody">
+          {onboardingAside}
           {hasConversation ? null : (
             <div className="onboardingWelcome">
               <h2>Vamos a componer tu patrimonio.</h2>

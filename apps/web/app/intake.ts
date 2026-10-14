@@ -634,6 +634,11 @@ export function okMessage(key: string | undefined): string | null {
     goal_deleted: "Objetivo eliminado.",
     goal_saved: "Objetivo guardado.",
     restored: "Restaurado.",
+    // «Acceso de solo lectura» on /ajustes (#1844): the list below already names
+    // who, so the band only confirms what happened.
+    read_only_access_granted:
+      "Acceso de solo lectura dado. Avísale tú: no le llega ningún correo.",
+    read_only_access_revoked: "Acceso quitado: ya no puede ver tu espacio.",
     saved: "Guardado.",
     transfer_recorded: "Traspaso registrado.",
     // The Papelera's traspaso exit (#1549) confirms BOTH halves of what it promised:

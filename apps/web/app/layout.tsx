@@ -4,6 +4,7 @@ import AssistantMount from "@web/asistente/assistant-mount";
 import DemoBanner from "@web/demo/demo-banner";
 import { isDemoMode, isImpersonating } from "@web/demo/write-guard";
 import FormSubmitScrollKeeper from "@web/form-submit-scroll-keeper";
+import ViewingBanner from "@web/viewing/viewing-banner";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
@@ -106,6 +107,10 @@ export default function RootLayout({
         </Suspense>
         <Suspense fallback={null}>
           <ImpersonationModeBanner />
+        </Suspense>
+        {/* A viewer of a shared workspace (#1844): neutral tone, it is a granted state. */}
+        <Suspense fallback={null}>
+          <ViewingBanner />
         </Suspense>
         <ServiceWorkerRegister />
         <Suspense fallback={null}>

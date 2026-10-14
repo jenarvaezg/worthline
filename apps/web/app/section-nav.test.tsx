@@ -35,6 +35,12 @@ describe("SectionNav (#1190)", () => {
     expect(html).toContain('class="navTab active">Patrimonio');
   });
 
+  it("leaves Ajustes out while viewing a shared workspace (#1844)", () => {
+    const html = renderToStaticMarkup(<SectionNav viewingSharedWorkspace />);
+    expect(html).toContain("Resumen");
+    expect(html).not.toContain("Ajustes");
+  });
+
   it("highlights no tab on a route outside the workspace chrome", () => {
     pathname.value = "/bienvenida";
     const html = renderToStaticMarkup(<SectionNav />);

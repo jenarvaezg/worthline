@@ -104,6 +104,11 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // «Not even offered» means never rendered, so ask the document: a screen-scoped
   // count would also pass for a danger zone tucked inside a closed fold (#1351).
   await expect(wholeDocument(page).getByText("Zona de peligro")).toHaveCount(0);
+  // Nor is sharing (#1844): a read-only session never sees a control to give access.
+  await expect(wholeDocument(page).getByText("Acceso de solo lectura")).toHaveCount(0);
+  await expect(
+    wholeDocument(page).getByRole("button", { name: "Dar acceso" }),
+  ).toHaveCount(0);
   // La escritura que prueba el guard es la de los supuestos FIRE, que desde #1450
   // vive en /objetivos: el formulario se mudó, la demo lo sigue rechazando.
   await page.goto("/objetivos");

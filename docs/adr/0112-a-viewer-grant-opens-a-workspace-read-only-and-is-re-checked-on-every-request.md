@@ -111,6 +111,19 @@ tokens.
    out clears `wl_viewing` and the member scope with the session.
    Impersonation is unchanged.
 
+8. **The surfaces (#1844).** «Acceso de solo lectura» on `/ajustes` is the
+   owner's door: an email and «Dar acceso», the list of viewers with the day
+   each got access and «Quitar acceso» behind a confirmation. Both actions go
+   through `formActionInlineError` — its guard turns away every read-only
+   session — and call the S1 commands with the session's email; giving and
+   taking access are optimistic, and a refusal the client can already see is
+   decided before the round trip. «Compartidos contigo» (on `/ajustes`, and on
+   `/bienvenida`, where an identity that was only invited lands) posts to
+   `POST /viewing`. Both sections exist only for a session acting on its own
+   account. While viewing, the root layout carries a neutral session band
+   naming the owner with «Volver a mi espacio» (`POST /viewing/exit`), and the
+   topnav drops «Ajustes».
+
 ## Consequences
 
 - A grant that is not the owner's can never become ownership through the

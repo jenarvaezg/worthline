@@ -10,7 +10,8 @@ import { VIEWING_COOKIE_MAX_AGE_SECONDS, VIEWING_COOKIE_NAME } from "./viewing-c
 /**
  * Enter a viewer session (#1843, ADR 0112): view a workspace someone shared with
  * this session's identity. A route handler that only touches cookies, like
- * `/scope` and `/privacy`; the form that posts here is S4's (#1844).
+ * `/scope` and `/privacy`; the form that posts here is
+ * «Compartidos contigo» (`viewing/shared-with-you.tsx`, #1844).
  *
  *   - no session → `/login`;
  *   - no viewer grant of THIS session's email on that workspace → `/ajustes`,
