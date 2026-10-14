@@ -14,6 +14,7 @@ import { reconcileProposalTools } from "./chat-tools/proposals/reconcile";
 import { statementProposalTools } from "./chat-tools/proposals/statement";
 import { transferProposalTools } from "./chat-tools/proposals/transfer";
 import { trashProposalTools } from "./chat-tools/proposals/trash";
+import { withWorkspaceReadonlyRefusal } from "./chat-tools/readonly-workspace";
 import { actionReadTools } from "./chat-tools/reads/actions";
 import { contextReadTools } from "./chat-tools/reads/context";
 import { dataQualityReadTools } from "./chat-tools/reads/data-quality";
@@ -94,7 +95,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
   };
 
   const grounded = withHoldingIdProvenance(
-    tools,
+    // Innermost, so a write refused by a read-only workspace (#1845) is an ordinary
+    // answer to every wrapper above it.
+    withWorkspaceReadonlyRefusal(tools),
     turn.groundedHoldingIds,
     input.onUngroundedHoldingId,
   );

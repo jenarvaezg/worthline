@@ -56,6 +56,30 @@ export function blockedWriteMessage(target: StoreTarget): string | null {
 }
 
 /**
+ * Why this request may not write to the REAL workspace it resolved to, or null
+ * (#1845). The classifier above, narrowed to authenticated targets: the demo
+ * answers null here because a chat draft of its lands in its own ephemeral store,
+ * never in anyone's workspace. So today this is the impersonation message or
+ * nothing — the seams that write as the workspace's owner without passing through
+ * a Server Action (the chat's proposal store) close on it.
+ */
+export function workspaceWriteBlockedMessage(target: StoreTarget): string | null {
+  return target.kind === "authenticated" ? blockedWriteMessage(target) : null;
+}
+
+/**
+ * The workspace this request acts for AS ITS OWNER — the one whose AI quota it may
+ * spend and in whose name it may alert the maintainer — or null (#1845). Null for
+ * the demo and local, as before, and for an admin impersonating a workspace: the
+ * admin reads that user's data, but their turns are not the user's turns.
+ */
+export function ownWorkspaceId(target: StoreTarget): string | null {
+  return target.kind === "authenticated" && workspaceWriteBlockedMessage(target) === null
+    ? target.workspaceId
+    : null;
+}
+
+/**
  * Whether this request must not write: the read-only demo, or an admin
  * impersonating a workspace (#1180). The non-redirecting form of
  * {@link guardDemoWrite}, for a mutating action that must refuse SILENTLY rather

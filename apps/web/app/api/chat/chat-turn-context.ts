@@ -35,6 +35,7 @@ import {
 import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
 import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
+import { ownWorkspaceId, workspaceWriteBlockedMessage } from "@web/demo/write-guard";
 import { withStore } from "@web/store";
 import type { StoreTarget } from "@web/store-resolver";
 import type { UIMessage } from "ai";
@@ -104,8 +105,12 @@ export function buildTurnToolsFactory(input: {
     input;
   // Maintainer alerts persist only for a real workspace (ADR 0064). Demo is
   // read-only and local dev has no control plane, so the closure is bound only
-  // when authenticated; otherwise the tool reports the alert as unavailable.
-  const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
+  // for the workspace's own turns; otherwise the tool reports the alert as
+  // unavailable. An impersonating admin is not that user (#1845).
+  const workspaceId = ownWorkspaceId(target);
+  // A workspace this turn may read but not write (#1845): its drafts are refused at
+  // the proposal store, the one writer the tools hold.
+  const writeBlockedMessage = workspaceWriteBlockedMessage(target);
   // The unvalidated-evidence boundary (#1248, PRD #1241). An unreadable attachment is
   // deliberately NOT evidence — the model then holds no document at all, so the source
   // is the user's own text (the manual path). The history trace closes the two-turn
@@ -195,7 +200,8 @@ export function buildTurnToolsFactory(input: {
           "Assistant raised a maintainer alert with no discrepancy",
           rejection,
         ),
-      runWithStore: (run) => withStore((store) => run(chatToolStores(store)), target),
+      runWithStore: (run) =>
+        withStore((store) => run(chatToolStores(store, writeBlockedMessage)), target),
       asOf: chatAsOf(target),
       ...(workspaceId === null
         ? {}

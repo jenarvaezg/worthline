@@ -51,6 +51,7 @@ import {
   readVisionCallUsage,
   recordVisionCalls,
 } from "@web/asistente/vision-call-budget-store";
+import { ownWorkspaceId } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_ATTACHMENT_MESSAGE,
@@ -183,10 +184,13 @@ export async function chatRateLimitReached(
  *     deliberately bypass the meter, exactly as the ingestion gate does: demo is
  *     IP-rate-limited plus a shared hourly global budget (#1184, ADR 0051), its
  *     provider spend is backstopped by the Gateway money ceiling (ADR 0050), and local
- *     dev owns its own key.
+ *     dev owns its own key. An admin impersonating a workspace bypasses it the same
+ *     way (#1845): the turn is the admin's, and the user's budget is not theirs to
+ *     spend or even to consult.
  *  3. **The free plan's monthly courtesy quota** (ADR 0051 mechanism). Only
  *     authenticated free turns that reach the model count; trial/premium answer to the
- *     token budget, demo/local bypass entirely.
+ *     token budget, demo/local/impersonation bypass entirely — reading this counter
+ *     increments it.
  *  4. **The oversized upload** (#1180), on its DECLARED size, before `arrayBuffer()`
  *     materializes the whole body in the JS heap. It sits AFTER the paywalls on
  *     purpose: a caller who has already spent their allowance reads about the
@@ -214,11 +218,9 @@ export async function openTurnSpendDoors(
     return { kind: "paywall", message: PAYWALL_ATTACHMENT_MESSAGE };
   }
 
-  if (target.kind === "authenticated") {
-    const usage = await readers.readAiTokenUsage(
-      target.workspaceId,
-      tokenDayWindow(nowIso),
-    );
+  const workspaceId = ownWorkspaceId(target);
+  if (workspaceId !== null) {
+    const usage = await readers.readAiTokenUsage(workspaceId, tokenDayWindow(nowIso));
     if (usage && isGlobalTokenFuseBlown(usage.globalTokens)) {
       return { kind: "paywall", message: PAYWALL_GLOBAL_FUSE_MESSAGE };
     }
@@ -227,9 +229,9 @@ export async function openTurnSpendDoors(
     }
   }
 
-  if (target.kind === "authenticated" && effectivePlan === "free") {
+  if (workspaceId !== null && effectivePlan === "free") {
     const used = await readers.countAssistantCourtesyUse(
-      `ws:${target.workspaceId}`,
+      `ws:${workspaceId}`,
       courtesyMonthWindow(nowIso),
     );
     if (isCourtesyQuotaExhausted(used)) {

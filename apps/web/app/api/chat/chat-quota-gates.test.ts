@@ -338,3 +338,46 @@ describe("chatRateLimitReached", () => {
     ).toBe(false);
   });
 });
+
+describe("an admin impersonating a workspace spends none of its quota (#1845)", () => {
+  const IMPERSONATED: StoreTarget = {
+    ...AUTHENTICATED,
+    impersonatedEmail: "ana@example.com",
+  };
+
+  test("neither consults the workspace's token budget nor counts a courtesy turn", async () => {
+    const consulted: string[] = [];
+    expect(
+      await openTurnSpendDoors(
+        { attachment: null, ip: "1.2.3.4", nowIso: NOW, target: IMPERSONATED },
+        readers({
+          countAssistantCourtesyUse: async (key) => {
+            consulted.push(key);
+            return FREE_ASSISTANT_MONTHLY_QUOTA + 1;
+          },
+          readAiTokenUsage: async (workspaceId) => {
+            consulted.push(workspaceId);
+            return { globalTokens: 0, workspaceTokens: 5_000_000 };
+          },
+          readEffectivePlan: async () => "free",
+        }),
+      ),
+    ).toMatchObject({ kind: "open" });
+    expect(consulted).toEqual([]);
+  });
+
+  test("counts its rate limit and its readings on the admin's IP, not the workspace", async () => {
+    const keys: string[] = [];
+    await chatRateLimitReached(
+      { ip: "1.2.3.4", nowIso: NOW, target: IMPERSONATED },
+      async (key) => {
+        keys.push(key);
+        return 1;
+      },
+    );
+    expect(keys).toEqual(["impersonation:1.2.3.4"]);
+    expect(
+      visionMeterFor({ attachment: image(), ip: "1.2.3.4", target: IMPERSONATED }),
+    ).toMatchObject({ mode: "count", scopeKey: "impersonation:1.2.3.4" });
+  });
+});

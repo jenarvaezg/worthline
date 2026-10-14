@@ -38,6 +38,7 @@ import {
 import { isAssistantSurface } from "@web/asistente/screen-context";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { MAX_STEPS, TOOL_PROMPT_BUDGET } from "@web/asistente/turn-prompt-budget";
+import { ownWorkspaceId } from "@web/demo/write-guard";
 import { readStoreTarget } from "@web/read-store-target";
 import {
   createUIMessageStreamResponse,
@@ -183,9 +184,10 @@ export async function POST(request: Request): Promise<Response> {
       : jsonError("assistant_unavailable", 503);
   }
 
-  const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
+  // Only the workspace's own turns spend its tokens: an impersonated one is the
+  // admin's, unmetered like the demo (#1845).
   const providerStream = toUIMessageStream({
-    stream: meterTurnTokens(selected.stream, workspaceId, nowIso),
+    stream: meterTurnTokens(selected.stream, ownWorkspaceId(target), nowIso),
     onError: (error) => {
       console.error("Chat stream failed", {
         provider: selected.provider.provider,
