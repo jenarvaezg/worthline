@@ -53,6 +53,7 @@ const TER_READERS = [
   // The admin edits it (ADR 0058: the catalog is admin-curated).
   "apps/web/app/admin/catalogo/actions.ts",
   "apps/web/app/admin/catalogo/catalog-profile-editor.tsx",
+  "apps/web/app/admin/catalogo/catalog-triage.ts",
   "apps/web/app/admin/catalogo/catalog-workbench.tsx",
   // The agent view shows a security's profile as a fact, never as a figure.
   "apps/web/app/agent-view/contract/exposure.ts",

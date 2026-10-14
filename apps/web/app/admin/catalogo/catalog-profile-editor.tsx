@@ -12,6 +12,7 @@
  * validation still runs server-side in the domain; its error surfaces inline.
  */
 
+import { formatDeclaredRatePercent } from "@web/_components/fine-percent";
 import { priceSourceLabel } from "@web/price-source-label";
 import {
   CURRENCY_NOT_APPLICABLE_KEY,
@@ -29,7 +30,7 @@ import {
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   sectorStyleSplit,
 } from "@worthline/domain";
-import { startTransition, useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useEffect, useId, useState } from "react";
 
 import {
   type CatalogActionResult,
@@ -180,6 +181,20 @@ function formatPercent(fraction: number): string {
   return `${(Math.round(fraction * 1000) / 10).toLocaleString("es-ES")}%`;
 }
 
+/**
+ * The typed TER read back as a percentage (`0.0022` → `= 0,22 %`), so a
+ * percentage typed as a fraction shows itself before the domain rejects it
+ * (#1839). A declared rate, so no typed digit is rounded away. Nothing to read
+ * for an empty or non-numeric draft.
+ */
+function terReading(typed: string): string | null {
+  const trimmed = typed.trim();
+  const fraction = Number(trimmed);
+  return trimmed === "" || !Number.isFinite(fraction)
+    ? null
+    : `= ${formatDeclaredRatePercent(fraction)}`;
+}
+
 /** Whether any dimension's declared weights exceed 100% — an invalid draft. */
 function draftExceedsHundred(draft: EditorDraft): boolean {
   return [
@@ -266,6 +281,8 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
   const [draft, setDraft] = useState<EditorDraft>(() => draftFromProfile(profile));
   const [state, dispatch, pending] = useActionState(saveCatalogProfileAction, IDLE);
   useResultEffect(state, onResult);
+  const terHintId = useId();
+  const terHint = terReading(draft.ter);
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -348,16 +365,24 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
           />
         </label>
         <div className="catalogTwoCol">
-          <label>
-            TER (fracción 0–1)
-            <input
-              inputMode="decimal"
-              name="ter"
-              onChange={(e) => setDraft({ ...draft, ter: e.target.value })}
-              placeholder="0.0012"
-              value={draft.ter}
-            />
-          </label>
+          <div>
+            <label>
+              TER (fracción: 0,22 % = 0.0022)
+              <input
+                aria-describedby={terHint ? terHintId : undefined}
+                inputMode="decimal"
+                name="ter"
+                onChange={(e) => setDraft({ ...draft, ter: e.target.value })}
+                placeholder="0.0012"
+                value={draft.ter}
+              />
+            </label>
+            {terHint ? (
+              <p className="catalogHint" id={terHintId}>
+                {terHint}
+              </p>
+            ) : null}
+          </div>
           <label>
             Divisa de cobertura
             <input

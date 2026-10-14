@@ -48,7 +48,8 @@ export type CatalogFilter =
   | "todos"
   | "por-categorizar"
   | "confianza-baja"
-  | "corte-antiguo";
+  | "corte-antiguo"
+  | "sin-ter";
 
 /** The orders the register can be read in — independent of which rows it shows. */
 export type CatalogSort = "identidad" | "cobertura" | "confianza" | "corte";
@@ -340,8 +341,11 @@ export const CATALOG_LENSES: Record<
   CatalogFilter,
   {
     label: string;
-    /** Counter wording — says «o sin declarar» wherever the lens folds those in. */
-    countLabel: (count: number) => string;
+    /**
+     * Counter wording — says «o sin declarar» wherever the lens folds those in.
+     * `null` for a lens that never gets a counter.
+     */
+    countLabel: ((count: number) => string) | null;
     matches: (profile: GlobalExposureProfile, today: string) => boolean;
     defaultSort: CatalogSort;
   }
@@ -370,6 +374,14 @@ export const CATALOG_LENSES: Record<
       `${count} con corte de más de ${STALE_AS_OF_MONTHS} meses o sin fecha`,
     matches: (profile, today) => asOfIsStale(profile, today),
     defaultSort: "corte",
+  },
+  // A declared «0» is a fact, not a gap (ADR 0109 §3): only an absent TER is listed.
+  // A share's row lands here by right, so the lens is a worklist with no counter.
+  "sin-ter": {
+    label: "Sin TER",
+    countLabel: null,
+    matches: (profile) => profile.ter === null,
+    defaultSort: "identidad",
   },
 };
 

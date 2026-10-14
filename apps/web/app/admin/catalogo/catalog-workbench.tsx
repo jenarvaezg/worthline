@@ -77,7 +77,11 @@ function formatGap(remainder: number): string {
   return `${(Math.round(remainder * 1000) / 10).toLocaleString("es-ES")}%`;
 }
 
-/** The counters shown beside the filter — the lenses that name a problem. */
+/**
+ * The counters shown beside the filter — the lenses that name a problem.
+ * «Sin TER» is left out: an equity row has no TER by right (ADR 0109), so that
+ * count would never reach 0.
+ */
 const COUNTED_LENSES: readonly CatalogFilter[] = [
   "por-categorizar",
   "confianza-baja",
@@ -249,7 +253,7 @@ export default function CatalogWorkbench({
               const count = countMatching(profiles, filter, today);
               return count > 0 ? (
                 <p className="catalogTriageCount" key={filter}>
-                  {CATALOG_LENSES[filter].countLabel(count)}
+                  {CATALOG_LENSES[filter].countLabel?.(count)}
                 </p>
               ) : null;
             })}

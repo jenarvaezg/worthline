@@ -211,13 +211,35 @@ describe("global exposure profile content validation (#940)", () => {
     ).toThrow(/cannot exceed 100%/);
   });
 
-  test("rejects TER outside [0,1]", () => {
+  test("keeps a TER right on the 5% ceiling", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        ter: "0.05",
+        breakdowns: { assetClass: { equity: "1" } },
+      }).ter,
+    ).toBe("0.05");
+  });
+
+  test.each([
+    "0.0501",
+    "0.22",
+    "1",
+  ])("rejects TER %s above the 5% ceiling as a percentage typed as a fraction", (ter) => {
     expect(() =>
       validateGlobalExposureProfileContent({
-        ter: "1.01",
+        ter,
         breakdowns: { assetClass: { equity: "1" } },
       }),
-    ).toThrow(/TER must be between 0 and 1/);
+    ).toThrow(/0,22 % se escribe 0\.0022/);
+  });
+
+  test("still rejects a negative TER", () => {
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        ter: "-0.001",
+        breakdowns: { assetClass: { equity: "1" } },
+      }),
+    ).toThrow(/no puede ser negativo/);
   });
 
   test("createValidatedGlobalExposureProfileInput composes identity and content", () => {

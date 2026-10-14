@@ -187,6 +187,32 @@ describe("AdminCatalogPage", () => {
     expect(html).toContain('name="securityId"');
   });
 
+  test("the TER field reads the typed fraction back as a percentage (#1839)", async () => {
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([UNCOVERED]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage({ perfil: "p:yahoo:VWCE.DE" }));
+
+    expect(html).toContain("TER (fracción: 0,22 % = 0.0022)");
+    const reading = html.match(/<p class="catalogHint" id="([^"]+)">= 0,22 %<\/p>/);
+    expect(reading).not.toBeNull();
+    // The input points at its reading, so a screen reader hears it too.
+    expect(html).toMatch(
+      new RegExp(`<input(?=[^>]*name="ter")(?=[^>]*aria-describedby="${reading?.[1]}")`),
+    );
+  });
+
+  test("an empty TER field prints no reading (#1839)", () => {
+    const html = renderToStaticMarkup(
+      <CatalogSaveForm mode="create" profile={null} onResult={() => {}} />,
+    );
+
+    expect(html).toContain("TER (fracción: 0,22 % = 0.0022)");
+    expect(html).not.toMatch(/>= [^<]*%</);
+    expect(html).not.toMatch(/<input(?=[^>]*name="ter")(?=[^>]*aria-describedby)/);
+  });
+
   test("edits the sector vector as % of equity with a derived defensive lens (S4)", async () => {
     vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
       available([SECTORED]),
@@ -262,6 +288,25 @@ describe("AdminCatalogPage", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("«Sin TER» filters the register and never prints a counter (#1839)", async () => {
+    const NO_TER: GlobalExposureProfile = {
+      ...COVERED,
+      identity: { kind: "isin", isin: "US0378331005" },
+      displayName: "Una acción",
+      ter: null,
+    };
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([UNCOVERED, COVERED, NO_TER]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage({ filtro: "sin-ter" }));
+
+    expect(html).toContain("Sin TER");
+    expect(html).toContain("US0378331005");
+    expect(html).not.toContain("US9229087690");
+    expect(html).not.toMatch(/\d+ sin TER/);
   });
 
   test("a deep-linked order reads the whole set, dropping nothing (#1508)", async () => {
