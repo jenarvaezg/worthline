@@ -3,8 +3,8 @@ import type { WorkspaceSharedWithUser } from "@worthline/db";
 /**
  * «Compartidos contigo» (#1844, S4 of #1718, ADR 0112): the workspaces other
  * people own and shared with this identity, each with the way in. On /ajustes,
- * and on /bienvenida, where someone who was only invited lands after their first
- * sign-in.
+ * and where someone who was only invited lands after their first sign-in:
+ * /empezar (their own workspace is still empty) and /bienvenida.
  *
  * «Ver su espacio» is a real form POSTing the workspace id to `/viewing`, which
  * checks the grant of THIS session before setting the cookie. POST, never a GET

@@ -5,6 +5,8 @@ import { parseFormError } from "@web/intake";
 import LegalLinks from "@web/legal/legal-links";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import { readWorkspacesSharedWithSession } from "@web/viewing/shared-with-session";
+import SharedWithYou from "@web/viewing/shared-with-you";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -70,6 +72,11 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
     return <EmptySharedWorkspace />;
   }
 
+  // Someone who was only invited lands here too: their own workspace is
+  // provisioned empty on the first sign-in, so `/app` sends them to create it.
+  // The way into what was shared with them is offered beside that (#1844).
+  const sharedWithMe = await readWorkspacesSharedWithSession();
+
   const params = await searchParams;
   const activePath = params.path === "hogar" ? "hogar" : "solo";
   const errorCtx = parseFormError(params as Record<string, string | undefined>);
@@ -93,6 +100,8 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
           <FeedbackMount />
         </Suspense>
       </header>
+
+      <SharedWithYou className="empezarSection" workspaces={sharedWithMe} />
 
       <section className="empezarSection" aria-label="Crear workspace">
         <div className="empezarHeader">
