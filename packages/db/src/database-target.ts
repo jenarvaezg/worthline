@@ -5,7 +5,12 @@ import type { LocalPersistenceStatus } from "@worthline/domain";
 import { eq } from "drizzle-orm";
 
 import { openDrizzle, openLibsqlClient } from "./libsql-client";
-import { migrate, SCHEMA_VERSION } from "./migrate";
+import {
+  type MigrateResult,
+  migrate,
+  readSchemaVersion,
+  SCHEMA_VERSION,
+} from "./migrate";
 import { appSettings } from "./schema";
 import type {
   BootstrapHealthcheckOptions,
@@ -44,9 +49,38 @@ function migratedTargetKey(url: string): string {
   return `${url}@${SCHEMA_VERSION}`;
 }
 
-export async function migrateTarget(target: DatabaseTarget, client: Client) {
+/**
+ * A read-only open (#1842) found the base behind the compiled schema. A viewer
+ * cannot run the ladder — its client refuses every write — so the caller must
+ * have the schema brought up to date by a full-access open and retry.
+ */
+export class WorkspaceSchemaBehindError extends Error {
+  constructor(
+    readonly baseVersion: number,
+    readonly requiredVersion: number = SCHEMA_VERSION,
+  ) {
+    super(
+      `Workspace schema is at version ${baseVersion}, behind the required ${requiredVersion}; a read-only open cannot migrate it.`,
+    );
+    this.name = "WorkspaceSchemaBehindError";
+  }
+}
+
+export async function migrateTarget(
+  target: DatabaseTarget,
+  client: Client,
+  options: { readOnly?: true } = {},
+): Promise<MigrateResult> {
   const key = target.kind === "url" ? migratedTargetKey(target.url) : null;
   if (key !== null && migratedTargets.has(key)) {
+    return { ranV18Backfill: false, ranV33Backfill: false };
+  }
+  if (options.readOnly) {
+    // Read the version and nothing else: the ladder writes, and a viewer's open
+    // must not. A base already at (or past) the version is as good as migrated.
+    const version = await readSchemaVersion(client);
+    if (version < SCHEMA_VERSION) throw new WorkspaceSchemaBehindError(version);
+    if (key !== null) migratedTargets.add(key);
     return { ranV18Backfill: false, ranV33Backfill: false };
   }
   const result = await migrate(client);

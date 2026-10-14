@@ -14,6 +14,14 @@ export type StoreTarget =
        * impersonation are unaffected.
        */
       impersonatedEmail?: string;
+      /**
+       * Set only when this session views a workspace SHARED with it (#1718):
+       * the owner's email. Its presence makes the port open the workspace
+       * read-only (#1842), and `token` is then the read-only Turso token of the
+       * viewer grant — the owner's full token never travels on a target. Set
+       * by the viewer session (S3); absent on every other resolution.
+       */
+      sharedByEmail?: string;
     }
   | { kind: "demo"; persona: PersonaId; now: string }
   | { kind: "local" }

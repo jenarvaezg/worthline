@@ -181,6 +181,7 @@ export {
   resolveDatabaseTarget,
   resolveDataDir,
   runBootstrapHealthcheck,
+  WorkspaceSchemaBehindError,
 } from "./database-target";
 export { type DebtCurveRows, debtBalanceCurveInput } from "./debt-balance-input";
 export type { EarlyRepaymentPlan } from "./early-repayment-plan";
@@ -262,6 +263,12 @@ export {
   type StartedTrial,
   type TursoPort,
 } from "./provisioner";
+export {
+  isReadOnlyStatement,
+  isReadOnlyWorkspaceError,
+  READ_ONLY_WORKSPACE_CODE,
+  ReadOnlyWorkspaceError,
+} from "./read-only-client";
 export type {
   DailyCaptureBenchmarkFailure,
   DailyCaptureBenchmarkPrice,

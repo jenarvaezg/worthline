@@ -130,6 +130,14 @@ export interface WorthlineStoreOptions {
   dataDir?: string;
   url?: string;
   authToken?: string;
+  /**
+   * Open the workspace for a viewer (#1842, PRD #1718): the libSQL client refuses
+   * every statement that does not read (`ReadOnlyWorkspaceError`), the migration
+   * ladder only reads the version (`WorkspaceSchemaBehindError` when the base is
+   * behind), and neither the post-migrate re-ripples nor the FIRE seed run.
+   * Absent on every owner, cron and script open.
+   */
+  readOnly?: true;
 }
 
 export interface BootstrapHealthcheckOptions extends WorthlineStoreOptions {

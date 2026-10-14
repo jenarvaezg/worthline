@@ -39,6 +39,7 @@ import { createManagedPortfolioStore } from "./managed-portfolio-store";
 import { type MigrateResult, migrate } from "./migrate";
 import { createOperationsStore } from "./operations-store";
 import { createPayoutStore } from "./payout-store";
+import { readOnlyClient } from "./read-only-client";
 import { appSettings, assets, auditLog, liabilities, warningOverrides } from "./schema";
 import {
   createSnapshotOrchestrator,
@@ -174,19 +175,37 @@ export async function createWorthlineStoreUnsafe(
   options: WorthlineStoreOptions = {},
 ): Promise<WorthlineStore> {
   const target = resolveDatabaseTarget(options);
-  const client = openDatabaseTarget(target);
-  const migrateResult = await migrateTarget(target, client);
-  return buildStore(
-    client,
-    migrateResult,
-    target.kind === "url" ? { seedMemoKey: target.url } : {},
-  );
+  const rawClient = openDatabaseTarget(target);
+  // A viewer's store is built over the read-only client (#1842): the raw one is
+  // never handed to the store, so no seam under it has a path to a write.
+  const client = options.readOnly ? readOnlyClient(rawClient) : rawClient;
+  try {
+    const migrateResult = await migrateTarget(
+      target,
+      client,
+      options.readOnly ? { readOnly: true } : {},
+    );
+    return await buildStore(
+      client,
+      migrateResult,
+      target.kind === "url" ? { seedMemoKey: target.url } : {},
+      options.readOnly ? "read-only" : "full",
+    );
+  } catch (error) {
+    client.close();
+    throw error;
+  }
 }
 
 async function buildStore(
   client: Client,
   migrateResult: MigrateResult,
   deps: StoreBuildDeps = {},
+  // "read-only" (#1842) skips the post-migrate re-ripples and the FIRE seed, the
+  // two writes a store performs on open without a caller asking. Internal on
+  // purpose: only `createWorthlineStoreUnsafe` pairs it with the read-only
+  // client, so no caller can skip the writes over a client that still allows them.
+  openMode: "full" | "read-only" = "full",
 ): Promise<WorthlineStore> {
   // The clock enters HERE and only here (ADR 0024, #1598): the seams that write
   // without a caller — the post-migrate re-ripples, the sync attempt stamps, the
@@ -530,6 +549,11 @@ async function buildStore(
       }));
     },
   };
+
+  // A viewer's store never writes on open (#1842): the base is already at
+  // version (or the open refused), and the two writes below belong to a
+  // full-access open.
+  if (openMode === "read-only") return store;
 
   // Post-migrate snapshot reconstruction (issue #491): the v18 / v33 backfills
   // re-ripple frozen historical snapshots at migration time. The logic lives
