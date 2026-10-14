@@ -1,3 +1,7 @@
+import { SCOPE_COOKIE_NAME } from "@web/intake";
+import { VIEWING_COOKIE_NAME } from "@web/viewing/viewing-cookie";
+import { cookies } from "next/headers";
+
 import { readStoreTarget } from "./read-store-target";
 
 /**
@@ -23,6 +27,11 @@ export default async function SignOutButton() {
       className="signOutForm"
       action={async () => {
         "use server";
+        // The viewer session and the member scope end with the account (#1843):
+        // the next account on this browser starts in its own workspace.
+        const jar = await cookies();
+        jar.delete(VIEWING_COOKIE_NAME);
+        jar.delete(SCOPE_COOKIE_NAME);
         const { signOut } = await import("@web/auth");
         await signOut({ redirectTo: "/" });
       }}

@@ -98,11 +98,17 @@ tokens.
    authentication check, before providers, rate limit, quotas or store, and the
    launcher is not mounted), `/ajustes` and `/ajustes/conexiones` (redirect to
    `/app`), the export (403: it is the owner's copy and would survive
-   revocation), the checkout (`/premium/pagar` redirects to `/premium` without
-   creating one), onboarding (`/bienvenida` redirects to `/app`), the MCP (owner
-   only), self-removal, invitation email. `/empezar`, where `/app` sends an empty
-   workspace, shows a viewer a static «Este espacio todavía está vacío» with the
-   exit instead of the creation form, so `/app` ↔ `/empezar` cannot loop.
+   revocation), billing (`/premium` — the owner's plan, subscription and billing
+   portal — redirects to `/app`; `/premium/pagar` redirects to `/premium`
+   without creating a checkout), statement import (`/patrimonio/importar-extracto`
+   redirects to `/app`), onboarding (`/bienvenida` redirects to `/app`), the MCP
+   (owner only), self-removal, invitation email. `/empezar`, where `/app` sends an
+   empty workspace, shows a viewer a static «Este espacio todavía está vacío» with
+   the exit instead of the creation form, so `/app` ↔ `/empezar` cannot loop.
+   Underneath the doors, the control-plane writes a request can trigger — the
+   activation marks and the source-sync queue — do nothing unless the session
+   acts on its own account, whatever order a caller ran its guards in. Signing
+   out clears `wl_viewing` and the member scope with the session.
    Impersonation is unchanged.
 
 ## Consequences

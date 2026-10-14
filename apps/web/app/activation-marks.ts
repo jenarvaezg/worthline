@@ -1,3 +1,4 @@
+import { actsOnOwnAccount } from "@web/demo/write-guard";
 import type { EntitlementDirectory } from "@worthline/db";
 
 import { controlPlaneTargetFromEnv, withControlPlaneStore } from "./control-plane-store";
@@ -18,7 +19,8 @@ import type { StoreTarget } from "./store-resolver";
  * every later write is harmless — no "is this the first?" read here.
  *
  * - Demo/local/no control plane → no-op (only a hosted authenticated workspace
- *   has a row to stamp).
+ *   has a row to stamp), and so for a viewer or an impersonating admin (#1843):
+ *   only the owner's own session marks its workspace.
  * - Any resolve/open/write failure is swallowed: a missed stamp costs one
  *   set-once timestamp, and the next qualifying write retries it.
  */
@@ -39,7 +41,9 @@ async function markActivation(
 
   try {
     const resolved = target ?? (await readStoreTarget());
-    if (resolved.kind !== "authenticated") {
+    // Only the owner's own session marks its workspace (#1843): never a viewer
+    // or an admin impersonating, whatever order the caller ran its guards in.
+    if (!actsOnOwnAccount(resolved)) {
       return;
     }
     await withControlPlaneStore<void, Pick<EntitlementDirectory, typeof mark>>(
