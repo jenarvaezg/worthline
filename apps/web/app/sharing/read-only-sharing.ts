@@ -139,3 +139,88 @@ export function planShare({
   }
   return { email: viewerEmail, kind: "optimistic" };
 }
+
+/**
+ * What a sharing action resolves to on the inline path: nothing worth reading on
+ * success (it redirects), a refusal otherwise — `FormActionState`'s shape.
+ */
+export type SharingActionResult =
+  | { ok: true }
+  | { ok: false; error: string; values?: Record<string, string> };
+
+/** The island's side of a submit, injected so the choreography tests in node. */
+interface SubmitDeps {
+  action: (formData: FormData) => Promise<SharingActionResult>;
+  formData: FormData;
+  /** The refusal to show, or null to clear the previous one as a submit leaves. */
+  onRefusal: (message: string | null) => void;
+  showOptimistic: (mutation: ViewerMutation) => void;
+  startTransition: (scope: () => Promise<void>) => void;
+}
+
+/**
+ * Run one share (#1844): refuse on the spot what the client can see, otherwise
+ * show the row, clear the field and send with `inlineError` stamped on the body
+ * (never in the HTML, #1311), bringing a server refusal and what was typed back.
+ *
+ * There is no in-flight gate: a second share while the first is still travelling
+ * is sent too, never dropped in silence. The plan reads the rows WITH the pending
+ * ones (a thunk, read at submit time), so the cap and «ya tiene acceso» still
+ * count what is in flight; the server is the atomic arbiter either way.
+ */
+export function submitShare({
+  action,
+  formData,
+  onRefusal,
+  ownerEmail,
+  rows,
+  setDraft,
+  showOptimistic,
+  startTransition,
+  today,
+}: SubmitDeps & {
+  ownerEmail: string;
+  rows: () => readonly ViewerRow[];
+  setDraft: (email: string) => void;
+  today: string;
+}): void {
+  const typed = String(formData.get("viewerEmail") ?? "");
+  const plan = planShare({ email: typed, ownerEmail, viewers: rows() });
+  if (plan.kind === "reject") {
+    onRefusal(plan.error);
+    return;
+  }
+  formData.set("inlineError", "1");
+  onRefusal(null);
+  setDraft("");
+  startTransition(async () => {
+    showOptimistic({ email: plan.email, kind: "add", since: today });
+    const result = await action(formData);
+    if (!result.ok) {
+      onRefusal(result.error);
+      setDraft(result.values?.["viewerEmail"] ?? typed);
+    }
+  });
+}
+
+/**
+ * Run one revoke (#1844): the row leaves at once and the body goes with
+ * `inlineError` stamped; a server refusal brings the row back (the optimistic
+ * state ends with the transition) and says why. Concurrent revokes are each sent.
+ */
+export function submitRevoke({
+  action,
+  formData,
+  onRefusal,
+  showOptimistic,
+  startTransition,
+  userId,
+}: SubmitDeps & { userId: string }): void {
+  formData.set("inlineError", "1");
+  onRefusal(null);
+  startTransition(async () => {
+    showOptimistic({ kind: "remove", userId });
+    const result = await action(formData);
+    if (!result.ok) onRefusal(result.error);
+  });
+}

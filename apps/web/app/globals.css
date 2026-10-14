@@ -1352,7 +1352,10 @@ h3 {
   animation: wl-shake var(--dur-base) var(--ease-standard);
 }
 
-.rowForm .formError {
+/* The reason for a refusal takes the whole row under the field and its button —
+   in a row form and in the inline form of «Acceso de solo lectura» (#1844). */
+.rowForm .formError,
+.inlineForm .formError {
   grid-column: 1 / -1;
 }
 
@@ -5533,8 +5536,11 @@ code {
 }
 
 /* Canon §3: warning-override rows read as a ruled ledger list — each entry
-   opened by a hairline, no perimeter border box. */
-.overrideRow {
+   opened by a hairline, no perimeter border box. The rows of «Acceso de solo
+   lectura» and «Compartidos contigo» (#1844) are the same ledger line; only
+   their columns differ (below, under #1844). */
+.overrideRow,
+.sharingRow {
   align-items: center;
   border-top: 1px solid var(--line-soft);
   display: grid;
@@ -5597,10 +5603,10 @@ p.muted {
 }
 
 /* === #1844 acceso de solo lectura ===
-   «Acceso de solo lectura» y «Compartidos contigo»: la misma lista de libro que
-   los overrides — cada persona abierta por un filete, sin caja —, el email a la
-   izquierda y su acción a la derecha. `minmax(0, 1fr)`: un email largo se parte,
-   no empuja la acción fuera del panel. */
+   «Acceso de solo lectura» y «Compartidos contigo»: la línea de libro de los
+   overrides (`.overrideRow, .sharingRow`), con el email a la izquierda y su acción
+   a la derecha. `minmax(0, 1fr)`: un email largo se parte, no empuja la acción
+   fuera del panel. */
 .sharingList {
   display: grid;
   list-style: none;
@@ -5609,12 +5615,7 @@ p.muted {
 }
 
 .sharingRow {
-  align-items: center;
-  border-top: 1px solid var(--line-soft);
-  display: grid;
-  gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
-  padding: 10px 0 6px;
 }
 
 .sharingWho {
@@ -5631,11 +5632,6 @@ p.muted {
 .sharingSince {
   color: var(--muted);
   font-size: 0.78rem;
-}
-
-/* El motivo de un rechazo ocupa la fila entera bajo el campo y el botón. */
-.inlineForm .formError {
-  grid-column: 1 / -1;
 }
 
 /* === #58 inversiones === */

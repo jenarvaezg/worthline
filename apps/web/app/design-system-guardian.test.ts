@@ -717,12 +717,21 @@ describe("Libro mayor design-system guardian (#906)", () => {
     expect(freeze?.declarations.get("background")).toBe("var(--ink)");
 
     // Warning-override rows read as a ruled list — each opened by a hairline,
-    // not a perimeter border box.
+    // not a perimeter border box. The sharing rows of /ajustes (#1844) are the
+    // same ledger line, so they join the rule instead of copying it.
     const override = rules.find(
-      (rule) => rule.file === "globals.css" && rule.selector === ".overrideRow",
+      (rule) =>
+        rule.file === "globals.css" &&
+        rule.selector
+          .split(",")
+          .map((selector) => selector.trim())
+          .includes(".overrideRow"),
     );
     expect(override?.declarations.get("border-top")).toBe("1px solid var(--line-soft)");
     expect(override?.declarations.get("border")).toBeUndefined();
+    expect(override?.selector.split(",").map((selector) => selector.trim())).toContain(
+      ".sharingRow",
+    );
   });
 
   test("the settings and admin surfaces consume the paper register (#912)", () => {

@@ -17,7 +17,7 @@
  * reverts with the reason beside the door. Without JavaScript both forms post
  * plainly to the same actions and a refusal comes back on the URL.
  *
- * Rendered only for a session acting on its own account (`ReadOnlySharing`): the
+ * Rendered only for a session acting on its own account (`readOnlySharingSections`): the
  * demo, an admin impersonating and a viewer never see a sharing control.
  */
 
@@ -25,7 +25,8 @@ import type { FormActionState } from "@web/form-action";
 import {
   applyViewerMutation,
   MAX_VIEWERS,
-  planShare,
+  submitRevoke,
+  submitShare,
   type ViewerMutation,
   type ViewerRow,
   viewerSinceLabel,
@@ -67,40 +68,32 @@ export function ReadOnlyAccessSection({
   const [refusal, setRefusal] = useState<string | null>(initialError);
   const [isSaving, startSaving] = useTransition();
 
+  // No in-flight gate: a second submit while one travels is sent too, never
+  // dropped in silence (`submitShare` plans against the rows still pending).
   function onShare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSaving) return;
-    const formData = new FormData(event.currentTarget);
-    const typed = String(formData.get("viewerEmail") ?? "");
-    const plan = planShare({ email: typed, ownerEmail, viewers: rows });
-    if (plan.kind === "reject") {
-      setRefusal(plan.error);
-      return;
-    }
-    formData.set("inlineError", "1");
-    setRefusal(null);
-    setEmail("");
-    startSaving(async () => {
-      applyOptimistic({ email: plan.email, kind: "add", since: today });
-      // `ok: true` never arrives: success redirects, so what comes back is a refusal.
-      const result = await shareAction(formData);
-      if (!result.ok) {
-        setRefusal(result.error);
-        setEmail(result.values?.["viewerEmail"] ?? typed);
-      }
+    submitShare({
+      action: shareAction,
+      formData: new FormData(event.currentTarget),
+      onRefusal: setRefusal,
+      ownerEmail,
+      rows: () => rows,
+      setDraft: setEmail,
+      showOptimistic: applyOptimistic,
+      startTransition: startSaving,
+      today,
     });
   }
 
   const onRevoke = (userId: string) => (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (isSaving) return;
-    const formData = new FormData(event.currentTarget);
-    formData.set("inlineError", "1");
-    setRefusal(null);
-    startSaving(async () => {
-      applyOptimistic({ kind: "remove", userId });
-      const result = await revokeAction(formData);
-      if (!result.ok) setRefusal(result.error);
+    submitRevoke({
+      action: revokeAction,
+      formData: new FormData(event.currentTarget),
+      onRefusal: setRefusal,
+      showOptimistic: applyOptimistic,
+      startTransition: startSaving,
+      userId,
     });
   };
 
@@ -142,8 +135,17 @@ export function ReadOnlyAccessSection({
                     className="confirmDelete confirmReversible"
                     suppressHydrationWarning
                   >
-                    <summary className="btnSmall btnWarning">Quitar acceso</summary>
-                    <button className="btnSmall btnWarning" type="submit">
+                    <summary
+                      aria-label={`Quitar acceso a ${row.email}`}
+                      className="btnSmall btnWarning"
+                    >
+                      Quitar acceso
+                    </summary>
+                    <button
+                      aria-label={`Confirmar: quitar acceso a ${row.email}`}
+                      className="btnSmall btnWarning"
+                      type="submit"
+                    >
                       Confirmar: quitar acceso
                     </button>
                   </details>

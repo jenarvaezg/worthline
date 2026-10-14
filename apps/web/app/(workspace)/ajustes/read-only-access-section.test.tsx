@@ -61,6 +61,11 @@ describe("«Acceso de solo lectura» (#1844)", () => {
     expect(html.match(/<summary[^>]*>Quitar acceso<\/summary>/g)).toHaveLength(2);
     expect(html).toContain("Confirmar: quitar acceso");
     expect(html).toContain('name="viewerUserId" value="u_ana"');
+    // Each control says whose row it is, so a screen reader hears more than
+    // «Quitar acceso» five times.
+    expect(html).toContain('aria-label="Quitar acceso a ana@example.com"');
+    expect(html).toContain('aria-label="Confirmar: quitar acceso a ana@example.com"');
+    expect(html).toContain('aria-label="Quitar acceso a luis@example.com"');
     expect(html).toContain("2 de 5");
     expect(html).not.toContain("Nadie más ve tu espacio.");
   });
