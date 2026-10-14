@@ -69,7 +69,9 @@ A **user** holding a `viewer` **grant** on a workspace someone else owns. Sees e
 figure and record of that workspace and writes nothing: the owner gives and takes
 the access from their own workspace, at most five viewers each, and the viewer opens
 it with a read-only database credential. A viewer still owns their own workspace;
-viewing never makes a workspace theirs (ADR 0112).
+viewing never makes a workspace theirs (ADR 0112). Viewing is a session the viewer
+enters and leaves; every request re-checks the grant, so a revoked viewer is back in
+their own workspace on the next one.
 _Avoid_: guest, read-only member, co-owner, shared user.
 
 **Control plane**:

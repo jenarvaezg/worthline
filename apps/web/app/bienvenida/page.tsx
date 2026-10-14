@@ -1,5 +1,6 @@
 import AssistantLayer from "@web/asistente/assistant-layer";
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
+import { blockedWriteMessage, viewsSharedWorkspace } from "@web/demo/write-guard";
 import { canSendFeedback } from "@web/feedback/feedback-eligibility";
 import FeedbackLauncher from "@web/feedback/feedback-launcher";
 import { readOnboardingEntryRedirect } from "@web/onboarding-redirect";
@@ -25,6 +26,8 @@ export const instant = false;
  * Server gate:
  *  - unauthenticated (auth enabled, not signed in) → the sign-in page, returning
  *    here afterwards.
+ *  - a viewer of a shared workspace (#1843) → the dashboard, before anything is
+ *    read: onboarding is the owner's, and it is the assistant, closed to viewers.
  *  - an authenticated workspace with no record yet → `/empezar`, to declare who
  *    it is (solo/hogar) before onboarding can populate it.
  *  - an authenticated workspace that has already onboarded — or an impersonating
@@ -38,6 +41,10 @@ export default async function BienvenidaPage() {
     redirect(`/login?returnTo=${encodeURIComponent(ONBOARDING_PATH)}`);
   }
 
+  if (viewsSharedWorkspace(target)) {
+    redirect("/app");
+  }
+
   if (target.kind === "authenticated") {
     const workspace = await withStore((store) => store.workspace.readWorkspace());
     if (!workspace) {
@@ -48,13 +55,9 @@ export default async function BienvenidaPage() {
     }
   }
 
-  const mutationsDisabled =
-    target.kind === "demo" ||
-    (target.kind === "authenticated" && target.impersonatedEmail !== undefined);
-
   return (
     <AssistantLayer
-      mutationsDisabled={mutationsDisabled}
+      mutationsDisabled={blockedWriteMessage(target) !== null}
       onboardingCompleteAction={markOnboardingCompleteAction}
       onboardingMastheadAction={canSendFeedback(target) ? <FeedbackLauncher /> : null}
       onboardingSkipAction={skipOnboardingAction}

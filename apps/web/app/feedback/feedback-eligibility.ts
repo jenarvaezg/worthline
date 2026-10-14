@@ -1,3 +1,4 @@
+import { actsOnOwnAccount } from "@web/demo/write-guard";
 import type { StoreTarget } from "@web/store-resolver";
 
 /**
@@ -7,10 +8,11 @@ import type { StoreTarget } from "@web/store-resolver";
  *   - a signed-in user's OWN session: there is someone to answer;
  *   - not the read-only demo: public and anonymous, an open door to the inbox;
  *   - not the local no-auth mode: no control plane to keep the message in;
- *   - not an admin impersonating a workspace: never in that user's name.
+ *   - not an admin impersonating a workspace, nor a viewer of a shared one
+ *     (#1843): never in the owner's name.
  */
 export function canSendFeedback(
   target: StoreTarget,
 ): target is Extract<StoreTarget, { kind: "authenticated" }> {
-  return target.kind === "authenticated" && target.impersonatedEmail === undefined;
+  return actsOnOwnAccount(target);
 }

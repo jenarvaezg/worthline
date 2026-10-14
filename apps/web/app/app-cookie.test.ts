@@ -56,6 +56,7 @@ const APP_COOKIE_CONSTANTS = [
   "PRIVACY_COOKIE_NAME",
   "DEMO_PERSONA_COOKIE_NAME",
   "IMPERSONATE_COOKIE_NAME",
+  "VIEWING_COOKIE_NAME",
 ] as const;
 
 /**
@@ -97,6 +98,7 @@ describe("app cookie tripwire · nothing spells the options out by hand (#1180)"
       "app/privacy/route.ts",
       "app/demo/persona/route.ts",
       "app/admin/actions.ts",
+      "app/viewing/route.ts",
       "app/empezar/actions.ts",
       "app/(workspace)/ajustes/actions.ts",
     ]) {

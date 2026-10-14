@@ -31,8 +31,12 @@
  * the surface credential's natural cadence, and deliberately differs (forcing one
  * cadence on all would either add a control-plane round-trip to every RSC render,
  * avoided by #445, or let a revoked MCP token linger until expiry):
- *   - web: the workspace is pinned into the Auth.js JWT at sign-in and trusted
- *     for the JWT's lifetime — no per-request control-plane re-check;
+ *   - web: the user's OWN workspace is pinned into the Auth.js JWT at sign-in and
+ *     trusted for the JWT's lifetime — no per-request control-plane re-check.
+ *     The two overrides are cookies re-checked on every request instead: admin
+ *     impersonation (#697) and a viewer of a shared workspace (#1843, ADR 0112),
+ *     whose grant is re-read for this session's email each time, so revoking it
+ *     is immediate;
  *   - MCP: the bearer token is verified per request (`verifyMcpToken`), which
  *     re-resolves the workspace claims from the control plane on every call;
  *   - cron: a deploy-configured `system` actor (CRON_SECRET) with no per-workspace

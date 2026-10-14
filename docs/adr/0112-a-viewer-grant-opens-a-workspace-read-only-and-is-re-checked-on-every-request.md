@@ -56,19 +56,54 @@ tokens.
    like impersonation: it carries a workspace id and grants nothing by itself;
    each request re-reads the grant of *this* session's email. Revocation is
    therefore immediate, and an owner without the cookie pays nothing.
+   Resolution, as built:
+   - The cookie is unsigned, `httpOnly`, 12 hours, with the app's cookie posture
+     (`appCookieOptions`); its name lives in a dependency-free module
+     (`viewing/viewing-cookie.ts`).
+   - With a session and the cookie, `readStoreTarget` (under `cache`, so once per
+     request) calls `readViewerAccess({ viewerEmail: <session email, trimmed and
+     lower-cased>, workspaceId: <cookie> })` once. No cookie, or no session
+     email, means no control-plane call at all.
+   - `resolveStoreTarget` receives the result as `viewedWorkspace` and honors it
+     only when its `viewerEmail` equals *this* session's email (recompared there,
+     never trusted from the caller) and its read-only token is non-empty — a
+     viewer never falls back to the group token. It resolves
+     `{ kind: "authenticated", workspaceId, dbUrl, token: readOnlyToken,
+     sharedByEmail: ownerEmail }`.
+   - Precedence: admin impersonation > viewer > the session's own workspace. A
+     forged cookie, a revoked grant or a lookup that names another email resolves
+     exactly as if the cookie were absent; without a session the request stays
+     unauthenticated (or the demo, with a persona cookie).
+   - Entering and leaving are route handlers that only touch cookies, like
+     `/scope`: `POST /viewing` (`workspaceId`) sends a request without a session
+     to `/login`, checks `readViewerAccess` *before* setting the cookie (no grant
+     → `/ajustes`, no cookie), drops the member scope and goes to `/app`;
+     `POST /viewing/exit` clears both cookies and goes to `/app`.
 6. **One classifier, one gate.** `blockedWriteMessage` is the only place that
    decides whether a session may write; a guardian forbids copies. Every door —
    Server Actions, chat, export, checkout — refuses the viewer, each with its
-   test (#1843). Underneath it, a viewer principal's store rejects any statement
+   test (#1843). As built: the classifier answers «Acceso de solo lectura: desde
+   aquí no se puede cambiar nada de este espacio.» for a viewer; its two narrow
+   readings live beside it in `demo/write-guard.ts` — `actsOnOwnAccount` (signed
+   in, in one's own workspace, no read-only reason: onboarding, feedback, quota)
+   and `viewsSharedWorkspace` (the doors closed to a viewer only). The
+   `read-only-classifier-guardian` lets only the classifier, the resolver, the
+   port and the bands name `impersonatedEmail` or `sharedByEmail`. Underneath it, a viewer principal's store rejects any statement
    that is not a `SELECT` (#1842), and underneath that, the credential itself is
    read-only. Write controls stay visible (the demo and impersonation precedent);
    the gate refuses them.
 7. **Scope of v1.** The viewer sees every figure and record. Not in v1: the
    assistant (a turn writes drafts into the owner's workspace and spends the
-   owner's quota — the route answers 403 and the launcher is not mounted),
-   `/ajustes` (redirects to `/app`), the export (403: it is the owner's copy and
-   would survive revocation), the MCP (owner only), self-removal, invitation
-   email. Impersonation is unchanged.
+   owner's quota — the route answers 403 `read_only` right after the
+   authentication check, before providers, rate limit, quotas or store, and the
+   launcher is not mounted), `/ajustes` and `/ajustes/conexiones` (redirect to
+   `/app`), the export (403: it is the owner's copy and would survive
+   revocation), the checkout (`/premium/pagar` redirects to `/premium` without
+   creating one), onboarding (`/bienvenida` redirects to `/app`), the MCP (owner
+   only), self-removal, invitation email. `/empezar`, where `/app` sends an empty
+   workspace, shows a viewer a static «Este espacio todavía está vacío» with the
+   exit instead of the creation form, so `/app` ↔ `/empezar` cannot loop.
+   Impersonation is unchanged.
 
 ## Consequences
 

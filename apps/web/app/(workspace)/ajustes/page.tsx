@@ -1,8 +1,10 @@
-import { isDemoMode } from "@web/demo/write-guard";
+import { isDemoMode, viewsSharedWorkspace } from "@web/demo/write-guard";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
+import { readStoreTarget } from "@web/read-store-target";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import {
   createMemberAction,
@@ -68,6 +70,12 @@ export async function AjustesContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
+  // Settings are the owner's — members, reset, import, connections, who may view
+  // (#1843, ADR 0112): a viewer is sent to the figures before anything is read.
+  if (viewsSharedWorkspace(await readStoreTarget())) {
+    redirect("/app");
+  }
+
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);

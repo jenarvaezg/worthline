@@ -5,8 +5,13 @@
  * document and serves it as an attachment, so the browser saves a file
  * instead of navigating. Pretty-printed on purpose: the export is the manual
  * stand-in for backup/sync, and a human should be able to read it.
+ *
+ * A viewer of a shared workspace gets 403 before the store opens (#1843, ADR
+ * 0112): the export is the owner's copy and would survive a revocation.
  */
 
+import { viewsSharedWorkspace } from "@web/demo/write-guard";
+import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 
@@ -18,6 +23,10 @@ function localDateStamp(now: Date): string {
 }
 
 export async function GET(): Promise<Response> {
+  if (viewsSharedWorkspace(await readStoreTarget())) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   const doc = await withStore(async (store) =>
     (await store.workspace.readWorkspace()) === null
       ? null

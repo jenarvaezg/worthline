@@ -1,5 +1,6 @@
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
 import { withOptionalControlPlaneStore } from "@web/control-plane-store";
+import { actsOnOwnAccount } from "@web/demo/write-guard";
 import type { StoreTarget } from "@web/store-resolver";
 import type { EntitlementDirectory, WorkspaceEntitlement } from "@worthline/db";
 
@@ -16,8 +17,9 @@ export { ONBOARDING_PATH };
  * Gated ONLY for a hosted authenticated workspace acting on its own account:
  *  - `local`/`demo`/`unauthenticated` never carry an entitlement row and are
  *    never force-redirected (they may still visit `/bienvenida` directly).
- *  - An impersonating admin (#697) is viewing someone else's workspace read-only
- *    — never trap them in that user's onboarding.
+ *  - An impersonating admin (#697), or a viewer of a shared workspace (#1843), is
+ *    viewing someone else's workspace read-only — never trap them in that
+ *    user's onboarding.
  *
  * «Onboarded» is either mark being present: `onboardedAt` (completed `/bienvenida`
  * or the explicit «lo haré luego»), OR `firstHoldingAt` — a workspace that already
@@ -29,7 +31,7 @@ export function shouldEnterOnboarding(
   target: StoreTarget,
   entitlement: WorkspaceEntitlement | null,
 ): boolean {
-  if (target.kind !== "authenticated" || target.impersonatedEmail !== undefined) {
+  if (!actsOnOwnAccount(target)) {
     return false;
   }
   if (!entitlement) return true;
@@ -48,7 +50,7 @@ export function shouldEnterOnboarding(
 export async function readOnboardingEntryRedirect(
   target: StoreTarget,
 ): Promise<string | null> {
-  if (target.kind !== "authenticated" || target.impersonatedEmail !== undefined) {
+  if (!actsOnOwnAccount(target)) {
     return null;
   }
 

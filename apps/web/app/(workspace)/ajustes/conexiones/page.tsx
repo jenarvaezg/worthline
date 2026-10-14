@@ -1,3 +1,4 @@
+import { viewsSharedWorkspace } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_CONNECT_SOURCE_MESSAGE,
@@ -14,6 +15,7 @@ import {
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { CONNECTION_REGISTRY } from "./connection-registry";
 import { loadConnectionRows } from "./connection-rows";
@@ -45,6 +47,12 @@ export async function ConexionesContent({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
+  // The owner's connections and credentials (#1843, ADR 0112): a viewer is sent
+  // to the figures before anything is read.
+  if (viewsSharedWorkspace(await readStoreTarget())) {
+    redirect("/app");
+  }
+
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);

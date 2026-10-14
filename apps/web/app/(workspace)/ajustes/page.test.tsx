@@ -72,7 +72,10 @@ vi.mock("@web/page-shell", () => ({
   resolvePageShell: calls.resolvePageShell,
 }));
 
-vi.mock("@web/demo/write-guard", () => ({ isDemoMode: async () => false }));
+vi.mock("@web/demo/write-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@web/demo/write-guard")>()),
+  isDemoMode: async () => false,
+}));
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
