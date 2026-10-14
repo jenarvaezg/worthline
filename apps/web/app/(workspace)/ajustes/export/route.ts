@@ -22,9 +22,16 @@ function localDateStamp(now: Date): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** What a viewer reads if it reaches the export anyway (a typed or old link). */
+const VIEWER_EXPORT_MESSAGE =
+  "La exportación es solo para quien es dueño del espacio. Con acceso de solo lectura puedes ver sus cifras aquí, pero no descargarlas.";
+
 export async function GET(): Promise<Response> {
   if (viewsSharedWorkspace(await readStoreTarget())) {
-    return new Response("Forbidden", { status: 403 });
+    return new Response(VIEWER_EXPORT_MESSAGE, {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      status: 403,
+    });
   }
 
   const doc = await withStore(async (store) =>

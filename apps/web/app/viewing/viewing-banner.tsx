@@ -19,11 +19,8 @@ import { readStoreTarget } from "@web/read-store-target";
 export default async function ViewingBanner() {
   const target = await readStoreTarget();
   // The classifier decides WHETHER; the marker only says whose.
-  const ownerEmail =
-    viewsSharedWorkspace(target) && target.kind === "authenticated"
-      ? target.sharedByEmail
-      : undefined;
-  if (!ownerEmail) return null;
+  if (!viewsSharedWorkspace(target)) return null;
+  const ownerEmail = target.sharedByEmail;
 
   return (
     <div aria-label="Espacio compartido" className="sessionBand" role="note">

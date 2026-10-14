@@ -1,6 +1,6 @@
 import { CHECKOUT_TIER_PARAM, CHECKOUT_TRANSACTION_PARAM } from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
-import { viewsSharedWorkspace } from "@web/demo/write-guard";
+import { guardViewerPage } from "@web/demo/write-guard";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
@@ -43,9 +43,7 @@ export async function PagarContent({
 }) {
   // A viewer never opens a checkout for the workspace it views (#1843, ADR
   // 0112): the plan is the owner's to buy. Back to `/premium`, nothing created.
-  if (viewsSharedWorkspace(await readStoreTarget())) {
-    redirect("/premium");
-  }
+  await guardViewerPage("/premium");
 
   const resolvedSearchParams = await searchParams;
   await resolvePageShell({ searchParams: resolvedSearchParams });

@@ -55,7 +55,7 @@ export function tursoPortFromEnv(env: Record<string, string | undefined>): Turso
   const tursoToken = env["TURSO_API_TOKEN"];
   if (!env["WORTHLINE_CONTROL_PLANE_DB_URL"] || !tursoOrg || !tursoToken) {
     throw new Error(
-      "Hosted provisioning requires WORTHLINE_CONTROL_PLANE_DB_URL, TURSO_ORG, and TURSO_API_TOKEN.",
+      "Reaching Turso's Platform API (provisioning a workspace, or minting its read-only token to share it) requires WORTHLINE_CONTROL_PLANE_DB_URL, TURSO_ORG, and TURSO_API_TOKEN.",
     );
   }
   return createTursoPort({

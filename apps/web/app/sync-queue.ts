@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildDailyCaptureDeps } from "@web/api/cron/snapshot/daily-capture-deps";
 import { openControlPlaneStore, withControlPlaneStore } from "@web/control-plane-store";
-import { actsOnOwnAccount, workspaceWriteBlockedMessage } from "@web/demo/write-guard";
+import { workspaceWriteBlockedMessage } from "@web/demo/write-guard";
 import { openAuthorizedStore } from "@web/principal";
 import type { StoreTarget } from "@web/store-resolver";
 import {
@@ -318,7 +318,7 @@ export async function enqueueSourceSyncOrInline(params: {
   if (workspaceWriteBlockedMessage(params.target) !== null) {
     return;
   }
-  if (actsOnOwnAccount(params.target) && isDurableQueueConfigured(env)) {
+  if (params.target.kind === "authenticated" && isDurableQueueConfigured(env)) {
     await productionSyncQueue(env).enqueue({
       descriptor: params.descriptor,
       workspaceId: params.target.workspaceId,

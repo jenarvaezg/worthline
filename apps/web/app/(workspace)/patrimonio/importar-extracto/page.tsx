@@ -1,4 +1,4 @@
-import { isDemoMode, viewsSharedWorkspace } from "@web/demo/write-guard";
+import { guardViewerPage, isDemoMode } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import { PAYWALL_STATEMENT_MESSAGE } from "@web/entitlements/paywall-copy";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
@@ -8,7 +8,6 @@ import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intak
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { IMPORT_DOCUMENT_VIEW_PARAM, readViewParam } from "@web/view-state";
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { confirmImportStatementAction, previewImportStatementAction } from "./actions";
 import { ImportLaneTabs } from "./import-lane-tabs";
@@ -47,9 +46,7 @@ export async function ImportarExtractoContent({
 }) {
   // Importing is ingestion into the owner's book, under the owner's plan (#1843,
   // ADR 0112): a viewer is sent to the figures, like every other write door.
-  if (viewsSharedWorkspace(await readStoreTarget())) {
-    redirect("/app");
-  }
+  await guardViewerPage("/app");
 
   const resolvedSearchParams = await searchParams;
   const isDemo = await isDemoMode();

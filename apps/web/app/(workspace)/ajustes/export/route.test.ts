@@ -50,6 +50,10 @@ describe("GET /ajustes/export", () => {
     const response = await GET();
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(await response.text()).toBe(
+      "La exportación es solo para quien es dueño del espacio. Con acceso de solo lectura puedes ver sus cifras aquí, pero no descargarlas.",
+    );
     expect(withStore).not.toHaveBeenCalled();
   });
 

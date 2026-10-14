@@ -83,8 +83,27 @@ export function blockedWriteMessage(target: StoreTarget): string | null {
  * only to a viewer — the chat, the export, `/ajustes`, the checkout,
  * `/bienvenida`, `/empezar`. Demo and impersonation keep their own rules there.
  */
-export function viewsSharedWorkspace(target: StoreTarget): boolean {
+export function viewsSharedWorkspace(
+  target: StoreTarget,
+): target is SharedWorkspaceTarget {
   return readOnlyReason(target) === "viewer";
+}
+
+/** A target that views a workspace shared with the session: whose it is, always. */
+type SharedWorkspaceTarget = Extract<StoreTarget, { kind: "authenticated" }> & {
+  sharedByEmail: string;
+};
+
+/**
+ * For a page closed to a viewer (#1843, ADR 0112) — the owner's settings,
+ * connections, billing, ingestion, onboarding — send a viewer to `to` before the
+ * page reads anything. No-op for everyone else: the demo and impersonation keep
+ * their own rules on those pages. Throws Next's redirect signal.
+ */
+export async function guardViewerPage(to: string): Promise<void> {
+  if (viewsSharedWorkspace(await readStoreTarget())) {
+    redirect(to);
+  }
 }
 
 /**

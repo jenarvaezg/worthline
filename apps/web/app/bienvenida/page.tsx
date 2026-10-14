@@ -1,6 +1,6 @@
 import AssistantLayer from "@web/asistente/assistant-layer";
 import { ONBOARDING_PATH } from "@web/asistente/screen-context";
-import { blockedWriteMessage, viewsSharedWorkspace } from "@web/demo/write-guard";
+import { blockedWriteMessage, guardViewerPage } from "@web/demo/write-guard";
 import { canSendFeedback } from "@web/feedback/feedback-eligibility";
 import FeedbackLauncher from "@web/feedback/feedback-launcher";
 import { readOnboardingEntryRedirect } from "@web/onboarding-redirect";
@@ -42,9 +42,7 @@ export default async function BienvenidaPage() {
     redirect(`/login?returnTo=${encodeURIComponent(ONBOARDING_PATH)}`);
   }
 
-  if (viewsSharedWorkspace(target)) {
-    redirect("/app");
-  }
+  await guardViewerPage("/app");
 
   if (target.kind === "authenticated") {
     const workspace = await withStore((store) => store.workspace.readWorkspace());
