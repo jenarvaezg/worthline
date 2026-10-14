@@ -4,6 +4,8 @@ import type {
   WorthlineStore,
 } from "@worthline/db";
 
+import { readonlyProposalStore } from "./readonly-workspace";
+
 /**
  * The stores one chat tool call may reach (#629/#630, ADR 0047).
  *
@@ -35,12 +37,22 @@ export interface ChatReadStore {
  * the fields by hand, and the harness listed three of the six: every proposal tool
  * answered `proposal_persistence_unavailable`, so the write path could not be
  * measured at all. An eighth field would have re-armed exactly that.
+ *
+ * `writeBlockedMessage` is the one switch for a workspace the turn may read but not
+ * write (#1845, `workspaceWriteBlockedMessage`): the proposal store — the only
+ * writer here — then refuses with it. Every other field is read-only by use.
  */
-export function chatToolStores(store: WorthlineStore): ChatReadStore {
+export function chatToolStores(
+  store: WorthlineStore,
+  writeBlockedMessage: string | null = null,
+): ChatReadStore {
   return {
     agentView: store.agentView,
     assets: store.assets,
-    assistantProposals: store.assistantProposals,
+    assistantProposals:
+      writeBlockedMessage === null
+        ? store.assistantProposals
+        : readonlyProposalStore(store.assistantProposals, writeBlockedMessage),
     connectedSources: store.connectedSources,
     liabilities: store.liabilities,
     operations: store.operations,

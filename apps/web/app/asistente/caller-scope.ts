@@ -1,3 +1,4 @@
+import { ownWorkspaceId } from "@web/demo/write-guard";
 import type { StoreTarget } from "@web/store-resolver";
 
 /**
@@ -20,13 +21,20 @@ export type CallerScope = { mode: "count"; key: string } | { mode: "bypass" };
  * This caller's counter key. Demo and unauthenticated callers key on IP, and an
  * absent IP shares ONE bucket rather than escaping the counter: a missing header
  * must never be the way out.
+ *
+ * An admin impersonating a workspace keys on IP too (#1845): the counters are still
+ * there, but the turn is the admin's, so it must not spend the user's hour or day.
  */
 export function callerScope(target: StoreTarget, ip: string | null): CallerScope {
   switch (target.kind) {
     case "local":
       return { mode: "bypass" };
-    case "authenticated":
-      return { mode: "count", key: `ws:${target.workspaceId}` };
+    case "authenticated": {
+      const workspaceId = ownWorkspaceId(target);
+      return workspaceId === null
+        ? { mode: "count", key: `impersonation:${ip ?? "unknown"}` }
+        : { mode: "count", key: `ws:${workspaceId}` };
+    }
     case "demo":
       return { mode: "count", key: `demo:${ip ?? "unknown"}` };
     case "unauthenticated":

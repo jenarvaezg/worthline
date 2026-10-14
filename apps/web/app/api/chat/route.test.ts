@@ -47,7 +47,7 @@ import {
   GLOBAL_DAILY_TOKEN_FUSE,
   TRIAL_PREMIUM_DAILY_TOKEN_BUDGET,
 } from "@web/asistente/token-budget";
-import { readAiTokenUsage } from "@web/asistente/token-budget-store";
+import { readAiTokenUsage, recordAiTokenUsage } from "@web/asistente/token-budget-store";
 import { VISION_CALL_LIMITS } from "@web/asistente/vision-call-budget";
 import {
   readVisionCallUsage,
@@ -55,12 +55,13 @@ import {
 } from "@web/asistente/vision-call-budget-store";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
+import { IMPERSONATION_READONLY_MESSAGE } from "@web/demo/write-guard-messages";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "./route";
 
@@ -3091,5 +3092,193 @@ describe("historial con lecturas de herramienta (#1260)", () => {
     const turns = turnsOf(model.doStreamCalls[0]!);
     expect(turns.length).toBeLessThan(120_000);
     expect(turns).not.toContain("RELLENO-0");
+  });
+});
+
+describe("POST /api/chat · impersonación de solo lectura (#1845)", () => {
+  const ANA = {
+    kind: "authenticated" as const,
+    workspaceId: "ws-ana",
+    dbUrl: "libsql://wl-ana.turso.io",
+    token: "token-ana",
+  };
+  const impersonatingAna = () =>
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      ...ANA,
+      impersonatedEmail: "ana@example.com",
+    });
+
+  /** A rename of a real seeded holding: the smallest proposal that persists a draft. */
+  async function renameTurn(): Promise<string> {
+    const holdingId = (await currentStore.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding",
+    )?.publicId as string;
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        proposeCorrectionModel({
+          correction: { kind: "edit_config", name: "Nombre corregido" },
+          holdingId,
+          summary: "Renombrar el holding",
+        }),
+      ),
+    ]);
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("esto está mal escrito"),
+          groundedHoldingHistory(holdingId),
+        ],
+      }),
+    );
+    expect(response.status).toBe(200);
+    return response.text();
+  }
+
+  it("no deja el borrador en el workspace del usuario y el modelo recibe el mensaje de solo lectura", async () => {
+    impersonatingAna();
+    const create = vi.spyOn(currentStore.assistantProposals, "create");
+    const append = vi.spyOn(currentStore.assistantProposals, "appendDocument");
+    try {
+      const streamed = await renameTurn();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(append).not.toHaveBeenCalled();
+      expect(streamed).toContain("propose_correction");
+      expect(streamed).toContain(IMPERSONATION_READONLY_MESSAGE);
+      expect(streamed).not.toContain("solo-desde-hoy");
+    } finally {
+      create.mockRestore();
+      append.mockRestore();
+    }
+  });
+
+  it("el mismo turno sin impersonación sigue persistiendo el borrador", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue(ANA);
+    const create = vi.spyOn(currentStore.assistantProposals, "create");
+    try {
+      const streamed = await renameTurn();
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(streamed).toContain("solo-desde-hoy");
+      expect(streamed).not.toContain(IMPERSONATION_READONLY_MESSAGE);
+    } finally {
+      create.mockRestore();
+    }
+  });
+
+  describe("con plano de control", () => {
+    beforeEach(() => {
+      vi.stubEnv("WORTHLINE_CONTROL_PLANE_DB_URL", "libsql://control-plane.turso.io");
+      vi.mocked(readEffectivePlan).mockResolvedValue("free");
+      // No tool call: with a control-plane URL set, a read would try to reach it.
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Tu patrimonio neto va bien.")),
+      ]);
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("no gasta la cuota del usuario: ni mide tokens ni consulta sus cupos", async () => {
+      impersonatingAna();
+
+      const streamed = await (
+        await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }))
+      ).text();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(streamed).toContain("patrimonio neto");
+      expect(recordAiTokenUsage).not.toHaveBeenCalled();
+      expect(readAiTokenUsage).not.toHaveBeenCalled();
+      expect(countAssistantCourtesyUse).not.toHaveBeenCalled();
+      // The rate limit still runs, on the admin's IP and never on the user's counter.
+      expect(countChatRequest).toHaveBeenCalled();
+      for (const [rateKey] of vi.mocked(countChatRequest).mock.calls) {
+        expect(rateKey).not.toBe("ws:ws-ana");
+      }
+    });
+
+    it("sin impersonación el turno sigue contando contra el workspace", async () => {
+      vi.mocked(readStoreTarget).mockResolvedValue(ANA);
+
+      await (await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }))).text();
+
+      await vi.waitFor(() =>
+        expect(recordAiTokenUsage).toHaveBeenCalledWith(
+          "ws-ana",
+          expect.any(String),
+          expect.any(Number),
+        ),
+      );
+      expect(readAiTokenUsage).toHaveBeenCalledWith("ws-ana", expect.any(String));
+      expect(countAssistantCourtesyUse).toHaveBeenCalledWith(
+        "ws:ws-ana",
+        expect.any(String),
+      );
+      expect(countChatRequest).toHaveBeenCalledWith("ws:ws-ana", expect.any(String));
+    });
+  });
+
+  it("no carga las lecturas de un documento a la cuenta de visión del usuario", async () => {
+    impersonatingAna();
+    mockVisionReading(
+      parseExtractionResult({
+        data: {
+          documentType: "positions",
+          positions: [
+            {
+              currency: "EUR",
+              marketValueEur: 50,
+              name: "Acme",
+              ticker: "ACME",
+              units: 2,
+            },
+          ],
+          warnings: [],
+        },
+        status: "valid",
+      }),
+    );
+
+    await (await POST(imageAttachmentRequestFromIp("203.0.113.7"))).text();
+
+    expect(readVisionCallUsage).not.toHaveBeenCalledWith("ws:ws-ana", expect.anything());
+    expect(recordVisionCalls).toHaveBeenCalledTimes(1);
+    expect(recordVisionCalls).not.toHaveBeenCalledWith(
+      "ws:ws-ana",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("no levanta una alerta al mantenedor en nombre del usuario", async () => {
+    impersonatingAna();
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        maintainerAlertModel({
+          holdingId: FAKE_LOAN_HOLDING_ID,
+          category: "infidelity",
+          summary: "El saldo pintado no coincide con el recomputado.",
+          declaredBalanceMinor: 559_200,
+          declaredDate: "2026-07-15",
+          declaredSource: "extracto del banco",
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("el préstamo pinta mal"),
+          groundedHoldingHistory(FAKE_LOAN_HOLDING_ID),
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(raiseMaintainerAlert).not.toHaveBeenCalled();
   });
 });
