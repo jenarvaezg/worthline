@@ -112,6 +112,13 @@ export interface WorkspaceSharedWithUser {
   createdAt: string;
 }
 
+/** What {@link TenancyDirectory.recordViewerGrant} did (#1841). */
+export type RecordViewerGrantOutcome =
+  | "recorded"
+  | "already-viewer"
+  | "conflicting-grant"
+  | "viewer-limit";
+
 /**
  * What a viewer needs to open a shared workspace read-only (#1841): where it
  * lives and the read-only token. Never the full token.
@@ -130,12 +137,16 @@ export interface ViewerAccess {
  * (ADR 0112).
  */
 export interface TenancyDirectory {
-  /** Idempotent by email: the same address always maps to the same user row. */
+  /**
+   * Idempotent by email: the same address always maps to the same user row,
+   * whatever its case (#1841) — an existing row is reused as first written.
+   */
   findOrCreateUser(email: string): Promise<ControlPlaneUser>;
   /**
-   * Read an existing user by email without creating one — null when unknown.
-   * The MCP auth path resolves a caller this way so it never provisions; that
-   * stays on first web sign-in (ADR 0030 / ADR 0034).
+   * Read an existing user by email, case-insensitively (#1841), without
+   * creating one — null when unknown. The MCP auth path resolves a caller this
+   * way so it never provisions; that stays on first web sign-in (ADR 0030 /
+   * ADR 0034).
    */
   findUserByEmail(email: string): Promise<ControlPlaneUser | null>;
   /** Register a freshly provisioned workspace database. */
@@ -151,10 +162,12 @@ export interface TenancyDirectory {
    */
   setWorkspaceDbAuthToken(workspaceId: string, dbAuthToken: string): Promise<void>;
   /**
-   * Persist (or replace) the workspace's read-only Turso JWT (#1841), sealed at
-   * rest exactly like `db_auth_token`.
+   * Seal the workspace's read-only Turso JWT (#1841) — set ONCE: when a
+   * concurrent writer already stored one, it is kept. Resolves the token in
+   * force, which is the one every viewer opens with. Sealed at rest exactly
+   * like `db_auth_token`.
    */
-  setWorkspaceReadOnlyToken(workspaceId: string, readOnlyToken: string): Promise<void>;
+  setWorkspaceReadOnlyToken(workspaceId: string, readOnlyToken: string): Promise<string>;
   /**
    * Remove a workspace row. The provisioner's loser-side cleanup after losing
    * the first-login race (#733) — the loser never got a grant, so only the
@@ -167,6 +180,18 @@ export interface TenancyDirectory {
     workspaceId: string,
     role?: GrantRole,
   ): Promise<ControlPlaneGrant>;
+  /**
+   * Grant `userId` a viewer role on the workspace only while it has fewer than
+   * `maxViewers` viewers, in ONE statement, so concurrent shares cannot exceed
+   * the cap (#1841). When nothing was written it says why: the user already
+   * views it, already holds another grant on it (owner, or a legacy role that
+   * grants nothing), or the cap is full.
+   */
+  recordViewerGrant(
+    userId: string,
+    workspaceId: string,
+    maxViewers: number,
+  ): Promise<RecordViewerGrantOutcome>;
   /**
    * Read a single grant, or null when the user has no access to the workspace —
    * including a row whose role is not a {@link GrantRole} (fail closed).
@@ -294,12 +319,9 @@ export function createTenancyDirectory(
 ): TenancyDirectory {
   return {
     async findOrCreateUser(email) {
-      const existing = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      if (existing.rows.length > 0) {
-        return toUser(existing.rows[0]!);
+      const existing = await findUserRow(client, email);
+      if (existing) {
+        return existing;
       }
       // ON CONFLICT: two concurrent first logins may both pass the select
       // above (#733); whichever insert lands second becomes a no-op and both
@@ -308,18 +330,14 @@ export function createTenancyDirectory(
         sql: "INSERT INTO users (id, email) VALUES (?, ?) ON CONFLICT(email) DO NOTHING",
         args: [newId(), email],
       });
-      const created = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      return toUser(created.rows[0]!);
+      const created = await findUserRow(client, email);
+      if (!created) {
+        throw new Error("findOrCreateUser: the user row just written is unreadable.");
+      }
+      return created;
     },
     async findUserByEmail(email) {
-      const result = await client.execute({
-        sql: "SELECT id, email, created_at FROM users WHERE email = ?",
-        args: [email],
-      });
-      return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
+      return findUserRow(client, email);
     },
     async createWorkspace({ dbName, dbUrl, dbAuthToken }) {
       const id = newId();
@@ -342,10 +360,26 @@ export function createTenancyDirectory(
       });
     },
     async setWorkspaceReadOnlyToken(workspaceId, readOnlyToken) {
-      await client.execute({
-        sql: "UPDATE workspaces SET db_read_only_token = ? WHERE id = ?",
+      const written = await client.execute({
+        sql: `UPDATE workspaces SET db_read_only_token = ?
+              WHERE id = ? AND (db_read_only_token IS NULL OR db_read_only_token = '')`,
         args: [sealSecret(readOnlyToken), workspaceId],
       });
+      if (written.rowsAffected > 0) {
+        return readOnlyToken;
+      }
+      // A concurrent first share sealed its token first: that one is in force.
+      const stored = await client.execute({
+        sql: "SELECT db_read_only_token FROM workspaces WHERE id = ?",
+        args: [workspaceId],
+      });
+      const sealed = stored.rows[0]?.["db_read_only_token"];
+      if (sealed == null || sealed === "") {
+        throw new Error(
+          `setWorkspaceReadOnlyToken: workspace ${workspaceId} does not exist.`,
+        );
+      }
+      return openSecret(String(sealed));
     },
     async deleteWorkspace(workspaceId) {
       await client.execute({
@@ -363,6 +397,31 @@ export function createTenancyDirectory(
         throw new Error(`recordGrant: the ${role} grant just written is unreadable.`);
       }
       return grant;
+    },
+    async recordViewerGrant(userId, workspaceId, maxViewers) {
+      // One statement: the count and the insert are atomic, so two concurrent
+      // shares cannot both see room for the last place.
+      const written = await client.execute({
+        sql: `INSERT INTO grants (user_id, workspace_id, role)
+              SELECT ?, ?, 'viewer'
+              WHERE (SELECT count(*) FROM grants
+                     WHERE workspace_id = ? AND role = 'viewer') < ?
+              ON CONFLICT(user_id, workspace_id) DO NOTHING`,
+        args: [userId, workspaceId, workspaceId, maxViewers],
+      });
+      if (written.rowsAffected > 0) {
+        return "recorded";
+      }
+      // Nothing written: a row for this pair blocked it, or the cap is full.
+      // The raw role is read on purpose — a legacy role grants nothing, but it
+      // still occupies the pair.
+      const existing = await client.execute({
+        sql: "SELECT role FROM grants WHERE user_id = ? AND workspace_id = ?",
+        args: [userId, workspaceId],
+      });
+      const row = existing.rows[0];
+      if (!row) return "viewer-limit";
+      return row["role"] === "viewer" ? "already-viewer" : "conflicting-grant";
     },
     async readGrant(userId, workspaceId) {
       return readGrantRow(client, userId, workspaceId);
@@ -469,6 +528,22 @@ export function createTenancyDirectory(
       return result.rows.map((row) => toWorkspaceWithOwner(row));
     },
   };
+}
+
+/**
+ * The user row for an email, compared trimmed and lower-cased (#1841). Should
+ * legacy rows differ only by case, the oldest wins — deterministically.
+ */
+async function findUserRow(
+  client: Client,
+  email: string,
+): Promise<ControlPlaneUser | null> {
+  const result = await client.execute({
+    sql: `SELECT id, email, created_at FROM users WHERE lower(email) = ?
+          ORDER BY created_at ASC, rowid ASC LIMIT 1`,
+    args: [comparableEmail(email)],
+  });
+  return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
 }
 
 async function readGrantRow(

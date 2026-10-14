@@ -144,6 +144,7 @@ export {
   parseGrantRole,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
+  type RecordViewerGrantOutcome,
   type RenewJobLeaseInput,
   type StartTrialInput,
   type TenancyDirectory,

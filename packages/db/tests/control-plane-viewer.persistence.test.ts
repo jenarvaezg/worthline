@@ -18,8 +18,10 @@ import {
   readControlPlaneSchemaVersion,
   writeControlPlaneSchemaVersion,
 } from "@db/control-plane/migrate";
+import { createTenancyDirectory } from "@db/control-plane/tenancy-directory";
 import { openLibsqlClient } from "@db/libsql-client";
 import { afterAll, afterEach, describe, expect, test } from "vitest";
+import { instrumentClient } from "./instrument-libsql-client";
 
 const tempDirs: string[] = [];
 afterAll(() => {
@@ -391,6 +393,122 @@ describe("tenancy · read-only access (#1841)", () => {
         (await cp.findUserByEmail("ana@example.com"))!.id,
       );
       expect(owned?.hasReadOnlyToken).toBe(true);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("the read-only token is set once: a second writer gets the one in force", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const { anaWs, leo } = await twoOwners(cp);
+      await cp.recordGrant(leo.id, anaWs.id, "viewer");
+
+      expect(await cp.setWorkspaceReadOnlyToken(anaWs.id, "ro-first")).toBe("ro-first");
+      expect(await cp.setWorkspaceReadOnlyToken(anaWs.id, "ro-second")).toBe("ro-first");
+      expect(
+        (
+          await cp.readViewerAccess({
+            viewerEmail: "leo@example.com",
+            workspaceId: anaWs.id,
+          })
+        )?.readOnlyToken,
+      ).toBe("ro-first");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("reading a viewer's access is ONE statement — it runs on every viewer request", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worthline-cp-ro-one-query-"));
+    tempDirs.push(dir);
+    const url = `file:${join(dir, "control-plane.sqlite")}`;
+    const cp = await createControlPlaneStore({ url });
+    const { anaWs, leo } = await twoOwners(cp as AdminControlPlaneStore);
+    await cp.setWorkspaceReadOnlyToken(anaWs.id, "ro-ana");
+    await cp.recordGrant(leo.id, anaWs.id, "viewer");
+    cp.close();
+
+    const statements: string[] = [];
+    const raw = openLibsqlClient({ url });
+    const tenancy = createTenancyDirectory(
+      instrumentClient(raw, (sql) => statements.push(sql)),
+      () => "unused-id",
+    );
+    try {
+      const granted = await tenancy.readViewerAccess({
+        viewerEmail: "leo@example.com",
+        workspaceId: anaWs.id,
+      });
+      expect(granted?.readOnlyToken).toBe("ro-ana");
+      expect(statements).toHaveLength(1);
+
+      statements.length = 0;
+      expect(
+        await tenancy.readViewerAccess({
+          viewerEmail: "nobody@example.com",
+          workspaceId: anaWs.id,
+        }),
+      ).toBeNull();
+      expect(statements).toHaveLength(1);
+    } finally {
+      raw.close();
+    }
+  });
+});
+
+describe("tenancy · the viewer grant is capped atomically (#1841)", () => {
+  test("records a viewer under the cap, and says why it did not otherwise", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worthline-cp-viewer-cap-"));
+    tempDirs.push(dir);
+    const url = `file:${join(dir, "control-plane.sqlite")}`;
+    const cp = await createControlPlaneStore({ url });
+    const { ana, anaWs, leo } = await twoOwners(cp as AdminControlPlaneStore);
+    const eva = await cp.findOrCreateUser("eva@example.com");
+    const ines = await cp.findOrCreateUser("ines@example.com");
+    const legacy = await cp.findOrCreateUser("legacy@example.com");
+    cp.close();
+    const raw = openLibsqlClient({ url });
+    await raw.execute({
+      sql: "INSERT INTO grants (user_id, workspace_id, role) VALUES (?, ?, 'orphaned-owner')",
+      args: [legacy.id, anaWs.id],
+    });
+    raw.close();
+
+    const reopened = await createControlPlaneStore({ url });
+    try {
+      expect(await reopened.recordViewerGrant(leo.id, anaWs.id, 2)).toBe("recorded");
+      expect(await reopened.recordViewerGrant(leo.id, anaWs.id, 2)).toBe(
+        "already-viewer",
+      );
+      expect(await reopened.recordViewerGrant(ana.id, anaWs.id, 2)).toBe(
+        "conflicting-grant",
+      );
+      expect(await reopened.recordViewerGrant(legacy.id, anaWs.id, 2)).toBe(
+        "conflicting-grant",
+      );
+      expect(await reopened.recordViewerGrant(eva.id, anaWs.id, 2)).toBe("recorded");
+      expect(await reopened.recordViewerGrant(ines.id, anaWs.id, 2)).toBe("viewer-limit");
+      expect(await reopened.readGrant(ines.id, anaWs.id)).toBeNull();
+      expect((await reopened.readGrant(ana.id, anaWs.id))?.role).toBe("owner");
+    } finally {
+      reopened.close();
+    }
+  });
+});
+
+describe("tenancy · users are found whatever the case of their email (#1841)", () => {
+  test("find and find-or-create reuse the existing row across capitalisations", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const foo = await cp.findOrCreateUser("Foo@X.com");
+
+      expect((await cp.findUserByEmail("foo@x.com"))?.id).toBe(foo.id);
+      expect((await cp.findUserByEmail(" FOO@x.COM "))?.id).toBe(foo.id);
+      const again = await cp.findOrCreateUser("foo@x.com");
+      expect(again.id).toBe(foo.id);
+      // The stored address keeps the case it was first written with.
+      expect(again.email).toBe("Foo@X.com");
     } finally {
       cp.close();
     }

@@ -116,6 +116,7 @@ export {
   GRANT_ROLES,
   type GrantRole,
   parseGrantRole,
+  type RecordViewerGrantOutcome,
   type TenancyDirectory,
   type ViewerAccess,
   type WorkspaceSharedWithUser,

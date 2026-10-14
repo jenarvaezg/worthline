@@ -347,6 +347,161 @@ describe("shareWorkspaceReadOnly (#1841)", () => {
   });
 });
 
+describe("shareWorkspaceReadOnly · races and legacy rows (#1841)", () => {
+  /** Mints a distinct token per call, so a second mint is detectable. */
+  function countingTurso() {
+    let mints = 0;
+    const port: TursoPort = {
+      async createDatabase() {
+        throw new Error("sharing never creates a database");
+      },
+      async createDatabaseToken(name, authorization) {
+        mints += 1;
+        return { jwt: `${authorization}-${mints}-for-${name}` };
+      },
+    };
+    return { mints: () => mints, port };
+  }
+
+  test("two concurrent shares at the edge of the cap never make a sixth viewer", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const turso = fakeTurso();
+    try {
+      const { workspace } = await anaOwnsAWorkspace(cp);
+      const deps = { controlPlane: cp, turso: turso.port };
+      for (let index = 1; index < MAX_VIEWERS_PER_WORKSPACE; index += 1) {
+        await shareWorkspaceReadOnly(deps, {
+          ownerEmail: "ana@example.com",
+          viewerEmail: `viewer${index}@example.com`,
+        });
+      }
+
+      const outcomes = await Promise.allSettled([
+        shareWorkspaceReadOnly(deps, {
+          ownerEmail: "ana@example.com",
+          viewerEmail: "first@example.com",
+        }),
+        shareWorkspaceReadOnly(deps, {
+          ownerEmail: "ana@example.com",
+          viewerEmail: "second@example.com",
+        }),
+      ]);
+
+      expect(await cp.listViewersOfWorkspace(workspace.id)).toHaveLength(
+        MAX_VIEWERS_PER_WORKSPACE,
+      );
+      const refused = outcomes.flatMap((outcome) =>
+        outcome.status === "rejected" ? [outcome.reason] : [],
+      );
+      expect(refused).toHaveLength(1);
+      expect(refused[0]).toBeInstanceOf(ShareWorkspaceRefusedError);
+      expect((refused[0] as ShareWorkspaceRefusedError).reason).toBe("viewer-limit");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("two concurrent first shares converge on ONE read-only token", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const turso = countingTurso();
+    try {
+      const { workspace } = await anaOwnsAWorkspace(cp);
+      const deps = { controlPlane: cp, turso: turso.port };
+
+      await Promise.all([
+        shareWorkspaceReadOnly(deps, {
+          ownerEmail: "ana@example.com",
+          viewerEmail: "leo@example.com",
+        }),
+        shareWorkspaceReadOnly(deps, {
+          ownerEmail: "ana@example.com",
+          viewerEmail: "eva@example.com",
+        }),
+      ]);
+
+      const leo = await cp.readViewerAccess({
+        viewerEmail: "leo@example.com",
+        workspaceId: workspace.id,
+      });
+      const eva = await cp.readViewerAccess({
+        viewerEmail: "eva@example.com",
+        workspaceId: workspace.id,
+      });
+      // Both minted (the race), but the first one sealed is the one in force.
+      expect(turso.mints()).toBe(2);
+      expect(leo?.readOnlyToken).toBe("read-only-1-for-wl-ana");
+      expect(eva?.readOnlyToken).toBe("read-only-1-for-wl-ana");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("sharing with an existing identity hangs the grant on its row, whatever its case", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const { workspace } = await anaOwnsAWorkspace(cp);
+      const foo = await cp.findOrCreateUser("Foo@X.com");
+
+      const shared = await shareWorkspaceReadOnly(
+        { controlPlane: cp, turso: fakeTurso().port },
+        { ownerEmail: "ana@example.com", viewerEmail: "foo@x.com" },
+      );
+
+      expect(shared.viewer.userId).toBe(foo.id);
+      expect(await cp.listWorkspacesSharedWithUser(foo.id)).toEqual([
+        expect.objectContaining({ workspaceId: workspace.id }),
+      ]);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("the owner is found whatever the case of the email they share from", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const { workspace } = await anaOwnsAWorkspace(cp);
+      const shared = await shareWorkspaceReadOnly(
+        { controlPlane: cp, turso: fakeTurso().port },
+        { ownerEmail: "Ana@Example.com", viewerEmail: "leo@example.com" },
+      );
+      expect(shared.workspaceId).toBe(workspace.id);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("a recipient with a legacy grant on the workspace is refused as already-granted", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worthline-share-legacy-"));
+    tempDirs.push(dir);
+    const url = `file:${join(dir, "control-plane.sqlite")}`;
+    const cp = await createControlPlaneStore({ url });
+    const { workspace } = await anaOwnsAWorkspace(cp as AdminControlPlaneStore);
+    const legacy = await cp.findOrCreateUser("legacy@example.com");
+    cp.close();
+    const raw = openLibsqlClient({ url });
+    await raw.execute({
+      sql: "INSERT INTO grants (user_id, workspace_id, role) VALUES (?, ?, 'orphaned-owner')",
+      args: [legacy.id, workspace.id],
+    });
+    raw.close();
+
+    const reopened = await createControlPlaneStore({ url });
+    try {
+      expect(
+        await refusal(
+          shareWorkspaceReadOnly(
+            { controlPlane: reopened, turso: fakeTurso().port },
+            { ownerEmail: "ana@example.com", viewerEmail: "legacy@example.com" },
+          ),
+        ),
+      ).toBe("already-granted");
+      expect(await reopened.listViewersOfWorkspace(workspace.id)).toEqual([]);
+    } finally {
+      reopened.close();
+    }
+  });
+});
+
 describe("revokeWorkspaceReadOnly (#1841)", () => {
   test("the owner takes a viewer's access back", async () => {
     const cp = await createInMemoryControlPlaneStore();

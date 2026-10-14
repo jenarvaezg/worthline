@@ -50,8 +50,7 @@ export interface ShareWorkspaceDeps {
     | "findUserByEmail"
     | "listOwnedWorkspacesForUser"
     | "listViewersOfWorkspace"
-    | "readGrant"
-    | "recordGrant"
+    | "recordViewerGrant"
     | "setWorkspaceReadOnlyToken"
   >;
   turso: Pick<TursoPort, "createDatabaseToken">;
@@ -111,7 +110,8 @@ export async function shareWorkspaceReadOnly(
   }
 
   // The read-only credential exists before the grant does: if minting fails,
-  // the share fails with no grant and no user row written.
+  // the share fails with no grant and no user row written. The seal is set
+  // once, so two concurrent first shares converge on whichever landed first.
   if (!workspace.hasReadOnlyToken) {
     const { jwt } = await turso.createDatabaseToken(workspace.dbName, "read-only");
     await controlPlane.setWorkspaceReadOnlyToken(workspace.id, jwt);
@@ -119,26 +119,28 @@ export async function shareWorkspaceReadOnly(
 
   // Only the user row: no database, no trial, no provisioning cap. The viewer's
   // own workspace is provisioned on their first sign-in, like anyone's.
+  // An existing identity is reused whatever the case of its stored email.
   const viewer = await controlPlane.findOrCreateUser(viewerEmail);
   if (viewer.id === owner.id) {
     throw new ShareWorkspaceRefusedError("self-share");
   }
-  const grant = await controlPlane.readGrant(viewer.id, workspace.id);
-  if (grant) {
-    if (grant.role !== "viewer") {
+  // The atomic arbiter of the cap: the check above only spares a token mint
+  // and a user row when the workspace is visibly full.
+  const outcome = await controlPlane.recordViewerGrant(
+    viewer.id,
+    workspace.id,
+    MAX_VIEWERS_PER_WORKSPACE,
+  );
+  switch (outcome) {
+    case "recorded":
+      return sharedWith(workspace.id, viewer, true);
+    case "already-viewer":
+      return sharedWith(workspace.id, viewer, false);
+    case "conflicting-grant":
       throw new ShareWorkspaceRefusedError("already-granted");
-    }
-    return sharedWith(workspace.id, viewer, false);
+    case "viewer-limit":
+      throw new ShareWorkspaceRefusedError("viewer-limit");
   }
-  try {
-    await controlPlane.recordGrant(viewer.id, workspace.id, "viewer");
-  } catch (error) {
-    // A concurrent share of the same viewer won the insert: same outcome.
-    const raced = await controlPlane.readGrant(viewer.id, workspace.id);
-    if (raced?.role === "viewer") return sharedWith(workspace.id, viewer, false);
-    throw error;
-  }
-  return sharedWith(workspace.id, viewer, true);
 }
 
 function sharedWith(

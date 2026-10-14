@@ -76,9 +76,20 @@ tokens.
   provisioner, the MCP, or any owner-email lookup; tests pin each path.
 - The MCP no longer rejects an owner who also views someone else's workspace as
   «multiple granted workspaces».
-- Turso read-only tokens are per database and do not expire; revoking a viewer
-  removes the grant, which is what the per-request check reads. The token stays
-  on the workspace row for the next viewer; rotating it is an operator action.
+- **Revoking does not rotate the read-only token.** Turso read-only tokens are
+  per database and do not expire; revoking a viewer removes the grant, which is
+  what the per-request check reads, and the token stays on the workspace row for
+  every other viewer. The guarantee therefore rests on the token never leaving
+  the server: it must **never be serialized to the browser** — not in a session
+  or JWT, not in an RSC payload or client prop, not in a log. A revoked viewer
+  who had kept a copy could still read until an operator rotates it.
+- The token is sealed once (`UPDATE … WHERE db_read_only_token IS NULL`):
+  concurrent first shares converge on whichever landed first. The five-viewer
+  cap is a single `INSERT … SELECT … WHERE count < 5`, so concurrent shares
+  cannot exceed it.
+- Users are looked up by email case-insensitively, so a share to `foo@x.com`
+  reaches the identity that signed in as `Foo@x.com`. There is no unique index
+  on `lower(email)`; existing rows were not migrated.
 - v2 is the natural next step: the viewer *proposes* through the assistant's
   proposal machinery and the owner confirms — the advisor → owner flow that
   motivated this.
