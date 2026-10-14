@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInMemoryControlPlaneStore } from "@db/control-plane";
+import {
+  type ControlPlaneStore,
+  createInMemoryControlPlaneStore,
+} from "@db/control-plane";
 import { openLibsqlClient } from "@db/libsql-client";
 import { SCHEMA_VERSION } from "@db/migrate";
 import {
@@ -597,6 +600,150 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     } finally {
       cp.close();
     }
+  });
+
+  describe("a provision that fails after the database exists deletes it (#1807)", () => {
+    const failurePoints: Array<{
+      step: string;
+      fail: (deps: { controlPlane: ControlPlaneStore; turso: TursoPort }) => {
+        openAndMigrate?: () => Promise<void>;
+        turso: TursoPort;
+      };
+    }> = [
+      {
+        step: "createDatabaseToken",
+        fail: ({ turso }) => ({
+          turso: {
+            ...turso,
+            async createDatabaseToken() {
+              throw new Error("createDatabaseToken failed");
+            },
+          },
+        }),
+      },
+      {
+        step: "openAndMigrate",
+        fail: ({ turso }) => ({
+          openAndMigrate: async () => {
+            throw new Error("openAndMigrate failed");
+          },
+          turso,
+        }),
+      },
+      {
+        step: "createWorkspace",
+        fail: ({ controlPlane, turso }) => {
+          vi.spyOn(controlPlane, "createWorkspace").mockRejectedValueOnce(
+            new Error("createWorkspace failed"),
+          );
+          return { turso };
+        },
+      },
+      {
+        step: "recordGrant",
+        fail: ({ controlPlane, turso }) => {
+          vi.spyOn(controlPlane, "recordGrant").mockRejectedValueOnce(
+            new Error("recordGrant failed"),
+          );
+          return { turso };
+        },
+      },
+    ];
+
+    for (const { step, fail } of failurePoints) {
+      test(`a failing ${step} deletes the database and gives the day's place back`, async () => {
+        const cp = await createInMemoryControlPlaneStore();
+        const { port, created, deleted } = fakeTurso(
+          tempDir(`worthline-cap-orphan-${step}-`),
+        );
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        try {
+          const failing = fail({ controlPlane: cp, turso: port });
+          await expect(
+            provisionWorkspaceForUser(
+              {
+                controlPlane: cp,
+                now: () => MORNING,
+                provisioningCap: limited(1),
+                ...failing,
+              },
+              "ana@example.com",
+            ),
+          ).rejects.toThrow(`${step} failed`);
+
+          expect(created).toHaveLength(1);
+          expect(deleted).toEqual(created);
+          expect(await cp.listAllWorkspaces()).toEqual([]);
+          expect(warn).not.toHaveBeenCalled();
+          expect(await provisionedOn(cp, "2026-03-14")).toBe(0);
+        } finally {
+          warn.mockRestore();
+          cp.close();
+        }
+      });
+    }
+
+    test("a cleanup that fails too names the orphan database for an operator", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const { port, created } = fakeTurso(tempDir("worthline-cap-orphan-undeletable-"));
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await expect(
+          provisionWorkspaceForUser(
+            {
+              controlPlane: cp,
+              now: () => MORNING,
+              openAndMigrate: async () => {
+                throw new Error("migration rejected by Turso");
+              },
+              provisioningCap: limited(1),
+              turso: {
+                ...port,
+                async deleteDatabase() {
+                  throw new Error("Turso Platform API unavailable");
+                },
+              },
+            },
+            "ana@example.com",
+          ),
+        ).rejects.toThrow("migration rejected by Turso");
+
+        expect(warn).toHaveBeenCalledOnce();
+        expect(String(warn.mock.calls[0]?.[0])).toContain(created[0]);
+        expect(await provisionedOn(cp, "2026-03-14")).toBe(0);
+      } finally {
+        warn.mockRestore();
+        cp.close();
+      }
+    });
+
+    test("a failure inside createDatabase has nothing to delete", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const { port, deleted } = fakeTurso(tempDir("worthline-cap-orphan-none-"));
+      try {
+        await expect(
+          provisionWorkspaceForUser(
+            {
+              controlPlane: cp,
+              now: () => MORNING,
+              provisioningCap: limited(1),
+              turso: {
+                ...port,
+                async createDatabase() {
+                  throw new Error("Turso Platform API unavailable");
+                },
+              },
+            },
+            "ana@example.com",
+          ),
+        ).rejects.toThrow("Turso Platform API unavailable");
+
+        expect(deleted).toEqual([]);
+        expect(await provisionedOn(cp, "2026-03-14")).toBe(0);
+      } finally {
+        cp.close();
+      }
+    });
   });
 
   test("a double-fired first login is counted ONCE: the race loser gives its claim back (#733)", async () => {
