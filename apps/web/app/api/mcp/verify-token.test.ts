@@ -1,3 +1,4 @@
+import { createInMemoryControlPlaneStore } from "@worthline/db";
 import { generateKeyPair, SignJWT } from "jose";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -7,6 +8,7 @@ import {
   createVerifyMcpToken,
   MCP_READ_SCOPE,
   type McpWorkspaceRef,
+  resolveOwnedMcpWorkspace,
   selectSingleMcpWorkspace,
   type VerifiedEmail,
   verifyMcpToken,
@@ -314,6 +316,56 @@ describe("selectSingleMcpWorkspace", () => {
         },
       ]),
     ).toBeNull();
+  });
+});
+
+describe("resolveOwnedMcpWorkspace (#1841)", () => {
+  async function anaAndLeoOwnTheirs() {
+    const cp = await createInMemoryControlPlaneStore();
+    const ana = await cp.findOrCreateUser("ana@example.com");
+    const leo = await cp.findOrCreateUser("leo@example.com");
+    const anaWs = await cp.createWorkspace({
+      dbAuthToken: "full-ana",
+      dbName: "wl-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+    });
+    const leoWs = await cp.createWorkspace({
+      dbAuthToken: "full-leo",
+      dbName: "wl-leo",
+      dbUrl: "libsql://wl-leo.turso.io",
+    });
+    await cp.recordGrant(ana.id, anaWs.id);
+    await cp.recordGrant(leo.id, leoWs.id);
+    return { ana, anaWs, cp, leo, leoWs };
+  }
+
+  test("an owner who also views another workspace resolves to their own, not «multiple»", async () => {
+    const { anaWs, cp, leo, leoWs } = await anaAndLeoOwnTheirs();
+    try {
+      // The viewer grant lands before Leo's own is listed — it must not count.
+      await cp.recordGrant(leo.id, anaWs.id, "viewer");
+
+      expect(await resolveOwnedMcpWorkspace(cp, "leo@example.com")).toEqual({
+        dbAuthToken: "full-leo",
+        dbUrl: "libsql://wl-leo.turso.io",
+        workspaceId: leoWs.id,
+      });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("an identity that only views a workspace gets nothing from the MCP", async () => {
+    const { anaWs, cp } = await anaAndLeoOwnTheirs();
+    try {
+      const eva = await cp.findOrCreateUser("eva@example.com");
+      await cp.recordGrant(eva.id, anaWs.id, "viewer");
+
+      expect(await resolveOwnedMcpWorkspace(cp, "eva@example.com")).toBeNull();
+      expect(await resolveOwnedMcpWorkspace(cp, "nobody@example.com")).toBeNull();
+    } finally {
+      cp.close();
+    }
   });
 });
 

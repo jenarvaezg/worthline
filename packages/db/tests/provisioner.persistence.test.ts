@@ -320,7 +320,7 @@ describe("workspace provisioner", () => {
 
       // …exactly one workspace + grant survive in the control plane…
       const user = await cp.findOrCreateUser("ana@example.com");
-      expect(await cp.listWorkspacesForUser(user.id)).toHaveLength(1);
+      expect(await cp.listOwnedWorkspacesForUser(user.id)).toHaveLength(1);
       expect(await cp.listAllWorkspaces()).toHaveLength(1);
 
       // …and the loser's database was cleaned up via the port.
@@ -810,5 +810,106 @@ describe("workspace provisioner · daily provisioning cap (#1175)", () => {
     } finally {
       cp.close();
     }
+  });
+
+  describe("a viewer grant is never ownership (#1841)", () => {
+    test("an identity that only views a workspace is provisioned its own, through the cap", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const { port, created } = fakeTurso(tempDir("worthline-cap-viewer-only-"));
+      try {
+        const deps = {
+          controlPlane: cp,
+          now: () => MORNING,
+          provisioningCap: limited(2),
+          turso: port,
+        };
+        const ana = await provisionWorkspaceForUser(deps, "ana@example.com");
+        // Ana shared hers: Leo exists as a bare user row with a viewer grant.
+        const leoUser = await cp.findOrCreateUser("leo@example.com");
+        await cp.recordGrant(leoUser.id, ana.id, "viewer");
+
+        const leo = await provisionWorkspaceForUser(deps, "leo@example.com");
+
+        expect(leo.id).not.toBe(ana.id);
+        expect(created).toHaveLength(2);
+        expect(await provisionedOn(cp, "2026-03-14")).toBe(2);
+        expect(
+          (await cp.listOwnedWorkspacesForUser(leoUser.id)).map((w) => w.id),
+        ).toEqual([leo.id]);
+        // And the viewer grant is still there, untouched.
+        expect((await cp.readGrant(leoUser.id, ana.id))?.role).toBe("viewer");
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("an identity that only views a workspace is refused on a full day, never handed the shared one", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const { port } = fakeTurso(tempDir("worthline-cap-viewer-full-"));
+      try {
+        const deps = {
+          controlPlane: cp,
+          now: () => MORNING,
+          provisioningCap: limited(1),
+          turso: port,
+        };
+        const ana = await provisionWorkspaceForUser(deps, "ana@example.com");
+        const leoUser = await cp.findOrCreateUser("leo@example.com");
+        await cp.recordGrant(leoUser.id, ana.id, "viewer");
+
+        await expect(provisionWorkspaceForUser(deps, "leo@example.com")).rejects.toThrow(
+          DailyProvisioningCapRefusedError,
+        );
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("an owner who also views another workspace keeps resolving to their own", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const { port, created } = fakeTurso(tempDir("worthline-cap-owner-viewer-"));
+      try {
+        const deps = { controlPlane: cp, now: () => MORNING, turso: port };
+        const ana = await provisionWorkspaceForUser(deps, "ana@example.com");
+        const leo = await provisionWorkspaceForUser(deps, "leo@example.com");
+        const leoUser = await cp.findOrCreateUser("leo@example.com");
+        // Leo's viewer grant on Ana's workspace is OLDER than nothing — but even
+        // a grant listed first must not be read as his.
+        await cp.recordGrant(leoUser.id, ana.id, "viewer");
+
+        const again = await provisionWorkspaceForUser(deps, "leo@example.com");
+        expect(again.id).toBe(leo.id);
+        expect(again.dbAuthToken).toBe(`scoped-token-for-${leo.dbName}`);
+        expect(created).toHaveLength(2);
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("the provision mints the full-access token, never a read-only one", async () => {
+      const cp = await createInMemoryControlPlaneStore();
+      const authorizations: string[] = [];
+      const { port } = fakeTurso(tempDir("worthline-provision-full-access-"));
+      try {
+        await provisionWorkspaceForUser(
+          {
+            controlPlane: cp,
+            now: () => MORNING,
+            openAndMigrate: async () => {},
+            turso: {
+              ...port,
+              async createDatabaseToken(name, authorization) {
+                authorizations.push(authorization);
+                return port.createDatabaseToken(name, authorization);
+              },
+            },
+          },
+          "ana@example.com",
+        );
+        expect(authorizations).toEqual(["full-access"]);
+      } finally {
+        cp.close();
+      }
+    });
   });
 });

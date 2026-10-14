@@ -27,15 +27,14 @@ export function createTursoPort(config: TursoPortConfig): TursoPort {
       );
       return { name: db.name, url: `libsql://${db.hostname}` };
     },
-    async createDatabaseToken(name) {
+    async createDatabaseToken(name, authorization) {
       const { createClient } = await import("@tursodatabase/api");
       const client = createClient({ org: config.org, token: config.token });
       // No expiration: the JWT is stored on the control-plane workspace row and
       // reused like the old group token was — rotated by operators via the
-      // backfill / Platform API when needed (#1185).
-      const token = await client.databases.createToken(name, {
-        authorization: "full-access",
-      });
+      // backfill / Platform API when needed (#1185). `read-only` is the
+      // viewer's credential (#1841); provisioning always asks `full-access`.
+      const token = await client.databases.createToken(name, { authorization });
       return { jwt: token.jwt };
     },
     async deleteDatabase(name) {

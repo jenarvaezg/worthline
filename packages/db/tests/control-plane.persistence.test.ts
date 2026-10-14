@@ -62,7 +62,7 @@ describe("control-plane store", () => {
       });
       await cp.recordGrant(user.id, ws.id);
 
-      const list = await cp.listWorkspacesForUser(user.id);
+      const list = await cp.listOwnedWorkspacesForUser(user.id);
       expect(list).toHaveLength(1);
       expect(list[0]).toMatchObject({
         id: ws.id,
@@ -208,7 +208,7 @@ describe("control-plane store", () => {
       await cp.recordGrant(ana.id, anaWs.id);
       await cp.recordGrant(leo.id, leoWs.id);
 
-      const anaList = await cp.listWorkspacesForUser(ana.id);
+      const anaList = await cp.listOwnedWorkspacesForUser(ana.id);
       expect(anaList.map((w) => w.id)).toEqual([anaWs.id]);
       expect(anaList.map((w) => w.id)).not.toContain(leoWs.id);
     } finally {
@@ -302,7 +302,7 @@ describe("control-plane store", () => {
       await cp.recordGrant(ana.id, first.id);
 
       await expect(cp.recordGrant(ana.id, second.id)).rejects.toThrow(/UNIQUE/i);
-      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(1);
+      expect(await cp.listOwnedWorkspacesForUser(ana.id)).toHaveLength(1);
     } finally {
       cp.close();
     }
@@ -322,10 +322,13 @@ describe("control-plane store", () => {
       });
       await cp.recordGrant(ana.id, own.id);
 
-      // A future sharing flow can still grant the same user other workspaces
-      // under non-owner roles.
+      // The same user can still view other workspaces (#1841) — and only her
+      // own one resolves as owned.
       await cp.recordGrant(ana.id, shared.id, "viewer");
-      expect(await cp.listWorkspacesForUser(ana.id)).toHaveLength(2);
+      expect((await cp.readGrant(ana.id, shared.id))?.role).toBe("viewer");
+      expect((await cp.listOwnedWorkspacesForUser(ana.id)).map((w) => w.id)).toEqual([
+        own.id,
+      ]);
     } finally {
       cp.close();
     }
@@ -388,8 +391,10 @@ describe("control-plane store", () => {
     const cp = await createControlPlaneStore({ url });
     try {
       expect((await cp.readGrant("u1", "w1"))?.role).toBe("owner");
-      expect((await cp.readGrant("u1", "w2"))?.role).toBe("orphaned-owner");
-      expect((await cp.readGrant("u1", "w3"))?.role).toBe("orphaned-owner");
+      // Demoted to `orphaned-owner`, which is not a grant role: it grants
+      // nothing, so it reads as no grant at all (#1841, fail closed).
+      expect(await cp.readGrant("u1", "w2")).toBeNull();
+      expect(await cp.readGrant("u1", "w3")).toBeNull();
 
       // The index is live: a fresh owner grant for the same user is rejected.
       const other = await cp.createWorkspace({
@@ -399,7 +404,7 @@ describe("control-plane store", () => {
       await expect(cp.recordGrant("u1", other.id)).rejects.toThrow(/UNIQUE/i);
 
       // Login resolution is unchanged — the oldest grant still wins.
-      const list = await cp.listWorkspacesForUser("u1");
+      const list = await cp.listOwnedWorkspacesForUser("u1");
       expect(list[0]?.id).toBe("w1");
     } finally {
       cp.close();
