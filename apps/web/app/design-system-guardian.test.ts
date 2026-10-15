@@ -92,6 +92,45 @@ function sourceFiles(pattern: RegExp): string[] {
 const files = cssFiles(appDirectory);
 const rules = files.flatMap(parseRules);
 
+/** A selector list split on its top-level commas, so `:where(a, b)` stays one part. */
+function selectorParts(selector: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < selector.length; index += 1) {
+    const char = selector[index];
+    if (char === "(" || char === "[") depth += 1;
+    else if (char === ")" || char === "]") depth -= 1;
+    else if (char === "," && depth === 0) {
+      parts.push(selector.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  parts.push(selector.slice(start).trim());
+  return parts;
+}
+
+/** A selector without its `:not(…)` arguments: a class it negates does not scope it. */
+function withoutNegations(selector: string): string {
+  let result = "";
+  let index = 0;
+  while (index < selector.length) {
+    if (!selector.startsWith(":not(", index)) {
+      result += selector[index];
+      index += 1;
+      continue;
+    }
+    let depth = 0;
+    index += ":not".length;
+    do {
+      if (selector[index] === "(") depth += 1;
+      else if (selector[index] === ")") depth -= 1;
+      index += 1;
+    } while (depth > 0 && index < selector.length);
+  }
+  return result;
+}
+
 function ruleIncludesSelector(rule: CssRule, selector: string): boolean {
   return rule.selector.split(",").some((part) => part.trim() === selector);
 }
@@ -329,6 +368,58 @@ describe("Libro mayor design-system guardian (#906)", () => {
     for (const selector of surfaces) {
       expect(ruleIncludesSelector(carriers[0]!, selector), selector).toBe(true);
     }
+  });
+
+  test("a classless selector reaches every surface, so the list is frozen (#1712)", () => {
+    // `input { width: 100%; min-height: 38px }` turned every checkbox and radio into
+    // a giant cell, and each surface that met one patched it by hand. A selector
+    // with no class lands on every screen, present and future: a new one is a
+    // decision for design-system §7 («Capa CSS»), not for the surface that needs it.
+    // Element bases go inside `:where()`; their states are recipe and stay bare.
+    const frozen = [
+      ":root",
+      "*",
+      "html",
+      "body",
+      ":where(a)",
+      ":where(button, input, select, textarea)",
+      ":where(button)",
+      "button:hover",
+      "button:disabled",
+      "button:disabled:hover",
+      'button[aria-busy="true"]',
+      ":focus-visible",
+      "button:focus-visible",
+      "*::before",
+      "*::after",
+      ':where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="hidden"]), select, textarea)',
+      "input:focus-visible",
+      "select:focus-visible",
+      "textarea:focus-visible",
+      ":where(textarea)",
+      ":where(h1, h2, h3, p)",
+      ":where(h1)",
+      ":where(h2)",
+      ":where(h3)",
+      ":where(table)",
+      ":where(th, td)",
+      ":where(td)",
+      ":where(th)",
+      ":where(td:last-child, th:last-child)",
+      ":where(code)",
+    ];
+    const keyframeStep = /^(from|to|\d+(\.\d+)?%)$/;
+    const classless = rules
+      .filter((rule) => rule.file === "globals.css" && !rule.selector.startsWith("@"))
+      .flatMap((rule) => selectorParts(rule.selector))
+      .map((part) => part.replace(/\(\s+/g, "(").replace(/\s+\)/g, ")"))
+      .filter((part) => !keyframeStep.test(part))
+      .filter((part) => !/[.#]/.test(withoutNegations(part).replace(/\[[^\]]*\]/g, "")));
+
+    expect(
+      [...new Set(classless)],
+      "a new classless selector: scope it under a class, or decide it in design-system §7",
+    ).toEqual(frozen);
   });
 
   test("every consumed custom property resolves to a real definition (#913)", () => {

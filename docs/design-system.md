@@ -223,6 +223,31 @@ lista de selectores nombra cada superficie que la usa; cada superficie añade so
 tono, su cuerpo y su hover en una regla propia. Una superficie nueva se suma a esa
 lista, no copia las cinco declaraciones (lo fija el test-guardián).
 
+**Capa CSS (#1712).** Toda la app comparte una sola cascada, así que una regla de
+elemento sin clase alcanza todas las pantallas, también las que aún no existen. La
+regla `input { width: 100%; min-height: 38px }` convertía cada checkbox y cada radio
+en una celda gigante, y cada pantalla que los usaba acababa poniendo un parche para
+deshacerla. Para lo que se escriba a partir de ahora:
+
+- Las bases de elemento (`button`, `input`/`select`/`textarea`, `table`, `th`/`td`,
+  `h1`–`h3`, `p`) van dentro de `:where()`: valen cero en especificidad y cualquier
+  clase las sustituye sin pelea. Los estados de un control base (`:hover`,
+  `:disabled`, `:focus-visible`) son parte de la receta y no van envueltos.
+- La celda del libro (ancho completo, 38 px, relleno, papel `--panel`) es solo
+  para los controles de texto: `select`, `textarea` y los `input` que no son
+  checkbox, radio, range, color ni hidden. El selector de archivo sí es celda,
+  porque se lee como una. Un checkbox o un radio nativo se queda con su tamaño. Si
+  una superficie lo quiere mayor, declara el tamaño; no deshace la celda.
+- Lo nuevo se compone con las recetas de este catálogo. Una clase de superficie
+  aporta el layout (rejilla, huecos, orden) y sus diferencias declaradas; no
+  redefine un control.
+- No se añaden selectores sin clase. El guardián congela la lista exacta de los que
+  tiene `globals.css` y se pone rojo si aparece uno nuevo. Un estado nuevo de un
+  control base se decide aquí, no en una pantalla.
+- Los CSS modules quedan para los prototipos y la landing. No protegen de la
+  cascada global, porque una regla `input {…}` entra igual dentro de un module, así
+  que no sirven contra estas colisiones.
+
 Las páginas consumen estas recetas; no duplican una versión equivalente ad hoc.
 El test-guardián escanea todas las hojas CSS y falla ante tokens deprecados,
 elevaciones, píldoras indiscriminadas, segundo tema o pérdida del catálogo. La
@@ -237,6 +262,7 @@ propiedad y valor; nunca con un contador o un `skip`.
 - [ ] ¿El total final tiene dos reglas de 1px visibles a 1×?
 - [ ] ¿Pasivos, banding y vivienda usan su notación semántica?
 - [ ] ¿No hay sombras, radios heredados ni `999px` accidental?
+- [ ] ¿La superficie no añade selectores sin clase ni redefine un control base?
 - [ ] ¿El color conserva contraste AA y nunca es la única señal?
 - [ ] ¿Las interacciones preservan RSC-first, URL, Atrás, foco y movimiento reducido?
 
