@@ -84,3 +84,70 @@ describe("shared provider model resolution", () => {
     ]);
   });
 });
+
+describe("self-hosted ollama resolution (ADR 0113)", () => {
+  const baseURL = "http://127.0.0.1:51335/v1";
+
+  it("activates on the base URL alone, without an API key", () => {
+    expect(
+      resolveProviderModel(
+        { provider: "ollama", modelId: "llama3.2:3b" },
+        { WORTHLINE_OLLAMA_BASE_URL: baseURL },
+      ),
+    ).toMatchObject({
+      provider: "ollama",
+      modelId: "llama3.2:3b",
+      credentialEnvKey: "WORTHLINE_OLLAMA_BASE_URL",
+      label: "ollama · llama3.2:3b",
+    });
+  });
+
+  it("returns null when the server base URL is absent", () => {
+    expect(
+      resolveProviderModel({ provider: "ollama", modelId: "llama3.2:3b" }, {}),
+    ).toBeNull();
+    expect(
+      resolveProviderModel(
+        { provider: "ollama", modelId: "llama3.2:3b" },
+        { WORTHLINE_OLLAMA_API_KEY: "token" },
+      ),
+    ).toBeNull();
+  });
+
+  it("serves the model named by WORTHLINE_OLLAMA_MODEL instead of the reference tag", () => {
+    expect(
+      resolveAllowedProviderModels({
+        WORTHLINE_OLLAMA_BASE_URL: baseURL,
+        WORTHLINE_OLLAMA_MODEL: "qwen2.5:14b",
+      }).map(({ provider, modelId, label }) => ({ provider, modelId, label })),
+    ).toEqual([
+      { provider: "ollama", modelId: "qwen2.5:14b", label: "ollama · qwen2.5:14b" },
+    ]);
+  });
+
+  it("admits the provider slot for any served tag, not just the reference pair", () => {
+    expect(
+      resolveProviderModel(
+        { provider: "ollama", modelId: "some-local-tag" },
+        { WORTHLINE_OLLAMA_BASE_URL: baseURL },
+        { requireAdmission: true },
+      ),
+    ).toMatchObject({ provider: "ollama", modelId: "some-local-tag" });
+    expect(() =>
+      resolveProviderModel(
+        { provider: "cerebras", modelId: "some-local-tag" },
+        { CEREBRAS_API_KEY: "key" },
+        { requireAdmission: true },
+      ),
+    ).toThrow(/allowlist/i);
+  });
+
+  it("resolves the explicit eval candidate from a configured server", () => {
+    expect(
+      resolveProviderModel(
+        { provider: "ollama", modelId: "eval-candidate" },
+        { WORTHLINE_OLLAMA_BASE_URL: baseURL },
+      ),
+    ).toMatchObject({ provider: "ollama", modelId: "eval-candidate" });
+  });
+});

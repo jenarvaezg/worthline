@@ -691,6 +691,25 @@ run into `admission-evidence.ts`, add or refresh the matching allowlist entry,
 and let the guard verify that the evidence names the same provider/model and
 passes the canonical threshold. Never add an entry from an incomplete run.
 
+A **self-hosted** entry (Ollama, ADR 0113) works differently in one respect: its
+mark is a *reference* run, not an admission. It is activated by
+`WORTHLINE_OLLAMA_BASE_URL` (the OpenAI-compatible endpoint root, e.g.
+`http://127.0.0.1:11434/v1`), serves the tag named by `WORTHLINE_OLLAMA_MODEL`
+(default: the committed reference `llama3.2:3b`), and carries a reference mark
+that MAY be incomplete or below threshold — a small local model is allowed to
+fail, and the run is on the record only to keep the interaction reviewable. Run
+it like any other candidate from a shell that has the server configured:
+
+```sh
+WORTHLINE_OLLAMA_BASE_URL=http://127.0.0.1:11434/v1 \
+  bun run eval:assistant -- --provider ollama --model llama3.2:3b
+```
+
+Re-run it when the system prompt, tool contract, or golden-question contract
+changes, same as the shared-baseline marks. A down server, an un-pulled tag, or a
+context window below the turn floor is `provider_unavailable`/`request_too_large`
+and fails over to the next pool entry; that is a runtime outcome, never a mark.
+
 Hosted chat stores pre-output provider cooldowns in the control plane, scoped
 by `WORTHLINE_CHAT_DEPLOYMENT_KEY` when set or the Vercel deployment identity.
 Explicit provider reset information wins; daily and short-window quota defaults

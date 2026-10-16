@@ -82,6 +82,16 @@ describe("classifyPreOutputProviderError", () => {
     [apiError(503, "upstream unavailable"), "provider_unavailable"],
     [apiError(401, "invalid API key"), "invalid_credential"],
     [new LoadAPIKeyError({ message: "API key is missing" }), "invalid_credential"],
+    [
+      new TypeError("fetch failed", {
+        cause: new Error("connect ECONNREFUSED 127.0.0.1:51335"),
+      }),
+      "provider_unavailable",
+    ],
+    [
+      apiError(404, 'model "llama3.2:3b" not found, try pulling it first'),
+      "provider_unavailable",
+    ],
   ])("classifies a failover-safe rejection", (error, expected) => {
     expect(classifyPreOutputProviderError(error)).toBe(expected);
   });

@@ -14,6 +14,9 @@ export interface EvalArgs {
 const POLICIES: Record<EvalProvider, { delayBetweenQuestionsMs: number }> = {
   google: { delayBetweenQuestionsMs: 20_000 },
   cerebras: { delayBetweenQuestionsMs: 55_000 },
+  // Local server: no shared free tier to pace (ADR 0113), but a small box still
+  // appreciates a beat between multi-step turns while its model stays resident.
+  ollama: { delayBetweenQuestionsMs: 2_000 },
 };
 
 export function candidatePolicy(provider: EvalProvider) {

@@ -1,17 +1,27 @@
 import { decideSummarizedAdmission } from "./eval/admission";
 import { ADMISSION_EVIDENCE, type AdmissionEvidence } from "./eval/admission-evidence";
 
-export const PROVIDERS = ["google", "cerebras"] as const;
+export const PROVIDERS = ["google", "cerebras", "ollama"] as const;
 export type AssistantProvider = (typeof PROVIDERS)[number];
 
 export type ProviderCredentialEnvKey =
   | "GOOGLE_GENERATIVE_AI_API_KEY"
-  | "CEREBRAS_API_KEY";
+  | "CEREBRAS_API_KEY"
+  | "WORTHLINE_OLLAMA_BASE_URL";
+
+/** The env key that picks the served model for the self-hosted ollama slot. */
+export const OLLAMA_MODEL_ENV_KEY = "WORTHLINE_OLLAMA_MODEL";
+
+/** Optional bearer token for an ollama server that requires one (most do not). */
+export const OLLAMA_API_KEY_ENV_KEY = "WORTHLINE_OLLAMA_API_KEY";
 
 export interface ProviderPoolEntry {
   provider: AssistantProvider;
   modelId: string;
   envKey: ProviderCredentialEnvKey;
+  /** A self-hosted, user-funded slot (ollama today): model is env-chosen and
+   *  the mark is a reference run, not an admission (ADR 0113). */
+  selfHosted: boolean;
   validation: AdmissionEvidence;
 }
 
@@ -37,13 +47,26 @@ export const DEFAULT_PROVIDER_ALLOWLIST = [
     provider: "google",
     modelId: "gemini-3.5-flash-lite",
     envKey: "GOOGLE_GENERATIVE_AI_API_KEY",
+    selfHosted: false,
     validation: ADMISSION_EVIDENCE[0],
   },
   {
     provider: "cerebras",
     modelId: "gpt-oss-120b",
     envKey: "CEREBRAS_API_KEY",
+    selfHosted: false,
     validation: ADMISSION_EVIDENCE[1],
+  },
+  {
+    provider: "ollama",
+    // The reference tag, not a default the user must serve: at runtime
+    // `WORTHLINE_OLLAMA_MODEL` chooses whatever model the server actually has
+    // (ADR 0113). It is committed here so the pool can name a pair, price a
+    // capacity card, and hold a reference measurement of the interaction.
+    modelId: "llama3.2:3b",
+    envKey: "WORTHLINE_OLLAMA_BASE_URL",
+    selfHosted: true,
+    validation: ADMISSION_EVIDENCE[2],
   },
 ] as const satisfies readonly ProviderPoolEntry[];
 
@@ -113,7 +136,9 @@ export function validateProviderAllowlist(value: unknown): void {
       !positiveCount(run["total"]) ||
       typeof run["passed"] !== "number" ||
       !Number.isInteger(run["passed"]) ||
-      run["passed"] <= 0 ||
+      // Zero is allowed here so a self-hosted reference run may fail; the
+      // admission verdict below is what forbids a zero on a shared-baseline mark.
+      run["passed"] < 0 ||
       run["passed"] > run["total"] ||
       !positiveCount(run["totalQuestions"]) ||
       !positiveCount(run["executedQuestions"]) ||
@@ -122,8 +147,22 @@ export function validateProviderAllowlist(value: unknown): void {
       validationError(`validation mark for ${provider} is empty or incoherent`);
     }
 
-    // One rule for every entry since #1278 retired Groq: the pool no longer
-    // carries a named exception, so an incomplete run cannot admit anything.
+    if (committed.selfHosted) {
+      // A self-hosted slot holds a reference run, never an admission: the model
+      // is user-chosen at runtime, so there is no fixed candidate to admit
+      // (ADR 0113). The shape checks above still apply — a missing or
+      // incoherent measurement is refused — but pass/fail does not gate it.
+      if (validation["status"] !== "self_hosted") {
+        validationError(`${provider} is self-hosted and needs a reference mark`);
+      }
+      continue;
+    }
+    if (validation["status"] === "self_hosted") {
+      validationError(`a self-hosted mark cannot admit ${provider}`);
+    }
+
+    // One rule for every shared-baseline entry since #1278 retired Groq: the pool
+    // no longer carries a named exception, so an incomplete run cannot admit.
     const verdict = decideSummarizedAdmission({
       complete:
         validation["status"] === "admitted" &&
@@ -147,6 +186,35 @@ export function findAllowedProvider(
   return DEFAULT_PROVIDER_ALLOWLIST.find(
     (entry) => entry.provider === provider && entry.modelId === modelId,
   );
+}
+
+/**
+ * Admission is per EXACT provider/model pair for a shared-baseline slot, and per
+ * PROVIDER for a self-hosted one (ADR 0113): a self-hosted slot serves whatever
+ * the user's env names, so requiring the committed pair there would reject the
+ * user's own tag before it ever reached the server. This is what relaxes
+ * `requireAdmission` in the shared resolution seam.
+ */
+export function isAdmittedProvider(candidate: {
+  provider: AssistantProvider;
+  modelId: string;
+}): boolean {
+  const slot = DEFAULT_PROVIDER_ALLOWLIST.find(
+    (entry) => entry.provider === candidate.provider,
+  );
+  if (!slot) return false;
+  return (
+    slot.selfHosted || ALLOWED_PAIRS.has(pairKey(candidate.provider, candidate.modelId))
+  );
+}
+
+/** The model a self-hosted entry actually serves: the user's env choice, else the reference tag. */
+export function servedModelId(
+  entry: { provider: AssistantProvider; selfHosted: boolean; modelId: string },
+  env: ProviderEnvironment,
+): string {
+  if (!entry.selfHosted) return entry.modelId;
+  return env[OLLAMA_MODEL_ENV_KEY]?.trim() || entry.modelId;
 }
 
 export function providerCredentialEnvKey(

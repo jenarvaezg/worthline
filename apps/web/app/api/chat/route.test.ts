@@ -361,6 +361,7 @@ function resolvedModel(
   const credentialEnvKeys: Record<AssistantProvider, ProviderCredentialEnvKey> = {
     google: "GOOGLE_GENERATIVE_AI_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
+    ollama: "WORTHLINE_OLLAMA_BASE_URL",
   };
   return {
     provider,
