@@ -66,13 +66,28 @@ describe("committed admission evidence", () => {
     // #1278 retired the one entry that had one (Groq, whose free tier cannot accept
     // a single request of the current turn). «Admitted» and «in the pool» are the
     // same statement now, and this is what says so if a mark is ever pasted back.
+    //
+    // ADR 0113 adds one legal exception to that identity: the `self_hosted`
+    // reference mark. A self-hosted provider is admitted at provider level, so its
+    // mark is not an admission of the model — it is priced evidence for a user's
+    // own machine and may honestly be incomplete or below threshold. It must still
+    // say that it is, and be shape-valid, or the entry it validates could admit on
+    // fiction.
     for (const entry of ADMISSION_EVIDENCE) {
+      if (entry.status === "self_hosted") {
+        expect(entry.provider).toBe("ollama");
+        expect(entry.run.total).toBeGreaterThan(0);
+        expect(entry.run.executedQuestions).toBeGreaterThan(0);
+        expect(entry.run.executedQuestions).toBeLessThanOrEqual(entry.run.totalQuestions);
+        continue;
+      }
       expect(entry.status, entry.provider).toBe("admitted");
       expect(entry.run.executedQuestions, entry.provider).toBe(entry.run.totalQuestions);
     }
     expect(ADMISSION_EVIDENCE.map((entry) => entry.provider)).toEqual([
       "google",
       "cerebras",
+      "ollama",
     ]);
   });
 });

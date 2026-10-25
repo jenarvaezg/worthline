@@ -54,6 +54,16 @@ export function classifyPreOutputProviderError(
     return "invalid_credential";
   }
   if (
+    /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|failed to connect|socket hang up|network error|getaddrinfo/i.test(
+      text,
+    )
+  ) {
+    // A self-hosted server that is down, unreachable, or not yet started has no
+    // status code to classify, but it is exactly a provider that is unavailable
+    // rather than a turn that must die. The next pool entry takes over (ADR 0113).
+    return "provider_unavailable";
+  }
+  if (
     apiError?.statusCode === 429 &&
     /request(?: is)? too large|request_too_large|context (?:length|window).*(?:exceed|large)/i.test(
       text,
@@ -66,6 +76,11 @@ export function classifyPreOutputProviderError(
     /quota (?:exhausted|exceeded)|rate limit|too many requests|tokens per day/i.test(text)
   ) {
     return "quota_exhausted";
+  }
+  if (/model .* not found|not found, try pulling/i.test(text)) {
+    // A mistyped or un-pulled Ollama tag: the server is up, the model is not.
+    // Fail over rather than dead-end the pool on a configuration slip.
+    return "provider_unavailable";
   }
   if (apiError?.statusCode !== undefined && apiError.statusCode >= 500) {
     return "provider_unavailable";
