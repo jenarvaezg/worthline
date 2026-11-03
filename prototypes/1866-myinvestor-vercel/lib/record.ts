@@ -3,7 +3,7 @@
  * (`proto-1866`), para tener la tabla de 5 días sin depender de los logs de Vercel, que caducan en una hora.
  */
 import { createClient } from "@libsql/client";
-import type { Step } from "./myinvestor";
+import type { Step } from "./myinvestor.js";
 
 export function guard(request: Request): Response | null {
   const secret = process.env.CRON_SECRET;

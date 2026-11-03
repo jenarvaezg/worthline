@@ -130,7 +130,14 @@ function loginResult(name: string, raw: Raw): LoginResult {
       step: { ...base, note },
     };
   }
-  const errCode = d?.errCode ? `errCode ${d.errCode}` : (raw.error ?? "sin errCode");
+  const envelope = raw.body?.status ?? raw.body?.code ?? null;
+  const reason = envelope
+    ? ` · sobre ${JSON.stringify(envelope)
+        .replace(/"timestamp":"[^"]*",?/, "")
+        .slice(0, 160)}`
+    : "";
+  const errCode =
+    (d?.errCode ? `errCode ${d.errCode}` : (raw.error ?? "sin errCode")) + reason;
   return { kind: "rejected", step: { ...base, note: errCode } };
 }
 
@@ -188,7 +195,7 @@ export async function refresh(
     { refreshToken: tokens.refresh },
   );
   const d = data(raw.body);
-  const ok = raw.status === 200 && d?.accessToken;
+  const ok = (raw.status ?? 0) >= 200 && (raw.status ?? 0) < 300 && d?.accessToken;
   return {
     tokens: ok ? { access: d.accessToken, refresh: d.refreshToken ?? null } : null,
     step: {

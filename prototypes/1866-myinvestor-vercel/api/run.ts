@@ -3,8 +3,8 @@
  * login directo con la contraseña guardada → refresh → lecturas. El cron de Vercel lo llama cada día;
  * también se puede llamar a mano con `Authorization: Bearer $CRON_SECRET`.
  */
-import { login, reads, refresh, type Step } from "../lib/myinvestor";
-import { guard, record } from "../lib/record";
+import { login, reads, refresh, type Step } from "../lib/myinvestor.js";
+import { guard, record } from "../lib/record.js";
 
 export const maxDuration = 60;
 

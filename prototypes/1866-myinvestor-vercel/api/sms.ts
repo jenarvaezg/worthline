@@ -9,8 +9,14 @@
  *
  * Los ids de la firma solo vuelven a quien llama (con el CRON_SECRET), nunca a la BD de resultados.
  */
-import { login, type Step, signedLogin, startCode, submitCode } from "../lib/myinvestor";
-import { guard, record } from "../lib/record";
+import {
+  login,
+  type Step,
+  signedLogin,
+  startCode,
+  submitCode,
+} from "../lib/myinvestor.js";
+import { guard, record } from "../lib/record.js";
 
 export const maxDuration = 60;
 
