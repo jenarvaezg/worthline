@@ -1,0 +1,9 @@
+{
+  "name": "proto-1866-myinvestor-vercel",
+  "private": true,
+  "type": "module",
+  "description": "PROTOTIPO DESECHABLE de worthline#1866: ¿pasan el login y las lecturas de MyInvestor desde Vercel? No se mergea.",
+  "dependencies": {
+    "@libsql/client": "0.18.0"
+  }
+}
