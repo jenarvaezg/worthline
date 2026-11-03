@@ -1,0 +1,7 @@
+# PROTOTIPO DESECHABLE de #1866: el ciclo en un Cloudflare Worker (salida por IPs de Cloudflare).
+name = "proto-1866-myinvestor"
+main = "worker/index.ts"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["0 3 * * *"]
