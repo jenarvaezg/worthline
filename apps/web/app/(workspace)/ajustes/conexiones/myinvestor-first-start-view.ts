@@ -16,6 +16,7 @@ import type {
   MyInvestorPortfolioTwin,
   MyInvestorProductRow,
   MyInvestorTwin,
+  MyInvestorTwinCandidate,
   MyInvestorTwinChoice,
 } from "@web/ajustes/myinvestor-selection";
 import {
@@ -244,6 +245,11 @@ function schemeLabel(scheme: MyInvestorTwin["scheme"]): string {
 /** Why a product is a twin, above its three choices. */
 export function myInvestorTwinLegend(twin: MyInvestorTwin): string {
   const names = twin.candidates.map((candidate) => `«${candidate.name}»`);
+  if (twin.reason === "cash") {
+    return names.length === 1
+      ? `Puede ser tu cuenta ${names[0]}, que llevas a mano. ¿Es la misma?`
+      : `Puede ser una de tus cuentas ${names.join(", ")}, que llevas a mano. ¿Es alguna la misma?`;
+  }
   const scheme = schemeLabel(twin.scheme);
   if (twin.reason === "identifier") {
     return names.length === 1
@@ -255,13 +261,25 @@ export function myInvestorTwinLegend(twin: MyInvestorTwin): string {
     : `Se parece por el nombre a ${names.join(", ")}, que no tienen ${scheme}. ¿Es alguno el mismo?`;
 }
 
+/** What linking a cash account kept by hand does: its balance becomes MyInvestor's. */
+export function myInvestorTwinCashLine(
+  candidate: MyInvestorTwinCandidate,
+  money: (minor: number) => string,
+): string | null {
+  const cash = candidate.cash;
+  if (cash === null) return null;
+  return `Saldo de «${candidate.name}»: ${money(cash.beforeMinor)} → ${money(cash.afterMinor)}, el de MyInvestor.`;
+}
+
 /** The three ways out of a twin, as the radios read them. */
 export function myInvestorTwinOptions(
   twin: MyInvestorTwin,
 ): { value: MyInvestorTwinChoice; label: string; note: string | null }[] {
   return [
     ...twin.candidates.map((candidate) => ({
-      label: `Enlazar con «${candidate.name}»: MyInvestor sustituye sus operaciones`,
+      label: `Enlazar con «${candidate.name}»: MyInvestor sustituye ${
+        candidate.cash ? "su saldo" : "sus operaciones"
+      }`,
       note:
         candidate.pairedWith.length === 0
           ? null

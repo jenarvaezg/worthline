@@ -19,6 +19,7 @@ import {
   myInvestorRowNotes,
   myInvestorRowState,
   myInvestorSinceLabel,
+  myInvestorTwinCashLine,
   myInvestorTwinLegend,
   myInvestorTwinOptions,
 } from "./myinvestor-first-start-view";
@@ -126,7 +127,9 @@ describe("the careo of a twin, in words (#1881, design C)", () => {
     valueDeltaMinor: 5_014,
   };
   const twin: MyInvestorTwin = {
-    candidates: [{ assetId: "hand", careo, name: "Global (a mano)", pairedWith: [] }],
+    candidates: [
+      { assetId: "hand", careo, cash: null, name: "Global (a mano)", pairedWith: [] },
+    ],
     defaultChoice: "link:hand",
     reason: "identifier",
     scheme: "isin",
@@ -169,6 +172,32 @@ describe("the careo of a twin, in words (#1881, design C)", () => {
       "separate",
       "skip",
     ]);
+  });
+
+  test("a cash account: the legend says why it may be, and linking replaces its balance", () => {
+    const cashTwin: MyInvestorTwin = {
+      candidates: [
+        {
+          assetId: "box",
+          careo: null,
+          cash: { afterMinor: 149_317, beforeMinor: 120_311 },
+          name: "Cuenta MyInvestor",
+          pairedWith: [],
+        },
+      ],
+      defaultChoice: "skip",
+      reason: "cash",
+      scheme: null,
+    };
+    expect(myInvestorTwinLegend(cashTwin)).toBe(
+      "Puede ser tu cuenta «Cuenta MyInvestor», que llevas a mano. ¿Es la misma?",
+    );
+    expect(myInvestorTwinOptions(cashTwin)[0]!.label).toBe(
+      "Enlazar con «Cuenta MyInvestor»: MyInvestor sustituye su saldo",
+    );
+    expect(myInvestorTwinCashLine(cashTwin.candidates[0]!, euros)).toBe(
+      "Saldo de «Cuenta MyInvestor»: 1203.11 € → 1493.17 €, el de MyInvestor.",
+    );
   });
 
   test("a row of the operations carries the near-day hint, never a pairing", () => {

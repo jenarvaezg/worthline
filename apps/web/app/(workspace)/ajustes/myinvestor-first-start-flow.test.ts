@@ -296,7 +296,7 @@ describe("linking a holding kept by hand (#1881), over the fixtures", () => {
     const twin = view.rows.find((row) => row.key === product.key)!;
     expect(twin.twin?.reason).toBe("identifier");
     expect(twin.twin?.defaultChoice).toBe("link:hand");
-    expect(twin.twin!.candidates[0]!.careo.plan?.lines).toHaveLength(1);
+    expect(twin.twin!.candidates[0]!.careo!.plan?.lines).toHaveLength(1);
 
     const batchesBefore = (await client.execute("SELECT id FROM fact_batch")).rows.length;
     const result = await includeMyInvestorProducts(

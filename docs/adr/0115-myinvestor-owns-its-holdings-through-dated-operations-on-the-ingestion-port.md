@@ -188,3 +188,24 @@ Two points where what landed differs from what this record and its tickets said:
    (`myInvestorScheduledEntries`). Nothing is counted twice: linking closes the
    holding's worthline lines, the plan's gate refuses a new one towards a linked
    holding, and the ceiling forecast drops any line still pointing at one.
+3. **MyInvestor's cash account has a weak twin, never a strong one.** worthline keeps
+   no IBAN or account number for a cash account, so there is nothing to compare
+   MyInvestor's with. Including it next to a cash account the user already keeps by
+   hand for MyInvestor would count that money twice, so `findMyInvestorTwins` offers
+   as a suggestion (reason `cash`) a live manual cash account outside any managed
+   portfolio whose name says «MyInvestor» or is alike to the product's. Like the twin
+   by name of #1881 it opens at «No incluir». Linking it is a cash link (the same
+   `cashLinks` a portfolio's sibling takes, #1883): the account becomes the source's
+   and takes MyInvestor's balance; no operation moves, because a cash account in
+   worthline is a stored balance, and from then on the sync writes that balance
+   (S5's model for cash, S9's `cashBalances`). The fold shows the balance before and
+   after instead of a careo, and «Así queda tu patrimonio» adds the difference. A
+   robo-advisor's cash is still its portfolio's sibling and links with the block.
+4. **A loose manual fund with the ISIN of a robo-advisor's fund is flagged, not
+   linked.** Point 1 keeps a portfolio's funds out of the one-by-one twins, so a
+   manual holding outside any portfolio that carries the ISIN of a fund of the block
+   would be counted twice if the block were included. The block now lists it
+   (`looseTwins`), opens unticked and says which holding doubles which fund and what
+   to do: send it to the Papelera or put it in a portfolio (then it is offered as
+   the block's twin). Offering it as a member to link was left out: a portfolio
+   link is all or nothing (#1883), and a loose holding is not part of any.

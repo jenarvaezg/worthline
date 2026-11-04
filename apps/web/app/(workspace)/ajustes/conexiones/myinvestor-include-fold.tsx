@@ -52,6 +52,7 @@ import {
   setMyInvestorTwinChoice,
   summarizeMyInvestorSelection,
   toggleMyInvestorSelection,
+  twinCandidateOfChoice,
 } from "@web/ajustes/myinvestor-selection";
 import { formatMoneyMinorPrivacy, formatUnits } from "@worthline/domain";
 import Link from "next/link";
@@ -76,6 +77,7 @@ import {
   myInvestorPortfolioTwinOptions,
   myInvestorPortfolioWitnessLine,
   myInvestorRowNotes,
+  myInvestorTwinCashLine,
   myInvestorTwinLegend,
   myInvestorTwinOptions,
 } from "./myinvestor-first-start-view";
@@ -358,6 +360,9 @@ function TwinProduct({
   const twin = row.twin;
   if (!twin) return null;
   const careo = careoOfChoice(row, choice);
+  // A cash account has no careo: linking it says what its balance becomes.
+  const chosen = twinCandidateOfChoice(row, choice);
+  const cashLine = chosen ? myInvestorTwinCashLine(chosen, money) : null;
   return (
     <div className="myinvestorTwin" data-off={choice === "skip" || undefined}>
       <div className="myinvestorTwinHead">
@@ -388,9 +393,10 @@ function TwinProduct({
       </fieldset>
       {/* Choosing «Enlazar» mounts the verdict below: said once, as it appears. */}
       <p aria-live="polite" className="srOnly">
-        {careo ? myInvestorCareoVerdict(careo, money) : ""}
+        {careo ? myInvestorCareoVerdict(careo, money) : (cashLine ?? "")}
       </p>
       {careo ? <Careo careo={careo} money={money} /> : null}
+      {cashLine ? <p className="myinvestorVerdict">{cashLine}</p> : null}
     </div>
   );
 }

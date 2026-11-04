@@ -173,7 +173,13 @@ export interface MyInvestorPortfolioTwin {
 export interface MyInvestorTwinCandidate {
   readonly assetId: string;
   readonly name: string;
-  readonly careo: MyInvestorCareo;
+  /** The careo of its operations; null for a cash account, which has none. */
+  readonly careo: MyInvestorCareo | null;
+  /**
+   * A cash account's balance before linking (what was kept by hand) and after
+   * (MyInvestor's): linking replaces the balance, never operations. Null otherwise.
+   */
+  readonly cash: { readonly beforeMinor: number; readonly afterMinor: number } | null;
   /**
    * The holdings holding the other half of one of its traspasos: linking it alone
    * would leave that half behind, so they link together or not at all (#1393).
@@ -193,9 +199,12 @@ export interface MyInvestorTwin {
   /**
    * `identifier`: the holding carries the same ISIN or DGS code — the strong match.
    * `name`: it carries none and only its name is alike — a suggestion, never ticked.
+   * `cash`: a cash account kept by hand whose name says MyInvestor. worthline keeps
+   * no IBAN to compare, so it is a suggestion too, never ticked.
    */
-  readonly reason: "identifier" | "name";
-  readonly scheme: "isin" | "dgs";
+  readonly reason: "identifier" | "name" | "cash";
+  /** The identifier compared; null for a cash account, which has none. */
+  readonly scheme: "isin" | "dgs" | null;
   readonly candidates: readonly MyInvestorTwinCandidate[];
   /** «Enlazar» for the one holding with the same identifier; «No incluir» otherwise. */
   readonly defaultChoice: MyInvestorTwinChoice;
@@ -293,16 +302,22 @@ export function portfolioOfChoice(
   );
 }
 
+/** The holding a choice links to, as a twin candidate, or null when it does not link. */
+export function twinCandidateOfChoice(
+  row: MyInvestorProductRow,
+  choice: MyInvestorTwinChoice,
+): MyInvestorTwinCandidate | null {
+  const assetId = linkedAssetOf(choice);
+  if (assetId === null || row.twin === null) return null;
+  return row.twin.candidates.find((candidate) => candidate.assetId === assetId) ?? null;
+}
+
 /** The careo of the holding a choice links to, or null when it does not link. */
 export function careoOfChoice(
   row: MyInvestorProductRow,
   choice: MyInvestorTwinChoice,
 ): MyInvestorCareo | null {
-  const assetId = linkedAssetOf(choice);
-  if (assetId === null || row.twin === null) return null;
-  return (
-    row.twin.candidates.find((candidate) => candidate.assetId === assetId)?.careo ?? null
-  );
+  return twinCandidateOfChoice(row, choice)?.careo ?? null;
 }
 
 /** Each twin's choice when the fold opens. */
@@ -366,6 +381,9 @@ export function summarizeMyInvestorSelection(
     const choice = choices.get(row.key) ?? "skip";
     const careo = careoOfChoice(row, choice);
     if (careo) return [{ careos: [careo], deltaMinor: careo.valueDeltaMinor, row }];
+    const cash = twinCandidateOfChoice(row, choice)?.cash;
+    if (cash)
+      return [{ careos: [], deltaMinor: cash.afterMinor - cash.beforeMinor, row }];
     const portfolio = portfolioOfChoice(row, choice);
     if (!portfolio || !isPortfolioLinkable(portfolio)) return [];
     return [

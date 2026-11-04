@@ -462,6 +462,92 @@ describe("what can be included in this slice", () => {
   });
 });
 
+describe("a cash account kept by hand that MyInvestor's may be (S6 for cash)", () => {
+  const cash: MyInvestorDiscoveredProduct = {
+    accountKey: "cash:7",
+    cash: { balance: "1493.17", currency: "EUR", withheld: "0" },
+    declared: null,
+    identifier: "ES00 ···0000",
+    instrument: null,
+    key: "cash:7",
+    kind: "cash",
+    members: [],
+    name: "Cuenta",
+    otherHolder: false,
+    portfolioKey: null,
+    units: null,
+  };
+  const d = discovery([], [cash]);
+  const manualCash = [
+    { id: "hand-mi", name: "Cuenta MyInvestor", valueMinor: 120_311 },
+    { id: "hand-other", name: "Cuenta nómina", valueMinor: 87_113 },
+  ];
+  const linkedKeys = new Set<string>();
+  const v = myInvestorFirstStartView(d, {
+    ledgers: new Map(),
+    linkedKeys,
+    sourceId: SOURCE,
+    today: "2026-11-04",
+    twins: findMyInvestorTwins(d, { cash: manualCash, linkedKeys, manual: [] }),
+  });
+  const row = v.rows[0]!;
+
+  test("no IBAN to compare: a weak twin by name, opened at «No incluir»", () => {
+    expect(row.twin).toMatchObject({
+      candidates: [
+        {
+          assetId: "hand-mi",
+          careo: null,
+          cash: { afterMinor: 149_317, beforeMinor: 120_311 },
+          name: "Cuenta MyInvestor",
+        },
+      ],
+      defaultChoice: "skip",
+      reason: "cash",
+    });
+    expect(row.selectedByDefault).toBe(false);
+  });
+
+  test("linking takes MyInvestor's balance: the patrimonio moves by the difference", () => {
+    const summary = summarizeMyInvestorSelection(
+      v.rows,
+      new Set(),
+      new Map([["cash:7", "link:hand-mi" as const]]),
+    );
+    expect(summary).toMatchObject({
+      count: 0,
+      linked: 1,
+      valueMinor: 149_317 - 120_311,
+    });
+
+    const plan = planMyInvestorInclusion(d, {
+      assetIdFor: () => "unused",
+      links: [{ assetId: "hand-mi", productKey: "cash:7" }],
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+      productKeys: [],
+      sourceId: SOURCE,
+      symbols: new Map(),
+      today: "2026-11-04",
+      view: v,
+    });
+    if (!plan.ok) throw new Error(plan.error);
+    expect(plan.command.cashLinks).toEqual([
+      { assetId: "hand-mi", balanceMinor: 149_317, productKey: "cash:7" },
+    ]);
+    expect(plan.command.links).toEqual([]);
+    expect(plan.command.holdings).toEqual([]);
+  });
+
+  test("a cash account with nothing of MyInvestor in its name is no twin", () => {
+    const plain = findMyInvestorTwins(d, {
+      cash: [{ id: "hand-other", name: "Cuenta nómina", valueMinor: 87_113 }],
+      linkedKeys,
+      manual: [],
+    });
+    expect(plain.size).toBe(0);
+  });
+});
+
 describe("a product a manual holding already is (#1881)", () => {
   const d = discovery(
     [
@@ -540,7 +626,7 @@ describe("a product a manual holding already is (#1881)", () => {
 
   test("the careo pairs the manual buy and says the plan closes today", () => {
     const strong = view(d, manual, ledgers).rows.find((row) => row.key === keyOf(A))!;
-    const careo = strong.twin!.candidates[0]!.careo;
+    const careo = strong.twin!.candidates[0]!.careo!;
 
     expect(careo.counts).toEqual({ enters: 1, leaves: 0, manual: 1, same: 1 });
     expect(careo.plan?.lines).toHaveLength(1);
@@ -549,7 +635,7 @@ describe("a product a manual holding already is (#1881)", () => {
   test("the panel adds a linked holding by its difference, a separate one whole", () => {
     const v = view(d, manual, ledgers);
     const strong = v.rows.find((row) => row.key === keyOf(A))!;
-    const careo = strong.twin!.candidates[0]!.careo;
+    const careo = strong.twin!.candidates[0]!.careo!;
 
     const linked = summarizeMyInvestorSelection(
       v.rows,

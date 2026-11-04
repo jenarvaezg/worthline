@@ -287,6 +287,15 @@ export interface MyInvestorManualHolding {
   readonly name: string;
   /** The ISIN or DGS code it carries; null when it carries none. */
   readonly code: string | null;
+  /** A cash account's balance today, its «before» when linked; absent otherwise. */
+  readonly valueMinor?: number;
+}
+
+/** A live MANUAL cash account outside any managed portfolio, for the cash twin. */
+export interface MyInvestorManualCash {
+  readonly id: string;
+  readonly name: string;
+  readonly valueMinor: number;
 }
 
 /** Which manual holdings a product may be, before their ledgers are read. */
@@ -296,6 +305,9 @@ export interface MyInvestorTwinMatch {
   readonly holdings: readonly MyInvestorManualHolding[];
 }
 
+/** «MyInvestor» or «My Investor» in a name, however it is written. */
+const SAYS_MYINVESTOR = /my\s*investor/i;
+
 /**
  * The manual twins of each product not linked yet (#1881, #1869 P3). Pure.
  *
@@ -303,19 +315,42 @@ export interface MyInvestorTwinMatch {
  *   holding has no account, so the code is all there is to compare.
  * - **Suggestion**: only when there is no strong one, a holding that carries no
  *   identifier and whose name is alike. It is never ticked.
+ * - **Cash**: worthline keeps no IBAN for a cash account, so MyInvestor's cash
+ *   account can only SUGGEST a manual one whose name says MyInvestor or is alike
+ *   (ADR 0115, amendment of 2026-11-04). It is never ticked; linking it replaces
+ *   the balance, never operations.
  *
- * Cash and a managed portfolio have no units to compare: they never have a twin.
+ * A managed portfolio has no units to compare: it never has a twin of its own.
  */
 export function findMyInvestorTwins(
   discovery: MyInvestorDiscovery,
   input: {
     manual: readonly MyInvestorManualHolding[];
+    /** The live manual cash accounts outside any portfolio; none when absent. */
+    cash?: readonly MyInvestorManualCash[];
     linkedKeys: ReadonlySet<string>;
   },
 ): Map<string, MyInvestorTwinMatch> {
   const twins = new Map<string, MyInvestorTwinMatch>();
   for (const product of discovery.products) {
-    if (product.instrument === null || input.linkedKeys.has(product.key)) continue;
+    if (input.linkedKeys.has(product.key)) continue;
+    // A robo-advisor's cash is its portfolio's sibling, linked with the block.
+    if (product.kind === "cash" && product.cash !== null && !product.portfolioKey) {
+      const alike = (input.cash ?? []).filter(
+        (account) =>
+          SAYS_MYINVESTOR.test(account.name) ||
+          myInvestorNamesAlike(product.name, account.name),
+      );
+      if (alike.length > 0) {
+        twins.set(product.key, {
+          holdings: alike.map((account) => ({ ...account, code: null })),
+          reason: "cash",
+          scheme: null,
+        });
+      }
+      continue;
+    }
+    if (product.instrument === null) continue;
     const { code, scheme } = product.instrument;
     const strong = input.manual.filter((holding) => holding.code === code);
     if (strong.length > 0) {
@@ -398,9 +433,23 @@ export function myInvestorFirstStartView(
     const match = input.twins.get(product.key);
     if (!match) return null;
     const candidates = match.holdings.map((holding) => {
+      // A cash account has no operations to careo: linking replaces its balance.
+      if (match.reason === "cash" && product.cash !== null) {
+        return {
+          assetId: holding.id,
+          careo: null,
+          cash: {
+            afterMinor: toMinor(product.cash.balance),
+            beforeMinor: holding.valueMinor ?? 0,
+          },
+          name: holding.name,
+          pairedWith: [],
+        };
+      }
       const ledger = input.ledgers.get(holding.id);
       return {
         assetId: holding.id,
+        cash: null,
         careo: myInvestorCareo({
           manual: ledger?.operations ?? [],
           plan: ledger?.plan ?? null,
@@ -856,8 +905,18 @@ export function planMyInvestorInclusion(
   };
 
   const linkCommands: ConnectedHoldingLink[] = [];
+  const cashLinks: ConnectedCashLink[] = [];
   for (const { link, row } of holdingLinks) {
     const product = productByKey.get(link.productKey)!;
+    // A cash account kept by hand takes MyInvestor's balance: no operations move.
+    if (row.twin?.reason === "cash" && product.cash !== null) {
+      cashLinks.push({
+        assetId: link.assetId,
+        balanceMinor: toMinor(product.cash.balance),
+        productKey: link.productKey,
+      });
+      continue;
+    }
     linkCommands.push({
       assetId: link.assetId,
       productKey: link.productKey,
@@ -876,7 +935,6 @@ export function planMyInvestorInclusion(
 
   const portfolios: ConnectedPortfolioCreation[] = [];
   const portfolioLinkCommands: ConnectedPortfolioLink[] = [];
-  const cashLinks: ConnectedCashLink[] = [];
   const witnessOf = (product: MyInvestorDiscoveredProduct) =>
     product.declared === null
       ? null

@@ -43,6 +43,7 @@ import {
 import {
   findMyInvestorTwins,
   type MyInvestorLinkChoice,
+  type MyInvestorManualCash,
   type MyInvestorManualHolding,
   type MyInvestorPriceSymbol,
   type MyInvestorTwinLedger,
@@ -208,6 +209,22 @@ function manualHoldings(
 }
 
 /**
+ * The live MANUAL cash accounts MyInvestor's cash may be: not linked to any source,
+ * and not a portfolio's cash sibling, which is linked with its block (#1883).
+ */
+function manualCashAccounts(
+  portfolios: readonly ManagedPortfolio[],
+  assets: readonly ManualAsset[],
+): MyInvestorManualCash[] {
+  const members = new Set(portfolios.flatMap((portfolio) => portfolio.holdingIds));
+  return assets.flatMap((asset) =>
+    asset.type === "cash" && asset.connectedSourceId == null && !members.has(asset.id)
+      ? [{ id: asset.id, name: asset.name, valueMinor: asset.currentValue.amountMinor }]
+      : [],
+  );
+}
+
+/**
  * The managed portfolios kept by hand (#1883): none of their live members is a
  * source's. Each with its live members as the block's careo reads them, and its
  * ficha, where a member MyInvestor lacks is taken out.
@@ -283,6 +300,7 @@ export async function loadMyInvestorFirstStart(
   const portfolios = await store.managedPortfolios.readManagedPortfolios();
   const twins = findMyInvestorTwins(discovery, {
     linkedKeys,
+    cash: manualCashAccounts(portfolios, assets),
     manual: manualHoldings(portfolios, assets),
   });
   const publicIds = managedPortfolioPublicIdIndex(
