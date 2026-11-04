@@ -14,7 +14,7 @@ export const metadata = {
   title: "Prototipo ficha MyInvestor · worthline",
 };
 
-export default async function PrototipoFichaMyInvestorPage({
+export default function PrototipoFichaMyInvestorPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -22,11 +22,19 @@ export default async function PrototipoFichaMyInvestorPage({
   if (process.env.NODE_ENV === "production") {
     notFound();
   }
-  // `?s9=` monta «Poner al día» y la salud (#1884/#1885); si no, el coste heredado (#1882).
-  const params = await searchParams;
   return (
     <Suspense fallback={null}>
-      {params.s9 ? <SyncPrototype /> : <FichaPrototype />}
+      <WhichPrototype searchParams={searchParams} />
     </Suspense>
   );
+}
+
+/** `?s9=` monta «Poner al día» y la salud (#1884/#1885); si no, el coste heredado (#1882). */
+async function WhichPrototype({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  return params.s9 ? <SyncPrototype /> : <FichaPrototype />;
 }
