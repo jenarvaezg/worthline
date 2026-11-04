@@ -151,6 +151,11 @@ export async function ConexionesContent({
           initialVariant={prototypeVariantFor(resolvedSearchParams) ?? "A"}
         />
       ) : null}
+
+      {/* PROTOTIPO #1880 — desechable: solo en desarrollo, solo con `?s5=`. */}
+      {s5VariantFor(resolvedSearchParams) ? (
+        <DiscoveryPrototype initialVariant={s5VariantFor(resolvedSearchParams) ?? "A"} />
+      ) : null}
     </section>
   );
 }
