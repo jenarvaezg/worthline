@@ -201,9 +201,10 @@ export function planMyInvestorSync(
  * not in the book, keeps the cost the fold gave it.
  */
 export function carryTransferCostsFromBook(
-  facts: readonly NormalizedFact<CreateInvestmentOperationInput>[],
+  batch: readonly NormalizedFact<CreateInvestmentOperationInput>[],
   books: ReadonlyMap<string, readonly InvestmentOperation[]>,
 ): NormalizedFact<CreateInvestmentOperationInput>[] {
+  const facts = pendWhereOriginWasSold(batch, books);
   const ledgers = new Map<string, InvestmentOperation[]>(
     [...books].map(([assetId, rows]) => [assetId, [...rows]]),
   );
@@ -251,6 +252,51 @@ export function carryTransferCostsFromBook(
     return cost === undefined
       ? fact
       : { ...fact, payload: { ...fact.payload, transferCostMinor: cost } };
+  });
+}
+
+/**
+ * A new paired `transfer_in` whose `transfer_out` an earlier pass already applied as
+ * the sale it read as (`unpaired_out`, #1882): the pass that saw the money leave had
+ * not seen it arrive. The ledger will not write that out again, so writing the entry
+ * as half a traspaso would leave a pair with no other half and a sale that still
+ * realizes its gain. The entry goes in as an entry with its cost PENDING, valued at
+ * what arrived, and the proposal of S7 offers that sale as its origin: «Sí, vienen
+ * de ahí» turns both into one traspaso, the user saying so (ADR 0115 as amended).
+ */
+function pendWhereOriginWasSold(
+  facts: readonly NormalizedFact<CreateInvestmentOperationInput>[],
+  books: ReadonlyMap<string, readonly InvestmentOperation[]>,
+): NormalizedFact<CreateInvestmentOperationInput>[] {
+  const outs = new Map<string, CreateInvestmentOperationInput>();
+  for (const { payload } of facts) {
+    if (payload.kind === "transfer_out" && payload.transferId) {
+      outs.set(payload.transferId, payload);
+    }
+  }
+  const soldAlready = (transferId: string | undefined): boolean => {
+    const out = transferId === undefined ? undefined : outs.get(transferId);
+    if (!out) return false;
+    const applied = books.get(out.assetId)?.find((row) => row.id === out.id);
+    return applied?.kind === "sell" && applied.transferLegState === "unpaired_out";
+  };
+  return facts.map((fact) => {
+    const { payload } = fact;
+    if (
+      payload.kind !== "transfer_in" ||
+      payload.transferLegState !== undefined ||
+      !soldAlready(payload.transferId)
+    ) {
+      return fact;
+    }
+    return {
+      ...fact,
+      payload: {
+        ...payload,
+        transferCostMinor: multiplyToMinor(payload.units, payload.pricePerUnit),
+        transferLegState: "cost_pending",
+      },
+    };
   });
 }
 

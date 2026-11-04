@@ -8,7 +8,12 @@ import type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
 } from "@worthline/domain";
-import { auditTransferPairs, createInvestmentOperation } from "@worthline/domain";
+import {
+  auditTransferPairs,
+  confirmTransferOrigin,
+  createInvestmentOperation,
+  proposeTransferOrigin,
+} from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
@@ -410,6 +415,110 @@ describe("the cost a new traspaso inherits travels from the origin's BOOK", () =
         ],
       ]),
     );
+    expect(auditTransferPairs({ operationsByAssetId: after })).toEqual([]);
+  });
+
+  test("a sale applied before its traspaso: the later entry is pending, the proposal finds the sale and «Sí, vienen de ahí» makes them one (S9 × S7)", () => {
+    const links = [
+      { assetId: "asset-a", productKey: keyOf(A) },
+      { assetId: "asset-b", productKey: keyOf(B) },
+    ];
+    const buys = [
+      op("b1", A, { amount: "33.07", executedAt: "2026-03-03", units: "3.0317" }),
+      op("b2", A, { amount: "71.93", executedAt: "2026-05-05", units: "5.1129" }),
+    ];
+    const outAt = { amount: "51.83", executedAt: "2026-10-20", units: "4.1173" };
+    // Pass 1: the money left A and had not arrived anywhere yet. The adapter could
+    // not pair the leg, so the fold writes it as the sale it reads as (#1882).
+    const first = discovery(
+      [
+        ...buys,
+        op("out", A, {
+          ...outAt,
+          operation: "transfer_out",
+          transfer: {
+            inheritedCost: null,
+            pairing: "unpaired",
+            reason: "no_counterpart",
+            transferId: "myinvestor-unpaired:out",
+          },
+        }),
+      ],
+      [fund(A, "4.0273"), fund(B, "0")],
+      "2026-10-21",
+    );
+    const firstPlan = planMyInvestorSync(first, {
+      cursor: "2026-10-21",
+      links,
+      sourceId: SOURCE,
+      windowKeys: null,
+    });
+    const book = new Map<string, InvestmentOperation[]>([
+      ["asset-a", []],
+      ["asset-b", []],
+    ]);
+    for (const { payload } of firstPlan.facts.facts) {
+      book.get(payload.assetId)!.push(createInvestmentOperation(payload));
+    }
+    const sale = book.get("asset-a")!.find((row) => row.kind === "sell")!;
+    expect(sale.transferLegState).toBe("unpaired_out");
+
+    // Pass 2: the window (cursor − 30 days) reads the out again with its entry, and
+    // the adapter pairs them. The out's key is already applied: the ledger skips it.
+    const pair = {
+      in: { counterpartKey: "out", pairing: "paired" as const, transferId: "t:out:in" },
+      out: { counterpartKey: "in", pairing: "paired" as const, transferId: "t:out:in" },
+    };
+    const second = discovery(
+      [
+        ...buys,
+        op("out", A, { ...outAt, operation: "transfer_out", transfer: pair.out }),
+        op("in", B, {
+          amount: "51.83",
+          executedAt: "2026-10-23",
+          operation: "transfer_in",
+          transfer: pair.in,
+          units: "2.9311",
+        }),
+      ],
+      [fund(A, "4.0273"), fund(B, "2.9311")],
+      "2026-10-24",
+    );
+    const secondPlan = planMyInvestorSync(second, {
+      cursor: "2026-10-24",
+      links,
+      sourceId: SOURCE,
+      windowKeys: new Set(["out", "in"]),
+    });
+    const applied = carryTransferCostsFromBook(secondPlan.facts.facts, book).filter(
+      ({ payload }) => !book.get(payload.assetId)!.some((row) => row.id === payload.id),
+    );
+    expect(applied.map((fact) => fact.key)).toEqual(["in"]);
+    const entry = createInvestmentOperation(applied[0]!.payload);
+
+    // Its cost is pending, provisionally what arrived: no traspaso half-made against
+    // a sale that still realizes its gain.
+    expect(entry.transferLegState).toBe("cost_pending");
+    expect(entry.transferCostMinor).toBe(5183);
+    expect(proposeTransferOrigin(entry, book.get("asset-a")!)).toEqual(sale);
+
+    const confirmed = confirmTransferOrigin({
+      entry,
+      origin: sale,
+      originLedger: book.get("asset-a")!,
+    });
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+    const after = new Map([
+      [
+        "asset-a",
+        book
+          .get("asset-a")!
+          .map((row) => (row.id === sale.id ? confirmed.value.out : row)),
+      ],
+      ["asset-b", [confirmed.value.incoming]],
+    ]);
+    expect(confirmed.value.out.kind).toBe("transfer_out");
     expect(auditTransferPairs({ operationsByAssetId: after })).toEqual([]);
   });
 
