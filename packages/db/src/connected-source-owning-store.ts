@@ -12,7 +12,7 @@
  * - Every secret is sealed at rest (ADR 0030): the credentials and the pending step.
  */
 import type { SourceAdapter } from "@worthline/domain";
-import { isMirroredSourceAdapter } from "@worthline/domain";
+import { asDateKey, isMirroredSourceAdapter, isRealCalendarDay } from "@worthline/domain";
 import { and, asc, eq, lt, sql } from "drizzle-orm";
 
 import { openSecret, sealSecret } from "./crypto";
@@ -207,6 +207,12 @@ export async function saveSourceDiscovery(
   ctx: StoreContext,
   input: { sourceId: string; readOn: string; payloadJson: string; readAt: string },
 ): Promise<{ saved: true } | null> {
+  // The day of the read becomes the ingestion cursor, compared as text with other
+  // days: an instant here would sort after its own day. Refused, not truncated.
+  if (!isRealCalendarDay(input.readOn)) {
+    throw new Error(`A discovery is read on a calendar day, got "${input.readOn}".`);
+  }
+  const readOn = asDateKey(input.readOn);
   const source = await ctx.db
     .select({ adapter: connectedSources.adapter })
     .from(connectedSources)
@@ -219,11 +225,11 @@ export async function saveSourceDiscovery(
       .insert(connectedSourceDiscoveries)
       .values({
         payloadJson: input.payloadJson,
-        readOn: input.readOn,
+        readOn,
         sourceId: input.sourceId,
       })
       .onConflictDoUpdate({
-        set: { payloadJson: input.payloadJson, readOn: input.readOn },
+        set: { payloadJson: input.payloadJson, readOn },
         target: connectedSourceDiscoveries.sourceId,
       })
       .run();

@@ -138,7 +138,15 @@ export function MyInvestorIncludedProducts({
                   ) : null}
                 </span>
                 {isIncludable(row) ? (
-                  <form action={includeMyInvestorProductsAction}>
+                  <form
+                    // No island here: without `inlineError` the action redirects on
+                    // every terminal, so what it resolves to is never read.
+                    action={
+                      includeMyInvestorProductsAction as unknown as (
+                        formData: FormData,
+                      ) => Promise<void>
+                    }
+                  >
                     <input name="currentUrl" type="hidden" value={currentUrl} />
                     <input name="sourceId" type="hidden" value={sourceId} />
                     <input name="productKey" type="hidden" value={row.key} />

@@ -125,9 +125,22 @@ function rowPrice(
 
 /**
  * Every operation of the discovery as a worthline row, keyed by product, with the
- * inherited cost of each `transfer_in` resolved. Throws on a cycle of traspasos,
- * which no real history can have.
+ * inherited cost of each `transfer_in` resolved. Each cost depends only on rows
+ * earlier in its origin's ledger, so the dependencies follow time and a round trip
+ * (A → B, later B → A) resolves; a cycle could only come from two legs of one day
+ * ordered against each other, and it throws instead of guessing.
  */
+/** The ledger's own order (`compareInvestmentOperations`: day, then id), from a fact. */
+function compareLedgerOrder(
+  left: NormalizedFact<MyInvestorOperationFact>,
+  right: NormalizedFact<MyInvestorOperationFact>,
+): number {
+  const byDay = left.payload.executedAt
+    .slice(0, 10)
+    .localeCompare(right.payload.executedAt.slice(0, 10));
+  return byDay !== 0 ? byDay : left.key.localeCompare(right.key);
+}
+
 export function foldMyInvestorOperations(
   discovery: MyInvestorDiscovery,
   sourceId: string,
@@ -169,9 +182,12 @@ export function foldMyInvestorOperations(
   const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): number => {
     const outRow = resolve(out);
     const origin = rowsByProduct.get(productKeyOf(out.payload)) ?? [];
+    // Only the rows BEFORE the leg that leaves are resolved: a later entry into the
+    // origin (capital that comes back) has a cost of its own that may depend on this
+    // one, and resolving it here would chase its tail. The ledger order needs no cost.
     const before = origin
-      .map(resolve)
-      .filter((row) => compareInvestmentOperations(row, outRow) < 0);
+      .filter((fact) => compareLedgerOrder(fact, out) < 0)
+      .map(resolve);
     const options = { assetId: outRow.assetId, currency: outRow.currency };
     const held = derivePosition(before, options).costBasis.amountMinor;
     const left = derivePosition([...before, outRow], options).costBasis.amountMinor;

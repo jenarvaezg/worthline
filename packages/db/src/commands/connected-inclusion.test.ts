@@ -218,4 +218,46 @@ describe("including connected holdings", () => {
       }),
     ).rejects.toThrow(/does not own/);
   });
+
+  test("an export carries the links, the ledger, the cursor and the last read back", async () => {
+    await store.connectedSources.saveDiscovery({
+      payloadJson: '{"version":1}',
+      readAt: `${TODAY}T09:00:00.000Z`,
+      readOn: TODAY,
+      sourceId,
+    });
+    await store.command.includeConnectedHoldings({
+      facts: facts([buy("o1", "f1", "2025-01-10")]),
+      holdings: [fundHolding("p1", "f1")],
+      sourceId,
+      today: TODAY,
+    });
+
+    const doc = await store.workspace.exportWorkspace();
+    const restored = await createStoreFromSqlite(openLibsqlClient(":memory:"));
+    await restored.workspace.importWorkspace(doc);
+
+    expect(await restored.connectedSources.readLinks(sourceId)).toEqual([
+      { assetId: "f1", productKey: "p1" },
+    ]);
+    expect(await restored.connectedSources.readAppliedFactKeys(sourceId)).toEqual(
+      new Set(["fact:o1"]),
+    );
+    expect(await restored.connectedSources.readDiscovery(sourceId)).toEqual({
+      payloadJson: '{"version":1}',
+      readOn: TODAY,
+    });
+    expect(doc.connectedSources[0]!.ingestCursor).toBe(TODAY);
+  });
+
+  test("a read is kept on a calendar day, never an instant", async () => {
+    await expect(
+      store.connectedSources.saveDiscovery({
+        payloadJson: "{}",
+        readAt: `${TODAY}T09:00:00.000Z`,
+        readOn: `${TODAY}T09:00:00.000Z`,
+        sourceId,
+      }),
+    ).rejects.toThrow(/calendar day/);
+  });
 });

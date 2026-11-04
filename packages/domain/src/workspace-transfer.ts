@@ -837,6 +837,20 @@ const connectedSourceSchema = z.object({
   /** ISO timestamp of the last sync; absent when the source never synced. */
   lastSyncAt: nonEmptyString.optional(),
   positions: z.array(positionSchema).default([]),
+  /**
+   * A source that owns its holdings (MyInvestor, #1880): where its ingestion resumes,
+   * which product each linked holding is, the fact keys it already applied and what
+   * its last read found. Absent on a mirroring source and on a file written before
+   * them, which restores the source with none: a re-read starts from scratch.
+   */
+  ingestCursor: nonEmptyString.optional(),
+  links: z
+    .array(z.object({ productKey: nonEmptyString, assetId: nonEmptyString }))
+    .default([]),
+  appliedFacts: z
+    .array(z.object({ factKey: nonEmptyString, batchId: nonEmptyString }))
+    .default([]),
+  discovery: z.object({ readOn: nonEmptyString, payloadJson: nonEmptyString }).optional(),
 });
 
 /**

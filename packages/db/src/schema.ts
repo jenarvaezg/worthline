@@ -846,7 +846,7 @@ export const connectedSourceDiscoveries = sqliteTable("connected_source_discover
     .primaryKey()
     .references(() => connectedSources.id, { onDelete: "cascade" }),
   // The calendar day the read was made, `YYYY-MM-DD`.
-  readOn: text("read_on").notNull(),
+  readOn: text("read_on").$type<DateKey>().notNull(),
   payloadJson: text("payload_json").notNull(),
   createdAt: timestamp("created_at"),
 });

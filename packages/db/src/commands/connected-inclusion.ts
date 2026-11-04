@@ -14,7 +14,7 @@ import type {
   NormalizedBatch,
 } from "@worthline/domain";
 import { isMirroredSourceAdapter, reconcileFacts } from "@worthline/domain";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type {
   DatedFactCommandImplementations,
   DatedFactStores,
@@ -81,10 +81,7 @@ export function createConnectedInclusionCommands(
       if (!workspace) throw new Error("Workspace must be initialized before including.");
 
       const source = await ctx.db
-        .select({
-          adapter: connectedSources.adapter,
-          cursor: connectedSources.ingestCursor,
-        })
+        .select({ adapter: connectedSources.adapter })
         .from(connectedSources)
         .where(eq(connectedSources.id, sourceId))
         .get();
@@ -126,11 +123,21 @@ export function createConnectedInclusionCommands(
           }
           // The cursor only moves forward: including a product later, from an older
           // read, must not send the next sync back over days it already covered.
-          if (cursor !== null && (source.cursor === null || cursor > source.cursor)) {
+          // The comparison is the UPDATE's own condition, inside the transaction:
+          // a cursor read before it opened could be overtaken by another include.
+          if (cursor !== null) {
             await ctx.db
               .update(connectedSources)
               .set({ ingestCursor: cursor, updatedAt: sql`CURRENT_TIMESTAMP` })
-              .where(eq(connectedSources.id, sourceId))
+              .where(
+                and(
+                  eq(connectedSources.id, sourceId),
+                  or(
+                    isNull(connectedSources.ingestCursor),
+                    lt(connectedSources.ingestCursor, cursor),
+                  ),
+                ),
+              )
               .run();
           }
         },

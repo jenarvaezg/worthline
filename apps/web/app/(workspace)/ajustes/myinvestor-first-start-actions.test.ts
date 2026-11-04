@@ -242,4 +242,18 @@ describe("including", () => {
     expect(target).toContain("Aún no hemos leído tus productos de MyInvestor");
     expect(target).toContain("form=myinvestor-include");
   });
+
+  test("from the fold's island a refusal comes back as state, not as a redirect", async () => {
+    const sourceId = await connect(SAVED);
+
+    const state = await includeMyInvestorProductsAction(
+      form({ currentUrl: URL, inlineError: "1", productKey: "cash:1", sourceId }),
+      store,
+      clock,
+      noSymbols,
+    );
+
+    expect(state).toMatchObject({ ok: false });
+    expect(state.ok ? null : state.error).toContain("Aún no hemos leído");
+  });
 });

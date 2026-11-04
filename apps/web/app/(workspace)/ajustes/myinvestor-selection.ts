@@ -115,3 +115,41 @@ export function summarizeMyInvestorSelection(
     valueMinor: chosen.reduce((sum, row) => sum + row.valueMinor, 0),
   };
 }
+
+/** Tick or untick one product. Pure: a new set, the old one untouched. */
+export function toggleMyInvestorSelection(
+  selected: ReadonlySet<string>,
+  key: string,
+): ReadonlySet<string> {
+  const next = new Set(selected);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+/** Tick or untick every product of a group at once, from its group box. */
+export function setMyInvestorSelection(
+  selected: ReadonlySet<string>,
+  keys: readonly string[],
+  on: boolean,
+): ReadonlySet<string> {
+  const next = new Set(selected);
+  for (const key of keys) {
+    if (on) next.add(key);
+    else next.delete(key);
+  }
+  return next;
+}
+
+/**
+ * What a group box shows: all of its includable products ticked, none, or some (the
+ * mixed state). A group with nothing includable reads as none.
+ */
+export function myInvestorGroupState(
+  includableKeys: readonly string[],
+  selected: ReadonlySet<string>,
+): "all" | "none" | "mixed" {
+  const on = includableKeys.filter((key) => selected.has(key)).length;
+  if (includableKeys.length === 0 || on === 0) return "none";
+  return on === includableKeys.length ? "all" : "mixed";
+}

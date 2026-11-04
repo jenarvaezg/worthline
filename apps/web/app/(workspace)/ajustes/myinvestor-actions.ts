@@ -413,15 +413,20 @@ export async function readMyInvestorProductsAction(
  * ticked products become linked holdings with their whole history, in ONE batch.
  * It applies what the last read found, so it never talks to MyInvestor; only the
  * price symbols are looked up, before the batch.
+ *
+ * Success redirects with what the batch created. A refusal comes back as state when
+ * the fold's island asks for it (`inlineError=1`), so the reason lands beside the
+ * button and the boxes the user unticked stay as they were (interaction-patterns
+ * §4.1); without JS it redirects to the section's band.
  */
 export async function includeMyInvestorProductsAction(
   formData: FormData,
   ..._testArgs: unknown[]
-): Promise<never> {
+): Promise<FormActionState> {
   const resolver =
     testArgFromActionArgs(_testArgs, isSymbolResolverOverride)?.myInvestorResolveSymbol ??
     searchMyInvestorSymbol;
-  return formAction<string[], { created: number; applied: number }>({
+  return formActionInlineError<string[], { created: number; applied: number }>({
     datedFact: false,
     extraIds: ["sourceId"],
     guardUrl: currentUrlOf,
@@ -452,7 +457,8 @@ export async function includeMyInvestorProductsAction(
           }
         : result;
     },
-    onError: ({ formData: data, error }) =>
+    onError: ({ error }) => ({ error }),
+    onErrorUrl: ({ formData: data, error }) =>
       firstStartErrorUrl(data, MYINVESTOR_INCLUDE_FORM_ID, error),
     onSuccess: ({ formData: data, value }) =>
       appendParam(

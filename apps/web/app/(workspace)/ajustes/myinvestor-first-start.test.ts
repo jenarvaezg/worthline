@@ -238,6 +238,55 @@ describe("the cost a traspaso carries", () => {
     expect(rows.get(keyOf(C))![0]!.transferCostMinor).toBe(10000);
   });
 
+  test("a round trip carries each cost from where it leaves, without a cycle", () => {
+    const there = paired("o1", "i1");
+    const back = paired("o2", "i2");
+    const d = discovery(
+      [
+        // 10 units of A for 100 €; all of them go to B; later half of B comes back.
+        op("b1", A, { amount: "100", executedAt: "2025-01-02", units: "10" }),
+        op("o1", A, {
+          amount: "118",
+          executedAt: "2025-03-02",
+          operation: "transfer_out",
+          transfer: there.out,
+          units: "10",
+        }),
+        op("i1", B, {
+          amount: "118",
+          executedAt: "2025-03-02",
+          operation: "transfer_in",
+          transfer: there.in,
+          units: "20",
+        }),
+        op("o2", B, {
+          amount: "66",
+          executedAt: "2025-09-02",
+          operation: "transfer_out",
+          transfer: back.out,
+          units: "10",
+        }),
+        op("i2", A, {
+          amount: "66",
+          executedAt: "2025-09-02",
+          operation: "transfer_in",
+          transfer: back.in,
+          units: "5",
+        }),
+      ],
+      [fund(A, "5"), fund(B, "10")],
+    );
+    const rows = foldMyInvestorOperations(d, SOURCE);
+
+    expect(
+      rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!.transferCostMinor,
+    ).toBe(10000);
+    // Half of B's units leave with half of its 100 € cost.
+    expect(
+      rows.get(keyOf(A))!.find((row) => row.kind === "transfer_in")!.transferCostMinor,
+    ).toBe(5000);
+  });
+
   test("an entry from another institution has its cost pending: the amount that arrived", () => {
     const d = discovery(
       [

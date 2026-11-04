@@ -10003,10 +10003,11 @@ td.rowActions > * {
     grid-template-columns: minmax(0, 1fr) 20rem;
   }
 
+  /* Bajo la barra de ámbitos cuando la hay, como la cesta del libro (#1837). */
   .myinvestorBasket {
     align-self: start;
     position: sticky;
-    top: 1rem;
+    top: calc(var(--scope-bar-clearance, 0px) + 1rem);
   }
 }
 

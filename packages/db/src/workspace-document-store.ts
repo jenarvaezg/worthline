@@ -56,7 +56,10 @@ import {
   assetPriceCache,
   assets,
   assetValuations,
+  connectedSourceDiscoveries,
+  connectedSourceLinks,
   connectedSources,
+  connectorAppliedFacts,
   contributionAllowanceHoldings,
   contributionAllowances,
   contributionLots,
@@ -790,11 +793,41 @@ async function importWorkspace(
           assetId: source.assetId,
           credentialsJson: "{}",
           id: source.id,
+          ingestCursor: source.ingestCursor ?? null,
           label: source.label,
           lastSyncAt: source.lastSyncAt ?? null,
           tokenJson: null,
         })
         .run();
+
+      // An owning source's links, ledger and last read (#1880): without them its
+      // linked holdings would come back not knowing which product they are.
+      if (source.links.length > 0) {
+        await db
+          .insert(connectedSourceLinks)
+          .values(source.links.map((link) => ({ ...link, sourceId: source.id })))
+          .run();
+      }
+      for (let start = 0; start < source.appliedFacts.length; start += 100) {
+        await db
+          .insert(connectorAppliedFacts)
+          .values(
+            source.appliedFacts
+              .slice(start, start + 100)
+              .map((fact) => ({ ...fact, sourceId: source.id })),
+          )
+          .run();
+      }
+      if (source.discovery) {
+        await db
+          .insert(connectedSourceDiscoveries)
+          .values({
+            payloadJson: source.discovery.payloadJson,
+            readOn: asDateKey(source.discovery.readOn),
+            sourceId: source.id,
+          })
+          .run();
+      }
 
       if (source.positions.length > 0) {
         // Re-attach each exported position to its source and write the full column
@@ -1091,19 +1124,50 @@ async function buildWorkspaceExport(
       label: connectedSources.label,
       assetId: connectedSources.assetId,
       lastSyncAt: connectedSources.lastSyncAt,
+      ingestCursor: connectedSources.ingestCursor,
     })
     .from(connectedSources)
     .orderBy(asc(connectedSources.createdAt), asc(connectedSources.id))
     .all();
+  // An owning source's links, ledger and last read (#1880), grouped by source.
+  const linksBySource = groupBySource(
+    await db
+      .select()
+      .from(connectedSourceLinks)
+      .orderBy(asc(connectedSourceLinks.sourceId), asc(connectedSourceLinks.productKey))
+      .all(),
+    (row) => ({ assetId: row.assetId, productKey: row.productKey }),
+  );
+  const factsBySource = groupBySource(
+    await db
+      .select()
+      .from(connectorAppliedFacts)
+      .orderBy(asc(connectorAppliedFacts.sourceId), asc(connectorAppliedFacts.factKey))
+      .all(),
+    (row) => ({ batchId: row.batchId, factKey: row.factKey }),
+  );
+  const discoveryBySource = new Map(
+    (await db.select().from(connectedSourceDiscoveries).all()).map((row) => [
+      row.sourceId,
+      { payloadJson: row.payloadJson, readOn: row.readOn },
+    ]),
+  );
   const exportedConnectedSources: ExportedConnectedSource[] = connectedSourceRows.map(
-    (row) => ({
-      id: row.id,
-      adapter: row.adapter,
-      label: row.label,
-      assetId: row.assetId,
-      ...(row.lastSyncAt ? { lastSyncAt: row.lastSyncAt } : {}),
-      positions: positionsBySource.get(row.id) ?? [],
-    }),
+    (row) => {
+      const discovery = discoveryBySource.get(row.id);
+      return {
+        id: row.id,
+        adapter: row.adapter,
+        label: row.label,
+        assetId: row.assetId,
+        ...(row.lastSyncAt ? { lastSyncAt: row.lastSyncAt } : {}),
+        positions: positionsBySource.get(row.id) ?? [],
+        ...(row.ingestCursor ? { ingestCursor: row.ingestCursor } : {}),
+        links: linksBySource.get(row.id) ?? [],
+        appliedFacts: factsBySource.get(row.id) ?? [],
+        ...(discovery ? { discovery } : {}),
+      };
+    },
   );
 
   // Payouts + schedules (PRD #652, ADR 0054), ordered for a stable diff. Only the
@@ -1608,4 +1672,18 @@ async function readHoldingRowsBySnapshot(
   }
 
   return bySnapshot;
+}
+
+/** Rows of a per-source table, grouped by their source and mapped. */
+function groupBySource<Row extends { sourceId: string }, Out>(
+  rows: readonly Row[],
+  map: (row: Row) => Out,
+): Map<string, Out[]> {
+  const grouped = new Map<string, Out[]>();
+  for (const row of rows) {
+    const list = grouped.get(row.sourceId) ?? [];
+    list.push(map(row));
+    grouped.set(row.sourceId, list);
+  }
+  return grouped;
 }

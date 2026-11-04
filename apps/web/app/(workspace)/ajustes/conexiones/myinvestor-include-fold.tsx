@@ -26,11 +26,21 @@ import {
   type MyInvestorAccountGroup,
   type MyInvestorProductRow,
   type MyInvestorRung,
+  myInvestorGroupState,
+  setMyInvestorSelection,
   summarizeMyInvestorSelection,
+  toggleMyInvestorSelection,
 } from "@web/ajustes/myinvestor-selection";
-import { PendingSubmit } from "@web/pending-submit";
 import { formatMoneyMinorPrivacy, formatUnits } from "@worthline/domain";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { myInvestorHistoryLine, myInvestorRowNotes } from "./myinvestor-first-start-view";
 
 const RUNG_ORDER: readonly MyInvestorRung[] = ["liquid", "invested", "retirement"];
@@ -113,18 +123,18 @@ function AccountGroup({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const includable = group.products.filter(isIncludable).map((row) => row.key);
-  const on = includable.filter((key) => selected.has(key)).length;
+  const state = myInvestorGroupState(includable, selected);
   useEffect(() => {
-    if (ref.current) ref.current.indeterminate = on > 0 && on < includable.length;
-  }, [on, includable.length]);
+    if (ref.current) ref.current.indeterminate = state === "mixed";
+  }, [state]);
   return (
     <div className="myinvestorGroup">
       <label className="myinvestorGroupHead">
         <input
           aria-label={`Incluir todo ${group.account.label}`}
-          checked={includable.length > 0 && on === includable.length}
+          checked={state === "all"}
           disabled={includable.length === 0}
-          onChange={() => setMany(includable, on !== includable.length)}
+          onChange={() => setMany(includable, state !== "all")}
           ref={ref}
           type="checkbox"
         />
@@ -168,29 +178,42 @@ export default function MyInvestorIncludeFold({
     () => new Set(rows.filter((row) => row.selectedByDefault).map((row) => row.key)),
   );
   const toggle = useCallback((key: string) => {
-    setSelected((previous) => {
-      const next = new Set(previous);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setSelected((previous) => toggleMyInvestorSelection(previous, key));
   }, []);
   const setMany = useCallback((keys: readonly string[], on: boolean) => {
-    setSelected((previous) => {
-      const next = new Set(previous);
-      for (const key of keys) {
-        if (on) next.add(key);
-        else next.delete(key);
-      }
-      return next;
-    });
+    setSelected((previous) => setMyInvestorSelection(previous, keys, on));
   }, []);
   const summary = summarizeMyInvestorSelection(rows, selected);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  // A refusal comes back as state, beside the button, with the boxes as they were;
+  // only success redirects (interaction-patterns §4.1).
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    formData.set("inlineError", "1");
+    setError(null);
+    startTransition(async () => {
+      const result = await includeMyInvestorProductsAction(formData);
+      setError(result.ok ? null : result.error);
+    });
+  };
   const holdingsNoun = summary.count === 1 ? "holding" : "holdings";
   const operationsNoun = summary.operations === 1 ? "operación" : "operaciones";
 
   return (
-    <form action={includeMyInvestorProductsAction} className="myinvestorInclude">
+    <form
+      // The SAME server action, for the no-JS post: without `inlineError` it
+      // redirects on every terminal, so what it resolves to is never read.
+      action={
+        includeMyInvestorProductsAction as unknown as (
+          formData: FormData,
+        ) => Promise<void>
+      }
+      className="myinvestorInclude"
+      onSubmit={onSubmit}
+    >
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="sourceId" type="hidden" value={sourceId} />
       <p className="muted">
@@ -227,6 +250,10 @@ export default function MyInvestorIncludeFold({
         </div>
         <aside aria-label="Así queda tu patrimonio" className="myinvestorBasket">
           <h3 className="myinvestorBasketHead">Así queda tu patrimonio</h3>
+          {/* What ticking a box changed, said once: the panel recomputes silently. */}
+          <p aria-live="polite" className="srOnly">
+            {`${summary.count} ${holdingsNoun} marcados, ${money(summary.valueMinor)} al patrimonio.`}
+          </p>
           <dl className="myinvestorLedger">
             {RUNG_ORDER.map((rung) => (
               <div key={rung}>
@@ -260,12 +287,20 @@ export default function MyInvestorIncludeFold({
               mano: se revisarán antes de enlazarlos.
             </p>
           ) : null}
-          <PendingSubmit
-            disabled={summary.count === 0}
-            pendingLabel="Trayendo el histórico…"
+          {error ? (
+            <p className="errorBand" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <button
+            aria-busy={pending || undefined}
+            disabled={pending || summary.count === 0}
+            type="submit"
           >
-            Incluir {summary.count} y traer su histórico
-          </PendingSubmit>
+            {pending
+              ? "Trayendo el histórico…"
+              : `Incluir ${summary.count} y traer su histórico`}
+          </button>
         </aside>
       </div>
     </form>
