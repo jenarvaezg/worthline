@@ -1,0 +1,284 @@
+/* PROTOTIPO #1880 — desechable. */
+
+.prototype {
+  margin-top: 2rem;
+  padding-bottom: 80px;
+}
+
+.fold {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+  max-width: 48rem;
+}
+
+.group {
+  border-top: 1px solid var(--line-soft);
+  padding: 0.4rem 0 0.6rem;
+}
+
+.groupHead,
+.product {
+  align-items: start;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.35rem 0;
+}
+
+.groupHead input,
+.product input {
+  margin-top: 3px;
+}
+
+.groupLabel {
+  display: block;
+  font-weight: 650;
+}
+
+.product {
+  border-top: 1px solid var(--hairline);
+  padding-left: 1.6rem;
+}
+
+.product[data-off] .productName,
+.product[data-off] .productNum {
+  color: var(--muted);
+}
+
+.productMain {
+  display: grid;
+  gap: 1px;
+}
+
+.productName {
+  font-weight: 600;
+}
+
+.productNum {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.code {
+  font-family: var(--font-numeric);
+}
+
+.notes {
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+}
+
+.notes > span {
+  border-left: 2px solid var(--gold);
+  color: var(--ink);
+  font-size: 0.78rem;
+  padding-left: 6px;
+}
+
+.othersHead {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  margin: 1rem 0 0;
+  text-transform: uppercase;
+}
+
+.submitLine {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 8px;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+}
+
+.submitLine p {
+  margin: 0;
+}
+
+.submitLine button {
+  justify-self: start;
+}
+
+/* C · la página propia. */
+.page {
+  border-top: var(--rule-heavy);
+  padding-top: 0.75rem;
+}
+
+.fakeUrl {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: 0.72rem;
+  margin: 0 0 0.5rem;
+}
+
+.pageTitle {
+  margin: 0 0 1rem;
+}
+
+.pageGrid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .pageGrid {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  .basket {
+    align-self: start;
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.basket {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 10px;
+  padding-top: 0.6rem;
+}
+
+.basket button {
+  justify-self: start;
+}
+
+.basketHead {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.basketNote {
+  border-left: 2px solid var(--gold);
+  font-size: 0.82rem;
+  margin: 0;
+  padding-left: 8px;
+}
+
+.ledger {
+  display: grid;
+  margin: 0;
+}
+
+.ledger > div {
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.ledger dd {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.ledger .ledgerTotal {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink);
+  font-weight: 650;
+  margin-top: 3px;
+  padding-top: 6px;
+  position: relative;
+}
+
+.ledger .ledgerTotal::before {
+  border-top: 1px solid var(--ink);
+  content: "";
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 2px;
+}
+
+.leftList {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.4rem 0 0;
+  max-width: 40rem;
+  padding: 0;
+}
+
+.leftList li {
+  align-items: start;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding-bottom: 0.4rem;
+}
+
+.textControl {
+  background: none;
+  border: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 0;
+  padding: 0;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.controls {
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 8px 16px;
+  margin-top: 2rem;
+  padding: 8px 12px;
+}
+
+.controls button {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  min-height: 0;
+  padding: 2px 6px;
+}
+
+.switcher {
+  align-items: center;
+  background: #111;
+  border: 2px solid var(--gilt);
+  border-radius: var(--radius);
+  bottom: 20px;
+  color: #fff;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 12px;
+  left: 50%;
+  padding: 8px 14px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 1000;
+}
+
+.switcher button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  height: 28px;
+  min-height: 0;
+  width: 28px;
+}
+
+@media (max-width: 640px) {
+  .switcherPrefix {
+    display: none;
+  }
+}
