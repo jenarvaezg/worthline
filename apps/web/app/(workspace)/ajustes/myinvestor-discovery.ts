@@ -38,6 +38,8 @@ import {
   myInvestorAccountId,
   myInvestorHoldingKey,
 } from "@worthline/pricing";
+import { z } from "zod";
+import { readStoredJson } from "./stored-json";
 
 /**
  * 2 since #1883: a robo-advisor's funds and cash are products of their own, inside
@@ -521,30 +523,117 @@ export function serializeMyInvestorDiscovery(discovery: MyInvestorDiscovery): st
   return JSON.stringify(discovery);
 }
 
+// The stored document's shape, version 2 (the managed portfolio of #1883) and
+// nothing else. Typed against the interfaces, so a field added to them without its
+// schema does not compile.
+const text = z.string();
+const decimal = z.string();
+const instrumentSchema = z.object({
+  code: text,
+  scheme: z.enum(["isin", "dgs"]),
+});
+
+const accountSchema = z.object({
+  key: text,
+  kind: z.enum(["securities", "portfolio", "pension", "cash"]),
+  label: text,
+  otherHolder: z.boolean(),
+  sub: text,
+});
+
+const productSchema = z.object({
+  accountKey: text,
+  cash: z.object({ balance: decimal, currency: text, withheld: decimal }).nullable(),
+  declared: z.object({ currency: text, value: decimal }).nullable(),
+  identifier: text.nullable(),
+  instrument: instrumentSchema.nullable(),
+  key: text,
+  kind: z.enum(["fund", "etf", "stock", "plan", "cash", "managed"]),
+  members: z.array(text),
+  name: text,
+  otherHolder: z.boolean(),
+  portfolioKey: text.nullable(),
+  units: decimal.nullable(),
+});
+
+const transferSchema = z.discriminatedUnion("pairing", [
+  z.object({ counterpartKey: text, pairing: z.literal("paired"), transferId: text }),
+  z.object({
+    inheritedCost: z.literal("pending"),
+    pairing: z.literal("external_in"),
+    transferId: text,
+  }),
+  z.object({
+    inheritedCost: z.literal("pending").nullable(),
+    pairing: z.literal("unpaired"),
+    reason: z.enum(["no_common_reference", "no_counterpart", "ambiguous"]),
+    transferId: text,
+  }),
+]);
+
+const operationSchema = z.object({
+  dateKey: text,
+  key: text,
+  payload: z.object({
+    accountId: text,
+    amount: decimal.nullable(),
+    currency: text,
+    executedAt: text,
+    fees: decimal,
+    instrument: instrumentSchema,
+    instrumentName: text.nullable(),
+    kind: z.literal("operation"),
+    operation: z.enum(["buy", "sell", "transfer_out", "transfer_in"]),
+    pricePerUnit: decimal.nullable(),
+    product: z.enum(["fund", "broker", "pension_plan"]),
+    reference: text,
+    sourceType: text,
+    transfer: transferSchema.nullable(),
+    units: decimal,
+  }),
+});
+
+const contributionSchema = z.object({
+  amount: decimal,
+  contributionId: text,
+  contributionType: text.nullable(),
+  currency: text,
+  fromAccountId: text.nullable(),
+  fundName: text.nullable(),
+  productCode: text.nullable(),
+  status: text.nullable(),
+  subscriptionType: text.nullable(),
+  timeFrame: z
+    .object({
+      endDate: text.nullable(),
+      nextExecutionDate: text.nullable(),
+      recurrence: text.nullable(),
+      startDate: text.nullable(),
+    })
+    .nullable(),
+  toAccountId: text.nullable(),
+  toAccountType: text.nullable(),
+});
+
+const discoverySchema: z.ZodType<MyInvestorDiscovery> = z.object({
+  accounts: z.array(accountSchema),
+  // Absent on a document kept before the periodic sync existed.
+  contributions: z.array(contributionSchema).exactOptional(),
+  operations: z.array(operationSchema),
+  products: z.array(productSchema),
+  readOn: text,
+  version: z.literal(MYINVESTOR_DISCOVERY_VERSION),
+});
+
 /**
  * A stored discovery, or null when the row is not one this version reads (an older
- * shape, or a corrupt row): the fold then offers to read MyInvestor again instead of
- * trusting a document it cannot vouch for.
+ * version, or a corrupt row, which leaves a log): the fold then offers to read
+ * MyInvestor again instead of trusting a document it cannot vouch for.
  */
 export function parseMyInvestorDiscovery(
   payloadJson: string,
 ): MyInvestorDiscovery | null {
-  try {
-    const parsed = JSON.parse(payloadJson) as Partial<MyInvestorDiscovery> | null;
-    if (
-      parsed === null ||
-      parsed.version !== MYINVESTOR_DISCOVERY_VERSION ||
-      typeof parsed.readOn !== "string" ||
-      !Array.isArray(parsed.accounts) ||
-      !Array.isArray(parsed.products) ||
-      !Array.isArray(parsed.operations)
-    ) {
-      return null;
-    }
-    return parsed as MyInvestorDiscovery;
-  } catch {
-    return null;
-  }
+  return readStoredJson(discoverySchema, payloadJson, "myinvestor discovery");
 }
 
 /** Whether a product holds anything today: units above zero, or a cash balance. */
