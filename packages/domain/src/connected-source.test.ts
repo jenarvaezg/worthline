@@ -17,6 +17,7 @@ import {
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
+  isMirroredSourceAdapter,
   isTokenDustValue,
   mergeCoinPositionSnapshotInputs,
   positionValue,
@@ -301,6 +302,17 @@ describe("instrumentForAdapter — the holding instrument a source projects into
   test("Numista projects a coin_collection; Binance a crypto holding", () => {
     expect(instrumentForAdapter("numista")).toBe("coin_collection");
     expect(instrumentForAdapter("binance")).toBe("crypto");
+  });
+});
+
+describe("isMirroredSourceAdapter — which sources mirror a value (ADR 0115)", () => {
+  test("Numista and Binance mirror a value; MyInvestor owns holdings through operations", () => {
+    // MyInvestor projects no rolled-up holding: each of its holdings keeps the
+    // instrument of what it is (a fund, a plan, cash), so it has no single
+    // adapter instrument for the projection to answer with.
+    expect(isMirroredSourceAdapter("numista")).toBe(true);
+    expect(isMirroredSourceAdapter("binance")).toBe(true);
+    expect(isMirroredSourceAdapter("myinvestor")).toBe(false);
   });
 });
 

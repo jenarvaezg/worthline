@@ -25,6 +25,14 @@ export const NUMISTA_DISCONNECT_FORM_ID = "numista-disconnect";
 export const BINANCE_DISCONNECT_FORM_ID = "binance-disconnect";
 
 /**
+ * MyInvestor (#1879). Its connect fold answers inline (the SMS step lives in the
+ * same fold), so only the forms of the connected row need an id: the fold of the
+ * remembered password and the disconnect.
+ */
+export const MYINVESTOR_PASSWORD_FORM_ID = "myinvestor-password";
+export const MYINVESTOR_DISCONNECT_FORM_ID = "myinvestor-disconnect";
+
+/**
  * Adónde vuelve «Eliminar y conservar histórico» cuando no puede volver a la página
  * desde la que se envió: desde la ficha del activo, que ese modo borra, al tablero
  * (#1849). Sin él, a `currentUrl`, como desde Conexiones.

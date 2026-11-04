@@ -423,7 +423,7 @@ export function createConnectedSourceSeams(
           !knownExternalIds.has(position.externalId) &&
           position.purchaseDate !== null,
       );
-      if (newDatedTrades.length === 0) return;
+      if (newDatedTrades.length === 0 || source.assetId === null) return;
 
       await rippleHistoricalSnapshotsForCoinAcquisition(
         ctx,
@@ -515,7 +515,7 @@ export function createConnectedSourceSeams(
       if (!workspace) return; // no workspace → no scopes, no history to backfill
 
       const source = await stores.connectedSources.readSource(params.sourceId);
-      if (!source) return;
+      if (!source || source.assetId === null) return;
 
       await backfillBinanceHistoricalSnapshots(
         ctx,

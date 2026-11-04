@@ -130,6 +130,37 @@ describe("loadConnectionRows (#1223)", () => {
     expect(rows[0]?.valueMinor).toBe(481_233);
   });
 
+  test("a source that owns its holdings (no mirror asset) counts and values them, with no ficha link", async () => {
+    // MyInvestor (ADR 0115, #1879): it has no mirror asset, so «Ver →» has nowhere
+    // to point, and what it counts is its linked holdings, not positions.
+    const owning: ConnectionDataDefinition = {
+      adapter: "duena",
+      countUnits: (_positions, sourceAssetIds) => sourceAssetIds.length,
+      valueMinor: rungsAdapter.valueMinor,
+    };
+    const store = fakeStore({}, { src_duena: ["fondo", "plan"] });
+    const hrefOf = vi.fn(() => "/patrimonio/wl_hld_1");
+
+    const rows = await loadConnectionRows({
+      assets: [
+        { id: "fondo", currentValue: { amountMinor: 1_000 } },
+        { id: "plan", currentValue: { amountMinor: 2_000 } },
+      ],
+      definitions: [owning],
+      hrefOf,
+      sources: [sourceRow({ adapter: "duena", assetId: null, id: "src_duena" })],
+      store,
+    });
+
+    expect(rows[0]).toMatchObject({
+      fichaHref: null,
+      source: { assetId: null, id: "src_duena" },
+      unitCount: 2,
+      valueMinor: 3_000,
+    });
+    expect(hrefOf).not.toHaveBeenCalled();
+  });
+
   test("an adapter with no connected source is a row too — the page offers connecting it", async () => {
     const store = fakeStore();
 

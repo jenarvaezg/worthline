@@ -34,8 +34,11 @@ export async function runNumistaCoinRefresh(
   store: WorthlineStore,
   nowIso: string,
 ): Promise<RefreshCoinValuationsResult> {
+  // A Numista source always has its mirror asset (ADR 0016); the guard only
+  // narrows the type, which is nullable since MyInvestor has none (v74).
   const numistaSources = (await store.connectedSources.listSources()).filter(
-    (source) => source.adapter === "numista",
+    (source): source is typeof source & { assetId: string } =>
+      source.adapter === "numista" && source.assetId !== null,
   );
   const sources: CoinSourceRef[] = await Promise.all(
     numistaSources.map(async (source) => ({

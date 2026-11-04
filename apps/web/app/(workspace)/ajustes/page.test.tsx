@@ -168,7 +168,7 @@ describe("las fuentes conectadas ya no viven aquí (#1223)", () => {
     );
 
     expect(html).toContain("/ajustes/conexiones");
-    expect(html).toContain("1 de 2 conectadas");
+    expect(html).toContain("1 de 3 conectadas");
     for (const gone of [
       "Conectar Numista",
       "Conectar Binance",

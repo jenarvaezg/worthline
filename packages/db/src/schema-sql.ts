@@ -369,7 +369,7 @@ CREATE TABLE \`connected_sources\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`adapter\` text NOT NULL,
 	\`label\` text NOT NULL,
-	\`asset_id\` text NOT NULL,
+	\`asset_id\` text,
 	\`credentials_json\` text NOT NULL,
 	\`token_json\` text,
 	\`last_sync_at\` text,
@@ -378,6 +378,7 @@ CREATE TABLE \`connected_sources\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_sources_myinvestor_unique\` ON \`connected_sources\` (\`adapter\`) WHERE adapter = 'myinvestor';--> statement-breakpoint
 CREATE TABLE \`positions\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`source_id\` text NOT NULL,
@@ -555,5 +556,15 @@ CREATE TABLE \`contribution_lots\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX \`contribution_lots_asset_idx\` ON \`contribution_lots\` (\`asset_id\`,\`available_from\`);
+CREATE INDEX \`contribution_lots_asset_idx\` ON \`contribution_lots\` (\`asset_id\`,\`available_from\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_pending_logins\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`adapter\` text NOT NULL,
+	\`payload_json\` text NOT NULL,
+	\`expires_at\` text NOT NULL,
+	\`attempts\` integer DEFAULT 0 NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_source_pending_logins_adapter_unique\` ON \`connected_source_pending_logins\` (\`adapter\`);
 `;

@@ -640,26 +640,40 @@ export const liabilityBalanceAnchors = sqliteTable(
  * A connected source: an external account worthline mirrors read-only (PRD #160,
  * ADR 0016/0017). It projects its positions into ONE rolled-up holding (the
  * `asset_id` row), whose value is derived from the positions — never hand-set.
- * `adapter` ∈ {numista} is enforced in TS, like the other text enums (no CHECK).
- * `credentials_json` (API key + OAuth client) and `token_json` (cached access
- * token + expiry) are LOCAL ONLY and never exported (ADR 0016).
+ * `adapter` ∈ {numista, binance, myinvestor} is enforced in TS, like the other
+ * text enums (no CHECK). `credentials_json` (API key + OAuth client, or
+ * MyInvestor's device id and, on opt-in, its password) and `token_json` (cached
+ * access token + expiry) are LOCAL ONLY, sealed, and never exported (ADR 0016,
+ * ADR 0114).
  */
-export const connectedSources = sqliteTable("connected_sources", {
-  id: text("id").primaryKey(),
-  adapter: text("adapter").$type<SourceAdapter>().notNull(),
-  label: text("label").notNull(),
-  // The materialized rolled-up holding this source projects into (ADR 0016).
-  assetId: text("asset_id")
-    .notNull()
-    .references(() => assets.id, { onDelete: "cascade" }),
-  // Local-only secrets — NEVER exported (ADR 0016). JSON blob of API key + OAuth client.
-  credentialsJson: text("credentials_json").notNull(),
-  // Cached OAuth token JSON (access_token + expiry); null until first mint.
-  tokenJson: text("token_json"),
-  lastSyncAt: text("last_sync_at"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const connectedSources = sqliteTable(
+  "connected_sources",
+  {
+    id: text("id").primaryKey(),
+    adapter: text("adapter").$type<SourceAdapter>().notNull(),
+    label: text("label").notNull(),
+    // The materialized rolled-up holding a MIRRORING source projects into (ADR
+    // 0016). Null for a source that owns its holdings through operations instead
+    // (MyInvestor, ADR 0115): it connects before it has any holding, and its
+    // holdings point back through `assets.connected_source_id` (schema v74).
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    // Local-only secrets — NEVER exported (ADR 0016). JSON blob of API key + OAuth client.
+    credentialsJson: text("credentials_json").notNull(),
+    // Cached OAuth token JSON (access_token + expiry); null until first mint.
+    tokenJson: text("token_json"),
+    lastSyncAt: text("last_sync_at"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [
+    // One MyInvestor connection per workspace (#1879): the web checks it before
+    // asking MyInvestor, and this index refuses the second row two concurrent
+    // logins could otherwise both write — leaving a password nobody disconnects.
+    uniqueIndex("connected_sources_myinvestor_unique")
+      .on(table.adapter)
+      .where(sql`adapter = 'myinvestor'`),
+  ],
+);
 
 /**
  * One line a connected source mirrors — a Numista coin or a Binance token balance
@@ -777,6 +791,37 @@ export const syncRuns = sqliteTable(
     // retention prune (keep the newest N per source) both filter by source and
     // order by creation — the composite serves both.
     index("sync_run_source_created_idx").on(table.sourceId, table.createdAt),
+  ],
+);
+
+/**
+ * The half-done login of a two-step SMS (#1879, ADR 0114 decision 6). Between
+ * «MyInvestor sent a code» and «the user typed it» the web app needs the signature
+ * request, the device it was asked for and — only when the user ticked «Guardar la
+ * contraseña» — the credentials it will keep. They live HERE, sealed
+ * (`sealSecret`, ADR 0030) and for five minutes, never in a cookie.
+ *
+ * It is tied to the workspace's MyInvestor connection by its adapter: a workspace
+ * has at most one connection per adapter, so the unique index keeps at most one
+ * pending login for it, and starting again replaces the old one. The row is
+ * deleted when the login ends, fails for good or expires.
+ */
+export const connectedSourcePendingLogins = sqliteTable(
+  "connected_source_pending_logins",
+  {
+    id: text("id").primaryKey(),
+    adapter: text("adapter").$type<SourceAdapter>().notNull(),
+    // Sealed JSON of the pending step; its shape belongs to the adapter's module.
+    payloadJson: text("payload_json").notNull(),
+    // ISO instant after which the step is refused and deleted.
+    expiresAt: text("expires_at").notNull(),
+    // Wrong codes tried so far, reserved atomically BEFORE MyInvestor is asked so
+    // two codes sent at once cannot slip past the cap. A count, not a secret.
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("connected_source_pending_logins_adapter_unique").on(table.adapter),
   ],
 );
 

@@ -7375,7 +7375,8 @@ td.rowActions > * {
 .lotRow button,
 .assistantProposal .assistantRowAside button,
 .fichaPriceNotice a,
-.fichaPriceNotice button {
+.fichaPriceNotice button,
+.myinvestorCodeActions .myinvestorRestart {
   background: transparent;
   border: 0;
   min-height: 0;
@@ -9912,6 +9913,69 @@ td.rowActions > * {
 
 .conexConnect .stackForm button {
   justify-self: start;
+}
+
+/* MyInvestor (#1879, variante A). El aviso de guardar la contraseña (ADR 0114,
+   decisión 1) es una entrada de aviso ABIERTA —regla de oro a la izquierda, la
+   gramática de .premiumNotice sin su tinte, porque aquí no se vende nada—, con el
+   texto entero y la casilla debajo, en orden de lectura. Nunca plegado. */
+.myinvestorRisk {
+  border-left: 2px solid var(--gold);
+  display: grid;
+  gap: 10px;
+  max-width: 60ch;
+  padding: 2px 0 2px 12px;
+}
+
+.myinvestorRiskText {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* La etiqueta de la casilla es la frase que se acepta: se lee en tinta y a cuerpo
+   de texto, no como la etiqueta gris de un campo. La casilla es la nativa (canon
+   §7, «Capa CSS»). */
+.stackForm .myinvestorRiskCheck {
+  align-items: start;
+  color: var(--ink);
+  display: grid;
+  font-weight: 400;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.myinvestorRiskCheck input {
+  margin-top: 3px;
+}
+
+/* El código del SMS: cifras tabulares, espaciadas, en un campo del ancho de un
+   código y no de la página. */
+.myinvestorCode {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2em;
+  max-width: 10rem;
+}
+
+.myinvestorCodeActions {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+/* «Empezar de nuevo» es un control de texto (receta «Control de texto»): aquí
+   solo su tono y su cuerpo, en el azul de interacción. */
+.myinvestorCodeActions .myinvestorRestart {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Por qué la fila sin conectar no ofrece pliegue: una línea, donde iría «Conectar». */
+.myinvestorGate {
+  margin: 0.35rem 0 0;
 }
 
 /* Composition strip — the 100 %-stacked metal split, the signature. */

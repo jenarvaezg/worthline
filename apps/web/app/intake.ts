@@ -569,6 +569,13 @@ export function okMessage(key: string | undefined): string | null {
     binance_disconnected: "Cuenta de Binance desconectada.",
     binance_frozen: "Cuenta de Binance convertida en activo manual.",
     binance_synced: "Cuenta de Binance sincronizada.",
+    myinvestor_connected:
+      "MyInvestor conectado. Ahora elige qué cuentas y productos incluir.",
+    myinvestor_disconnected: "MyInvestor desconectado. Sus credenciales se han borrado.",
+    myinvestor_password_forgotten:
+      "Contraseña de MyInvestor borrada. worthline guarda solo la marca del dispositivo.",
+    myinvestor_password_saved:
+      "Contraseña de MyInvestor guardada. Se pondrá al día sola cada día.",
     current_state_debt_saved: "Deuda dada de alta por estado actual.",
     debt_model_saved: "Modelo de deuda guardado.",
     debt_recalibrated: "Deuda recalibrada con el saldo real.",

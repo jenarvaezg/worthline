@@ -21,6 +21,9 @@ const WORKSPACE_TABLES = [
   // Connected sources project into an asset, with positions beneath the source —
   // children before parents so the FK cascade order holds (ADR 0016).
   "positions",
+  // The half-done SMS login of a MyInvestor connection (#1879): sealed, maybe with
+  // the password — a full replace must never leave one behind.
+  "connected_source_pending_logins",
   "connected_sources",
   "investment_assets",
   "asset_valuations",

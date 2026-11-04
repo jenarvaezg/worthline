@@ -11,16 +11,30 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
   listSourceAssetIds: vi.fn(async () => ["asset_binance"]),
-  listSources: vi.fn(async () => [
-    {
-      id: "src_binance",
-      adapter: "binance",
-      assetId: "asset_binance",
-      label: "Binance",
-      lastSyncAt: "2026-08-16T05:12:41.000Z",
-    },
-  ]),
+  // Annotated with the port's shape: a MyInvestor row has no mirror asset and
+  // carries its credentials (#1879), which the inferred literal would refuse.
+  listSources: vi.fn(
+    async (): Promise<
+      {
+        id: string;
+        adapter: string;
+        assetId: string | null;
+        credentialsJson?: string;
+        label: string;
+        lastSyncAt: string | null;
+      }[]
+    > => [
+      {
+        id: "src_binance",
+        adapter: "binance",
+        assetId: "asset_binance",
+        label: "Binance",
+        lastSyncAt: "2026-08-16T05:12:41.000Z",
+      },
+    ],
+  ),
   plan: "premium" as EntitlementPlan,
+  target: { kind: "authenticated", workspaceId: "wl_1" } as Record<string, unknown>,
   readAssets: vi.fn(async () => [
     {
       id: "asset_binance",
@@ -98,7 +112,14 @@ vi.mock("@web/page-shell", () => ({
 }));
 
 vi.mock("@web/read-store-target", () => ({
-  readStoreTarget: async () => ({ kind: "authenticated", workspaceId: "wl_1" }),
+  readSessionEmail: async () => null,
+  readStoreTarget: async () => calls.target,
+}));
+
+// The page reads the relay's env after `connection()`, which has no request here.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  connection: async () => undefined,
 }));
 
 vi.mock("@web/entitlements/read-effective-plan", () => ({
@@ -115,6 +136,31 @@ async function render(): Promise<string> {
 
 beforeEach(() => {
   calls.plan = "premium";
+  calls.target = { kind: "authenticated", workspaceId: "wl_1" };
+  vi.unstubAllEnvs();
+});
+
+/** The relay of ADR 0114 decision 10, configured (a fake URL; nothing is called). */
+function withRelay(): void {
+  vi.stubEnv("MYINVESTOR_RELAY_URL", "https://relay.example.com");
+  vi.stubEnv("MYINVESTOR_RELAY_SECRET", "x".repeat(40));
+}
+
+/** The «Sin conectar» row of MyInvestor, cut out of the page. */
+function myInvestorAvailableRow(html: string): string {
+  const start = html.indexOf('<span class="conexName">MyInvestor</span>');
+  expect(start).toBeGreaterThan(-1);
+  const end = html.indexOf('<div class="conexAvailableRow"', start);
+  return html.slice(start, end === -1 ? undefined : end);
+}
+
+const myInvestorSource = (credentialsJson: string) => ({
+  adapter: "myinvestor",
+  assetId: null,
+  credentialsJson,
+  id: "src_myinvestor",
+  label: "MyInvestor",
+  lastSyncAt: null,
 });
 
 describe("página de Conexiones (#1223)", () => {
@@ -126,7 +172,7 @@ describe("página de Conexiones (#1223)", () => {
     expect(html).toContain("Sincronizar Binance");
     expect(html).toContain("4812");
     expect(html).toContain("/patrimonio/wl_hld_binance/editar");
-    expect(html).toContain("1 de 2 fuentes conectadas");
+    expect(html).toContain("1 de 3 fuentes conectadas");
   });
 
   test("bajo la misma fila cuelga el pliegue de desconexión, sin navegar", async () => {
@@ -197,7 +243,7 @@ describe("página de Conexiones (#1223)", () => {
 
     expect(html).toContain("No tienes ninguna fuente conectada");
     expect(html).toContain("Conectar Binance");
-    expect(html).toContain("0 de 2 fuentes conectadas");
+    expect(html).toContain("0 de 3 fuentes conectadas");
   });
 });
 
@@ -396,5 +442,103 @@ describe("editar credenciales sin desconectar (#1225)", () => {
 
     expect(html.match(/<details[^>]*\sopen=""/g) ?? []).toHaveLength(1);
     expect(html).not.toMatch(/<details class="conexCredentials"[^>]*open=""/);
+  });
+});
+
+describe("MyInvestor en Conexiones (#1879, variante A)", () => {
+  test("sin el relé configurado, la fila dice en una línea que no se puede conectar", async () => {
+    const row = myInvestorAvailableRow(await render());
+
+    expect(row).toContain("Conectar MyInvestor aún no está disponible en este servidor.");
+    expect(row).not.toContain("<details");
+  });
+
+  test("con el relé y premium, el pliegue trae usuario, contraseña, el aviso entero y después la casilla", async () => {
+    withRelay();
+
+    const row = myInvestorAvailableRow(await render());
+
+    expect(row).toContain('<details class="conexConnect"');
+    expect(row).toContain("Usuario (DNI o NIE)");
+    expect(row).toMatch(/<input[^>]*type="password"[^>]*name="password"/);
+    // El texto literal de ADR 0114 decisión 1, entero y fuera de cualquier pliegue
+    // propio: el único <details> de la fila es el de «Conectar».
+    expect(row).toContain(
+      "Las órdenes y las transferencias siguen necesitando tu firma en el móvil: no apruebes nunca una notificación que no hayas pedido tú.",
+    );
+    expect(row.match(/<details/g)).toHaveLength(1);
+    // Se lee antes de marcar: el aviso va antes que la casilla, y la casilla sale
+    // desmarcada.
+    const notice = row.indexOf("Guardar la contraseña permite");
+    const box = row.indexOf('name="savePassword"');
+    expect(notice).toBeGreaterThan(-1);
+    expect(box).toBeGreaterThan(notice);
+    expect(row).not.toMatch(/name="savePassword"[^>]*checked/);
+    expect(row).toContain("Entiendo el riesgo y lo asumo.");
+    expect(row).toContain("guarda solo la marca de este dispositivo");
+    expect(row).toContain("Conectar MyInvestor");
+  });
+
+  test("sin premium, la fila dice que es premium con su enlace, sin pliegue", async () => {
+    withRelay();
+    calls.plan = "free";
+
+    const row = myInvestorAvailableRow(await render());
+
+    expect(row).toContain("Conectar MyInvestor es premium.");
+    expect(row).toContain('href="/premium"');
+    expect(row).not.toContain("<details");
+  });
+
+  test("con permiso de solo lectura, la fila lo dice, sin pliegue", async () => {
+    withRelay();
+    calls.target = { kind: "demo", now: "", persona: "familia" };
+
+    const row = myInvestorAvailableRow(await render());
+
+    expect(row).toContain(
+      "Conectar una fuente necesita permiso para editar este workspace.",
+    );
+    expect(row).not.toContain("<details");
+  });
+
+  test("conectada sin contraseña: falta elegir qué incluir, se pone al día cuando pulses", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce([]);
+
+    const html = await render();
+
+    expect(html).toContain("Falta elegir qué incluir");
+    expect(html).toContain("Se pone al día cuando pulses");
+    expect(html).toContain("Ponerse al día sola cada día");
+    expect(html).toContain("Guardar la contraseña");
+    expect(html).toContain("Desconectar MyInvestor");
+    expect(html).toContain("1 de 3 fuentes conectadas");
+  });
+
+  test("conectada con la contraseña guardada: cuándo, quién y cómo dejar de guardarla", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      myInvestorSource(
+        JSON.stringify({
+          acceptance: { acceptedAt: "2026-11-04T11:00:00.000Z", acceptedBy: null },
+          customerId: "12345678A",
+          deviceId: "device-1",
+          password: "pw-que-no-se-pinta",
+        }),
+      ),
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce([]);
+
+    const html = await render();
+
+    expect(html).toContain("Se pone al día sola cada día");
+    expect(html).toContain("Contraseña guardada");
+    expect(html).toContain("La aceptaste tú.");
+    expect(html).toContain("Dejar de guardarla");
+    // La contraseña nunca se pinta, ni siquiera dentro de su pliegue.
+    expect(html).not.toContain("pw-que-no-se-pinta");
+    expect(html).not.toContain("12345678A");
   });
 });

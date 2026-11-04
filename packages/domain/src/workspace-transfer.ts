@@ -275,7 +275,11 @@ const snapshotHoldingKindSchema = vocabularyOf<SnapshotHoldingKind>()([
   "asset",
   "liability",
 ]);
-const sourceAdapterSchema = vocabularyOf<SourceAdapter>()(["numista", "binance"]);
+const sourceAdapterSchema = vocabularyOf<SourceAdapter>()([
+  "numista",
+  "binance",
+  "myinvestor",
+]);
 const fireRetirementPlanSchema = vocabularyOf<FireRetirementPlan>()([
   "ordinary",
   "early",
@@ -827,8 +831,9 @@ const connectedSourceSchema = z.object({
   id: nonEmptyString,
   adapter: sourceAdapterSchema,
   label: nonEmptyString,
-  /** The materialized rolled-up holding this source projects into. */
-  assetId: nonEmptyString,
+  /** The materialized rolled-up holding this source projects into; null for a source
+   *  that owns its holdings through operations instead (MyInvestor, ADR 0115). */
+  assetId: nonEmptyString.nullable(),
   /** ISO timestamp of the last sync; absent when the source never synced. */
   lastSyncAt: nonEmptyString.optional(),
   positions: z.array(positionSchema).default([]),

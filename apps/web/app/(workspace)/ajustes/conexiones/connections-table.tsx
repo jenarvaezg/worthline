@@ -1,3 +1,4 @@
+import type { MyInvestorAcceptance } from "@web/ajustes/myinvestor-credentials";
 import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PendingSubmit } from "@web/pending-submit";
 import { syncRunInstant } from "@worthline/db";
@@ -6,6 +7,12 @@ import Link from "next/link";
 import { Fragment } from "react";
 import type { ConnectionDefinition, CredentialField } from "./connection-registry";
 import type { ConnectionRow } from "./connection-rows";
+import {
+  MyInvestorAvailable,
+  MyInvestorConnectedDetail,
+  MyInvestorPendingChoice,
+} from "./myinvestor-row";
+import type { MyInvestorAvailability } from "./myinvestor-view";
 import {
   describeRunOutcome,
   describeSyncState,
@@ -46,6 +53,16 @@ export interface ConnectionEntry {
   row: ConnectionRow;
 }
 
+/** What the MyInvestor rows need beyond the registry (#1879). */
+export interface MyInvestorTableContext {
+  /** What the «Sin conectar» row offers: the fold, or one line saying why not. */
+  availability: MyInvestorAvailability;
+  /** The remembered password's acceptance, or null when only the device is kept. */
+  savedPassword: MyInvestorAcceptance | null;
+  /** The session's email, to say «tú» to whoever accepted it. */
+  viewerEmail: string | null;
+}
+
 /**
  * Los campos de credenciales que declara un adapter, pintados igual en los DOS
  * sitios donde se piden: al conectar por primera vez y al cambiarlas sin
@@ -71,12 +88,14 @@ export default function ConnectionsTable({
   connections,
   currentUrl,
   errorFormId,
+  myInvestor,
   privacyMode,
 }: {
   connections: ConnectionEntry[];
   currentUrl: string;
   /** El `formId` del error que traiga la URL, o null si no trae ninguno. */
   errorFormId: string | null;
+  myInvestor: MyInvestorTableContext;
   privacyMode: boolean;
 }) {
   const connected = connections.filter((entry) => entry.row.source !== null);
@@ -115,6 +134,61 @@ export default function ConnectionsTable({
                   runs: row.runs,
                 });
                 const state = describeSyncState(health.state);
+
+                if (definition.kind === "myinvestor") {
+                  return (
+                    <Fragment key={definition.adapter}>
+                      <tr>
+                        <td>
+                          <span className="conexName">{definition.label}</span>
+                          <span className="conexSub">{definition.mirrors}</span>
+                        </td>
+                        <td>
+                          {/* Until something is included (#1880) there is no
+                              sync health to speak of: the next step is the state. */}
+                          {row.unitCount === 0 ? (
+                            <MyInvestorPendingChoice
+                              savedPassword={myInvestor.savedPassword !== null}
+                            />
+                          ) : (
+                            <span
+                              className={`coinStatusPill ${TONE_CLASS[state.tone]}`.trim()}
+                            >
+                              {state.label}
+                            </span>
+                          )}
+                        </td>
+                        <td>{formatLastSync(source.lastSyncAt)}</td>
+                        <td className="conexNum">
+                          {row.unitCount}
+                          <span className="conexSub">{definition.unitLabel}</span>
+                        </td>
+                        <td className="conexNum">
+                          {row.unitCount === 0
+                            ? "—"
+                            : formatMoneyMinorPrivacy(
+                                { amountMinor: row.valueMinor, currency: "EUR" },
+                                privacyMode,
+                              )}
+                        </td>
+                        <td />
+                      </tr>
+                      <tr className="conexDetailRow">
+                        <td colSpan={6}>
+                          <MyInvestorConnectedDetail
+                            currentUrl={currentUrl}
+                            disconnectFormId={definition.disconnectFormId}
+                            errorFormId={errorFormId}
+                            passwordFormId={definition.passwordFormId}
+                            savedPassword={myInvestor.savedPassword}
+                            sourceId={source.id}
+                            viewerEmail={myInvestor.viewerEmail}
+                          />
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                }
 
                 return (
                   <Fragment key={definition.adapter}>
@@ -265,28 +339,39 @@ export default function ConnectionsTable({
       {available.length === 0 ? null : (
         <div className="conexAvailable">
           <h3>Sin conectar</h3>
-          {available.map(({ definition }) => (
-            <div className="conexAvailableRow" key={definition.adapter}>
-              <span className="conexName">{definition.label}</span>
-              <span className="conexSub">{definition.mirrors}</span>
-              {/* Un error de conexión vuelve por redirect etiquetado con el
+          {available.map(({ definition }) =>
+            definition.kind === "myinvestor" ? (
+              <div className="conexAvailableRow" key={definition.adapter}>
+                <span className="conexName">{definition.label}</span>
+                <span className="conexSub">{definition.mirrors}</span>
+                <MyInvestorAvailable
+                  availability={myInvestor.availability}
+                  currentUrl={currentUrl}
+                />
+              </div>
+            ) : (
+              <div className="conexAvailableRow" key={definition.adapter}>
+                <span className="conexName">{definition.label}</span>
+                <span className="conexSub">{definition.mirrors}</span>
+                {/* Un error de conexión vuelve por redirect etiquetado con el
                   `formId` del adapter: su pliegue se reabre solo, para que el
                   aviso de arriba no hable de un formulario que está plegado. */}
-              <details
-                suppressHydrationWarning
-                className="conexConnect"
-                open={errorFormId === definition.formId}
-              >
-                <summary>Conectar</summary>
-                <form action={definition.connectAction} className="stackForm">
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <CredentialFields fields={definition.fields} />
-                  <p className="muted">{definition.intro}</p>
-                  <button type="submit">{definition.connectLabel}</button>
-                </form>
-              </details>
-            </div>
-          ))}
+                <details
+                  suppressHydrationWarning
+                  className="conexConnect"
+                  open={errorFormId === definition.formId}
+                >
+                  <summary>Conectar</summary>
+                  <form action={definition.connectAction} className="stackForm">
+                    <input name="currentUrl" type="hidden" value={currentUrl} />
+                    <CredentialFields fields={definition.fields} />
+                    <p className="muted">{definition.intro}</p>
+                    <button type="submit">{definition.connectLabel}</button>
+                  </form>
+                </details>
+              </div>
+            ),
+          )}
         </div>
       )}
     </>

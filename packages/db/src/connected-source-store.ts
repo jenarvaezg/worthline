@@ -1,6 +1,7 @@
 import type {
   ConnectedSource,
   DistributiveOmit,
+  MirroredSourceAdapter,
   OwnershipShare,
   PriceFreshnessState,
   SourceAdapter,
@@ -10,6 +11,7 @@ import {
   defaultsFor,
   frozenInstrumentForAdapter,
   instrumentForAdapter,
+  isMirroredSourceAdapter,
   projectConnectedSource,
 } from "@worthline/domain";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
@@ -19,6 +21,18 @@ import {
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
 import { hardDeleteAssetTx } from "./asset-reads";
+import {
+  type ConnectOwningSourceInput,
+  connectOwningSource,
+  deletePendingLogin,
+  disconnectOwningSource,
+  type PendingLoginRow,
+  purgeExpiredPendingLogins,
+  readPendingLogin,
+  reservePendingCodeAttempt,
+  type StartPendingLoginInput,
+  startPendingLogin,
+} from "./connected-source-owning-store";
 import { openSecret, sealSecret } from "./crypto";
 import { readAssetOwnerships } from "./ownership-reads";
 import {
@@ -31,9 +45,11 @@ import {
 import type { StoreContext } from "./store-context";
 
 /** Connect a new source: the caller resolves ownership (default 100% the
- *  connecting member) before handing it here. */
+ *  connecting member) before handing it here. Only a mirroring source
+ *  materializes a holding on connect (ADR 0016); MyInvestor connects through
+ *  {@link ConnectedSourceStore.connectOwningSource}. */
 export interface ConnectSourceInput {
-  adapter: SourceAdapter;
+  adapter: MirroredSourceAdapter;
   label: string;
   credentialsJson: string;
   ownership: OwnershipShare[];
@@ -44,7 +60,8 @@ export interface ConnectedSourceRow {
   id: string;
   adapter: SourceAdapter;
   label: string;
-  assetId: string;
+  /** The mirror asset of a mirroring source; null for MyInvestor (ADR 0115, v74). */
+  assetId: string | null;
   credentialsJson: string;
   tokenJson: string | null;
   lastSyncAt: string | null;
@@ -153,6 +170,27 @@ export interface ConnectedSourceStore {
    * asset id, or null when the source is unknown (nothing changes then).
    */
   freezeIntoStoredHolding(sourceId: string): Promise<{ assetId: string } | null>;
+  /**
+   * Connect a source that OWNS its holdings through operations (MyInvestor, ADR
+   * 0115): no mirror asset is created, and the credentials are sealed at rest.
+   */
+  connectOwningSource(
+    input: ConnectOwningSourceInput,
+  ): Promise<{ sourceId: string } | null>;
+  /**
+   * Disconnect an owning source: its credentials go at once and each linked holding
+   * is frozen as manual with its own instrument (ADR 0115 decision 6). Null for an
+   * unknown id or a mirroring source.
+   */
+  disconnectOwningSource(sourceId: string): Promise<{ frozen: number } | null>;
+  /** Keep the half-done login of a two-step SMS, sealed (ADR 0114 decision 6). */
+  startPendingLogin(input: StartPendingLoginInput): Promise<{ id: string }>;
+  readPendingLogin(id: string): Promise<PendingLoginRow | null>;
+  /** Reserve one code attempt atomically; the attempt's number, or null past `cap`. */
+  reservePendingCodeAttempt(id: string, cap: number): Promise<number | null>;
+  deletePendingLogin(id: string): Promise<void>;
+  /** Delete the pending steps already expired at `now`; returns how many. */
+  purgeExpiredPendingLogins(now: string): Promise<number>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -292,6 +330,33 @@ function termLockedSuffixForAdapter(adapter: SourceAdapter): string | null {
   return adapter === "binance" ? "(bloqueado)" : null;
 }
 
+/** A source that mirrors a value into its own rolled-up holding (ADR 0016/0021). */
+type MirroredSourceRow = ConnectedSourceRow & {
+  adapter: MirroredSourceAdapter;
+  assetId: string;
+};
+
+/**
+ * The source a projection path (sync, revalue, freeze) works on, which must be a
+ * mirroring one: MyInvestor has no positions to project and no mirror asset (ADR
+ * 0115), so reaching here with it is a wiring bug and fails loudly instead of
+ * re-rolling a holding that does not exist.
+ */
+function requireMirroredSource(
+  source: ConnectedSourceRow | null,
+  sourceId: string,
+): MirroredSourceRow {
+  if (!source) {
+    throw new Error(`Connected source "${sourceId}" not found.`);
+  }
+  if (!isMirroredSourceAdapter(source.adapter) || source.assetId === null) {
+    throw new Error(
+      `Connected source "${sourceId}" (${source.adapter}) does not mirror positions.`,
+    );
+  }
+  return { ...source, adapter: source.adapter, assetId: source.assetId };
+}
+
 // Secrets live encrypted at rest (ADR 0030, #387): seal on write, open on read,
 // so the database holds only ciphertext while callers see plaintext.
 function openConnectedSourceRow(row: ConnectedSourceRow): ConnectedSourceRow {
@@ -386,7 +451,7 @@ async function readSourceIdForAsset(
  */
 async function rerollSourceHoldings(
   ctx: StoreContext,
-  source: ConnectedSourceRow,
+  source: MirroredSourceRow,
 ): Promise<number> {
   const { db } = ctx;
   const ownership = (await readAssetOwnerships(db)).get(source.assetId) ?? [];
@@ -629,6 +694,13 @@ async function removeSourceHoldings(
   sourceId: string,
 ): Promise<{ removed: number }> {
   const { db } = ctx;
+  // Only a mirroring source is removed this way. An owning one (MyInvestor) keeps
+  // its holdings on disconnect, frozen as manual (ADR 0115 decision 6): a
+  // `sourceId` of it reaching a mirror's disconnect deletes nothing.
+  const source = await readSource(ctx, sourceId);
+  if (source && !isMirroredSourceAdapter(source.adapter)) {
+    return { removed: 0 };
+  }
   const removed = await ctx.transaction(async () => {
     // ONE transaction: soft-delete then hard-delete every rung asset (market +
     // term-locked, including any trashed one). Deleting the market (primary)
@@ -659,10 +731,7 @@ async function syncSourcePositions(
 ): Promise<void> {
   const { db } = ctx;
   await ctx.transaction(async () => {
-    const source = await readSource(ctx, sourceId);
-    if (!source) {
-      throw new Error(`Connected source "${sourceId}" not found.`);
-    }
+    const source = requireMirroredSource(await readSource(ctx, sourceId), sourceId);
 
     // Incremental mirror (ADR 0017): match on the stable `externalId`, update
     // existing lines in place (preserving internal ids), insert genuinely new
@@ -750,7 +819,7 @@ async function syncSourcePositions(
  */
 async function stampSourceFreshness(
   ctx: StoreContext,
-  source: ConnectedSourceRow,
+  source: MirroredSourceRow,
   valueMinor: number,
   freshness: ValuationFreshness,
 ): Promise<void> {
@@ -782,10 +851,7 @@ async function revalueSourcePositions(
 ): Promise<void> {
   const { db } = ctx;
   await ctx.transaction(async () => {
-    const source = await readSource(ctx, sourceId);
-    if (!source) {
-      throw new Error(`Connected source "${sourceId}" not found.`);
-    }
+    const source = requireMirroredSource(await readSource(ctx, sourceId), sourceId);
 
     // Update each coin's candidate values in place — never adding or removing
     // lines (that is `syncPositions`' job). A position not in `updates` keeps
@@ -823,10 +889,11 @@ async function freezeSourceIntoStoredHolding(
   sourceId: string,
 ): Promise<{ assetId: string } | null> {
   const { db } = ctx;
-  const source = await readSource(ctx, sourceId);
-  if (!source) {
+  const read = await readSource(ctx, sourceId);
+  if (!read) {
     return null;
   }
+  const source = requireMirroredSource(read, sourceId);
 
   // Every rung asset the source materialized — market + term-locked for
   // Binance, the single coin collection for Numista (#248). Captured BEFORE the
@@ -891,5 +958,12 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     revaluePositions: (sourceId, updates, freshness) =>
       revalueSourcePositions(ctx, sourceId, updates, freshness),
     freezeIntoStoredHolding: (sourceId) => freezeSourceIntoStoredHolding(ctx, sourceId),
+    connectOwningSource: (input) => connectOwningSource(ctx, input),
+    disconnectOwningSource: (sourceId) => disconnectOwningSource(ctx, sourceId),
+    startPendingLogin: (input) => startPendingLogin(ctx, input),
+    readPendingLogin: (id) => readPendingLogin(ctx, id),
+    reservePendingCodeAttempt: (id, cap) => reservePendingCodeAttempt(ctx, id, cap),
+    deletePendingLogin: (id) => deletePendingLogin(ctx, id),
+    purgeExpiredPendingLogins: (now) => purgeExpiredPendingLogins(ctx, now),
   };
 }

@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 73;
+export const SCHEMA_VERSION = 74;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2387,6 +2387,97 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 73);
+  }
+
+  if (version < 74) {
+    // #1879 (ADR 0114/0115): the MyInvestor connection.
+    //
+    // 1. `connected_sources.asset_id` stops being required. MyInvestor owns its
+    //    holdings through operations and connects before it has any, so it has no
+    //    mirror asset to point at. SQLite cannot drop a NOT NULL in place: the
+    //    table is rebuilt, as v25 did with `positions`. FKs go OFF outside the
+    //    transaction (SQLite docs), and the steps run in ONE transaction so a crash
+    //    between DROP and RENAME cannot leave the database without the table. The
+    //    tables that reference it (`positions`, `sync_run`) name it by name, so they
+    //    resolve to the new one after the rename. Guarded by the column's NOT NULL
+    //    flag, so a fresh database (born at this shape) and a re-run skip it.
+    // 2. The pending login of the two-step SMS gets its own table (decision 6),
+    //    with its count of wrong codes in clear (it is not a secret).
+    // 3. At most one MyInvestor connection per workspace: a partial unique index,
+    //    so the mirroring adapters keep whatever they had.
+    const sourceColumns = (
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows as unknown as {
+        name: string;
+        notnull: number;
+      }[]
+    ).map((column) => ({ name: String(column.name), notnull: Number(column.notnull) }));
+    const assetIdRequired = sourceColumns.some(
+      (column) => column.name === "asset_id" && column.notnull === 1,
+    );
+
+    if (assetIdRequired) {
+      const carry = [
+        "id",
+        "adapter",
+        "label",
+        "asset_id",
+        "credentials_json",
+        "token_json",
+        "last_sync_at",
+        "created_at",
+        "updated_at",
+      ].filter((column) => sourceColumns.some((existing) => existing.name === column));
+      const carryList = carry.join(", ");
+
+      await client.execute("PRAGMA foreign_keys = OFF");
+      try {
+        await client.executeMultiple(`BEGIN;
+          CREATE TABLE connected_sources_new (
+            id TEXT PRIMARY KEY NOT NULL,
+            adapter TEXT NOT NULL,
+            label TEXT NOT NULL,
+            asset_id TEXT,
+            credentials_json TEXT NOT NULL,
+            token_json TEXT,
+            last_sync_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+          );
+          INSERT INTO connected_sources_new (${carryList})
+            SELECT ${carryList} FROM connected_sources;
+          DROP TABLE connected_sources;
+          ALTER TABLE connected_sources_new RENAME TO connected_sources;
+          COMMIT;`);
+      } catch (error) {
+        await client.execute("ROLLBACK");
+        throw error;
+      } finally {
+        await client.execute("PRAGMA foreign_keys = ON");
+      }
+    }
+
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS connected_source_pending_logins (
+        id TEXT PRIMARY KEY NOT NULL,
+        adapter TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        attempts INTEGER DEFAULT 0 NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS connected_source_pending_logins_adapter_unique
+        ON connected_source_pending_logins (adapter);
+    `);
+    // A partial historical fixture may have no sources table at all (as v70/v71
+    // tolerate); there is nothing to index then.
+    if (sourceColumns.length > 0) {
+      await client.execute(
+        `CREATE UNIQUE INDEX IF NOT EXISTS connected_sources_myinvestor_unique
+           ON connected_sources (adapter) WHERE adapter = 'myinvestor'`,
+      );
+    }
+    await writeSchemaVersion(client, 74);
   }
 
   return { ranV18Backfill, ranV33Backfill };

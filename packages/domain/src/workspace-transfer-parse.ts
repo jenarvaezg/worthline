@@ -853,7 +853,7 @@ function collectConnectedSourceErrors(
   );
 
   for (const source of doc.connectedSources) {
-    if (!assetById.has(source.assetId)) {
+    if (source.assetId !== null && !assetById.has(source.assetId)) {
       errors.push(
         `La fuente conectada "${source.label}" (${source.id}) referencia un activo inexistente: ${source.assetId}.`,
       );

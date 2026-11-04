@@ -52,8 +52,9 @@ export interface AgentViewConnectedSource {
   adapter: SourceAdapter;
   label: string;
   lastSyncAt: string | null;
-  /** The market (primary) asset this source materialized — its freshness anchor. */
-  assetId: string;
+  /** The market (primary) asset this source materialized — its freshness anchor.
+   *  Null for a source that owns its holdings instead (MyInvestor, ADR 0115). */
+  assetId: string | null;
   /** Asset ids this source materialized — one per occupied rung. */
   assetIds: string[];
 }
@@ -349,7 +350,8 @@ export function createAgentViewReadStore(
     readSourceFreshness: async (sourceId) => {
       const sources = await deps.listConnectedSources();
       const source = sources.find((row) => row.id === sourceId);
-      if (!source) {
+      // A source with no mirror asset (MyInvestor) has no valuation-freshness row.
+      if (!source || source.assetId === null) {
         return null;
       }
       const cache = await deps.readSourcePriceCache(source.assetId);

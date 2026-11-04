@@ -1,4 +1,9 @@
-import { guardViewerPage } from "@web/demo/write-guard";
+import {
+  hasSavedPassword,
+  readMyInvestorCredentials,
+} from "@web/ajustes/myinvestor-credentials";
+import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
+import { guardViewerPage, isWriteBlocked } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_CONNECT_SOURCE_MESSAGE,
@@ -14,11 +19,16 @@ import {
 } from "@web/holding-route";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
-import { readStoreTarget } from "@web/read-store-target";
+import { readSessionEmail, readStoreTarget } from "@web/read-store-target";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { CONNECTION_REGISTRY } from "./connection-registry";
 import { loadConnectionRows } from "./connection-rows";
-import ConnectionsTable, { type ConnectionEntry } from "./connections-table";
+import ConnectionsTable, {
+  type ConnectionEntry,
+  type MyInvestorTableContext,
+} from "./connections-table";
+import { myInvestorAvailability } from "./myinvestor-view";
 
 /**
  * «Conexiones» (#1223, PRD #1222) — las fuentes vivas, fuera del monolito de
@@ -101,6 +111,26 @@ export async function ConexionesContent({
     await readEffectivePlan(await readStoreTarget()),
   );
 
+  // MyInvestor (#1879). Whether its relay is configured is read from the env of
+  // the SERVER, never of the build: `connection()` keeps it out of any prerender
+  // (a build-time value here would break hydration once the runtime differs).
+  await connection();
+  const myInvestorCredentials = sources
+    .filter((source) => source.adapter === "myinvestor")
+    .map((source) => readMyInvestorCredentials(source.credentialsJson))[0];
+  const myInvestor: MyInvestorTableContext = {
+    availability: myInvestorAvailability({
+      premium: !sourcesGated,
+      readOnly: await isWriteBlocked(),
+      relayConfigured: isMyInvestorRelayConfigured(),
+    }),
+    savedPassword:
+      myInvestorCredentials && hasSavedPassword(myInvestorCredentials)
+        ? myInvestorCredentials.acceptance
+        : null,
+    viewerEmail: await readSessionEmail(),
+  };
+
   return (
     <section className="section" aria-label="Conexiones">
       <div className="panelHeader">
@@ -138,6 +168,7 @@ export async function ConexionesContent({
         connections={connections}
         currentUrl={currentUrl}
         errorFormId={formError?.formId ?? null}
+        myInvestor={myInvestor}
         privacyMode={privacyMode}
       />
     </section>

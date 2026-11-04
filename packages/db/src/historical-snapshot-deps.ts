@@ -229,7 +229,8 @@ async function readCoinPositionsByAsset(
     .from(connectedSources)
     .all();
   for (const source of sourceRows) {
-    assetBySource.set(source.id, source.assetId);
+    // Only a mirroring source has coins under a mirror asset (ADR 0115).
+    if (source.assetId !== null) assetBySource.set(source.id, source.assetId);
   }
   if (assetBySource.size === 0) return byAsset;
 

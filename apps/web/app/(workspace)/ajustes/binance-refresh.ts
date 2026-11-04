@@ -45,8 +45,11 @@ export async function runBinanceRefresh(
   persistSync?: PersistSync,
 ): Promise<RefreshBinanceSourcesResult> {
   const persist = persistSync ?? ((params) => store.command.syncConnectedSource(params));
+  // A Binance source always has its mirror asset (ADR 0016); the guard only
+  // narrows the type, which is nullable since MyInvestor has none (v74).
   const binanceSources = (await store.connectedSources.listSources()).filter(
-    (source) => source.adapter === "binance",
+    (source): source is typeof source & { assetId: string } =>
+      source.adapter === "binance" && source.assetId !== null,
   );
   const sources: BinanceSourceRef[] = await Promise.all(
     binanceSources.map(async (source) => ({
