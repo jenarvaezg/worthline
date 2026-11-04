@@ -169,7 +169,7 @@ export async function ConexionesContent({
           state: myInvestorSyncState,
         }),
       ),
-      passwordForgotten: myInvestorStandingNow.stop === "password_forgotten",
+      stopped: myInvestorStandingNow.stop !== null,
       readOnly: writeBlocked || sourcesGated,
       standing: myInvestorStandingNow,
     },

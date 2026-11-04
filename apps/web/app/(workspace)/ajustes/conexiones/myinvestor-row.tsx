@@ -5,9 +5,10 @@
  *
  * - «Sin conectar»: the connect fold, or ONE line saying why there is none
  *   (relay, write access, premium).
- * - Connected, under its row: the fold of the remembered password — with when and
- *   who accepted it and «Dejar de guardarla», or the form to start remembering it —
- *   and the disconnect fold.
+ * - Connected, under its row: «Volver a entrar» (#1876), open while the daily sync
+ *   is stopped; the fold of the remembered password — with when and who accepted
+ *   it and «Dejar de guardarla», or the form to start remembering it — and the
+ *   disconnect fold.
  */
 
 import {
@@ -19,6 +20,7 @@ import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PREMIUM_CTA } from "@web/entitlements/paywall-copy";
 import { PendingSubmit } from "@web/pending-submit";
 import MyInvestorConnectFold, {
+  MyInvestorReenterFold,
   MyInvestorSavePasswordForm,
 } from "./myinvestor-connect-fold";
 import {
@@ -56,7 +58,7 @@ export function MyInvestorConnectedDetail({
   currentUrl,
   errorFormId,
   passwordFormId,
-  passwordOpen = false,
+  reenterOpen = false,
   disconnectFormId,
   savedPassword,
   sourceId,
@@ -67,10 +69,11 @@ export function MyInvestorConnectedDetail({
   errorFormId: string | null;
   passwordFormId: string;
   /**
-   * Open the password fold without an error (#1885): the saved password was
-   * rejected and deleted, and saving another is the way out the notice names.
+   * Open «Volver a entrar» without an error (#1876): the daily sync is stopped —
+   * MyInvestor asks for the SMS again, or rejected the saved password and worthline
+   * deleted it — and entering again is the way out the notice names.
    */
-  passwordOpen?: boolean;
+  reenterOpen?: boolean;
   disconnectFormId: string;
   savedPassword: MyInvestorAcceptance | null;
   sourceId: string;
@@ -78,10 +81,15 @@ export function MyInvestorConnectedDetail({
 }) {
   return (
     <>
+      <MyInvestorReenterFold
+        currentUrl={currentUrl}
+        open={reenterOpen}
+        sourceId={sourceId}
+      />
       <details
         suppressHydrationWarning
         className="conexCredentials"
-        open={passwordOpen || errorFormId === passwordFormId}
+        open={errorFormId === passwordFormId}
       >
         <summary>
           {savedPassword ? "Contraseña guardada" : "Ponerse al día sola cada día"}

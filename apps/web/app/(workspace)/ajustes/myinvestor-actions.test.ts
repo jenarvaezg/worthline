@@ -30,13 +30,17 @@ vi.mock("@web/entitlements/ingestion-guard", () => ({
 
 import { VIEWER_READONLY_MESSAGE } from "@web/demo/write-guard";
 import { ingestionBlockedMessage } from "@web/entitlements/ingestion-guard";
-import { PAYWALL_CONNECT_SOURCE_MESSAGE } from "@web/entitlements/paywall-copy";
+import {
+  PAYWALL_CONNECT_SOURCE_MESSAGE,
+  PAYWALL_SOURCES_PAUSED_MESSAGE,
+} from "@web/entitlements/paywall-copy";
 import {
   cancelMyInvestorCodeAction,
   disconnectMyInvestorAction,
   forgetMyInvestorPasswordAction,
   saveMyInvestorPasswordAction,
   startMyInvestorConnectAction,
+  startMyInvestorReenterAction,
   submitMyInvestorCodeAction,
 } from "./myinvestor-actions";
 import type { MyInvestorConnectClient } from "./myinvestor-connect";
@@ -390,6 +394,61 @@ describe("the connected row", () => {
     expect(target).toContain("ok=myinvestor_password_forgotten");
     const [source] = await store.connectedSources.listSources();
     expect(JSON.parse(source!.credentialsJson)).toEqual({ deviceId: expect.any(String) });
+  });
+
+  test("«Volver a entrar» after the SMS stop: the code re-enters the same row and lifts the stop", async () => {
+    const sourceId = await connectedSourceId(false);
+    await store.connectedSources.updateSyncState(sourceId, {
+      stoppedReason: "sms_required",
+    });
+    const override = { myInvestorClientFor: () => fakeClient("sms") };
+
+    const sms = await startMyInvestorReenterAction(
+      MYINVESTOR_IDLE,
+      form({ ...LOGIN, sourceId }),
+      store,
+      clock,
+      override,
+    );
+    expect(sms).toMatchObject({ step: "sms" });
+    const pendingId = sms.step === "sms" ? sms.pendingId : "";
+    const target = await redirected(
+      submitMyInvestorCodeAction(
+        sms,
+        form({ code: "123456", currentUrl: "/ajustes/conexiones", pendingId }),
+        store,
+        clock,
+        override,
+      ),
+    );
+
+    expect(target).toContain("ok=myinvestor_reentered");
+    expect((await store.connectedSources.listSources()).map((s) => s.id)).toEqual([
+      sourceId,
+    ]);
+    expect((await store.connectedSources.readSyncState(sourceId))?.stoppedReason).toBe(
+      null,
+    );
+  });
+
+  test("«Volver a entrar» refused comes back as state, inside the fold", async () => {
+    vi.mocked(ingestionBlockedMessage).mockResolvedValue(PAYWALL_SOURCES_PAUSED_MESSAGE);
+    const client = fakeClient("known");
+
+    const state = await startMyInvestorReenterAction(
+      MYINVESTOR_IDLE,
+      form({ ...LOGIN, sourceId: "s" }),
+      store,
+      clock,
+      { myInvestorClientFor: () => client },
+    );
+
+    expect(state).toMatchObject({
+      customerId: "12345678A",
+      error: PAYWALL_SOURCES_PAUSED_MESSAGE,
+      step: "credentials",
+    });
+    expect(client.login).not.toHaveBeenCalled();
   });
 
   test("disconnecting deletes the connection and its credentials", async () => {

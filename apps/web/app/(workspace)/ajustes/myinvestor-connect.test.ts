@@ -17,6 +17,7 @@ import {
   type MyInvestorFlowDeps,
   saveMyInvestorPassword,
   startMyInvestorConnect,
+  startMyInvestorReenter,
   submitMyInvestorCode,
 } from "./myinvestor-connect";
 import {
@@ -26,6 +27,7 @@ import {
   MYINVESTOR_LOGIN_ERRORS,
   MYINVESTOR_MAX_CODE_ATTEMPTS,
   MYINVESTOR_PENDING_EXPIRED,
+  MYINVESTOR_REENTER_PAUSED,
   MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
 } from "./myinvestor-copy";
@@ -378,5 +380,108 @@ describe("the password of a connected row", () => {
     });
 
     expect(await storedCredentials()).toEqual({ deviceId: "device-1" });
+  });
+});
+
+describe("«Volver a entrar» on the connection that already exists (#1876)", () => {
+  /** A connection whose daily sync stopped for `stoppedReason`. */
+  async function stopped(
+    stoppedReason: string | null,
+    lastOutcomeJson: string | null = null,
+    save = true,
+  ): Promise<string> {
+    await startMyInvestorConnect(deps(knownDeviceClient()), { ...LOGIN, save });
+    const sourceId = (await store.connectedSources.listSources())[0]!.id;
+    await store.connectedSources.updateSyncState(sourceId, {
+      lastOutcomeJson,
+      stoppedReason,
+    });
+    return sourceId;
+  }
+
+  test("MyInvestor asks for the SMS: a NEW device is verified on the same connection", async () => {
+    const sourceId = await stopped("sms_required");
+    const client = smsClient();
+    const reenter = deps(client, { newDeviceId: () => "device-2" });
+
+    const sms = await startMyInvestorReenter(reenter, { ...LOGIN, sourceId });
+    expect(sms).toMatchObject({ error: null, step: "sms" });
+    const pendingId = sms.step === "sms" ? sms.pendingId : "";
+    const step = await submitMyInvestorCode(reenter, { code: "123456", pendingId });
+
+    expect(step).toEqual({ reentered: true, savedPassword: true, step: "connected" });
+    // Nothing was disconnected: the same row, so its links and answers stay.
+    const sources = await store.connectedSources.listSources();
+    expect(sources.map((source) => source.id)).toEqual([sourceId]);
+    // Without the box, what was kept stays, with the new device.
+    expect(await storedCredentials()).toMatchObject({
+      customerId: "12345678A",
+      deviceId: "device-2",
+      password: "secret",
+    });
+    expect((await store.connectedSources.readSyncState(sourceId))?.stoppedReason).toBe(
+      null,
+    );
+  });
+
+  test("a rejected saved password: the known device enters with no SMS, and the box saves the new one", async () => {
+    const forgotten = JSON.stringify({
+      at: NOW,
+      forgotten: true,
+      kind: "password_rejected",
+    });
+    const sourceId = await stopped(null, forgotten, false);
+    const client = knownDeviceClient();
+
+    const step = await startMyInvestorReenter(deps(client), {
+      ...LOGIN,
+      password: "nueva",
+      save: true,
+      sourceId,
+    });
+
+    expect(step).toEqual({ reentered: true, savedPassword: true, step: "connected" });
+    expect(client.startCode).not.toHaveBeenCalled();
+    expect(await storedCredentials()).toEqual({
+      acceptance: { acceptedAt: NOW, acceptedBy: "titular@example.com" },
+      customerId: "12345678A",
+      deviceId: "device-1",
+      password: "nueva",
+    });
+    // The rejection no longer stands: the stop it made is lifted.
+    expect((await store.connectedSources.readSyncState(sourceId))?.lastOutcomeJson).toBe(
+      null,
+    );
+  });
+
+  test("a password MyInvestor rejects again changes nothing", async () => {
+    const sourceId = await stopped("sms_required");
+    const client = {
+      ...smsClient(),
+      login: vi.fn(async () => failure<never>("password_rejected")),
+    };
+
+    const step = await startMyInvestorReenter(deps(client), { ...LOGIN, sourceId });
+
+    expect(step).toEqual({
+      error: MYINVESTOR_LOGIN_ERRORS.password_rejected,
+      step: "credentials",
+    });
+    expect((await store.connectedSources.readSyncState(sourceId))?.stoppedReason).toBe(
+      "sms_required",
+    );
+  });
+
+  test("while the connection is paused, MyInvestor is not asked", async () => {
+    const sourceId = await stopped(null);
+    await store.connectedSources.updateSyncState(sourceId, {
+      pausedUntil: "2026-11-05T00:00:00.000Z",
+    });
+    const client = knownDeviceClient();
+
+    const step = await startMyInvestorReenter(deps(client), { ...LOGIN, sourceId });
+
+    expect(step).toEqual({ error: MYINVESTOR_REENTER_PAUSED, step: "credentials" });
+    expect(client.login).not.toHaveBeenCalled();
   });
 });

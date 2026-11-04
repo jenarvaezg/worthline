@@ -83,8 +83,8 @@ export interface MyInvestorTableContext {
     standing: MyInvestorStanding;
     readOnly: boolean;
     notices: readonly MyInvestorBandEntry[];
-    /** MyInvestor rejected the saved password and it was deleted: offer another. */
-    passwordForgotten: boolean;
+    /** The daily sync is stopped (the SMS, the rejected saved password): enter again. */
+    stopped: boolean;
   };
 }
 
@@ -284,8 +284,8 @@ export default function ConnectionsTable({
                               every fold, with the grammar of a failed sync
                               (#1224). Their way out is this row: «Poner al día»
                               (which asks for a password when none is saved) and,
-                              for a rejected saved password, the fold that saves
-                              another, opened below. */}
+                              while the daily sync is stopped, «Volver a entrar»,
+                              opened below (#1876). */}
                           {myInvestor.sync.notices.map((notice) => {
                             const { lead, rest } = noticeParts(notice.text);
                             return (
@@ -325,7 +325,7 @@ export default function ConnectionsTable({
                             disconnectFormId={definition.disconnectFormId}
                             errorFormId={errorFormId}
                             passwordFormId={definition.passwordFormId}
-                            passwordOpen={myInvestor.sync.passwordForgotten}
+                            reenterOpen={myInvestor.sync.stopped}
                             savedPassword={myInvestor.savedPassword}
                             sourceId={source.id}
                             viewerEmail={myInvestor.viewerEmail}

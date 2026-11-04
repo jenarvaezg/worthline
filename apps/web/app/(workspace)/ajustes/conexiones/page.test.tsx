@@ -801,6 +801,10 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     );
     expect(html).toContain("Historial de sincronización");
     expect(html).toContain("Al leer las órdenes");
+    // The way out is «Volver a entrar», open, on the same row: never disconnecting.
+    expect(html).toMatch(
+      /<details class="conexCredentials" id="myinvestor-volver-a-entrar" open="">\s*<summary>Volver a entrar<\/summary>/,
+    );
   });
 
   test("tras incluir: al día, y lo que quedó fuera se incluye con su histórico", async () => {

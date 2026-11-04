@@ -12,12 +12,18 @@
  * submit leaves from here and its answer comes back as state (interaction-patterns
  * §4.1); only a finished connection redirects, so the page re-renders with the row
  * in the book.
+ *
+ * «Volver a entrar» (#1876) is the SAME fold on the connected row, for when
+ * MyInvestor asks for the SMS again or rejects the password: same steps, same
+ * notice and box, on the connection that already exists — nothing is disconnected.
  */
 
+import { MYINVESTOR_REENTER_FOLD_ID } from "@web/ajustes/connected-source-form-ids";
 import {
   cancelMyInvestorCodeAction,
   saveMyInvestorPasswordAction,
   startMyInvestorConnectAction,
+  startMyInvestorReenterAction,
   submitMyInvestorCodeAction,
 } from "@web/ajustes/myinvestor-actions";
 import {
@@ -67,7 +73,91 @@ export function MyInvestorRiskCheckbox({
   );
 }
 
+/** What tells the connect fold and «Volver a entrar» apart: the rest is one fold. */
+interface LoginFoldCopy {
+  readonly summary: string;
+  readonly submit: string;
+  readonly submitting: string;
+  readonly announce: string;
+  /** The grey line under the box: what is kept without it. */
+  readonly withoutBox: string;
+}
+
+const CONNECT_COPY: LoginFoldCopy = {
+  announce: "Conectando con MyInvestor…",
+  submit: "Conectar MyInvestor",
+  submitting: "Conectando…",
+  summary: "Conectar",
+  withoutBox:
+    "Sin la casilla, worthline guarda solo la marca de este dispositivo y te pide la contraseña cada vez que pulses «Poner al día».",
+};
+
+const REENTER_COPY: LoginFoldCopy = {
+  announce: "Entrando en MyInvestor…",
+  submit: "Volver a entrar",
+  submitting: "Entrando…",
+  summary: "Volver a entrar",
+  withoutBox:
+    "Sin la casilla no cambia lo que worthline ya guardaba. No se desconecta nada: lo que incluiste y enlazaste sigue igual.",
+};
+
 export default function MyInvestorConnectFold({ currentUrl }: { currentUrl: string }) {
+  return (
+    <MyInvestorLoginFold
+      className="conexConnect"
+      copy={CONNECT_COPY}
+      currentUrl={currentUrl}
+      start={startMyInvestorConnectAction}
+    />
+  );
+}
+
+/**
+ * «Volver a entrar» on the connected row (#1876): opened by itself while the daily
+ * sync is stopped (the SMS, the rejected password), and the anchor the ficha's band
+ * links to.
+ */
+export function MyInvestorReenterFold({
+  currentUrl,
+  open,
+  sourceId,
+}: {
+  currentUrl: string;
+  open: boolean;
+  sourceId: string;
+}) {
+  return (
+    <MyInvestorLoginFold
+      className="conexCredentials"
+      copy={REENTER_COPY}
+      currentUrl={currentUrl}
+      id={MYINVESTOR_REENTER_FOLD_ID}
+      open={open}
+      sourceId={sourceId}
+      start={startMyInvestorReenterAction}
+    />
+  );
+}
+
+function MyInvestorLoginFold({
+  className,
+  copy,
+  currentUrl,
+  id,
+  open = false,
+  sourceId,
+  start,
+}: {
+  className: string;
+  copy: LoginFoldCopy;
+  currentUrl: string;
+  id?: string;
+  /** Open before anything is sent: the connection needs it now. */
+  open?: boolean;
+  /** The connection «Volver a entrar» re-enters; absent when connecting. */
+  sourceId?: string;
+  start: (state: MyInvestorFormState, formData: FormData) => Promise<MyInvestorFormState>;
+}) {
   const [state, setState] = useState<MyInvestorFormState>(MYINVESTOR_IDLE);
   const [save, setSave] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -95,7 +185,7 @@ export default function MyInvestorConnectFold({ currentUrl }: { currentUrl: stri
       setState(
         current.step === "sms"
           ? await submitMyInvestorCodeAction(current, formData)
-          : await startMyInvestorConnectAction(current, formData),
+          : await start(current, formData),
       );
     });
   };
@@ -118,16 +208,13 @@ export default function MyInvestorConnectFold({ currentUrl }: { currentUrl: stri
   return (
     <details
       suppressHydrationWarning
-      className="conexConnect"
-      open={touched ? true : undefined}
+      className={className}
+      id={id}
+      open={touched || open ? true : undefined}
     >
-      <summary>Conectar</summary>
+      <summary>{copy.summary}</summary>
       <p aria-live="polite" className="srOnly">
-        {pending
-          ? state.step === "sms"
-            ? "Comprobando el código…"
-            : "Conectando con MyInvestor…"
-          : ""}
+        {pending ? (state.step === "sms" ? "Comprobando el código…" : copy.announce) : ""}
       </p>
       {state.step === "sms" ? (
         <form className="stackForm" method="post" onSubmit={onSubmit}>
@@ -173,6 +260,7 @@ export default function MyInvestorConnectFold({ currentUrl }: { currentUrl: stri
       ) : (
         <form className="stackForm" method="post" onSubmit={onSubmit}>
           <input name="currentUrl" type="hidden" value={currentUrl} />
+          {sourceId ? <input name="sourceId" type="hidden" value={sourceId} /> : null}
           <label>
             Usuario (DNI o NIE)
             <input
@@ -194,17 +282,14 @@ export default function MyInvestorConnectFold({ currentUrl }: { currentUrl: stri
             />
           </label>
           <MyInvestorRiskCheckbox checked={save} name="savePassword" onChange={setSave} />
-          <p className="muted">
-            Sin la casilla, worthline guarda solo la marca de este dispositivo y te pide
-            la contraseña cada vez que pulses «Poner al día».
-          </p>
+          <p className="muted">{copy.withoutBox}</p>
           {state.error ? (
             <p className="errorBand" role="alert">
               {state.error}
             </p>
           ) : null}
           <button aria-busy={pending || undefined} disabled={pending} type="submit">
-            {pending ? "Conectando…" : "Conectar MyInvestor"}
+            {pending ? copy.submitting : copy.submit}
           </button>
         </form>
       )}

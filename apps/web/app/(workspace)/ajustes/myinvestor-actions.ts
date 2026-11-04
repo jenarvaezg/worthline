@@ -49,12 +49,14 @@ import {
   MYINVESTOR_READ_FORM_ID,
 } from "./connected-source-form-ids";
 import { currentUrlOf } from "./connected-source-helpers";
+import { myInvestorClientOrRefusal } from "./myinvestor-action-preamble";
 import {
   forgetMyInvestorPassword,
   type MyInvestorFlowDeps,
   type MyInvestorStep,
   saveMyInvestorPassword,
   startMyInvestorConnect,
+  startMyInvestorReenter,
   submitMyInvestorCode,
 } from "./myinvestor-connect";
 import {
@@ -137,7 +139,13 @@ function terminal(
   if (step.step === "connected") {
     // Same router-cache invalidation as every other successful mutation (#1191).
     revalidatePath("/", "layout");
-    redirect(appendParam(currentUrlOf(formData), "ok", "myinvestor_connected"));
+    redirect(
+      appendParam(
+        currentUrlOf(formData),
+        "ok",
+        step.reentered ? "myinvestor_reentered" : "myinvestor_connected",
+      ),
+    );
   }
   if (step.step === "sms") return step;
   return customerId === undefined ? step : { ...step, customerId };
@@ -164,6 +172,43 @@ export async function startMyInvestorConnectAction(
   const step = await runActionWithStore(
     (store) =>
       startMyInvestorConnect(flowDeps(store, front, clientFor, acceptedBy), parsed.value),
+    front.store,
+  );
+  return terminal(step, formData, customerId);
+}
+
+/**
+ * Step 1 of «Volver a entrar» (#1876, the review's decision): the same fold as
+ * connecting, on the connection that already exists. Its code goes through
+ * {@link submitMyInvestorCodeAction}: the pending step knows which connection it
+ * re-enters. It talks to MyInvestor like a sync, so a lapsed plan refuses it.
+ */
+export async function startMyInvestorReenterAction(
+  _prevState: MyInvestorFormState,
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<MyInvestorFormState> {
+  const front = await frontMatter(formData, _testArgs);
+  const customerId = String(formData.get("customerId") ?? "").trim();
+
+  const client = await myInvestorClientOrRefusal(
+    PAYWALL_SOURCES_PAUSED_MESSAGE,
+    _testArgs,
+  );
+  if (!client.ok) return { customerId, error: client.error, step: "credentials" };
+  const sourceId = parseEntityId(formData, "sourceId");
+  if (!sourceId) return { customerId, error: MYINVESTOR_NOT_FOUND, step: "credentials" };
+
+  const parsed = parseMyInvestorLogin(formData);
+  if (!parsed.ok) return { customerId, error: parsed.error, step: "credentials" };
+
+  const acceptedBy = parsed.value.save ? await readSessionEmail() : null;
+  const step = await runActionWithStore(
+    (store) =>
+      startMyInvestorReenter(flowDeps(store, front, client.clientFor, acceptedBy), {
+        ...parsed.value,
+        sourceId,
+      }),
     front.store,
   );
   return terminal(step, formData, customerId);

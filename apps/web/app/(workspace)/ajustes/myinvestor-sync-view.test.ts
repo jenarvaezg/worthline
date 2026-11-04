@@ -75,10 +75,15 @@ describe("the standing of the connection", () => {
     });
     expect(result.dailyLine).toBe("La puesta al día diaria está parada");
     expect(result.lasting).toMatchObject({
-      remedy: { kind: "conexiones", label: "Verificar el móvil en Conexiones →" },
+      remedy: {
+        fold: "reenter",
+        kind: "conexiones",
+        label: "Volver a entrar en Conexiones →",
+      },
       tone: "error",
     });
     expect(result.lasting?.text).toContain("worthline nunca manda un SMS solo");
+    expect(result.lasting?.text).not.toContain("Desconecta");
   });
 
   test("a rejection with no reason: paused, and the button says when it comes back", () => {

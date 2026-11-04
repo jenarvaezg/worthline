@@ -14,6 +14,7 @@
  * own tabs. No booleans in the page (#1607).
  */
 
+import { MYINVESTOR_REENTER_FOLD_ID } from "@web/ajustes/connected-source-form-ids";
 import {
   type MyInvestorSchedule,
   myInvestorSchedulesByAsset,
@@ -29,6 +30,7 @@ import {
   formatMyInvestorLastGood,
   MYINVESTOR_RESYNC_LABEL,
   type MyInvestorBandEntry,
+  type MyInvestorRemedy,
   type MyInvestorStanding,
   myInvestorHealthEntries,
   myInvestorStanding,
@@ -45,6 +47,13 @@ export const PONER_AL_DIA_ACTION = "poner-al-dia";
 
 /** The Conexiones row, where the SMS is verified again (#1879). */
 const CONEXIONES = "/ajustes/conexiones";
+
+/** Where a remedy of Conexiones lands: the row, or straight on its «Volver a entrar». */
+function conexionesHref(remedy: Extract<MyInvestorRemedy, { kind: "conexiones" }>) {
+  return remedy.fold === "reenter"
+    ? `${CONEXIONES}#${MYINVESTOR_REENTER_FOLD_ID}`
+    : CONEXIONES;
+}
 
 /** What the ficha of an owned holding knows about its source, read once. */
 export interface OwningSourceFicha {
@@ -203,7 +212,7 @@ export function owningSourceNotices(
         lasting.remedy === null
           ? null
           : lasting.remedy.kind === "conexiones"
-            ? { href: CONEXIONES, label: lasting.remedy.label }
+            ? { href: conexionesHref(lasting.remedy), label: lasting.remedy.label }
             : panel(lasting.remedy.label),
       text: owned.standing.blocked
         ? `${lasting.text} ${owned.standing.blocked.line}`
@@ -217,7 +226,7 @@ export function owningSourceNotices(
         entry.remedy === null
           ? null
           : entry.remedy.kind === "conexiones"
-            ? { href: CONEXIONES, label: entry.remedy.label }
+            ? { href: conexionesHref(entry.remedy), label: entry.remedy.label }
             : panel(entry.remedy.label),
       text: entry.text,
     });

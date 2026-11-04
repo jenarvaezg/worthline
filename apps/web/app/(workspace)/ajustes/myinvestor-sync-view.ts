@@ -90,8 +90,11 @@ export const MYINVESTOR_DAILY_STOPPED = "La puesta al día diaria está parada";
 export type MyInvestorRemedy =
   /** Opens the «Poner al día» panel: write the password, try again, resync. */
   | { kind: "panel"; label: string }
-  /** The SMS fold of Conexiones (#1879). */
-  | { kind: "conexiones"; label: string };
+  /**
+   * The MyInvestor row of Conexiones; with `fold: "reenter"`, straight to its
+   * «Volver a entrar» fold (the SMS, on the connection that already exists).
+   */
+  | { kind: "conexiones"; label: string; fold?: "reenter" };
 
 /** One entry of the band: the connection's lasting state, or one holding's units. */
 export interface MyInvestorBandEntry {
@@ -134,8 +137,12 @@ const PASSWORD_FORGOTTEN: MyInvestorBandEntry = {
 };
 
 const SMS_REQUIRED: MyInvestorBandEntry = {
-  remedy: { kind: "conexiones", label: "Verificar el móvil en Conexiones →" },
-  text: "MyInvestor pide verificar el móvil otra vez. La puesta al día diaria está parada hasta que lo hagas; worthline nunca manda un SMS solo.",
+  remedy: {
+    fold: "reenter",
+    kind: "conexiones",
+    label: "Volver a entrar en Conexiones →",
+  },
+  text: "MyInvestor pide verificar el móvil otra vez. La puesta al día diaria está parada hasta que vuelvas a entrar, sin desconectar nada; worthline nunca manda un SMS solo.",
   tone: "error",
 };
 

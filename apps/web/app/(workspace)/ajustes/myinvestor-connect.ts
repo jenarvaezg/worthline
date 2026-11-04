@@ -23,6 +23,7 @@
 import type { WorthlineStore } from "@web/store";
 import type {
   MyInvestorClient,
+  MyInvestorCredentials,
   MyInvestorErrorKind,
   MyInvestorReader,
   MyInvestorTokens,
@@ -36,6 +37,7 @@ import {
   MYINVESTOR_NOT_FOUND,
   MYINVESTOR_PENDING_EXPIRED,
   MYINVESTOR_PENDING_TTL_MINUTES,
+  MYINVESTOR_REENTER_PAUSED,
   MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
 } from "./myinvestor-copy";
@@ -49,6 +51,8 @@ import {
   serializeMyInvestorCredentials,
   serializeMyInvestorPending,
 } from "./myinvestor-credentials";
+import { MYINVESTOR_STOPPED_SMS } from "./myinvestor-sync";
+import { parseMyInvestorSyncOutcome } from "./myinvestor-sync-outcome";
 
 export const MYINVESTOR_ADAPTER = "myinvestor";
 export const MYINVESTOR_LABEL = "MyInvestor";
@@ -69,6 +73,8 @@ export type MyInvestorFlowStore = Pick<
   | "startPendingLogin"
   | "reservePendingCodeAttempt"
   | "updateCredentials"
+  | "readSyncState"
+  | "updateSyncState"
 >;
 
 export interface MyInvestorFlowDeps {
@@ -104,7 +110,12 @@ export type MyInvestorStep =
       readonly destination: string | null;
       readonly error: string | null;
     }
-  | { readonly step: "connected"; readonly savedPassword: boolean };
+  | {
+      readonly step: "connected";
+      readonly savedPassword: boolean;
+      /** «Volver a entrar» finished on the connection that already existed. */
+      readonly reentered?: true;
+    };
 
 export type MyInvestorResultMessage = { ok: true } | { ok: false; error: string };
 
@@ -174,19 +185,26 @@ function credentialsToKeep(
     : { deviceId };
 }
 
-/** Step 1: username and password, and the box. */
-export async function startMyInvestorConnect(
+/**
+ * Step 1, shared by connecting and «Volver a entrar»: the login on `deviceId`, and
+ * the SMS when MyInvestor asks for it. `finish` ends a login that got tokens at
+ * once; `sourceId` ties the pending step to the connection it re-enters.
+ */
+async function loginStep(
   deps: MyInvestorFlowDeps,
+  deviceId: string,
   input: MyInvestorLoginInput,
+  finish: (
+    save: MyInvestorPendingSave | null,
+    session: { client: MyInvestorConnectClient; tokens: MyInvestorTokens },
+  ) => Promise<MyInvestorStep>,
+  sourceId?: string,
 ): Promise<MyInvestorStep> {
-  // Refused before MyInvestor is asked: a second login is a login for nothing.
-  if (await existingConnection(deps.store)) {
-    return credentialsStep(MYINVESTOR_ALREADY_CONNECTED);
-  }
-
-  const deviceId = deps.newDeviceId();
   const client = deps.clientFor(deviceId);
-  const credentials = { customerId: input.customerId, password: input.password };
+  const credentials: MyInvestorCredentials = {
+    customerId: input.customerId,
+    password: input.password,
+  };
   const save: MyInvestorPendingSave | null = input.save
     ? { ...credentials, acceptedBy: deps.acceptedBy }
     : null;
@@ -195,10 +213,7 @@ export async function startMyInvestorConnect(
   if (!login.ok) return credentialsStep(loginErrorMessage(login.error.kind));
 
   if (login.value.kind === "tokens") {
-    return connect(deps, credentialsToKeep(deviceId, save, deps.now), {
-      client,
-      tokens: login.value.tokens,
-    });
+    return finish(save, { client, tokens: login.value.tokens });
   }
 
   const sent = await client.startCode(login.value.challenge);
@@ -213,6 +228,7 @@ export async function startMyInvestorConnect(
       requestId: login.value.challenge.requestId,
       save,
       signatureId: sent.value.signatureId,
+      ...(sourceId === undefined ? {} : { sourceId }),
     }),
   });
   return {
@@ -221,6 +237,90 @@ export async function startMyInvestorConnect(
     expiresAt,
     pendingId: id,
     step: "sms",
+  };
+}
+
+/** Step 1: username and password, and the box. */
+export async function startMyInvestorConnect(
+  deps: MyInvestorFlowDeps,
+  input: MyInvestorLoginInput,
+): Promise<MyInvestorStep> {
+  // Refused before MyInvestor is asked: a second login is a login for nothing.
+  if (await existingConnection(deps.store)) {
+    return credentialsStep(MYINVESTOR_ALREADY_CONNECTED);
+  }
+  const deviceId = deps.newDeviceId();
+  return loginStep(deps, deviceId, input, (save, session) =>
+    connect(deps, credentialsToKeep(deviceId, save, deps.now), session),
+  );
+}
+
+/**
+ * «Volver a entrar» (#1876, the review's decision): the same login as connecting, on the
+ * connection that ALREADY exists, when MyInvestor asks for the SMS again or rejects
+ * the password. Nothing is disconnected, so no link, holding or answer to the
+ * inherited cost is lost.
+ *
+ * - Stopped for the SMS, the device MyInvestor forgot is replaced by a NEW one,
+ *   verified with the code. Otherwise the device it trusts is kept, and no SMS is
+ *   sent unless MyInvestor asks.
+ * - The box saves the password, as on connecting. Without it, what was kept stays.
+ * - While the connection waits out a pause or the day's lock (ADR 0114 decision 7),
+ *   MyInvestor is not asked: that is what the pause is for.
+ */
+export async function startMyInvestorReenter(
+  deps: MyInvestorFlowDeps,
+  input: MyInvestorLoginInput & { readonly sourceId: string },
+): Promise<MyInvestorStep> {
+  const connection = await readConnection(deps.store, input.sourceId);
+  if (!connection) return credentialsStep(MYINVESTOR_NOT_FOUND);
+  const state = await deps.store.readSyncState(input.sourceId);
+  if (state?.pausedUntil && state.pausedUntil > deps.now) {
+    return credentialsStep(MYINVESTOR_REENTER_PAUSED);
+  }
+  const deviceId =
+    state?.stoppedReason === MYINVESTOR_STOPPED_SMS
+      ? deps.newDeviceId()
+      : connection.credentials.deviceId;
+  return loginStep(
+    deps,
+    deviceId,
+    input,
+    (save) => reenter(deps, input.sourceId, connection.credentials, deviceId, save),
+    input.sourceId,
+  );
+}
+
+/**
+ * The end of «Volver a entrar»: the connection keeps the device MyInvestor trusts
+ * now (and the password, with the box), and the stop is lifted — the SMS one, and
+ * a rejected password's, which the last outcome holds.
+ */
+async function reenter(
+  deps: MyInvestorFlowDeps,
+  sourceId: string,
+  kept: MyInvestorStoredCredentials,
+  deviceId: string,
+  save: MyInvestorPendingSave | null,
+): Promise<MyInvestorStep> {
+  const credentials: MyInvestorStoredCredentials = save
+    ? credentialsToKeep(deviceId, save, deps.now)
+    : { ...kept, deviceId };
+  await deps.store.updateCredentials(
+    sourceId,
+    serializeMyInvestorCredentials(credentials),
+  );
+  const state = await deps.store.readSyncState(sourceId);
+  const outcome = parseMyInvestorSyncOutcome(state?.lastOutcomeJson ?? null);
+  await deps.store.updateSyncState(sourceId, {
+    stoppedReason: null,
+    // A failed pass no longer says how the connection stands: it entered just now.
+    ...(outcome !== null && outcome.kind !== "ok" ? { lastOutcomeJson: null } : {}),
+  });
+  return {
+    reentered: true,
+    savedPassword: hasSavedPassword(credentials),
+    step: "connected",
   };
 }
 
@@ -244,7 +344,15 @@ export async function submitMyInvestorCode(
     step: "sms",
   });
 
-  if (await existingConnection(deps.store)) {
+  // Re-entering needs its connection still there; connecting, none there yet.
+  const reentering = pending.sourceId
+    ? await readConnection(deps.store, pending.sourceId)
+    : null;
+  if (pending.sourceId && !reentering) {
+    await deps.store.deletePendingLogin(row.id);
+    return credentialsStep(MYINVESTOR_NOT_FOUND);
+  }
+  if (!pending.sourceId && (await existingConnection(deps.store))) {
     await deps.store.deletePendingLogin(row.id);
     return credentialsStep(MYINVESTOR_ALREADY_CONNECTED);
   }
@@ -296,6 +404,15 @@ export async function submitMyInvestorCode(
   }
 
   await deps.store.deletePendingLogin(row.id);
+  if (pending.sourceId && reentering) {
+    return reenter(
+      deps,
+      pending.sourceId,
+      reentering.credentials,
+      pending.deviceId,
+      pending.save,
+    );
+  }
   return connect(
     deps,
     credentialsToKeep(pending.deviceId, pending.save, deps.now),
@@ -317,7 +434,7 @@ async function readConnection(store: MyInvestorFlowStore, sourceId: string) {
  */
 export async function saveMyInvestorPassword(
   deps: MyInvestorFlowDeps,
-  input: { sourceId: string; customerId: string; password: string },
+  input: MyInvestorCredentials & { sourceId: string },
 ): Promise<MyInvestorResultMessage> {
   const connection = await readConnection(deps.store, input.sourceId);
   if (!connection) return { error: MYINVESTOR_NOT_FOUND, ok: false };

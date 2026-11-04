@@ -592,6 +592,8 @@ export function okMessage(key: string | undefined): string | null {
       "MyInvestor conectado. Ahora elige qué cuentas y productos incluir.",
     myinvestor_disconnected: "MyInvestor desconectado. Sus credenciales se han borrado.",
     myinvestor_products_read: "Productos de MyInvestor leídos. Elige qué incluir.",
+    myinvestor_reentered:
+      "Has vuelto a entrar en MyInvestor. La puesta al día vuelve a funcionar.",
     myinvestor_password_forgotten:
       "Contraseña de MyInvestor borrada. worthline guarda solo la marca del dispositivo.",
     myinvestor_password_saved:

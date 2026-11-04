@@ -38,6 +38,11 @@ export interface MyInvestorPendingPayload {
   readonly signatureId: string;
   /** Null without the opt-in: then the pending step holds no credential at all. */
   readonly save: MyInvestorPendingSave | null;
+  /**
+   * «Volver a entrar»: the connection this login re-enters, which the code updates
+   * instead of creating one. Absent for a first connection.
+   */
+  readonly sourceId?: string | undefined;
 }
 
 const text = z.string().min(1);
@@ -61,6 +66,7 @@ const pendingSchema = z.object({
   save: z
     .object({ customerId: text, password: text, acceptedBy: text.nullable() })
     .nullable(),
+  sourceId: text.optional(),
 });
 
 /** Whether these credentials carry a remembered password (the opt-in). */

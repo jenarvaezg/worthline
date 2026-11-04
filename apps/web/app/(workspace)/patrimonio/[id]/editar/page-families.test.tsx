@@ -964,7 +964,8 @@ describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al
     const html = await renderedHtml();
 
     expect(band(html)).toContain("MyInvestor pide verificar el móvil otra vez");
-    expect(band(html)).toContain("Verificar el móvil en Conexiones →");
+    expect(band(html)).toContain("Volver a entrar en Conexiones →");
+    expect(band(html)).toContain("/ajustes/conexiones#myinvestor-volver-a-entrar");
   });
 
   test("three days failing on the orders: the band says so, with «Ver la conexión →» (#1885)", async () => {

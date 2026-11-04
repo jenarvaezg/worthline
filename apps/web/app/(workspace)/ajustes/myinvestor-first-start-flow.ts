@@ -63,7 +63,7 @@ export const MYINVESTOR_READ_FAILED =
 export const MYINVESTOR_PASSWORD_NEEDED =
   "Escribe tu contraseña de MyInvestor para leer tus productos. No se guarda.";
 export const MYINVESTOR_DEVICE_FORGOTTEN =
-  "MyInvestor ya no reconoce este dispositivo. Desconecta y vuelve a conectar para recibir el SMS.";
+  "MyInvestor ya no reconoce este dispositivo. Usa «Volver a entrar» para recibir el SMS: no se desconecta nada.";
 export const MYINVESTOR_NOTHING_READ =
   "Aún no hemos leído tus productos de MyInvestor. Léelos antes de elegir qué incluir.";
 

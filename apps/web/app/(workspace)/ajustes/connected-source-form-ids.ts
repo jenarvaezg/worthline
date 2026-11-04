@@ -34,6 +34,12 @@ export const MYINVESTOR_DISCONNECT_FORM_ID = "myinvestor-disconnect";
 /** The first start (#1880): reading the products, and including them. */
 export const MYINVESTOR_READ_FORM_ID = "myinvestor-read";
 export const MYINVESTOR_INCLUDE_FORM_ID = "myinvestor-include";
+/**
+ * The «Volver a entrar» fold of the connected row (#1876): its element id, the
+ * anchor the ficha's band links to when MyInvestor asks for the SMS again. It
+ * answers inline like the connect fold, so it needs no form id.
+ */
+export const MYINVESTOR_REENTER_FOLD_ID = "myinvestor-volver-a-entrar";
 
 /**
  * Adónde vuelve «Eliminar y conservar histórico» cuando no puede volver a la página
