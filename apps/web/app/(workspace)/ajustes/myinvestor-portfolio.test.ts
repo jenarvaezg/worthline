@@ -471,6 +471,36 @@ describe("a block already linked whose manager bought a fund since", () => {
     ]);
   });
 
+  test("its portfolio dissolved since: the new fund is offered as a product of its own", () => {
+    // The owner dissolved the portfolio in worthline: there is nothing to join.
+    const dissolved = myInvestorFirstStartView(robo, {
+      ledgers: new Map(),
+      linkedKeys,
+      portfolioTwins: findMyInvestorPortfolioTwins(robo, { linkedKeys, portfolios: [] }),
+      sourceId: SOURCE,
+      today: "2026-11-04",
+      twins: findMyInvestorTwins(robo, { linkedKeys, manual: [] }),
+    });
+    expect(dissolved.rows.map((row) => [row.key, row.linked])).toEqual([
+      [BLOCK, true],
+      [keyOf(SILVER), false],
+    ]);
+    expect(dissolved.rows[1]).toMatchObject({
+      kind: "fund",
+      portfolio: null,
+      selectedByDefault: true,
+      valueMinor: 20_341,
+    });
+
+    const result = plan(dissolved, { productKeys: [keyOf(SILVER)] });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.command.holdings.map((entry) => entry.productKey)).toEqual([
+      keyOf(SILVER),
+    ]);
+    expect(result.command.portfolios).toBeUndefined();
+    expect(result.command.portfolioLinks).toBeUndefined();
+  });
+
   test("a block linked whole is linked, and offers nothing", () => {
     const all = new Set([keyOf(GOLD), keyOf(SILVER), keyOf(COPPER), "cash:7"]);
     const whole = myInvestorFirstStartView(robo, {

@@ -561,9 +561,27 @@ export function myInvestorFirstStartView(
     };
   };
 
-  // A robo-advisor's funds and cash are not rows: they ride under their block.
+  // A robo-advisor's funds and cash are not rows: they ride under their block. Save
+  // when the block is linked and the portfolio it lived in was dissolved since:
+  // what the manager bought later has nothing to join, so it is offered as a
+  // product of its own, as the holdings already linked now are.
+  const orphaned = new Set(
+    discovery.products
+      .filter((product) => product.kind === "managed")
+      .flatMap((block) => {
+        if (input.connectedPortfolios?.has(block.key)) return [];
+        const { funds, cash } = myInvestorPortfolioParts(discovery, block.key);
+        const parts = [...funds, ...(cash ? [cash] : [])];
+        if (!parts.some((part) => input.linkedKeys.has(part.key))) return [];
+        return parts
+          .filter((part) => !input.linkedKeys.has(part.key))
+          .map((part) => part.key);
+      }),
+  );
   const rows = settleTwinDefaults(
-    discovery.products.filter((product) => !product.portfolioKey).map(rowOf),
+    discovery.products
+      .filter((product) => !product.portfolioKey || orphaned.has(product.key))
+      .map(rowOf),
   );
   const groups = discovery.accounts.map((account) => ({
     account,

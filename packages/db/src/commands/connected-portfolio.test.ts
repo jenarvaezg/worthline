@@ -243,6 +243,53 @@ describe("a robo-advisor brought whole", () => {
     });
   });
 
+  test("dissolved after linking: the sync ignores its witness and a new fund lands on its own", async () => {
+    await store.command.includeConnectedHoldings({
+      facts: facts([buy("o1", "gold", "2025-02-11", "connected")]),
+      holdings: [fund("acc|isin:gold", "gold", GOLD), cash("cash:7", "box", 734)],
+      portfolios: [
+        {
+          memberAssetIds: ["gold", "box"],
+          name: "Cartera sintética",
+          productKey: "portfolio:7",
+          provider: "MyInvestor",
+          scopeId: "m",
+          witness: WITNESS,
+        },
+      ],
+      sourceId,
+      today: TODAY,
+    });
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios();
+    await store.managedPortfolios.deleteManagedPortfolio(portfolio!.id);
+
+    await store.command.syncConnectedHoldings({
+      cashBalances: [],
+      facts: facts([]),
+      portfolioWitnesses: [
+        {
+          assetId: "gold",
+          witness: {
+            declaredDate: "2026-11-05",
+            declaredValue: { amountMinor: 72_119, currency: "EUR" },
+          },
+        },
+      ],
+      sourceId,
+      today: "2026-11-05",
+    });
+    const result = await store.command.includeConnectedHoldings({
+      facts: facts([buy("o2", "silver", "2026-10-07", "connected")]),
+      holdings: [fund("acc|isin:silver", "silver", SILVER)],
+      sourceId,
+      today: "2026-11-05",
+    });
+
+    expect(result).toMatchObject({ applied: 1, created: 1, portfolios: 0 });
+    expect(await store.managedPortfolios.readManagedPortfolios()).toEqual([]);
+    expect((await asset("silver"))?.connectedSourceId).toBe(sourceId);
+  });
+
   test("editing its name keeps the members the source owns", async () => {
     await store.command.includeConnectedHoldings({
       facts: facts([buy("o1", "gold", "2025-02-11", "connected")]),
