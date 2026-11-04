@@ -1,0 +1,10 @@
+# The MyInvestor relay (ADR 0114, decision 10; #1877). Deploy: see README.md.
+# Secret (not in this file): RELAY_SECRET, with `wrangler secret put RELAY_SECRET`.
+name = "worthline-myinvestor-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Passwords and tokens cross this Worker: nothing of a request is logged or kept.
+[observability]
+enabled = false

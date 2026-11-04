@@ -212,8 +212,11 @@ export function findLeaks(
   return [...leaks.values()];
 }
 
-/** A number written in text: not part of a word, a version or a longer number. */
-const NUMBER_TOKEN = /(?<![\w.])-?\d+(?:\.\d+)?(?![\w]|\.\d)/g;
+/**
+ * A number written in text: not part of a word, a version or a longer number. A number
+ * right after a slash is a product version (`Mozilla/5.0`, `Chrome/156.0`), not a figure.
+ */
+const NUMBER_TOKEN = /(?<![\w./])-?\d+(?:\.\d+)?(?![\w]|\.\d)/g;
 /** Whole numbers code needs whatever the capture says: the base of a percentage. */
 const STRUCTURAL = new Set(["100"]);
 

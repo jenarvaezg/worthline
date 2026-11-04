@@ -31,6 +31,11 @@ const WORKSPACES: WorkspaceCheck[] = [
     root: "packages/pricing",
     includes: ["src/**/*.test.{ts,tsx}"],
   },
+  {
+    name: "@worthline/myinvestor-relay",
+    root: "apps/myinvestor-relay",
+    includes: ["src/**/*.test.ts"],
+  },
   { name: "@worthline/tests", root: "tests", includes: ["**/*.test.{ts,tsx}"] },
 ];
 

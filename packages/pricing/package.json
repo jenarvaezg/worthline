@@ -10,7 +10,8 @@
     }
   },
   "dependencies": {
-    "@worthline/domain": "workspace:*"
+    "@worthline/domain": "workspace:*",
+    "zod": "^4.4.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

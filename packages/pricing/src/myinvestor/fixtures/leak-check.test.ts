@@ -213,4 +213,9 @@ describe("findTextLeaks", () => {
       scan('multiplyDecimal(profit, "100"); padStart(2, "0"); "1.2.3"; 37.215'),
     ).toEqual([]);
   });
+
+  it("reads a number after a slash as a product version, not a figure", () => {
+    expect(scan('"user-agent": "Mozilla/37.21 Chrome/8317"')).toEqual([]);
+    expect(scan("price 37.21")).toHaveLength(1);
+  });
 });

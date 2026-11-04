@@ -315,6 +315,7 @@ export {
   toMetalKind,
   YAHOO_METAL_SYMBOL,
 } from "./metal";
+export * from "./myinvestor";
 export type {
   CollectedItemDraft,
   NumistaCollectedItem,
