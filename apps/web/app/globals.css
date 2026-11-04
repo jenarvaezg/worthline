@@ -10043,7 +10043,9 @@ td.rowActions > * {
 }
 
 .myinvestorProduct[data-off] .myinvestorProductName,
-.myinvestorProduct[data-off] .myinvestorProductNum {
+.myinvestorProduct[data-off] .myinvestorProductNum,
+.myinvestorTwin[data-off] .myinvestorProductName,
+.myinvestorTwin[data-off] .myinvestorProductNum {
   color: var(--muted);
 }
 
@@ -10177,6 +10179,111 @@ td.rowActions > * {
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Un producto que ya llevas a mano (#1881, diseño C): sin casilla, tres radios con
+   el porqué encima; con «Enlazar», el veredicto y las operaciones plegadas. */
+.myinvestorTwin {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.35rem 0 0.6rem 1.6rem;
+}
+
+.myinvestorTwinHead {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.myinvestorTwinChoice {
+  border: 0;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.myinvestorTwinChoice legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+/* Radio nativo · texto: el radio conserva su tamaño (canon §7). */
+.myinvestorTwinChoice label {
+  align-items: baseline;
+  cursor: pointer;
+  display: grid;
+  font-size: 0.88rem;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.myinvestorCareo {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.myinvestorVerdict {
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.myinvestorCareoScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* La tabla del careo es la de corridas (.conexRunTable), la nota al pie de la
+   fila de esta misma página; solo añade las cifras a la derecha y la pista bajo
+   la marca. */
+.myinvestorCareoOps td {
+  vertical-align: top;
+}
+
+.myinvestorCareoOps .num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.myinvestorCareoOps td .conexSub {
+  white-space: normal;
+}
+
+/* Lo que coincide no cambia: se lee apagado; lo que se va o entra, con su signo. */
+.myinvestorCareoOps tr[data-mark="same"] td {
+  color: var(--muted);
+}
+
+.myinvestorCareoMark {
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Tras incluir, un gemelo que quedó fuera: las mismas tres salidas, en su fila. */
+.myinvestorLeftList .myinvestorLeftTwin {
+  display: block;
+}
+
+.myinvestorTwinLater {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.myinvestorTwinLater .myinvestorTwin {
+  border-top: 0;
+  padding: 0;
+}
+
+.myinvestorTwinLater button {
+  justify-self: start;
 }
 
 /* Composition strip — the 100 %-stacked metal split, the signature. */

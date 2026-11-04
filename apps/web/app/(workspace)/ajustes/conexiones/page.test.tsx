@@ -106,6 +106,12 @@ vi.mock("@web/page-shell", () => ({
         readSourceFreshness: calls.readSourceFreshness,
       },
       assets: { readAssets: calls.readAssets },
+      // The twins of the first start (#1881): none kept by hand in these cases.
+      contributionPlan: {
+        readHoldingPlans: async () => new Map(),
+      },
+      managedPortfolios: { readManagedPortfolios: async () => [] },
+      operations: { readHoldingLedgers: async () => new Map() },
       connectedSources: {
         listSourceAssetIds: calls.listSourceAssetIds,
         listSources: calls.listSources,
@@ -652,6 +658,51 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     // Lo del menor llega sin marcar; el efectivo propio, marcado.
     expect(html).toContain('name="productKey" checked="" value="cash:1"');
     expect(html).toContain('name="productKey" value="securities:2|isin:IE00B03HD191"');
+  });
+
+  test("un producto que ya llevas a mano: tres salidas con el porqué encima (#1881)", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce([]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-11-04",
+    });
+    const handKept = [
+      {
+        currency: "EUR",
+        currentValue: { amountMinor: 23_917, currency: "EUR" },
+        id: "asset_hand",
+        isPrimaryResidence: false,
+        liquidityTier: "market",
+        name: "Global (a mano)",
+        ownership: [{ memberId: "member_titular", shareBps: 10_000 }],
+        securityId: { kind: "isin", value: "IE00B03HD191" },
+        type: "investment",
+      },
+    ] as never;
+    // Read twice: once by the page, once by the fold's twin search.
+    calls.readAssets.mockResolvedValueOnce(handKept).mockResolvedValueOnce(handKept);
+
+    const html = await render();
+
+    expect(html).toContain("Ya lo tienes a mano con el mismo ISIN en «Global (a mano)».");
+    expect(html).toContain(
+      "Enlazar con «Global (a mano)»: MyInvestor sustituye sus operaciones",
+    );
+    expect(html).toContain("Crear aparte: contaría dos veces si es el mismo");
+    expect(html).toContain('name="twin:securities:2|isin:IE00B03HD191"');
+    // Someone else's product never opens set to link: «No incluir» comes checked
+    // from the server, and with it no verdict.
+    expect(html).toMatch(
+      /name="twin:securities:2\|isin:IE00B03HD191" checked="" value="skip"/,
+    );
+    expect(html).not.toContain("Coinciden");
+    // A twin is decided by its radios: it has no box of its own.
+    expect(html).not.toContain(
+      'name="productKey" value="securities:2|isin:IE00B03HD191"',
+    );
   });
 
   test("sin leer y sin contraseña guardada: pide la contraseña una vez para leer", async () => {

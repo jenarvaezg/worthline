@@ -865,6 +865,20 @@ function collectConnectedSourceErrors(
       source.positions.map((position) => position.id),
     );
   }
+
+  // What a link replaced (#1881) hangs on its holding, which must travel too.
+  collectDuplicateIdErrors(
+    errors,
+    "operación sustituida",
+    doc.replacedOperations.map((row) => row.operationId),
+  );
+  for (const row of doc.replacedOperations) {
+    if (!assetById.has(row.assetId)) {
+      errors.push(
+        `La operación sustituida ${row.operationId} referencia un activo inexistente: ${row.assetId}.`,
+      );
+    }
+  }
 }
 
 // Payouts (PRD #652, ADR 0054) are attribution records attached to an asset

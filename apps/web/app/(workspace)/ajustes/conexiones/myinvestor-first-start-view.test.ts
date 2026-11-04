@@ -1,11 +1,20 @@
-import type { MyInvestorProductRow } from "@web/ajustes/myinvestor-selection";
+import type { MyInvestorCareo } from "@web/ajustes/myinvestor-careo";
+import type {
+  MyInvestorProductRow,
+  MyInvestorTwin,
+} from "@web/ajustes/myinvestor-selection";
 import { describe, expect, test } from "vitest";
 
 import {
+  myInvestorCareoRowCells,
+  myInvestorCareoVerdict,
   myInvestorHistoryLine,
+  myInvestorPlanSentence,
   myInvestorRowNotes,
   myInvestorRowState,
   myInvestorSinceLabel,
+  myInvestorTwinLegend,
+  myInvestorTwinOptions,
 } from "./myinvestor-first-start-view";
 
 const ROW: MyInvestorProductRow = {
@@ -23,6 +32,7 @@ const ROW: MyInvestorProductRow = {
   rung: "invested",
   selectedByDefault: true,
   since: "2024-03-18",
+  twin: null,
   units: "24.85",
   valueMinor: 106_473,
   withheldMinor: null,
@@ -49,12 +59,6 @@ describe("the words of the first start (#1880)", () => {
     expect(
       myInvestorRowNotes({ ...ROW, inheritedCostPending: true }, euros)[0],
     ).toContain("te preguntaremos lo que costó");
-    expect(
-      myInvestorRowNotes(
-        { ...ROW, block: { holdingName: "Fondo (a mano)", reason: "manual_twin" } },
-        euros,
-      )[0],
-    ).toContain("«Fondo (a mano)»");
     expect(
       myInvestorRowNotes(
         { ...ROW, block: { reason: "managed_portfolio" }, members: ["Oro", "Plata"] },
@@ -90,5 +94,89 @@ describe("the words of the first start (#1880)", () => {
         linkedCount: 3,
       }).label,
     ).toBe("Desactualizado");
+  });
+});
+
+describe("the careo of a twin, in words (#1881, design C)", () => {
+  const careo: MyInvestorCareo = {
+    after: { averageMinor: 3_618, costMinor: 45_268, units: "12.5111" },
+    before: { averageMinor: 3_569, costMinor: 40_254, units: "11.2791" },
+    counts: { enters: 2, leaves: 2, manual: 3, same: 1 },
+    plan: {
+      lines: [
+        {
+          amount: { mode: "money", value: 10_037 },
+          cadence: { dayOfMonth: 5, kind: "monthly" },
+        },
+      ],
+      pending: 0,
+    },
+    rows: [
+      {
+        amountMinor: 25_107,
+        date: "2024-09-05",
+        kind: "buy",
+        mark: "enters",
+        near: "2024-09-06",
+        units: "6.9413",
+      },
+    ],
+    valueDeltaMinor: 5_014,
+  };
+  const twin: MyInvestorTwin = {
+    candidates: [{ assetId: "hand", careo, name: "Global (a mano)", pairedWith: [] }],
+    defaultChoice: "link:hand",
+    reason: "identifier",
+    scheme: "isin",
+  };
+
+  test("the verdict is one sentence with the figures before and after", () => {
+    expect(myInvestorCareoVerdict(careo, euros)).toBe(
+      "Coinciden 1 de 3 operaciones tuyas. Se van 2 tuyas y entran 2 de MyInvestor. " +
+        "Participaciones 11,2791 → 12,5111; coste 402.54 € → 452.68 €; " +
+        "coste medio 35.69 € → 36.18 €. " +
+        "Tu plan de 100.37 € el día 5 de cada mes se cierra hoy.",
+    );
+  });
+
+  test("the plan sentence names what leaves the pending list", () => {
+    expect(
+      myInvestorPlanSentence(
+        {
+          lines: [
+            { amount: { mode: "money", value: 5_013 }, cadence: { kind: "quarterly" } },
+          ],
+          pending: 2,
+        },
+        euros,
+      ),
+    ).toBe(
+      "Tu plan de 50.13 € cada trimestre se cierra hoy y sus 2 aportaciones pendientes se dan por cerradas.",
+    );
+  });
+
+  test("the legend says why it is a twin; the options are the three ways out", () => {
+    expect(myInvestorTwinLegend(twin)).toBe(
+      "Ya lo tienes a mano con el mismo ISIN en «Global (a mano)».",
+    );
+    expect(myInvestorTwinLegend({ ...twin, reason: "name", scheme: "dgs" })).toBe(
+      "Se parece por el nombre a «Global (a mano)», que no tiene código DGS. ¿Es el mismo?",
+    );
+    expect(myInvestorTwinOptions(twin).map((option) => option.value)).toEqual([
+      "link:hand",
+      "separate",
+      "skip",
+    ]);
+  });
+
+  test("a row of the operations carries the near-day hint, never a pairing", () => {
+    expect(myInvestorCareoRowCells(careo.rows[0]!, euros)).toEqual({
+      amount: "251.07 €",
+      date: "5 sep 2024",
+      hint: "igual que la del 6 sep 2024: revisa la fecha",
+      kind: "Compra",
+      mark: "+ entra",
+      units: "6,9413",
+    });
   });
 });

@@ -60,7 +60,7 @@ describe("schema migration v75 (the first start of MyInvestor)", () => {
 
     await migrate(client);
 
-    expect(SCHEMA_VERSION).toBe(75);
+    expect(SCHEMA_VERSION).toBe(76);
     expect(await columns(client)).toContain("ingest_cursor");
     expect(await tables(client)).toEqual(expect.arrayContaining(V75_TABLES));
     const source = (

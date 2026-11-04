@@ -11,8 +11,13 @@
  *   row (ADR 0114 decision 6): sealed, with an expiry, one per adapter.
  * - Every secret is sealed at rest (ADR 0030): the credentials and the pending step.
  */
-import type { SourceAdapter } from "@worthline/domain";
-import { asDateKey, isMirroredSourceAdapter, isRealCalendarDay } from "@worthline/domain";
+import type { InvestmentOperation, SourceAdapter } from "@worthline/domain";
+import {
+  asDateKey,
+  compareInvestmentOperations,
+  isMirroredSourceAdapter,
+  isRealCalendarDay,
+} from "@worthline/domain";
 import { and, asc, eq, lt, sql } from "drizzle-orm";
 
 import { openSecret, sealSecret } from "./crypto";
@@ -23,6 +28,7 @@ import {
   connectedSourcePendingLogins,
   connectedSources,
   connectorAppliedFacts,
+  factBatchReplacedOperations,
 } from "./schema";
 import type { StoreContext } from "./store-context";
 
@@ -284,6 +290,37 @@ export async function readAppliedFactKeys(
     .where(eq(connectorAppliedFacts.sourceId, sourceId))
     .all();
   return new Set(rows.map((row) => row.factKey));
+}
+
+/** One manual operation a link replaced, with the batch that replaced it (#1881). */
+export interface ReplacedOperationRow {
+  batchId: string;
+  operation: InvestmentOperation;
+}
+
+/**
+ * What linking a holding to an owning source replaced (#1881, ADR 0115 decision 6):
+ * its manual operations as they were, in ledger order, each with the linking batch.
+ * Provenance only — nothing folds these — and it outlives a disconnect.
+ */
+export async function readReplacedOperations(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<ReplacedOperationRow[]> {
+  const rows = await ctx.db
+    .select({
+      batchId: factBatchReplacedOperations.batchId,
+      operationJson: factBatchReplacedOperations.operationJson,
+    })
+    .from(factBatchReplacedOperations)
+    .where(eq(factBatchReplacedOperations.assetId, assetId))
+    .all();
+  return rows
+    .map((row) => ({
+      batchId: row.batchId,
+      operation: JSON.parse(row.operationJson) as InvestmentOperation,
+    }))
+    .sort((left, right) => compareInvestmentOperations(left.operation, right.operation));
 }
 
 /**

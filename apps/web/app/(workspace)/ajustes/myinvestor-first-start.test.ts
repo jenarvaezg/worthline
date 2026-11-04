@@ -12,11 +12,17 @@ import type {
   MyInvestorDiscovery,
 } from "./myinvestor-discovery";
 import {
+  findMyInvestorTwins,
   foldMyInvestorOperations,
+  type MyInvestorManualHolding,
+  type MyInvestorTwinLedger,
   myInvestorFirstStartView,
   planMyInvestorInclusion,
 } from "./myinvestor-first-start";
-import { summarizeMyInvestorSelection } from "./myinvestor-selection";
+import {
+  defaultMyInvestorTwinChoices,
+  summarizeMyInvestorSelection,
+} from "./myinvestor-selection";
 
 const SOURCE = "src";
 const ACCOUNT = "securities:1";
@@ -103,11 +109,18 @@ function paired(outRef: string, inRef: string) {
   };
 }
 
-function view(d: MyInvestorDiscovery, twins: Record<string, string> = {}) {
+function view(
+  d: MyInvestorDiscovery,
+  manual: MyInvestorManualHolding[] = [],
+  ledgers: Map<string, MyInvestorTwinLedger> = new Map(),
+) {
+  const linkedKeys = new Set<string>();
   return myInvestorFirstStartView(d, {
-    linkedKeys: new Set(),
-    manualTwins: new Map(Object.entries(twins)),
+    ledgers,
+    linkedKeys,
     sourceId: SOURCE,
+    today: "2026-11-04",
+    twins: findMyInvestorTwins(d, { linkedKeys, manual }),
   });
 }
 
@@ -319,7 +332,7 @@ describe("the cost a traspaso carries", () => {
 });
 
 describe("what can be included in this slice", () => {
-  test("a product kept by hand and the robo-advisor wait for their slices", () => {
+  test("the robo-advisor waits for its slice", () => {
     const d = discovery(
       [
         op("b1", A, { amount: "10", units: "1" }),
@@ -342,25 +355,20 @@ describe("what can be included in this slice", () => {
         },
       ],
     );
-    const v = view(d, { [A]: "Fondo A (a mano)" });
+    const v = view(d);
     const byKey = new Map(v.rows.map((row) => [row.key, row]));
 
-    expect(byKey.get(keyOf(A))!.block).toEqual({
-      holdingName: "Fondo A (a mano)",
-      reason: "manual_twin",
-    });
     expect(byKey.get("portfolio:9")!.block).toEqual({ reason: "managed_portfolio" });
     expect(byKey.get(keyOf(B))!.selectedByDefault).toBe(true);
 
     const all = new Set(v.rows.map((row) => row.key));
     const summary = summarizeMyInvestorSelection(v.rows, all);
-    expect(summary.count).toBe(1);
-    expect(summary.twins).toBe(1);
+    expect(summary.count).toBe(2);
 
     const plan = planMyInvestorInclusion(d, {
       assetIdFor: (key) => key,
       ownership: [],
-      productKeys: [keyOf(A)],
+      productKeys: ["portfolio:9"],
       sourceId: SOURCE,
       symbols: new Map(),
       today: "2026-11-04",
@@ -407,5 +415,233 @@ describe("what can be included in this slice", () => {
       asset: { currentValueMinor: 14945, instrument: "current_account", type: "cash" },
       kind: "cash",
     });
+  });
+});
+
+describe("a product a manual holding already is (#1881)", () => {
+  const d = discovery(
+    [
+      op("b1", A, { amount: "101.37", executedAt: "2025-02-11", units: "3.0317" }),
+      op("b2", A, { amount: "51.13", executedAt: "2025-06-11", units: "1.4419" }),
+      op("b3", B, { amount: "73.19", executedAt: "2025-03-03", units: "7.3117" }),
+    ],
+    [
+      fund(A, "4.4736", { name: "Vanguard Global Stock Index Fund EUR Acc" }),
+      fund(B, "7.3117", { name: "Fidelity MSCI World Index Fund EUR P Acc" }),
+    ],
+  );
+  const manual: MyInvestorManualHolding[] = [
+    { code: A, id: "global", name: "Global (a mano)" },
+    { code: null, id: "world", name: "Fidelity World (a mano)" },
+    { code: "ES0000000999", id: "other", name: "Otro fondo a mano" },
+  ];
+  const manualBuy = {
+    assetId: "global",
+    currency: "EUR",
+    executedAt: "2025-02-11",
+    feesMinor: 0,
+    id: "m1",
+    kind: "buy" as const,
+    pricePerUnit: "33.43701",
+    units: "3.0317",
+  };
+  const ledgers = new Map<string, MyInvestorTwinLedger>([
+    [
+      "global",
+      {
+        operations: [manualBuy],
+        plan: {
+          contributions: [
+            {
+              amount: { mode: "money", value: 5_013 },
+              cadence: { dayOfMonth: 11, kind: "monthly" },
+              destinationHoldingId: "global",
+              id: "c1",
+              startDate: "2025-02-11",
+            },
+          ],
+          reconciliations: [],
+        },
+        pairedWith: [],
+      },
+    ],
+  ]);
+
+  test("the same identifier is proposed to link; a name alike is a suggestion left out", () => {
+    const v = view(d, manual, ledgers);
+    const byKey = new Map(v.rows.map((row) => [row.key, row]));
+    const strong = byKey.get(keyOf(A))!;
+    const alike = byKey.get(keyOf(B))!;
+
+    expect(strong.twin).toMatchObject({
+      candidates: [{ assetId: "global", name: "Global (a mano)" }],
+      defaultChoice: "link:global",
+      reason: "identifier",
+    });
+    expect(alike.twin).toMatchObject({
+      candidates: [{ assetId: "world", name: "Fidelity World (a mano)" }],
+      defaultChoice: "skip",
+      reason: "name",
+    });
+    // A twin is decided by its three choices, never by a box ticked by default.
+    expect(strong.selectedByDefault).toBe(false);
+    expect(alike.selectedByDefault).toBe(false);
+    expect(defaultMyInvestorTwinChoices(v.rows)).toEqual(
+      new Map([
+        [keyOf(A), "link:global"],
+        [keyOf(B), "skip"],
+      ]),
+    );
+  });
+
+  test("the careo pairs the manual buy and says the plan closes today", () => {
+    const strong = view(d, manual, ledgers).rows.find((row) => row.key === keyOf(A))!;
+    const careo = strong.twin!.candidates[0]!.careo;
+
+    expect(careo.counts).toEqual({ enters: 1, leaves: 0, manual: 1, same: 1 });
+    expect(careo.plan?.lines).toHaveLength(1);
+  });
+
+  test("the panel adds a linked holding by its difference, a separate one whole", () => {
+    const v = view(d, manual, ledgers);
+    const strong = v.rows.find((row) => row.key === keyOf(A))!;
+    const careo = strong.twin!.candidates[0]!.careo;
+
+    const linked = summarizeMyInvestorSelection(
+      v.rows,
+      new Set(),
+      defaultMyInvestorTwinChoices(v.rows),
+    );
+    expect(linked).toMatchObject({
+      count: 0,
+      linked: 1,
+      linkedDeltaMinor: careo.valueDeltaMinor,
+      plansClosing: 1,
+      valueMinor: careo.valueDeltaMinor,
+    });
+    // 51.13 € more in MyInvestor than by hand: the one buy that only it has.
+    expect(careo.valueDeltaMinor).toBe(5_113);
+
+    const apart = summarizeMyInvestorSelection(
+      v.rows,
+      new Set(),
+      new Map([[keyOf(A), "separate" as const]]),
+    );
+    expect(apart).toMatchObject({ count: 1, linked: 0, valueMinor: strong.valueMinor });
+  });
+
+  test("the batch links the holding with MyInvestor's rows and gives a name match its ISIN", () => {
+    const v = view(d, manual, ledgers);
+    const plan = planMyInvestorInclusion(d, {
+      assetIdFor: (key) => `new:${key}`,
+      links: [
+        { assetId: "global", productKey: keyOf(A) },
+        { assetId: "world", productKey: keyOf(B) },
+      ],
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+      productKeys: [],
+      sourceId: SOURCE,
+      symbols: new Map(),
+      today: "2026-11-04",
+      view: v,
+    });
+
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.command.holdings).toEqual([]);
+    expect(plan.command.links).toEqual([
+      { assetId: "global", productKey: keyOf(A) },
+      {
+        assetId: "world",
+        productKey: keyOf(B),
+        securityId: { kind: "isin", value: B },
+      },
+    ]);
+    expect(
+      plan.command.facts.facts.map((fact) => [fact.key, fact.payload.assetId]),
+    ).toEqual([
+      ["b1", "global"],
+      ["b2", "global"],
+      ["b3", "world"],
+    ]);
+  });
+
+  test("refuses a holding that is not the product's twin, and one claimed twice", () => {
+    const v = view(d, manual, ledgers);
+    const base = {
+      assetIdFor: (key: string) => key,
+      ownership: [],
+      productKeys: [],
+      sourceId: SOURCE,
+      symbols: new Map(),
+      today: "2026-11-04",
+      view: v,
+    };
+
+    expect(
+      planMyInvestorInclusion(d, {
+        ...base,
+        links: [{ assetId: "other", productKey: keyOf(A) }],
+      }).ok,
+    ).toBe(false);
+    const twice = planMyInvestorInclusion(d, {
+      ...base,
+      links: [{ assetId: "global", productKey: keyOf(A) }],
+      productKeys: [keyOf(A)],
+    });
+    expect(twice).toEqual({
+      error:
+        "«Vanguard Global Stock Index Fund EUR Acc» se enlaza o se crea aparte, no las dos cosas.",
+      ok: false,
+    });
+  });
+
+  test("a holding with half a traspaso links only with its other half (#1393)", () => {
+    // «Global» received a traspaso from «World» by hand: linking «Global» alone
+    // would leave World's half as a flow nobody made.
+    const paired = new Map(ledgers);
+    paired.set("global", {
+      ...ledgers.get("global")!,
+      pairedWith: [{ assetId: "world", name: "Fidelity World (a mano)" }],
+    });
+    paired.set("world", {
+      operations: [],
+      pairedWith: [{ assetId: "global", name: "Global (a mano)" }],
+      plan: null,
+    });
+    const v = view(d, manual, paired);
+    const strong = v.rows.find((row) => row.key === keyOf(A))!;
+
+    // World is only a name suggestion (never linked by default), so Global's
+    // default «Enlazar» would strand the pair: it opens on «No incluir».
+    expect(strong.twin!.defaultChoice).toBe("skip");
+    const base = {
+      assetIdFor: (key: string) => key,
+      ownership: [],
+      productKeys: [],
+      sourceId: SOURCE,
+      symbols: new Map(),
+      today: "2026-11-04",
+      view: v,
+    };
+    expect(
+      planMyInvestorInclusion(d, {
+        ...base,
+        links: [{ assetId: "global", productKey: keyOf(A) }],
+      }),
+    ).toEqual({
+      error:
+        "«Global (a mano)» tiene un traspaso con «Fidelity World (a mano)»: enlaza los dos a la vez, o deshaz el traspaso antes.",
+      ok: false,
+    });
+    expect(
+      planMyInvestorInclusion(d, {
+        ...base,
+        links: [
+          { assetId: "global", productKey: keyOf(A) },
+          { assetId: "world", productKey: keyOf(B) },
+        ],
+      }).ok,
+    ).toBe(true);
   });
 });

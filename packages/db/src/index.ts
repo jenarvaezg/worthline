@@ -59,6 +59,7 @@ export type {
   CommandHost,
   CommandResult,
   ConnectedHoldingCreation,
+  ConnectedHoldingLink,
   CreateDebtHoldingCommand,
   CreateInvestmentHoldingCommand,
   DebtRippleCounts,
@@ -104,6 +105,7 @@ export type {
   SourcePositionInput,
   ValuationFreshness,
 } from "./connected-source-store";
+export type { HoldingContributionPlan } from "./contribution-plan-store";
 export {
   type AdminControlPlaneStore,
   type AiDailyTokenUsage,
@@ -211,6 +213,7 @@ export type {
   InvestmentHoldingCreationPlan,
   StoredHoldingCreationPlan,
 } from "./holding-creation-plan";
+export type { HoldingLedger } from "./holding-ledger-reads";
 export { type HousingCurveRows, housingCurveInput } from "./housing-curve-input";
 export type { InvestmentOperationPlan } from "./investment-operation-plan";
 export type { InvestmentTransferPlan } from "./investment-transfer-plan";

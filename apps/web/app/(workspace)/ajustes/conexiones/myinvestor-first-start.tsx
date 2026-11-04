@@ -7,7 +7,8 @@
  *   (the SMS proved the device, but the password was not kept): it asks for the
  *   password once, uses it and drops it;
  * - after including, the fold «Productos de MyInvestor» with what was left out, each
- *   with «Incluir con su histórico».
+ *   with «Incluir con su histórico», or — for one a manual holding already is
+ *   (#1881) — the same three choices and careo as the first start.
  */
 
 import {
@@ -16,6 +17,7 @@ import {
 } from "@web/ajustes/myinvestor-actions";
 import {
   isIncludable,
+  isTwinDecision,
   MYINVESTOR_KIND_LABEL,
   type MyInvestorProductRow,
 } from "@web/ajustes/myinvestor-selection";
@@ -25,6 +27,7 @@ import {
   type MyInvestorRowState,
   myInvestorRowNotes,
 } from "./myinvestor-first-start-view";
+import { MyInvestorTwinLater } from "./myinvestor-include-fold";
 
 const STATE_CLASS: Record<MyInvestorRowState["kind"], string> = {
   choose: "isPending",
@@ -120,6 +123,18 @@ export function MyInvestorIncludedProducts({
       {left.length > 0 ? (
         <ul className="myinvestorLeftList">
           {left.map((row) => {
+            if (isTwinDecision(row)) {
+              return (
+                <li className="myinvestorLeftTwin" key={row.key}>
+                  <MyInvestorTwinLater
+                    currentUrl={currentUrl}
+                    privacyMode={privacyMode}
+                    row={row}
+                    sourceId={sourceId}
+                  />
+                </li>
+              );
+            }
             const notes = myInvestorRowNotes(row, money);
             return (
               <li key={row.key}>

@@ -277,6 +277,8 @@ export {
   plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
 } from "./contribution-plan";
+export type { ContributionPlanLinkClosing } from "./contribution-plan-link";
+export { closeContributionPlanOnLink } from "./contribution-plan-link";
 export type {
   LedgerSeniority,
   LedgerSeniorityReport,

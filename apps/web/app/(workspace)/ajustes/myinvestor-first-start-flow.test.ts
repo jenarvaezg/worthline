@@ -104,7 +104,7 @@ beforeEach(async () => {
 describe("the first start of MyInvestor, over the fixtures", () => {
   test("connecting reads the account: own products ticked, someone else's not", async () => {
     const sourceId = await connectAndRead();
-    const loaded = await loadMyInvestorFirstStart(store, sourceId);
+    const loaded = await loadMyInvestorFirstStart(store, sourceId, TODAY);
 
     expect(loaded).not.toBeNull();
     const { view } = loaded!;
@@ -124,7 +124,7 @@ describe("the first start of MyInvestor, over the fixtures", () => {
 
   test("including everything of one's own: MyInvestor's units, one batch, nothing of the minor", async () => {
     const sourceId = await connectAndRead();
-    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId))!;
+    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const own = view.own.flatMap((group) => group.products).filter(isIncludable);
 
     const result = await include(
@@ -175,7 +175,7 @@ describe("the first start of MyInvestor, over the fixtures", () => {
 
   test("the cash with an order in progress counts the held amount once", async () => {
     const sourceId = await connectAndRead();
-    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId))!;
+    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const cash = view.own
       .flatMap((group) => group.products)
       .find((row) => row.kind === "cash" && row.withheldMinor !== null)!;
@@ -204,7 +204,7 @@ describe("the first start of MyInvestor, over the fixtures", () => {
 
   test("what belongs to someone else stays out, and including it later brings its history", async () => {
     const sourceId = await connectAndRead();
-    const { view } = (await loadMyInvestorFirstStart(store, sourceId))!;
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const own = view.own.flatMap((group) => group.products).filter(isIncludable);
     await include(
       sourceId,
@@ -228,5 +228,88 @@ describe("the first start of MyInvestor, over the fixtures", () => {
     expect(Number(await unitsOf(assetId!))).toBe(Number(minor.units));
     expect(await patrimonioMinor()).toBe(withoutMinor + minor.valueMinor);
     expect((await client.execute("SELECT id FROM fact_batch")).rows).toHaveLength(2);
+  });
+});
+
+describe("linking a holding kept by hand (#1881), over the fixtures", () => {
+  test("the twin opens set to link; confirming replaces its operations in one batch", async () => {
+    const sourceId = await connectAndRead();
+    const first = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const product = first.view.own
+      .flatMap((group) => group.products)
+      .find((row) => row.kind === "fund" && row.operations > 1)!;
+    expect(product).toBeDefined();
+    const discovered = first.discovery.products.find((row) => row.key === product.key)!;
+
+    // The same fund, kept by hand with one buy of its own and a monthly plan.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "hand",
+      instrument: "fund",
+      liquidityTier: "market",
+      name: "El fondo, a mano",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      securityId: { kind: "isin", value: discovered.instrument!.code },
+    });
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "hand",
+        currency: "EUR",
+        executedAt: "2024-01-17",
+        feesMinor: 0,
+        id: "hand-buy",
+        kind: "buy",
+        pricePerUnit: "27.3141",
+        source: "manual",
+        units: "1.7311",
+      },
+      { today: TODAY },
+    );
+    await store.contributionPlan.createPlannedContribution({
+      amount: { mode: "money", value: 7_391 },
+      cadence: { dayOfMonth: 17, kind: "monthly" },
+      destinationHoldingId: "hand",
+      scopeId: "default",
+      startDate: "2024-01-17",
+    });
+
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const twin = view.rows.find((row) => row.key === product.key)!;
+    expect(twin.twin?.reason).toBe("identifier");
+    expect(twin.twin?.defaultChoice).toBe("link:hand");
+    expect(twin.twin!.candidates[0]!.careo.plan?.lines).toHaveLength(1);
+
+    const batchesBefore = (await client.execute("SELECT id FROM fact_batch")).rows.length;
+    const result = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      {
+        links: [{ assetId: "hand", productKey: product.key }],
+        productKeys: [],
+        sourceId,
+      },
+    );
+
+    expect(result).toMatchObject({ created: 0, linked: ["El fondo, a mano"], ok: true });
+    expect((await client.execute("SELECT id FROM fact_batch")).rows).toHaveLength(
+      batchesBefore + 1,
+    );
+    expect(await linkedAssetFor(sourceId, product.key)).toBe("hand");
+    // MyInvestor's units, exactly; the manual buy is provenance now.
+    expect(Number(await unitsOf("hand"))).toBe(Number(product.units));
+    const operations = await store.operations.readOperations("hand");
+    expect(operations).toHaveLength(product.operations);
+    expect(operations.some((operation) => operation.id === "hand-buy")).toBe(false);
+    expect(
+      (await store.connectedSources.readReplacedOperations("hand")).map(
+        (row) => row.operation.id,
+      ),
+    ).toEqual(["hand-buy"]);
+    const plan = await store.contributionPlan.readContributionPlan("default");
+    expect(plan.contributions[0]!.endDate).toBe(TODAY);
   });
 });

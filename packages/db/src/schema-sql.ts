@@ -595,4 +595,14 @@ CREATE TABLE \`connector_applied_facts\` (
 	PRIMARY KEY(\`source_id\`, \`fact_key\`),
 	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
-`;
+--> statement-breakpoint
+CREATE TABLE \`fact_batch_replaced_operations\` (
+	\`operation_id\` text PRIMARY KEY NOT NULL,
+	\`batch_id\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`operation_json\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`fact_batch_replaced_operations_asset_idx\` ON \`fact_batch_replaced_operations\` (\`asset_id\`,\`batch_id\`);`;

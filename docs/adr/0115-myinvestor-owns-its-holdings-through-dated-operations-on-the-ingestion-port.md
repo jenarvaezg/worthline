@@ -62,6 +62,29 @@ in the web yet.
    operations. The manual operations it replaced on linking are not restored; they
    remain in the linking batch's provenance (ADR 0062).
 
+### How decisions 5 and 6 landed (#1881)
+
+- **Linking is part of the include batch.** A product whose ISIN or DGS code a live
+  manual investment already carries is offered to link (a holding alike only by name
+  is a suggestion, never ticked). Confirming moves the holding's manual operations out
+  of the book and writes MyInvestor's, in the same `fact_batch`, transaction and
+  ripple as the holdings the include creates. The ripple's floor is the earliest of the
+  replaced and the incoming dates.
+- **A traspaso is replaced whole or not at all.** A manual holding with half a
+  traspaso links only together with the holding of its other half, in the same batch.
+  Otherwise the half left behind would read as a flow nobody made (#1393).
+- **The replaced operations are the batch's provenance.** They are kept, whole, in
+  `fact_batch_replaced_operations` under the linking batch's id (schema v76). Nothing
+  folds them. Their only parent is the holding, so they outlive a disconnect and travel
+  in the workspace document, which carries no batches. This is the one place where a
+  batch keeps more than its header (ADR 0062 amended).
+- **"Pending occurrences are deleted" means they leave the pending list.**
+  Occurrences are derived, never stored, so there is no row to delete. Each running
+  line ends today, a line that has not started yet is removed, and every occurrence up
+  to today still pending is settled as `skipped`, the one closed state that keeps no
+  execution truth. The careo previews this with the same function the command applies
+  (`closeContributionPlanOnLink`).
+
 ## Considered options
 
 - **A live mirror like Binance.** Rejected: it loses the operations, so the cost,

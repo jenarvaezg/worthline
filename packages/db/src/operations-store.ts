@@ -13,6 +13,7 @@ import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
+import { type HoldingLedger, readHoldingLedgers } from "./holding-ledger-reads";
 import {
   operationCaptureColumns,
   operationCostBasisColumns,
@@ -108,6 +109,13 @@ export interface OperationsStore {
   ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /**
+   * A few holdings' ledgers at once, with what their valuation reads and the
+   * holdings their traspasos pair them with (#1881): a fixed number of statements.
+   */
+  readHoldingLedgers: (
+    assetIds: readonly string[],
+  ) => Promise<Map<string, HoldingLedger>>;
+  /**
    * Delete ONE operation. Returns its asset id and date, or null if not found.
    *
    * Refuses half a traspaso: the pair is deleted through
@@ -177,6 +185,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     recordSourceOperations: (sourceId, inputs, opts) =>
       recordSourceOperations(ctx, sourceId, inputs, opts),
     readOperations: (assetId) => readAssetOperations(ctx, assetId),
+    readHoldingLedgers: (assetIds) => readHoldingLedgers(ctx, assetIds),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
     readTransferCounterparts: (assetId) => readTransferCounterparts(ctx, assetId),

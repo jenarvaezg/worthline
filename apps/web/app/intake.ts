@@ -454,7 +454,17 @@ export function resolveOkMessage(
       Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
     const operations =
       Number.parseInt(normalizeParam(searchParams?.["operaciones"]) ?? "", 10) || 0;
-    return `${created} ${created === 1 ? "holding creado" : "holdings creados"} con ${operations} ${operations === 1 ? "operación" : "operaciones"}, en un solo lote.`;
+    // And what it linked (#1881): read-only from now on, but for the inherited cost.
+    const linked = (normalizeParam(searchParams?.["enlazados"]) ?? "")
+      .split("\n")
+      .filter(Boolean);
+    const createdPart =
+      created > 0 || linked.length === 0
+        ? `${created} ${created === 1 ? "holding creado" : "holdings creados"} con ${operations} ${operations === 1 ? "operación" : "operaciones"}, en un solo lote.`
+        : `Hecho en un solo lote, con ${operations} ${operations === 1 ? "operación" : "operaciones"}.`;
+    if (linked.length === 0) return createdPart;
+    const names = linked.map((name) => `«${name}»`).join(", ");
+    return `${createdPart} ${names} ya ${linked.length === 1 ? "está enlazado" : "están enlazados"} con MyInvestor: de solo lectura, salvo el coste heredado.`;
   }
 
   if (key === "schedule_import_loaded") {

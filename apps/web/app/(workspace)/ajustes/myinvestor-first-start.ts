@@ -19,9 +19,15 @@
  *   the amount that arrived, the default of every external entry (no latent gain
  *   invented), valued at the nearest execution NAV of the same product when
  *   MyInvestor states no figure for it.
+ *
+ * A product a live manual holding already is (#1881) is not created again unless
+ * the user says so: it is LINKED, and the same folded rows replace the holding's
+ * manual operations. Its careo comes from those rows too.
  */
 import type {
   ConnectedHoldingCreation,
+  ConnectedHoldingLink,
+  HoldingContributionPlan,
   IncludeConnectedHoldingsCommand,
 } from "@worthline/db";
 import type {
@@ -44,6 +50,7 @@ import {
 } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { myInvestorHoldingKey } from "@worthline/pricing";
+import { myInvestorCareo, myInvestorNamesAlike } from "./myinvestor-careo";
 import {
   holdsSomethingToday,
   type MyInvestorDiscoveredAccount,
@@ -51,12 +58,15 @@ import {
   type MyInvestorDiscovery,
   type MyInvestorProductKind,
 } from "./myinvestor-discovery";
-import type {
-  MyInvestorAccountGroup,
-  MyInvestorFirstStartView,
-  MyInvestorInclusionBlock,
-  MyInvestorProductRow,
-  MyInvestorRung,
+import {
+  type MyInvestorAccountGroup,
+  type MyInvestorFirstStartView,
+  type MyInvestorInclusionBlock,
+  type MyInvestorProductRow,
+  type MyInvestorRung,
+  type MyInvestorTwin,
+  type MyInvestorTwinChoice,
+  myInvestorLinkChoice,
 } from "./myinvestor-selection";
 
 const EUR = "EUR";
@@ -232,19 +242,84 @@ export function foldMyInvestorOperations(
   return folded;
 }
 
+/** A live MANUAL investment, as the twin search needs it (#1881). */
+export interface MyInvestorManualHolding {
+  readonly id: string;
+  readonly name: string;
+  /** The ISIN or DGS code it carries; null when it carries none. */
+  readonly code: string | null;
+}
+
+/** Which manual holdings a product may be, before their ledgers are read. */
+export interface MyInvestorTwinMatch {
+  readonly reason: MyInvestorTwin["reason"];
+  readonly scheme: MyInvestorTwin["scheme"];
+  readonly holdings: readonly MyInvestorManualHolding[];
+}
+
+/**
+ * The manual twins of each product not linked yet (#1881, #1869 P3). Pure.
+ *
+ * - **Strong**: a holding that carries the product's ISIN or DGS code. A manual
+ *   holding has no account, so the code is all there is to compare.
+ * - **Suggestion**: only when there is no strong one, a holding that carries no
+ *   identifier and whose name is alike. It is never ticked.
+ *
+ * Cash and a managed portfolio have no units to compare: they never have a twin.
+ */
+export function findMyInvestorTwins(
+  discovery: MyInvestorDiscovery,
+  input: {
+    manual: readonly MyInvestorManualHolding[];
+    linkedKeys: ReadonlySet<string>;
+  },
+): Map<string, MyInvestorTwinMatch> {
+  const twins = new Map<string, MyInvestorTwinMatch>();
+  for (const product of discovery.products) {
+    if (product.instrument === null || input.linkedKeys.has(product.key)) continue;
+    const { code, scheme } = product.instrument;
+    const strong = input.manual.filter((holding) => holding.code === code);
+    if (strong.length > 0) {
+      twins.set(product.key, { holdings: strong, reason: "identifier", scheme });
+      continue;
+    }
+    const alike = input.manual.filter(
+      (holding) =>
+        holding.code === null && myInvestorNamesAlike(product.name, holding.name),
+    );
+    if (alike.length > 0) {
+      twins.set(product.key, { holdings: alike, reason: "name", scheme });
+    }
+  }
+  return twins;
+}
+
+/** What the careo of one candidate needs of its manual holding. */
+export interface MyInvestorTwinLedger {
+  readonly operations: readonly InvestmentOperation[];
+  /** The two prices its valuation reads: the usable cached quote and the hand-set one. */
+  readonly cachedPrice?: DecimalString;
+  readonly manualPrice?: DecimalString;
+  readonly plan: HoldingContributionPlan | null;
+  /** The holdings holding the other half of one of its traspasos, with their names. */
+  readonly pairedWith: readonly { readonly assetId: string; readonly name: string }[];
+}
+
 /**
  * The fold that chooses what to include, by account as the bank shows them. Pure.
  *
- * `manualTwins` maps an ISIN or DGS code to the name of a live MANUAL holding that
- * already carries it (#1881's careo is not here yet); `linkedKeys` are the products
- * already linked.
+ * `twins` are the manual holdings each product may be ({@link findMyInvestorTwins}),
+ * and `ledgers` what was read of each of them, by holding id, for its careo;
+ * `linkedKeys` are the products already linked.
  */
 export function myInvestorFirstStartView(
   discovery: MyInvestorDiscovery,
   input: {
     sourceId: string;
     linkedKeys: ReadonlySet<string>;
-    manualTwins: ReadonlyMap<string, string>;
+    twins: ReadonlyMap<string, MyInvestorTwinMatch>;
+    ledgers: ReadonlyMap<string, MyInvestorTwinLedger>;
+    today: string;
   },
 ): MyInvestorFirstStartView {
   const folded = foldMyInvestorOperations(discovery, input.sourceId);
@@ -256,29 +331,63 @@ export function myInvestorFirstStartView(
     factsByProduct.set(key, list);
   }
 
+  // Only one product opens set to link a given holding: the same ISIN in two
+  // accounts would otherwise both claim it, and the batch refuses that.
+  const claimed = new Set<string>();
+  const twinOf = (
+    product: MyInvestorDiscoveredProduct,
+    rows: readonly InvestmentOperation[],
+  ): MyInvestorTwin | null => {
+    const match = input.twins.get(product.key);
+    if (!match) return null;
+    const candidates = match.holdings.map((holding) => {
+      const ledger = input.ledgers.get(holding.id);
+      return {
+        assetId: holding.id,
+        careo: myInvestorCareo({
+          manual: ledger?.operations ?? [],
+          plan: ledger?.plan ?? null,
+          source: rows,
+          today: input.today,
+          ...(ledger?.cachedPrice ? { cachedPrice: ledger.cachedPrice } : {}),
+          ...(ledger?.manualPrice ? { manualPrice: ledger.manualPrice } : {}),
+        }),
+        name: holding.name,
+        pairedWith: ledger?.pairedWith ?? [],
+      };
+    });
+    const only = candidates.length === 1 ? candidates[0]! : null;
+    let defaultChoice: MyInvestorTwinChoice = "skip";
+    if (
+      match.reason === "identifier" &&
+      only !== null &&
+      !product.otherHolder &&
+      !claimed.has(only.assetId)
+    ) {
+      claimed.add(only.assetId);
+      defaultChoice = myInvestorLinkChoice(only.assetId);
+    }
+    return { candidates, defaultChoice, reason: match.reason, scheme: match.scheme };
+  };
+
   const rowOf = (product: MyInvestorDiscoveredProduct): MyInvestorProductRow => {
     const rows = folded.get(product.key) ?? [];
     const facts = factsByProduct.get(product.key) ?? [];
-    const twin =
-      product.instrument === null
-        ? undefined
-        : input.manualTwins.get(product.instrument.code);
     const block: MyInvestorInclusionBlock | null =
       product.kind === "managed"
         ? { reason: "managed_portfolio" }
-        : twin !== undefined
-          ? { holdingName: twin, reason: "manual_twin" }
-          : facts.some((fact) => fact.currency !== EUR) ||
-              (product.cash !== null && product.cash.currency !== EUR)
-            ? { reason: "currency" }
-            : null;
+        : facts.some((fact) => fact.currency !== EUR) ||
+            (product.cash !== null && product.cash.currency !== EUR)
+          ? { reason: "currency" }
+          : null;
+    const linked = input.linkedKeys.has(product.key);
+    const twin = block === null && !linked ? twinOf(product, rows) : null;
     const valueMinor =
       product.cash !== null
         ? toMinor(product.cash.balance)
         : derivePosition([...rows], { assetId: product.key, currency: EUR }).costBasis
             .amountMinor;
     const withheld = product.cash?.withheld ?? null;
-    const linked = input.linkedKeys.has(product.key);
     return {
       accountKey: product.accountKey,
       block,
@@ -293,8 +402,13 @@ export function myInvestorFirstStartView(
       otherHolder: product.otherHolder,
       rung: rungOf(product.kind),
       selectedByDefault:
-        !linked && block === null && !product.otherHolder && holdsSomethingToday(product),
+        !linked &&
+        block === null &&
+        twin === null &&
+        !product.otherHolder &&
+        holdsSomethingToday(product),
       since: rows[0]?.executedAt.slice(0, 10) ?? null,
+      twin,
       units: product.units,
       valueMinor,
       withheldMinor:
@@ -302,7 +416,7 @@ export function myInvestorFirstStartView(
     };
   };
 
-  const rows = discovery.products.map(rowOf);
+  const rows = settleTwinDefaults(discovery.products.map(rowOf));
   const groups = discovery.accounts.map((account) => ({
     account,
     products: rows.filter((row) => row.accountKey === account.key),
@@ -313,6 +427,36 @@ export function myInvestorFirstStartView(
     readOn: discovery.readOn,
     rows,
   };
+}
+
+/**
+ * A default «Enlazar» stands only if every traspaso of its holding is linked with
+ * it: a half left behind would be refused by the batch (#1393). Repeated until
+ * nothing changes, since unlinking one can strand another.
+ */
+function settleTwinDefaults(rows: MyInvestorProductRow[]): MyInvestorProductRow[] {
+  let settled = rows;
+  for (;;) {
+    const linking = new Set(
+      settled.flatMap((row) => {
+        const choice = row.twin?.defaultChoice ?? "skip";
+        return choice.startsWith("link:") ? [choice.slice("link:".length)] : [];
+      }),
+    );
+    let changed = false;
+    settled = settled.map((row) => {
+      const twin = row.twin;
+      if (!twin || !twin.defaultChoice.startsWith("link:")) return row;
+      const assetId = twin.defaultChoice.slice("link:".length);
+      const candidate = twin.candidates.find((item) => item.assetId === assetId);
+      if (!candidate || candidate.pairedWith.every((pair) => linking.has(pair.assetId))) {
+        return row;
+      }
+      changed = true;
+      return { ...row, twin: { ...twin, defaultChoice: "skip" } };
+    });
+    if (!changed) return settled;
+  }
 }
 
 /** A price-provider symbol found for a product's ISIN or DGS code, when one was. */
@@ -332,10 +476,17 @@ const KIND_INSTRUMENT = {
   stock: "stock",
 } as const;
 
+/** A product to link to one of its manual twins (#1881). */
+export interface MyInvestorLinkChoice {
+  readonly productKey: string;
+  readonly assetId: string;
+}
+
 /**
- * The batch that includes the chosen products. Pure: ids, ownership and price
- * symbols are the caller's. Refuses a product that is unknown, already linked or
- * another slice's; nothing is half-planned.
+ * The batch that includes the chosen products and links the chosen twins. Pure:
+ * ids, ownership and price symbols are the caller's. Refuses a product that is
+ * unknown, already linked or another slice's, a link to a holding that is not one of
+ * the product's twins, and a holding claimed twice; nothing is half-planned.
  */
 export function planMyInvestorInclusion(
   discovery: MyInvestorDiscovery,
@@ -343,6 +494,8 @@ export function planMyInvestorInclusion(
     sourceId: string;
     today: string;
     productKeys: readonly string[];
+    /** Twins to link (#1881); none when absent. */
+    links?: readonly MyInvestorLinkChoice[];
     view: MyInvestorFirstStartView;
     ownership: OwnershipShare[];
     assetIdFor: (productKey: string) => string;
@@ -350,13 +503,55 @@ export function planMyInvestorInclusion(
   },
 ): MyInvestorInclusionPlan {
   const keys = [...new Set(input.productKeys)];
-  if (keys.length === 0) {
+  const links = input.links ?? [];
+  if (keys.length === 0 && links.length === 0) {
     return { error: "Marca al menos un producto para incluirlo.", ok: false };
   }
   const rowByKey = new Map(input.view.rows.map((row) => [row.key, row]));
   const productByKey = new Map(
     discovery.products.map((product) => [product.key, product]),
   );
+  const claimed = new Map<string, string>();
+  for (const link of links) {
+    const row = rowByKey.get(link.productKey);
+    if (!row || !productByKey.has(link.productKey)) {
+      return {
+        error: "Ese producto ya no está en lo que leímos de MyInvestor. Vuelve a leerlo.",
+        ok: false,
+      };
+    }
+    if (row.linked) return { error: `«${row.name}» ya está incluido.`, ok: false };
+    const candidate = row.twin?.candidates.find((item) => item.assetId === link.assetId);
+    if (row.block !== null || !candidate) {
+      return { error: `«${row.name}» no se puede enlazar con ese holding.`, ok: false };
+    }
+    if (keys.includes(link.productKey)) {
+      return {
+        error: `«${row.name}» se enlaza o se crea aparte, no las dos cosas.`,
+        ok: false,
+      };
+    }
+    const other = claimed.get(link.assetId);
+    if (other !== undefined) {
+      return {
+        error: `«${candidate.name}» solo se puede enlazar con un producto: elige entre «${other}» y «${row.name}».`,
+        ok: false,
+      };
+    }
+    claimed.set(link.assetId, row.name);
+  }
+  // A traspaso is replaced whole or not at all (#1393): both its holdings link.
+  for (const link of links) {
+    const row = rowByKey.get(link.productKey)!;
+    const candidate = row.twin!.candidates.find((item) => item.assetId === link.assetId)!;
+    const stranded = candidate.pairedWith.find((pair) => !claimed.has(pair.assetId));
+    if (stranded) {
+      return {
+        error: `«${candidate.name}» tiene un traspaso con «${stranded.name}»: enlaza los dos a la vez, o deshaz el traspaso antes.`,
+        ok: false,
+      };
+    }
+  }
   for (const key of keys) {
     const row = rowByKey.get(key);
     if (!row || !productByKey.has(key)) {
@@ -380,6 +575,34 @@ export function planMyInvestorInclusion(
       fact.key,
     ]),
   );
+
+  const linkCommands: ConnectedHoldingLink[] = [];
+  for (const link of links) {
+    const row = rowByKey.get(link.productKey)!;
+    const product = productByKey.get(link.productKey)!;
+    linkCommands.push({
+      assetId: link.assetId,
+      productKey: link.productKey,
+      // Alike only by name, the holding carries no identifier: it takes this one.
+      ...(row.twin?.reason === "name" && product.instrument
+        ? {
+            securityId: {
+              kind: product.instrument.scheme,
+              value: product.instrument.code,
+            },
+          }
+        : {}),
+    });
+    for (const operation of folded.get(link.productKey) ?? []) {
+      const factKey = factKeyById.get(operation.id);
+      if (factKey === undefined) continue;
+      facts.push({
+        dateKey: operation.executedAt.slice(0, 10),
+        key: factKey,
+        payload: operationInput(operation, link.assetId),
+      });
+    }
+  }
 
   for (const key of keys) {
     const product = productByKey.get(key)!;
@@ -445,6 +668,7 @@ export function planMyInvestorInclusion(
     command: {
       facts: { cursor: discovery.readOn, facts },
       holdings,
+      links: linkCommands,
       sourceId: input.sourceId,
       today: input.today,
     },

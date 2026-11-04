@@ -107,8 +107,9 @@ export function MyInvestorConnectedDetail({
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="sourceId" type="hidden" value={sourceId} />
           <p className="muted">
-            Se borran ya las credenciales. Lo que hubieras incluido se queda como manual,
-            con sus operaciones.
+            Se borran ya las credenciales. Lo que hubieras incluido o enlazado se queda
+            como manual, con las operaciones de MyInvestor: las tuyas que sustituyó no
+            vuelven.
           </p>
           <PendingSubmit className="btnSecondary" pendingLabel="Desconectando…">
             Desconectar MyInvestor

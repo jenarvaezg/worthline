@@ -28,8 +28,10 @@ import {
   disconnectOwningSource,
   type PendingLoginRow,
   purgeExpiredPendingLogins,
+  type ReplacedOperationRow,
   readAppliedFactKeys,
   readPendingLogin,
+  readReplacedOperations,
   readSourceDiscovery,
   readSourceLinks,
   reservePendingCodeAttempt,
@@ -212,6 +214,8 @@ export interface ConnectedSourceStore {
   readLinks(sourceId: string): Promise<SourceLinkRow[]>;
   /** The ingestion port's dedup ledger of a source (ADR 0066). */
   readAppliedFactKeys(sourceId: string): Promise<Set<string>>;
+  /** The manual operations a link to an owning source replaced (#1881). */
+  readReplacedOperations(assetId: string): Promise<ReplacedOperationRow[]>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -990,5 +994,6 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     readDiscovery: (sourceId) => readSourceDiscovery(ctx, sourceId),
     readLinks: (sourceId) => readSourceLinks(ctx, sourceId),
     readAppliedFactKeys: (sourceId) => readAppliedFactKeys(ctx, sourceId),
+    readReplacedOperations: (assetId) => readReplacedOperations(ctx, assetId),
   };
 }

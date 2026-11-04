@@ -895,6 +895,34 @@ export const connectorAppliedFacts = sqliteTable(
   (table) => [primaryKey({ columns: [table.sourceId, table.factKey] })],
 );
 
+/**
+ * The manual operations a source's operations REPLACED when it was linked to a
+ * holding that already existed by hand (#1881, ADR 0115 decision 6): the provenance
+ * of the batch that replaced them (ADR 0062). They are no longer facts — no fold,
+ * snapshot or ripple reads them — and disconnecting does not bring them back.
+ *
+ * - `batch_id` is the linking `fact_batch`, unconstrained like the dedup ledger's: a
+ *   workspace document carries no batches, and the provenance must outlive the
+ *   source, so neither the batch nor the source is a parent here.
+ * - `operation_json` is the replaced row as the domain read it, whole.
+ * - The holding is the parent: hard-deleting it takes its provenance with it.
+ */
+export const factBatchReplacedOperations = sqliteTable(
+  "fact_batch_replaced_operations",
+  {
+    operationId: text("operation_id").primaryKey(),
+    batchId: text("batch_id").notNull(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    operationJson: text("operation_json").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    index("fact_batch_replaced_operations_asset_idx").on(table.assetId, table.batchId),
+  ],
+);
+
 export const auditLog = sqliteTable(
   "audit_log",
   {

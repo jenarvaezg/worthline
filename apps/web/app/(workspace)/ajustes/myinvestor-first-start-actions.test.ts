@@ -29,6 +29,7 @@ vi.mock("@web/entitlements/ingestion-guard", () => ({
 import { VIEWER_READONLY_MESSAGE } from "@web/demo/write-guard";
 import { ingestionBlockedMessage } from "@web/entitlements/ingestion-guard";
 import { PAYWALL_SOURCES_PAUSED_MESSAGE } from "@web/entitlements/paywall-copy";
+import { resolveOkMessage } from "@web/intake";
 import {
   includeMyInvestorProductsAction,
   readMyInvestorProductsAction,
@@ -225,6 +226,58 @@ describe("including", () => {
     expect(target).toContain("ok=myinvestor_included");
     expect(target).toContain("created=2");
     expect(await store.connectedSources.readLinks(sourceId)).toHaveLength(2);
+  });
+
+  test("a twin set to «Enlazar» links its holding, and the band names it (#1881)", async () => {
+    const sourceId = await connect(SAVED);
+    await redirected(
+      readMyInvestorProductsAction(
+        form({ currentUrl: URL, sourceId }),
+        store,
+        clock,
+        fixtureClients,
+      ),
+    );
+    const row = await store.connectedSources.readDiscovery(sourceId);
+    const discovery = JSON.parse(row!.payloadJson) as {
+      products: {
+        key: string;
+        kind: string;
+        otherHolder: boolean;
+        instrument: { code: string } | null;
+      }[];
+    };
+    const fund = discovery.products.find(
+      (product) => product.kind === "fund" && !product.otherHolder,
+    )!;
+    const workspace = await store.workspace.readWorkspace();
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "hand",
+      instrument: "fund",
+      liquidityTier: "market",
+      name: "Fondo a mano",
+      ownership: [{ memberId: workspace!.members[0]!.id, shareBps: 10_000 }],
+      securityId: { kind: "isin", value: fund.instrument!.code },
+    });
+
+    const target = await redirected(
+      includeMyInvestorProductsAction(
+        form({ currentUrl: URL, sourceId, [`twin:${fund.key}`]: "link:hand" }),
+        store,
+        clock,
+        noSymbols,
+      ),
+    );
+
+    expect(target).toContain("ok=myinvestor_included");
+    expect(await store.connectedSources.readLinks(sourceId)).toEqual([
+      { assetId: "hand", productKey: fund.key },
+    ]);
+    const params = Object.fromEntries(new URLSearchParams(target.split("?")[1]));
+    expect(resolveOkMessage(params)).toContain(
+      "«Fondo a mano» ya está enlazado con MyInvestor: de solo lectura, salvo el coste heredado.",
+    );
   });
 
   test("including with nothing read says what to do first", async () => {

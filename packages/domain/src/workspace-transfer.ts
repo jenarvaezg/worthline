@@ -1003,6 +1003,21 @@ const managedPortfolioSchema = reproduces<ManagedPortfolio>()(
   }),
 );
 
+/**
+ * The manual operations a source's operations replaced when it was linked to a
+ * holding that existed by hand (#1881, ADR 0115 decision 6): the linking batch's
+ * provenance (ADR 0062), each row as the domain read it. Not operations any more —
+ * nothing folds them — so they travel apart from `operations`.
+ */
+const replacedOperationSchema = z.object({
+  operationId: nonEmptyString,
+  batchId: nonEmptyString,
+  assetId: nonEmptyString,
+  operationJson: nonEmptyString,
+});
+
+export type ExportedReplacedOperation = z.output<typeof replacedOperationSchema>;
+
 // ── The document ────────────────────────────────────────────────────────────
 
 /**
@@ -1050,6 +1065,8 @@ export const workspaceExportSchema = z.object({
    * extra data here.
    */
   managedPortfolios: z.array(managedPortfolioSchema).default([]),
+  /** What a link to an owning source replaced (#1881); absent before it existed. */
+  replacedOperations: z.array(replacedOperationSchema).default([]),
 });
 
 /** The versioned export document — the on-disk JSON shape. */
@@ -1073,7 +1090,8 @@ type OmittableSection =
   | "contributionPlans"
   | "contributionReconciliations"
   | "contributionAllowances"
-  | "managedPortfolios";
+  | "managedPortfolios"
+  | "replacedOperations";
 
 /** Every section of the document, without the version stamp. */
 export type WorkspaceExportData = Omit<WorkspaceExport, "version" | OmittableSection> &
@@ -1151,5 +1169,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     contributionReconciliations: data.contributionReconciliations ?? [],
     contributionAllowances: data.contributionAllowances ?? [],
     managedPortfolios: data.managedPortfolios ?? [],
+    replacedOperations: data.replacedOperations ?? [],
   };
 }

@@ -66,6 +66,7 @@ import {
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   earlyRepayments,
+  factBatchReplacedOperations,
   interestRateRevisions,
   investmentAssets,
   liabilities,
@@ -613,6 +614,14 @@ async function importWorkspace(
       if (portfolioLinks.length > 0) {
         await db.insert(managedPortfolioHoldings).values(portfolioLinks).run();
       }
+    }
+
+    // What a link to an owning source replaced (#1881), after its holdings (FK).
+    for (let start = 0; start < doc.replacedOperations.length; start += 100) {
+      await db
+        .insert(factBatchReplacedOperations)
+        .values(doc.replacedOperations.slice(start, start + 100))
+        .run();
     }
 
     if (doc.warningOverrides.length > 0) {
@@ -1297,7 +1306,23 @@ async function buildWorkspaceExport(
     portfolioHoldingsById.set(row.portfolioId, list);
   }
 
+  // What a link to an owning source replaced (#1881): the linking batch's provenance.
+  const replacedOperationRows = await db
+    .select({
+      assetId: factBatchReplacedOperations.assetId,
+      batchId: factBatchReplacedOperations.batchId,
+      operationId: factBatchReplacedOperations.operationId,
+      operationJson: factBatchReplacedOperations.operationJson,
+    })
+    .from(factBatchReplacedOperations)
+    .orderBy(
+      asc(factBatchReplacedOperations.assetId),
+      asc(factBatchReplacedOperations.operationId),
+    )
+    .all();
+
   return serializeWorkspaceExport({
+    replacedOperations: replacedOperationRows,
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
     groups: workspace.groups,

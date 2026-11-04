@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 75;
+export const SCHEMA_VERSION = 76;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2534,6 +2534,31 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `);
     }
     await writeSchemaVersion(client, 75);
+  }
+
+  if (version < 76) {
+    // #1881 (ADR 0115 decision 6, ADR 0062): the manual operations a source's
+    // operations replace when it is linked to a holding that already existed by
+    // hand, kept as the linking batch's provenance. Additive; the holding is its
+    // only parent (the batch and the source are not, so the provenance outlives a
+    // disconnect and travels in a workspace document that carries no batches).
+    // A partial historical fixture with no assets table has nothing to hang it on.
+    const assetColumns = (await client.execute("PRAGMA table_info(assets)")).rows;
+    if (assetColumns.length > 0) {
+      await client.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS fact_batch_replaced_operations (
+          operation_id TEXT PRIMARY KEY NOT NULL,
+          batch_id TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          operation_json TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE INDEX IF NOT EXISTS fact_batch_replaced_operations_asset_idx
+          ON fact_batch_replaced_operations (asset_id, batch_id);
+      `);
+    }
+    await writeSchemaVersion(client, 76);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -11,10 +11,15 @@
  *    the device but the password was not kept (ADR 0114 decision 1) — the fold asks
  *    for it once, and the known device needs no SMS.
  * 2. **Include.** No session: it applies what the read found, so including later
- *    what was left out never asks MyInvestor again.
+ *    what was left out never asks MyInvestor again. The same batch links the
+ *    products a manual holding already was (#1881).
  */
 import type { WorthlineStore } from "@web/store";
-import type { InvestmentPriceProvider, OwnershipShare } from "@worthline/domain";
+import type {
+  InvestmentPriceProvider,
+  ManualAsset,
+  OwnershipShare,
+} from "@worthline/domain";
 import type {
   MyInvestorClient,
   MyInvestorErrorKind,
@@ -30,7 +35,11 @@ import {
   serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
 import {
+  findMyInvestorTwins,
+  type MyInvestorLinkChoice,
+  type MyInvestorManualHolding,
   type MyInvestorPriceSymbol,
+  type MyInvestorTwinLedger,
   myInvestorFirstStartView,
   planMyInvestorInclusion,
 } from "./myinvestor-first-start";
@@ -61,7 +70,16 @@ export type MyInvestorFirstStartStore = {
   command: Pick<WorthlineStore["command"], "includeConnectedHoldings">;
   workspace: Pick<WorthlineStore["workspace"], "readWorkspace">;
   assets: Pick<WorthlineStore["assets"], "readAssets">;
+  operations: Pick<WorthlineStore["operations"], "readHoldingLedgers">;
+  contributionPlan: Pick<WorthlineStore["contributionPlan"], "readHoldingPlans">;
+  managedPortfolios: Pick<WorthlineStore["managedPortfolios"], "readManagedPortfolios">;
 };
+
+/** What loading the fold reads: everything but the command and the workspace. */
+type MyInvestorFoldStore = Pick<
+  MyInvestorFirstStartStore,
+  "connectedSources" | "assets" | "operations" | "contributionPlan" | "managedPortfolios"
+>;
 
 export type MyInvestorFlowResult = { ok: true } | { ok: false; error: string };
 
@@ -154,39 +172,97 @@ export async function readMyInvestorProducts(
   });
 }
 
-/** The live MANUAL holdings by the ISIN or DGS code they carry: S6's twins. */
-async function manualTwins(
-  store: Pick<MyInvestorFirstStartStore, "assets">,
-): Promise<Map<string, string>> {
-  const twins = new Map<string, string>();
-  for (const asset of await store.assets.readAssets()) {
-    if (asset.connectedSourceId != null) continue;
-    const code = asset.securityId?.value;
-    if (code && !twins.has(code)) twins.set(code, asset.name);
-  }
-  return twins;
+/**
+ * The live MANUAL investments a product could be (#1881): not linked to any source,
+ * and not a member of a managed portfolio — a portfolio kept by hand is linked as a
+ * block, member by member (#1883), not one fund at a time here.
+ */
+async function manualHoldings(
+  store: Pick<MyInvestorFoldStore, "managedPortfolios">,
+  assets: readonly ManualAsset[],
+): Promise<MyInvestorManualHolding[]> {
+  const members = new Set(
+    (await store.managedPortfolios.readManagedPortfolios()).flatMap(
+      (portfolio) => portfolio.holdingIds,
+    ),
+  );
+  return assets.flatMap((asset) =>
+    asset.type === "investment" &&
+    asset.connectedSourceId == null &&
+    !members.has(asset.id)
+      ? [{ code: asset.securityId?.value || null, id: asset.id, name: asset.name }]
+      : [],
+  );
+}
+
+/**
+ * What each careo needs of the candidates — ledgers, the prices their valuation
+ * reads, their plans and their traspasos' other halves — in a fixed number of
+ * reads, whatever the number of candidates (ADR 0030).
+ */
+async function twinLedgers(
+  store: Pick<MyInvestorFoldStore, "operations" | "contributionPlan">,
+  assetIds: readonly string[],
+  nameOf: ReadonlyMap<string, string>,
+): Promise<Map<string, MyInvestorTwinLedger>> {
+  if (assetIds.length === 0) return new Map();
+  const ledgers = await store.operations.readHoldingLedgers(assetIds);
+  const plans = await store.contributionPlan.readHoldingPlans(assetIds);
+  return new Map(
+    [...ledgers].map(([assetId, ledger]) => [
+      assetId,
+      {
+        operations: ledger.operations,
+        pairedWith: ledger.transferCounterparts.map((counterpart) => ({
+          assetId: counterpart,
+          name: nameOf.get(counterpart) ?? "otro holding",
+        })),
+        plan: plans.get(assetId) ?? null,
+        ...(ledger.cachedPrice ? { cachedPrice: ledger.cachedPrice } : {}),
+        ...(ledger.manualPrice ? { manualPrice: ledger.manualPrice } : {}),
+      },
+    ]),
+  );
 }
 
 /** The stored discovery and the fold built from it, or null when there is none to show. */
 export async function loadMyInvestorFirstStart(
-  store: Pick<MyInvestorFirstStartStore, "connectedSources" | "assets">,
+  store: MyInvestorFoldStore,
   sourceId: string,
+  today: string,
 ): Promise<{ discovery: MyInvestorDiscovery; view: MyInvestorFirstStartView } | null> {
   const row = await store.connectedSources.readDiscovery(sourceId);
   const discovery = row ? parseMyInvestorDiscovery(row.payloadJson) : null;
   if (!discovery) return null;
   const links = await store.connectedSources.readLinks(sourceId);
+  const linkedKeys = new Set(links.map((link) => link.productKey));
+  const assets = await store.assets.readAssets();
+  const twins = findMyInvestorTwins(discovery, {
+    linkedKeys,
+    manual: await manualHoldings(store, assets),
+  });
+  // Only the candidates' ledgers are read, all of them at once.
+  const candidates = [
+    ...new Set([...twins.values()].flatMap((match) => match.holdings.map((h) => h.id))),
+  ];
   const view = myInvestorFirstStartView(discovery, {
-    linkedKeys: new Set(links.map((link) => link.productKey)),
-    manualTwins: await manualTwins(store),
+    ledgers: await twinLedgers(
+      store,
+      candidates,
+      new Map(assets.map((asset) => [asset.id, asset.name])),
+    ),
+    linkedKeys,
     sourceId,
+    today,
+    twins,
   });
   return { discovery, view };
 }
 
 /**
  * «Incluir N y traer su histórico», and later «Incluir con su histórico»: the chosen
- * products become linked holdings with their whole history, in ONE batch.
+ * products become linked holdings with their whole history, and the chosen twins
+ * link their manual holdings (#1881), in ONE batch.
  */
 export async function includeMyInvestorProducts(
   deps: {
@@ -195,12 +271,18 @@ export async function includeMyInvestorProducts(
     newAssetId: () => string;
     today: string;
   },
-  input: { sourceId: string; productKeys: readonly string[] },
-): Promise<MyInvestorFlowResult & { created?: number; applied?: number }> {
+  input: {
+    sourceId: string;
+    productKeys: readonly string[];
+    links?: readonly MyInvestorLinkChoice[];
+  },
+): Promise<
+  MyInvestorFlowResult & { created?: number; linked?: string[]; applied?: number }
+> {
   if (!(await readConnection(deps.store, input.sourceId))) {
     return { error: MYINVESTOR_NOT_FOUND, ok: false };
   }
-  const loaded = await loadMyInvestorFirstStart(deps.store, input.sourceId);
+  const loaded = await loadMyInvestorFirstStart(deps.store, input.sourceId, deps.today);
   if (!loaded) return { error: MYINVESTOR_NOTHING_READ, ok: false };
 
   const workspace = await deps.store.workspace.readWorkspace();
@@ -228,6 +310,7 @@ export async function includeMyInvestorProducts(
 
   const plan = planMyInvestorInclusion(loaded.discovery, {
     assetIdFor: (key) => ids.get(key)!,
+    links: input.links ?? [],
     ownership,
     productKeys: keys,
     sourceId: input.sourceId,
@@ -238,7 +321,14 @@ export async function includeMyInvestorProducts(
   if (!plan.ok) return plan;
 
   const result = await deps.store.command.includeConnectedHoldings(plan.command);
-  return { applied: result.applied, created: result.created, ok: true };
+  // The success band names what is now MyInvestor's (#1881, design C).
+  const candidates = loaded.view.rows.flatMap((row) => row.twin?.candidates ?? []);
+  const linked = (input.links ?? []).map(
+    (link) =>
+      candidates.find((candidate) => candidate.assetId === link.assetId)?.name ??
+      link.assetId,
+  );
+  return { applied: result.applied, created: result.created, linked, ok: true };
 }
 
 /** The provider a symbol found by `searchSymbols` belongs to, narrowed. */

@@ -123,8 +123,9 @@ export async function ConexionesContent({
     : undefined;
   // What the last read found (#1880): the fold to choose what to include, and later
   // what was left out. Read from the store only; MyInvestor is never asked here.
+  const today = systemClock().today();
   const myInvestorFirstStart = myInvestorSource
-    ? await loadMyInvestorFirstStart(store, myInvestorSource.id)
+    ? await loadMyInvestorFirstStart(store, myInvestorSource.id, today)
     : null;
   const myInvestor: MyInvestorTableContext = {
     availability: myInvestorAvailability({
@@ -138,7 +139,7 @@ export async function ConexionesContent({
         : null,
     viewerEmail: await readSessionEmail(),
     firstStart: myInvestorFirstStart?.view ?? null,
-    today: systemClock().today(),
+    today,
   };
 
   return (

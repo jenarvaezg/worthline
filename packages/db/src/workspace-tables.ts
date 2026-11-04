@@ -17,6 +17,8 @@ const WORKSPACE_TABLES = [
   "contribution_allowance_holdings",
   "contribution_allowances",
   "asset_operations",
+  // The manual operations a link replaced (#1881): beneath the holding.
+  "fact_batch_replaced_operations",
   "asset_price_cache",
   // Connected sources project into an asset, with positions beneath the source —
   // children before parents so the FK cascade order holds (ADR 0016).

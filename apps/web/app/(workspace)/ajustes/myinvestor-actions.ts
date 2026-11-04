@@ -77,6 +77,7 @@ import {
   type MyInvestorClientFactory,
   myInvestorClientFactory,
 } from "./myinvestor-relay";
+import { parseMyInvestorInclusionForm } from "./myinvestor-selection";
 
 const CODE_NOT_A_CODE = "Escribe el código del SMS: solo cifras.";
 
@@ -410,7 +411,8 @@ export async function readMyInvestorProductsAction(
 
 /**
  * «Incluir N y traer su histórico» and «Incluir con su histórico» (#1880): the
- * ticked products become linked holdings with their whole history, in ONE batch.
+ * ticked products become linked holdings with their whole history, and the twins
+ * set to «Enlazar» link their manual holdings (#1881), in ONE batch.
  * It applies what the last read found, so it never talks to MyInvestor; only the
  * price symbols are looked up, before the batch.
  *
@@ -426,7 +428,10 @@ export async function includeMyInvestorProductsAction(
   const resolver =
     testArgFromActionArgs(_testArgs, isSymbolResolverOverride)?.myInvestorResolveSymbol ??
     searchMyInvestorSymbol;
-  return formActionInlineError<string[], { created: number; applied: number }>({
+  return formActionInlineError<
+    ReturnType<typeof parseMyInvestorInclusionForm>,
+    { created: number; linked: string[]; applied: number }
+  >({
     datedFact: false,
     extraIds: ["sourceId"],
     guardUrl: currentUrlOf,
@@ -434,7 +439,7 @@ export async function includeMyInvestorProductsAction(
     missingIdUrl: currentUrlOf,
     parse: ({ formData: data }) => ({
       ok: true,
-      value: data.getAll("productKey").map(String).filter(Boolean),
+      value: parseMyInvestorInclusionForm(data.entries()),
     }),
     requireId: false,
     run: async (store, { extra, parsed, today }) => {
@@ -448,12 +453,20 @@ export async function includeMyInvestorProductsAction(
           store,
           today,
         },
-        { productKeys: parsed, sourceId: extra.sourceId! },
+        {
+          links: parsed.links,
+          productKeys: parsed.productKeys,
+          sourceId: extra.sourceId!,
+        },
       );
       return result.ok
         ? {
             ok: true,
-            value: { applied: result.applied ?? 0, created: result.created ?? 0 },
+            value: {
+              applied: result.applied ?? 0,
+              created: result.created ?? 0,
+              linked: result.linked ?? [],
+            },
           }
         : result;
     },
@@ -463,9 +476,14 @@ export async function includeMyInvestorProductsAction(
     onSuccess: ({ formData: data, value }) =>
       appendParam(
         appendParam(
-          appendParam(currentUrlOf(data), "ok", "myinvestor_included"),
-          "created",
-          String(value?.created ?? 0),
+          appendParam(
+            appendParam(currentUrlOf(data), "ok", "myinvestor_included"),
+            "created",
+            String(value?.created ?? 0),
+          ),
+          "enlazados",
+          // One name per line: a holding's name is a single line.
+          (value?.linked ?? []).join("\n"),
         ),
         "operaciones",
         String(value?.applied ?? 0),

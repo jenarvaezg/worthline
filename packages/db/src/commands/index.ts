@@ -11,6 +11,7 @@ export type {
 } from "./command-implementation-types";
 export type {
   ConnectedHoldingCreation,
+  ConnectedHoldingLink,
   IncludeConnectedHoldingsCommand,
   IncludeConnectedHoldingsResult,
 } from "./connected-inclusion";
