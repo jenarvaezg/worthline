@@ -25,9 +25,11 @@ import type {
   MyInvestorDiscovery,
 } from "./myinvestor-discovery";
 import {
+  entryOfSoldOrigin,
   foldMyInvestorOperations,
   myInvestorOperationId,
   operationInput,
+  pendingEntryOfSoldOrigin,
   toMinor,
 } from "./myinvestor-operations-fold";
 import { myInvestorPortfolioParts } from "./myinvestor-portfolio";
@@ -90,6 +92,12 @@ export function planMyInvestorInclusion(
     ownership: OwnershipShare[];
     assetIdFor: (productKey: string) => string;
     symbols: ReadonlyMap<string, MyInvestorPriceSymbol | null>;
+    /**
+     * The ids of the sales `unpaired_out` the linked holdings' books already hold
+     * (#1882): an entry whose way out is one of them goes in with its cost pending,
+     * as the sync writes it. None when absent.
+     */
+    soldUnpairedOutIds?: ReadonlySet<string>;
   },
 ): MyInvestorInclusionPlan {
   const keys = [...new Set(input.productKeys)];
@@ -195,14 +203,31 @@ export function planMyInvestorInclusion(
     ]),
   );
   /** The product's operations, written into `assetId`. */
+  const outIdByTransferId = new Map(
+    [...folded.values()].flatMap((rows) =>
+      rows.flatMap((row) =>
+        row.kind === "transfer_out" && row.transferId
+          ? [[row.transferId, row.id] as const]
+          : [],
+      ),
+    ),
+  );
+  const soldOutIds = input.soldUnpairedOutIds ?? new Set<string>();
   const writeInto = (productKey: string, assetId: string) => {
     for (const operation of folded.get(productKey) ?? []) {
       const factKey = factKeyById.get(operation.id);
       if (factKey === undefined) continue;
+      const payload = operationInput(operation, assetId);
       facts.push({
         dateKey: operation.executedAt.slice(0, 10),
         key: factKey,
-        payload: operationInput(operation, assetId),
+        payload: entryOfSoldOrigin(
+          payload,
+          (transferId) => outIdByTransferId.get(transferId),
+          soldOutIds,
+        )
+          ? pendingEntryOfSoldOrigin(payload)
+          : payload,
       });
     }
   };

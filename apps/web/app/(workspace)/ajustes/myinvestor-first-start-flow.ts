@@ -51,6 +51,7 @@ import {
   type MyInvestorManualPortfolio,
 } from "./myinvestor-portfolio";
 import type { MyInvestorFirstStartView } from "./myinvestor-selection";
+import { soldUnpairedOutIds } from "./myinvestor-sync-plan";
 import {
   findMyInvestorTwins,
   type MyInvestorManualCash,
@@ -429,11 +430,21 @@ export async function includeMyInvestorProducts(
     symbols.set(key, await deps.resolveSymbol(product.instrument.code, instrument));
   }
 
+  // A way out an earlier pass applied as a sale (#1882): its entry, included now,
+  // goes in pending, as the sync writes it — never as half a traspaso.
+  const linkedBooks = await deps.store.operations.readHoldingLedgers(
+    (await deps.store.connectedSources.readLinks(input.sourceId)).map(
+      (link) => link.assetId,
+    ),
+  );
   const plan = planMyInvestorInclusion(loaded.discovery, {
     assetIdFor,
     links: input.links ?? [],
     ownership,
     productKeys: keys,
+    soldUnpairedOutIds: soldUnpairedOutIds(
+      new Map([...linkedBooks].map(([assetId, ledger]) => [assetId, ledger.operations])),
+    ),
     sourceId: input.sourceId,
     symbols,
     today: deps.today,

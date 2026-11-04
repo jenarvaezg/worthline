@@ -40,9 +40,11 @@ import {
   type MyInvestorDiscoveryReads,
 } from "./myinvestor-discovery";
 import {
+  entryOfSoldOrigin,
   foldMyInvestorOperations,
   myInvestorOperationId,
   operationInput,
+  pendingEntryOfSoldOrigin,
 } from "./myinvestor-operations-fold";
 
 type OperationFact = NormalizedFact<MyInvestorOperationFact>;
@@ -256,48 +258,43 @@ export function carryTransferCostsFromBook(
 }
 
 /**
+ * The ids of the sales `unpaired_out` the books hold (#1882): ways out an earlier
+ * pass read as sales because it had not seen the money arrive.
+ */
+export function soldUnpairedOutIds(
+  books: ReadonlyMap<string, readonly InvestmentOperation[]>,
+): Set<string> {
+  return new Set(
+    [...books.values()].flatMap((rows) =>
+      rows.flatMap((row) =>
+        row.kind === "sell" && row.transferLegState === "unpaired_out" ? [row.id] : [],
+      ),
+    ),
+  );
+}
+
+/**
  * A new paired `transfer_in` whose `transfer_out` an earlier pass already applied as
- * the sale it read as (`unpaired_out`, #1882): the pass that saw the money leave had
- * not seen it arrive. The ledger will not write that out again, so writing the entry
- * as half a traspaso would leave a pair with no other half and a sale that still
- * realizes its gain. The entry goes in as an entry with its cost PENDING, valued at
- * what arrived, and the proposal of S7 offers that sale as its origin: «Sí, vienen
- * de ahí» turns both into one traspaso, the user saying so (ADR 0115 as amended).
+ * the sale it read as: the ledger will not write that out again, so the entry goes in
+ * with its cost pending (`pendingEntryOfSoldOrigin`), never as half a traspaso.
+ * The window that pairs them holds the way out too, so its id comes from the batch.
  */
 function pendWhereOriginWasSold(
   facts: readonly NormalizedFact<CreateInvestmentOperationInput>[],
   books: ReadonlyMap<string, readonly InvestmentOperation[]>,
 ): NormalizedFact<CreateInvestmentOperationInput>[] {
-  const outs = new Map<string, CreateInvestmentOperationInput>();
+  const outIds = new Map<string, string>();
   for (const { payload } of facts) {
     if (payload.kind === "transfer_out" && payload.transferId) {
-      outs.set(payload.transferId, payload);
+      outIds.set(payload.transferId, payload.id);
     }
   }
-  const soldAlready = (transferId: string | undefined): boolean => {
-    const out = transferId === undefined ? undefined : outs.get(transferId);
-    if (!out) return false;
-    const applied = books.get(out.assetId)?.find((row) => row.id === out.id);
-    return applied?.kind === "sell" && applied.transferLegState === "unpaired_out";
-  };
-  return facts.map((fact) => {
-    const { payload } = fact;
-    if (
-      payload.kind !== "transfer_in" ||
-      payload.transferLegState !== undefined ||
-      !soldAlready(payload.transferId)
-    ) {
-      return fact;
-    }
-    return {
-      ...fact,
-      payload: {
-        ...payload,
-        transferCostMinor: multiplyToMinor(payload.units, payload.pricePerUnit),
-        transferLegState: "cost_pending",
-      },
-    };
-  });
+  const sold = soldUnpairedOutIds(books);
+  return facts.map((fact) =>
+    entryOfSoldOrigin(fact.payload, (transferId) => outIds.get(transferId), sold)
+      ? { ...fact, payload: pendingEntryOfSoldOrigin(fact.payload) }
+      : fact,
+  );
 }
 
 /** A linked holding whose book does not hold what MyInvestor says it holds. */

@@ -14,7 +14,10 @@ import type {
 } from "./myinvestor-discovery";
 import { myInvestorFirstStartView } from "./myinvestor-first-start";
 import { planMyInvestorInclusion } from "./myinvestor-inclusion-plan";
-import { foldMyInvestorOperations } from "./myinvestor-operations-fold";
+import {
+  foldMyInvestorOperations,
+  myInvestorOperationId,
+} from "./myinvestor-operations-fold";
 import {
   defaultMyInvestorTwinChoices,
   summarizeMyInvestorSelection,
@@ -371,6 +374,58 @@ describe("the cost a traspaso carries", () => {
     // And marked, so the ficha asks for the real cost (#1882).
     expect(entry.transferLegState).toBe("cost_pending");
     expect(view(d).rows[0]!.inheritedCostPending).toBe(true);
+  });
+
+  test("its way out already applied as a sale (S9 × S7): including the entry later writes it pending", () => {
+    const pair = paired("out", "in");
+    const d = discovery(
+      [
+        op("b1", A, { amount: "33.07", executedAt: "2026-03-03", units: "3.0317" }),
+        op("out", A, {
+          amount: "51.83",
+          executedAt: "2026-10-20",
+          operation: "transfer_out",
+          transfer: pair.out,
+          units: "3.0317",
+        }),
+        op("in", B, {
+          amount: "51.83",
+          executedAt: "2026-10-23",
+          operation: "transfer_in",
+          transfer: pair.in,
+          units: "2.9311",
+        }),
+      ],
+      [fund(A, "0"), fund(B, "2.9311")],
+    );
+    const v = view(d);
+    const include = (soldUnpairedOutIds?: ReadonlySet<string>) =>
+      planMyInvestorInclusion(d, {
+        assetIdFor: (key) => `asset:${key}`,
+        ownership: [{ memberId: "m", shareBps: 10_000 }],
+        productKeys: [keyOf(B)],
+        sourceId: SOURCE,
+        symbols: new Map(),
+        today: "2026-11-04",
+        view: v,
+        ...(soldUnpairedOutIds ? { soldUnpairedOutIds } : {}),
+      });
+
+    // A linked earlier: its book holds the way out as the sale an earlier pass
+    // wrote. The entry cannot be half a traspaso against it.
+    const plan = include(new Set([myInvestorOperationId(SOURCE, "out")]));
+    if (!plan.ok) throw new Error(plan.error);
+    expect(plan.command.facts.facts[0]!.payload).toMatchObject({
+      kind: "transfer_in",
+      transferCostMinor: 5183,
+      transferId: "t:out:in",
+      transferLegState: "cost_pending",
+    });
+
+    // With the way out a traspaso leg in the book, the cost travels as ever.
+    const travels = include();
+    if (!travels.ok) throw new Error(travels.error);
+    expect(travels.command.facts.facts[0]!.payload.transferLegState).toBeUndefined();
   });
 
   test("an internal traspaso nobody paired: the way out is a sale, the way in is pending (#1882)", () => {

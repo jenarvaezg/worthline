@@ -251,3 +251,36 @@ export function operationInput(
     units: row.units,
   };
 }
+
+/**
+ * Whether a row is the entry of a paired traspaso whose way out the book already
+ * holds as the sale an earlier pass read it as (`unpaired_out`, #1882): that pass
+ * saw the money leave and not arrive. `soldOutIds` are the ids of those sales,
+ * `outIdOf` gives the id of the way out of a `transferId`.
+ */
+export function entryOfSoldOrigin(
+  row: Pick<CreateInvestmentOperationInput, "kind" | "transferId" | "transferLegState">,
+  outIdOf: (transferId: string) => string | undefined,
+  soldOutIds: ReadonlySet<string>,
+): boolean {
+  if (row.kind !== "transfer_in" || row.transferLegState !== undefined) return false;
+  if (row.transferId === undefined) return false;
+  const outId = outIdOf(row.transferId);
+  return outId !== undefined && soldOutIds.has(outId);
+}
+
+/**
+ * That entry as it is written (ADR 0115 as amended 2026-11-04): with its cost
+ * PENDING, valued at what arrived, never as half a traspaso next to a sale that
+ * still realizes its gain. The proposal of #1882 offers that sale as its origin,
+ * and «Sí, vienen de ahí» turns both into one traspaso, the user saying so.
+ */
+export function pendingEntryOfSoldOrigin(
+  payload: CreateInvestmentOperationInput,
+): CreateInvestmentOperationInput {
+  return {
+    ...payload,
+    transferCostMinor: multiplyToMinor(payload.units, payload.pricePerUnit),
+    transferLegState: "cost_pending",
+  };
+}
