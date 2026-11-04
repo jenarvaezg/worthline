@@ -52,6 +52,7 @@ import {
   serializeMyInvestorCredentials,
   serializeMyInvestorPending,
 } from "./myinvestor-credentials";
+import { logMyInvestorFailure } from "./myinvestor-failure-log";
 import { MYINVESTOR_STOPPED_SMS } from "./myinvestor-sync";
 import { parseMyInvestorSyncOutcome } from "./myinvestor-sync-outcome";
 
@@ -211,14 +212,20 @@ async function loginStep(
     : null;
 
   const login = await client.login(credentials);
-  if (!login.ok) return credentialsStep(loginErrorMessage(login.error.kind));
+  if (!login.ok) {
+    logMyInvestorFailure("connecting", login.error);
+    return credentialsStep(loginErrorMessage(login.error.kind));
+  }
 
   if (login.value.kind === "tokens") {
     return finish(save, { client, tokens: login.value.tokens });
   }
 
   const sent = await client.startCode(login.value.challenge);
-  if (!sent.ok) return credentialsStep(loginErrorMessage(sent.error.kind));
+  if (!sent.ok) {
+    logMyInvestorFailure("sending the SMS", sent.error);
+    return credentialsStep(loginErrorMessage(sent.error.kind));
+  }
 
   const expiresAt = pendingExpiry(deps.now);
   const { id } = await deps.store.startPendingLogin({

@@ -224,7 +224,7 @@ export default function ConnectionsTable({
                 if (definition.kind === "myinvestor") {
                   return (
                     <Fragment key={definition.adapter}>
-                      <tr>
+                      <tr className="conexRow">
                         <td>
                           <span className="conexName">{definition.label}</span>
                           <span className="conexSub">{definition.mirrors}</span>
@@ -338,7 +338,7 @@ export default function ConnectionsTable({
 
                 return (
                   <Fragment key={definition.adapter}>
-                    <tr>
+                    <tr className="conexRow">
                       <td>
                         <span className="conexName">{definition.label}</span>
                         <span className="conexSub">{definition.mirrors}</span>
