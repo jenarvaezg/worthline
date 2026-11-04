@@ -56,6 +56,7 @@ import {
   serializeMyInvestorUnitsCheck,
 } from "./myinvestor-sync-outcome";
 import {
+  carryTransferCostsFromBook,
   checkMyInvestorUnits,
   planMyInvestorSync,
   refreshMyInvestorDiscovery,
@@ -392,9 +393,18 @@ async function readAndApply(
   const links = await store.connectedSources.readLinks(sourceId);
   const plan = planMyInvestorSync(discovery, { cursor, links, sourceId, windowKeys });
 
+  // A new traspaso's inherited cost travels from its origin's BOOK, answers to
+  // #1882 included, never only from what the stored read can fold.
+  const linkedAssets = plan.witnesses.map((witness) => witness.assetId);
+  const before = await store.operations.readHoldingLedgers(linkedAssets);
+  const books = new Map(
+    [...before].map(([assetId, ledger]) => [assetId, ledger.operations]),
+  );
+  const facts = carryTransferCostsFromBook(plan.facts.facts, books);
+
   const { applied } = await store.command.syncConnectedHoldings({
     cashBalances: plan.cashBalances,
-    facts: plan.facts,
+    facts: { cursor: plan.facts.cursor, facts },
     sourceId,
     today,
   });

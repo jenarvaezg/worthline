@@ -1349,6 +1349,7 @@ export type {
 } from "./transfer-pair-integrity";
 export {
   auditTransferPairs,
+  costLeavingOrigin,
   describeBrokenTransferPairs,
 } from "./transfer-pair-integrity";
 export type {

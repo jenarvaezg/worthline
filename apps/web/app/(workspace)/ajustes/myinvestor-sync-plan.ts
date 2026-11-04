@@ -10,6 +10,9 @@
  *    Operations`), so a traspaso's inherited cost travels from its origin's whole
  *    history, not from the 30 days of the window; and today's balance of each
  *    linked cash account.
+ *    {@link carryTransferCostsFromBook} then re-takes a new traspaso's inherited
+ *    cost from its origin's BOOK: an answer the user gave there (#1882) is the cost
+ *    the units carry, not the one the stored read can fold.
  * 3. {@link checkMyInvestorUnits} — the units check: each linked holding's book
  *    against MyInvestor's units, exact. It reports; it never plans an adjustment
  *    (PRD #1876, invariant 6).
@@ -17,10 +20,17 @@
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
+  InvestmentOperation,
   NormalizedBatch,
   NormalizedFact,
 } from "@worthline/domain";
-import { compareUnits, multiplyToMinor, subtractUnits } from "@worthline/domain";
+import {
+  compareUnits,
+  costLeavingOrigin,
+  createInvestmentOperation,
+  multiplyToMinor,
+  subtractUnits,
+} from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import {
   buildMyInvestorDiscovery,
@@ -143,6 +153,54 @@ export function planMyInvestorSync(
   }
 
   return { cashBalances, facts: { cursor: input.cursor, facts }, witnesses };
+}
+
+/**
+ * The inherited cost of each new PAIRED `transfer_in`, re-taken from the book of its
+ * origin when the origin is a linked holding (#1882, ADR 0082): its rows already
+ * applied — with any cost the user answered there — and the new ones of this batch,
+ * folded by `costLeavingOrigin`, the same fold the traspaso audit careos every pair
+ * against. The stored read only knows what MyInvestor said, so a cost answered on
+ * the origin would otherwise not travel. An entry still pending, or whose origin is
+ * not in the book, keeps the cost the fold gave it.
+ */
+export function carryTransferCostsFromBook(
+  facts: readonly NormalizedFact<CreateInvestmentOperationInput>[],
+  books: ReadonlyMap<string, readonly InvestmentOperation[]>,
+): NormalizedFact<CreateInvestmentOperationInput>[] {
+  const ledgers = new Map<string, InvestmentOperation[]>(
+    [...books].map(([assetId, rows]) => [assetId, [...rows]]),
+  );
+  const outs = new Map<string, InvestmentOperation>();
+  for (const rows of ledgers.values()) {
+    for (const row of rows) {
+      if (row.kind === "transfer_out" && row.transferId) outs.set(row.transferId, row);
+    }
+  }
+  for (const { payload } of facts) {
+    const ledger = ledgers.get(payload.assetId);
+    if (!ledger || ledger.some((row) => row.id === payload.id)) continue;
+    const row = createInvestmentOperation(payload);
+    ledger.push(row);
+    if (row.kind === "transfer_out" && row.transferId) outs.set(row.transferId, row);
+  }
+
+  return facts.map((fact) => {
+    const { payload } = fact;
+    if (
+      payload.kind !== "transfer_in" ||
+      payload.transferId === undefined ||
+      payload.transferLegState !== undefined
+    ) {
+      return fact;
+    }
+    const out = outs.get(payload.transferId);
+    if (!out || !books.has(out.assetId)) return fact;
+    return {
+      ...fact,
+      payload: { ...payload, transferCostMinor: costLeavingOrigin(out, ledgers) },
+    };
+  });
 }
 
 /** A linked holding whose book does not hold what MyInvestor says it holds. */

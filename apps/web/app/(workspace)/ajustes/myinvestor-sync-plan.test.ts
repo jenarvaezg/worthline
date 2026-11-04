@@ -4,6 +4,8 @@
  * SAME fold the first start includes with (#1438) — and the units check of P8,
  * which only ever reports: it never plans an adjustment (PRD #1876, invariant 6).
  */
+import type { CreateInvestmentOperationInput } from "@worthline/domain";
+import { createInvestmentOperation } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
@@ -14,6 +16,7 @@ import type {
 } from "./myinvestor-discovery";
 import { myInvestorOperationId } from "./myinvestor-first-start";
 import {
+  carryTransferCostsFromBook,
   checkMyInvestorUnits,
   planMyInvestorSync,
   refreshMyInvestorDiscovery,
@@ -176,21 +179,21 @@ describe("the batch of a periodic sync", () => {
   });
 
   test("a traspaso in the window carries the cost of its origin's WHOLE ledger", () => {
-    // 10 at 10 € and 10 at 20 € before the window: an average of 15 €. The 5 that
-    // leave inside the window take 75 €, not what 30 days alone would say.
+    // 10 for 103,70 € and 10 for 201,10 € before the window: 15,24 € on average.
+    // The 5 that leave inside the window take 76,20 €, not what 30 days would say.
     const transfer = discovery(
       [
-        op("a-buy-1", A, { amount: "100", executedAt: "2025-01-10", units: "10" }),
-        op("a-buy-2", A, { amount: "200", executedAt: "2025-06-10", units: "10" }),
+        op("a-buy-1", A, { amount: "103.7", executedAt: "2025-01-10", units: "10" }),
+        op("a-buy-2", A, { amount: "201.1", executedAt: "2025-06-10", units: "10" }),
         op("out", A, {
-          amount: "100",
+          amount: "76.21",
           executedAt: "2026-10-20",
           operation: "transfer_out",
           transfer: { counterpartKey: "in", pairing: "paired", transferId: "t1" },
           units: "5",
         }),
         op("in", B, {
-          amount: "100",
+          amount: "76.21",
           executedAt: "2026-10-20",
           operation: "transfer_in",
           transfer: { counterpartKey: "out", pairing: "paired", transferId: "t1" },
@@ -214,7 +217,7 @@ describe("the batch of a periodic sync", () => {
     const entry = plan.facts.facts.find((fact) => fact.key === "in")!;
     expect(entry.payload).toMatchObject({
       assetId: "asset-b",
-      transferCostMinor: 7_500,
+      transferCostMinor: 7_620,
       transferId: "t1",
     });
     expect(plan.facts.facts.map((fact) => fact.key).sort()).toEqual(["in", "out"]);
@@ -240,6 +243,93 @@ describe("the batch of a periodic sync", () => {
     expect(plan.witnesses).toEqual([
       { assetId: "asset-gone", productKey: keyOf(B), units: "0" },
     ]);
+  });
+});
+
+describe("the cost a new traspaso inherits travels from the origin's BOOK", () => {
+  function row(
+    overrides: Partial<CreateInvestmentOperationInput>,
+  ): CreateInvestmentOperationInput {
+    return {
+      assetId: "asset-a",
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      feesMinor: 0,
+      id: "x",
+      kind: "buy",
+      pricePerUnit: "98.37",
+      source: "connected",
+      units: "103.11",
+      ...overrides,
+    };
+  }
+
+  test("a cost the user answered on the origin is the one that travels", () => {
+    // The origin entered from another institution with 9.871,43 € that arrived; the
+    // user typed its real cost, 6.137,21 € (#1882). The fold of the stored read only
+    // knows the arrival; the book knows the answer.
+    const book = new Map([
+      [
+        "asset-a",
+        [
+          createInvestmentOperation(
+            row({
+              id: "entry",
+              kind: "transfer_in",
+              transferCostMinor: 613_721,
+              transferId: "myinvestor-external:e1",
+            }),
+          ),
+        ],
+      ],
+      ["asset-b", []],
+    ]);
+    const facts = [
+      {
+        dateKey: "2026-10-20",
+        key: "out",
+        payload: row({
+          executedAt: "2026-10-20",
+          id: "mi-out",
+          kind: "transfer_out",
+          transferId: "t1",
+        }),
+      },
+      {
+        dateKey: "2026-10-20",
+        key: "in",
+        payload: row({
+          assetId: "asset-b",
+          executedAt: "2026-10-20",
+          id: "mi-in",
+          kind: "transfer_in",
+          transferCostMinor: 987_143,
+          transferId: "t1",
+        }),
+      },
+    ];
+
+    const carried = carryTransferCostsFromBook(facts, book);
+
+    expect(carried.find((fact) => fact.key === "in")!.payload.transferCostMinor).toBe(
+      613_721,
+    );
+    expect(carried.find((fact) => fact.key === "out")).toEqual(facts[0]);
+  });
+
+  test("an entry still pending, or whose origin is not in the book, keeps its own", () => {
+    const pending = {
+      dateKey: "2026-10-20",
+      key: "in",
+      payload: row({
+        assetId: "asset-b",
+        kind: "transfer_in",
+        transferCostMinor: 987_143,
+        transferId: "myinvestor-external:e2",
+        transferLegState: "cost_pending",
+      }),
+    };
+    expect(carryTransferCostsFromBook([pending], new Map())).toEqual([pending]);
   });
 });
 
