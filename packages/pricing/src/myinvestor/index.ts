@@ -15,6 +15,35 @@ export type {
   MyInvestorStep,
 } from "./errors";
 export { DEFAULT_RETRY_DELAYS_MS } from "./exchange";
+export {
+  createMyInvestorAdapter,
+  MYINVESTOR_ADAPTER_ID,
+  MYINVESTOR_CURSOR_OVERLAP_DAYS,
+  MYINVESTOR_HISTORY_ORIGIN,
+  type MyInvestorAdapterOptions,
+  MyInvestorSyncError,
+  myInvestorAccountId,
+} from "./ingest/adapter";
+export type {
+  MyInvestorCashBalanceFact,
+  MyInvestorFact,
+  MyInvestorFactPayload,
+  MyInvestorInstrument,
+  MyInvestorOperationFact,
+  MyInvestorPositionFact,
+  MyInvestorProduct,
+  MyInvestorSkippedOrder,
+  MyInvestorSkipReason,
+  MyInvestorTransferLeg,
+  MyInvestorUnpairedReason,
+} from "./ingest/facts";
+export {
+  holdingKey as myInvestorHoldingKey,
+  type MyInvestorAccountOrders,
+  type MyInvestorBrokerExecution,
+  type MyInvestorOrderBook,
+  normalizeMyInvestorOrders,
+} from "./ingest/normalize";
 export type {
   IsoDate,
   MyInvestorBrokerOrder,
