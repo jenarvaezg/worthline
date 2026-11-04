@@ -4,6 +4,7 @@
  * moving average and a traspaso's cost travelling from its origin (ADR 0082).
  * Hand-built facts, so each case states the figures it proves.
  */
+import { costLeavingOrigin } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
@@ -210,6 +211,44 @@ describe("the cost a traspaso carries", () => {
     });
     // The origin, fully traspasado, holds nothing today: it arrives unticked.
     expect(v.rows.find((row) => row.key === keyOf(A))!.selectedByDefault).toBe(false);
+  });
+
+  test.each([
+    { label: "a fraction of an odd average", units: "1.3417" },
+    { label: "more units than the history holds", units: "13.0917" },
+  ])("the first start and the sync carry the same cost: $label (ADR 0115)", ({
+    units,
+  }) => {
+    const pair = paired("out", "in");
+    const d = discovery(
+      [
+        op("b1", A, { amount: "33.07", executedAt: "2026-01-02", units: "3.0317" }),
+        op("b2", A, { amount: "71.93", executedAt: "2026-02-02", units: "5.1129" }),
+        op("b3", A, { amount: "19.41", executedAt: "2026-02-17", units: "1.4471" }),
+        op("out", A, {
+          amount: "29.83",
+          executedAt: "2026-03-02",
+          operation: "transfer_out",
+          transfer: pair.out,
+          units,
+        }),
+        op("in", B, {
+          amount: "29.83",
+          executedAt: "2026-03-02",
+          operation: "transfer_in",
+          transfer: pair.in,
+          units: "2.0713",
+        }),
+      ],
+      [fund(A, "0"), fund(B, "2.0713")],
+    );
+    const rows = foldMyInvestorOperations(d, SOURCE);
+    const out = rows.get(keyOf(A))!.find((row) => row.kind === "transfer_out")!;
+    const incoming = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
+
+    // The sync and the inherited-cost answer fold this one (myinvestor-sync-plan,
+    // inherited-cost): the first start may not have a second opinion.
+    expect(incoming.transferCostMinor).toBe(costLeavingOrigin(out, rows));
   });
 
   test("a chain of traspasos carries the first origin's cost to the last", () => {

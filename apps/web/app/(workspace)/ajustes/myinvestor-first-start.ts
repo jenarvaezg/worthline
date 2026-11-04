@@ -11,8 +11,9 @@
  * - it is worthline's moving average, folded by `derivePosition`; MyInvestor's
  *   «invertido» is never read;
  * - an internal traspaso carries, on its `transfer_in`, exactly the cost its
- *   `transfer_out` takes out of the origin: the origin's position folded up to the
- *   leg that leaves, before and after it. The origin is folded from the discovery
+ *   `transfer_out` takes out of the origin: `costLeavingOrigin` over the origin's
+ *   rows before the leg that leaves, the same fold the sync and the inherited-cost
+ *   answer use (ADR 0115). The origin is folded from the discovery
  *   whether or not it is included, so the cost travels the same either way;
  * - an entry from another institution (or a leg nobody could pair) has no origin
  *   here: its inherited cost is PENDING (#1882 asks for it). Until then it carries
@@ -47,6 +48,7 @@ import type {
 } from "@worthline/domain";
 import {
   compareInvestmentOperations,
+  costLeavingOrigin,
   createInvestmentOperation,
   defaultsFor,
   derivePosition,
@@ -225,7 +227,10 @@ export function foldMyInvestorOperations(
     };
   };
 
-  /** The cost a `transfer_out` takes out of its origin: the fold before and after it. */
+  /**
+   * The cost a `transfer_out` takes out of its origin: `costLeavingOrigin`, the one
+   * fold the sync, the inherited-cost answer and the traspaso audit use (ADR 0115).
+   */
   const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): number => {
     const outRow = resolve(out);
     const origin = rowsByProduct.get(productKeyOf(out.payload)) ?? [];
@@ -235,10 +240,7 @@ export function foldMyInvestorOperations(
     const before = origin
       .filter((fact) => compareLedgerOrder(fact, out) < 0)
       .map(resolve);
-    const options = { assetId: outRow.assetId, currency: outRow.currency };
-    const held = derivePosition(before, options).costBasis.amountMinor;
-    const left = derivePosition([...before, outRow], options).costBasis.amountMinor;
-    return Math.max(0, held - left);
+    return costLeavingOrigin(outRow, new Map([[outRow.assetId, before]]));
   };
 
   const inheritedCost = (fact: NormalizedFact<MyInvestorOperationFact>): number => {
