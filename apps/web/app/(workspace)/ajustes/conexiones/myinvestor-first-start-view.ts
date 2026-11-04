@@ -69,6 +69,11 @@ export function myInvestorRowNotes(
       `Lo nuevo de tu cartera «${row.portfolio.joins.name}»: entra en ella con su histórico`,
     );
   }
+  for (const twin of row.portfolio?.looseTwins ?? []) {
+    notes.push(
+      `«${twin.name}» ya cuenta ${twin.fundName} en tu patrimonio: si incluyes la cartera, contará dos veces. Envíalo a la papelera o mételo en una cartera antes`,
+    );
+  }
   if (row.block?.reason === "currency") {
     notes.push("Opera en otra divisa: aún no se puede incluir");
   }

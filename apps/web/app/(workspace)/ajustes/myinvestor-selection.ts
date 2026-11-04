@@ -67,6 +67,17 @@ export interface MyInvestorPortfolioBlock {
    * since: the row then offers only those, and they join it. Null otherwise.
    */
   readonly joins: { readonly portfolioId: string; readonly name: string } | null;
+  /**
+   * Manual holdings outside any portfolio that carry the ISIN of one of its funds:
+   * money the block would count a second time if included. The row opens unticked
+   * and says so; the user sends the holding to the Papelera or into a portfolio.
+   */
+  readonly looseTwins: readonly {
+    readonly assetId: string;
+    readonly name: string;
+    /** The block's fund it doubles. */
+    readonly fundName: string;
+  }[];
 }
 
 /**

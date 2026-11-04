@@ -199,6 +199,7 @@ describe("a robo-advisor's block, in words (#1883)", () => {
       },
       declaredMinor: 61_237,
       joins: null,
+      looseTwins: [],
       members: [
         {
           identifier: "IE0000000001",

@@ -7,6 +7,7 @@
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
+import { myInvestorRowNotes } from "./conexiones/myinvestor-first-start-view";
 import type {
   MyInvestorDiscoveredProduct,
   MyInvestorDiscovery,
@@ -247,6 +248,32 @@ describe("the robo-advisor's account is one row", () => {
         .filter((fact) => fact.payload.assetId === `new:${keyOf(COPPER)}`)
         .map((fact) => fact.payload.kind),
     ).toEqual(["buy", "sell"]);
+  });
+
+  test("a loose manual holding with a fund's ISIN: the block says it would count twice and opens unticked", () => {
+    const linkedKeys = new Set<string>();
+    const manual = [
+      { code: SILVER, id: "hand-silver", name: "Plata (a mano)" },
+      { code: null, id: "hand-other", name: "Oro" },
+    ];
+    const v = myInvestorFirstStartView(robo, {
+      ledgers: new Map(),
+      linkedKeys,
+      portfolioTwins: findMyInvestorPortfolioTwins(robo, { linkedKeys, portfolios: [] }),
+      sourceId: SOURCE,
+      today: "2026-11-04",
+      twins: findMyInvestorTwins(robo, { linkedKeys, manual }),
+    });
+    const row = v.rows[0]!;
+
+    // Only the identifier says it is the same fund: a name alike is no proof.
+    expect(row.portfolio!.looseTwins).toEqual([
+      { assetId: "hand-silver", fundName: "Plata", name: "Plata (a mano)" },
+    ]);
+    expect(row.selectedByDefault).toBe(false);
+    expect(myInvestorRowNotes(row, (minor) => `${minor}`)).toContain(
+      "«Plata (a mano)» ya cuenta Plata en tu patrimonio: si incluyes la cartera, contará dos veces. Envíalo a la papelera o mételo en una cartera antes",
+    );
   });
 
   test("a fund of the block is never included on its own", () => {

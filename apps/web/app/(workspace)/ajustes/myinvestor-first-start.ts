@@ -316,14 +316,16 @@ export function findMyInvestorTwins(
   const twins = new Map<string, MyInvestorTwinMatch>();
   for (const product of discovery.products) {
     if (product.instrument === null || input.linkedKeys.has(product.key)) continue;
-    // A robo-advisor's fund is careed with its portfolio, as a block (#1883).
-    if (product.portfolioKey) continue;
     const { code, scheme } = product.instrument;
     const strong = input.manual.filter((holding) => holding.code === code);
     if (strong.length > 0) {
       twins.set(product.key, { holdings: strong, reason: "identifier", scheme });
       continue;
     }
+    // A robo-advisor's fund is careed with its portfolio, as a block (#1883). Only
+    // the identifier is kept for it: a loose holding of the same ISIN is money the
+    // block would count twice; a name alike proves nothing.
+    if (product.portfolioKey) continue;
     const alike = input.manual.filter(
       (holding) =>
         holding.code === null && myInvestorNamesAlike(product.name, holding.name),
@@ -469,6 +471,17 @@ export function myInvestorFirstStartView(
             },
       declaredMinor: product.declared ? toMinor(product.declared.value) : null,
       joins,
+      // A loose manual holding carrying a fund's ISIN: including the block would
+      // count that money twice, so the block says so and opens unticked.
+      looseTwins: funds.flatMap((fund) => {
+        const match = input.twins.get(fund.key);
+        if (match?.reason !== "identifier") return [];
+        return match.holdings.map((holding) => ({
+          assetId: holding.id,
+          fundName: fund.name,
+          name: holding.name,
+        }));
+      }),
       members: fundRows.map(({ product: fund, rows, valueMinor }) => ({
         identifier: fund.identifier,
         key: fund.key,
@@ -549,8 +562,9 @@ export function myInvestorFirstStartView(
         // A robo-advisor holds something when a fund has units or its cash a balance:
         // an emptied one is offered, never ticked.
         (managed
-          ? managed.valueMinor > 0 ||
-            managed.block.members.some((member) => !member.soldByManager)
+          ? managed.block.looseTwins.length === 0 &&
+            (managed.valueMinor > 0 ||
+              managed.block.members.some((member) => !member.soldByManager))
           : holdsSomethingToday(product)),
       since: managed ? managed.since : (rows[0]?.executedAt.slice(0, 10) ?? null),
       twin,
