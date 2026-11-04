@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import FichaPrototype from "./ficha-prototype";
+import SyncPrototype from "./sync-prototype";
 
 /**
  * PROTOTIPO #1882 (y siguientes del PRD #1876) — desechable. La ficha de un holding
  * enlazado con MyInvestor, pintada con el componente real de la ficha (#1826) y
- * datos inventados. `?s7=A|B|C&caso=externo|interno|sin-candidato`.
+ * datos inventados. `?s7=A|B|C&caso=externo|interno|sin-candidato` o `?s9=A|B|C`.
  */
 export const instant = false;
 
@@ -13,13 +14,19 @@ export const metadata = {
   title: "Prototipo ficha MyInvestor · worthline",
 };
 
-export default function PrototipoFichaMyInvestorPage() {
+export default async function PrototipoFichaMyInvestorPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (process.env.NODE_ENV === "production") {
     notFound();
   }
+  // `?s9=` monta «Poner al día» y la salud (#1884/#1885); si no, el coste heredado (#1882).
+  const params = await searchParams;
   return (
     <Suspense fallback={null}>
-      <FichaPrototype />
+      {params.s9 ? <SyncPrototype /> : <FichaPrototype />}
     </Suspense>
   );
 }

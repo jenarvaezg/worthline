@@ -116,6 +116,70 @@
   padding-left: 10px;
 }
 
+.steps {
+  display: grid;
+  font-size: 0.85rem;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.steps li[data-state="todo"] {
+  color: var(--muted);
+}
+
+.steps li[data-state="now"] {
+  font-weight: 650;
+}
+
+.inlineAsk {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.inlineAsk label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 4px;
+}
+
+.result {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+/* C · la franja de la conexión: una entrada abierta por regla, no una tarjeta. */
+.strip {
+  border-bottom: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line-strong);
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+}
+
+.stripTop {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+}
+
+.stripSignal {
+  border-left: 2px solid var(--gold);
+  font-size: 0.85rem;
+  margin: 0;
+  padding-left: 8px;
+}
+
 .controls {
   align-items: center;
   border: 1px dashed var(--line);
