@@ -20,6 +20,8 @@ import ConnectPrototype from "./_prototype-1879/connect-prototype";
 import { prototypeVariantFor } from "./_prototype-1879/prototype-model";
 import { s5VariantFor } from "./_prototype-1880/discovery-model";
 import DiscoveryPrototype from "./_prototype-1880/discovery-prototype";
+import { s6VariantFor } from "./_prototype-1881/careo-model";
+import CareoPrototype from "./_prototype-1881/careo-prototype";
 import { CONNECTION_REGISTRY } from "./connection-registry";
 import { loadConnectionRows } from "./connection-rows";
 import ConnectionsTable, { type ConnectionEntry } from "./connections-table";
@@ -155,6 +157,11 @@ export async function ConexionesContent({
       {/* PROTOTIPO #1880 — desechable: solo en desarrollo, solo con `?s5=`. */}
       {s5VariantFor(resolvedSearchParams) ? (
         <DiscoveryPrototype initialVariant={s5VariantFor(resolvedSearchParams) ?? "A"} />
+      ) : null}
+
+      {/* PROTOTIPO #1881 — desechable: solo en desarrollo, solo con `?s6=`. */}
+      {s6VariantFor(resolvedSearchParams) ? (
+        <CareoPrototype initialVariant={s6VariantFor(resolvedSearchParams) ?? "A"} />
       ) : null}
     </section>
   );

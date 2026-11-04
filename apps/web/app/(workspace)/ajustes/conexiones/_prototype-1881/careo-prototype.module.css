@@ -1,0 +1,334 @@
+/* PROTOTIPO #1881 — desechable. */
+
+.prototype {
+  border-top: var(--rule-heavy);
+  margin-top: 2rem;
+  padding: 0.75rem 0 80px;
+}
+
+.rowHead {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 1.5rem;
+  padding-bottom: 0.6rem;
+}
+
+.grid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0.6rem;
+}
+
+@media (min-width: 960px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  .basket {
+    align-self: start;
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.product {
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0 0.8rem;
+}
+
+.productHead {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.productName {
+  display: block;
+  font-weight: 600;
+}
+
+.code,
+.num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.choice {
+  border: 0;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.choice legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.choice label {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.88rem;
+  gap: 8px;
+}
+
+.careo {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 0.75rem;
+  padding-left: 12px;
+}
+
+.cuadre,
+.ops,
+.facing {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  width: auto;
+}
+
+.cuadre th,
+.cuadre td,
+.ops th,
+.ops td,
+.facing th,
+.facing td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.25rem 1rem 0.25rem 0;
+  text-align: left;
+}
+
+.cuadre td.num,
+.cuadre th.num,
+.ops td.num,
+.ops th.num,
+.facing td.num {
+  text-align: right;
+}
+
+.cuadre thead th,
+.ops thead th,
+.facing thead th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cuadre tbody th {
+  font-weight: 600;
+}
+
+.ops tr[data-mark="same"] td,
+.facing tr[data-mark="same"] td {
+  color: var(--muted);
+}
+
+.ops tr[data-mark="leaves"] .mark {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.ops tr[data-mark="enters"] .mark {
+  color: var(--green);
+  font-weight: 650;
+}
+
+.mark {
+  font-family: var(--font-numeric);
+  white-space: nowrap;
+}
+
+.facing .gutter {
+  border-left: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft);
+  font-family: var(--font-numeric);
+  padding: 0.25rem 0.6rem;
+  text-align: center;
+}
+
+.facing tr[data-mark="leaves"] .gutter {
+  color: var(--red);
+}
+
+.facing tr[data-mark="enters"] .gutter {
+  color: var(--green);
+}
+
+.facing .empty {
+  background: var(--band);
+}
+
+.planLine,
+.verdict {
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.planLine {
+  border-left: 2px solid var(--gold);
+  padding-left: 8px;
+}
+
+.basket {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 10px;
+  padding-top: 0.6rem;
+}
+
+.basket button {
+  justify-self: start;
+}
+
+.basketHead {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.basketNote {
+  border-left: 2px solid var(--gold);
+  font-size: 0.82rem;
+  margin: 0;
+  padding-left: 8px;
+}
+
+.ledger {
+  display: grid;
+  margin: 0;
+}
+
+.ledger > div {
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.ledger dd {
+  font-family: var(--font-numeric);
+  margin: 0;
+}
+
+.ledger .ledgerTotal {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink);
+  font-weight: 650;
+  margin-top: 3px;
+  padding-top: 6px;
+  position: relative;
+}
+
+.ledger .ledgerTotal::before {
+  border-top: 1px solid var(--ink);
+  content: "";
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 2px;
+}
+
+.step {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
+.stepHead {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.stepTitle {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.stepActions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.textControl {
+  background: none;
+  border: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 0;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.controls {
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 8px 16px;
+  margin-top: 2rem;
+  padding: 8px 12px;
+}
+
+.controls button {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  min-height: 0;
+  padding: 2px 6px;
+}
+
+.switcher {
+  align-items: center;
+  background: #111;
+  border: 2px solid var(--gilt);
+  border-radius: var(--radius);
+  bottom: 20px;
+  color: #fff;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 12px;
+  left: 50%;
+  padding: 8px 14px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 1000;
+}
+
+.switcher button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  height: 28px;
+  min-height: 0;
+  width: 28px;
+}
+
+@media (max-width: 640px) {
+  .switcherPrefix {
+    display: none;
+  }
+}
