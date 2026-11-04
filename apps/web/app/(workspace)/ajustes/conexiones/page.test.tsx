@@ -222,9 +222,11 @@ const DISCOVERY = JSON.stringify({
       instrument: null,
       key: "cash:1",
       kind: "cash",
+      declared: null,
       members: [],
       name: "Cuenta Proyectos",
       otherHolder: false,
+      portfolioKey: null,
       units: null,
     },
     {
@@ -234,14 +236,16 @@ const DISCOVERY = JSON.stringify({
       instrument: { code: "IE00B03HD191", scheme: "isin" },
       key: "securities:2|isin:IE00B03HD191",
       kind: "fund",
+      declared: null,
       members: [],
       name: "Fondo indexado",
       otherHolder: true,
+      portfolioKey: null,
       units: "2",
     },
   ],
   readOn: "2026-11-04",
-  version: 1,
+  version: 2,
 });
 
 const myInvestorSource = (credentialsJson: string) => ({

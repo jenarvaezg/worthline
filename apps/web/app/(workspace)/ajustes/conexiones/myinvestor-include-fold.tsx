@@ -18,6 +18,13 @@
  * under it, and «Ver las N operaciones» unfolds the exact pairing. The panel adds a
  * linked holding by its difference only, never its whole value.
  *
+ * A robo-advisor's account (#1883) is ONE row, «Cartera gestionada», with a line of
+ * its funds and its cash under it; one box includes the whole block. When a
+ * portfolio kept by hand may be it, the same three radios decide it as a unit, and
+ * «Enlazar» unfolds one verdict per fund (#1881's) plus a line for the cash. A
+ * manual member MyInvestor lacks disables «Enlazar», with the reason, the remedy and
+ * a link to the portfolio's ficha.
+ *
  * The boxes and radios are a native form (`productKey`, `twin:<key>`), so it
  * submits without JavaScript; the island only keeps the choice and recomputes the
  * panel with the same pure summary the server uses (interaction-patterns §7). The
@@ -40,12 +47,14 @@ import {
   type MyInvestorTwinChoice,
   myInvestorGroupState,
   myInvestorTwinField,
+  portfolioOfChoice,
   setMyInvestorSelection,
   setMyInvestorTwinChoice,
   summarizeMyInvestorSelection,
   toggleMyInvestorSelection,
 } from "@web/ajustes/myinvestor-selection";
 import { formatMoneyMinorPrivacy, formatUnits } from "@worthline/domain";
+import Link from "next/link";
 import {
   type FormEvent,
   useCallback,
@@ -59,6 +68,13 @@ import {
   myInvestorCareoRowCells,
   myInvestorCareoVerdict,
   myInvestorHistoryLine,
+  myInvestorPortfolioCashLine,
+  myInvestorPortfolioComposition,
+  myInvestorPortfolioMemberHead,
+  myInvestorPortfolioMembersLine,
+  myInvestorPortfolioTwinLegend,
+  myInvestorPortfolioTwinOptions,
+  myInvestorPortfolioWitnessLine,
   myInvestorRowNotes,
   myInvestorTwinLegend,
   myInvestorTwinOptions,
@@ -112,11 +128,15 @@ function ProductText({
 }) {
   const history = myInvestorHistoryLine(row);
   const notes = myInvestorRowNotes(row, money);
+  const composition = myInvestorPortfolioComposition(row);
+  const members = myInvestorPortfolioMembersLine(row);
+  const witness = myInvestorPortfolioWitnessLine(row, money);
   return (
     <span className="myinvestorProductMain">
       <span className="myinvestorProductName">{row.name}</span>
       <span className="conexSub">
         {MYINVESTOR_KIND_LABEL[row.kind]}
+        {composition ? ` · ${composition}` : ""}
         {row.identifier ? (
           <>
             {" · "}
@@ -125,7 +145,9 @@ function ProductText({
         ) : null}
         {row.otherHolder ? " · de otro titular" : ""}
       </span>
+      {members ? <span className="conexSub">{members}</span> : null}
       {history ? <span className="conexSub">{history}</span> : null}
+      {witness ? <span className="conexSub">{witness}</span> : null}
       {notes.length > 0 ? (
         <span className="myinvestorNotes">
           {notes.map((note) => (
@@ -227,6 +249,95 @@ function Careo({
   );
 }
 
+/**
+ * A robo-advisor's block a portfolio kept by hand may be (#1883): the same three
+ * ways out, as a unit. With «Enlazar» chosen, a verdict per fund and the cash line.
+ */
+function PortfolioTwinProduct({
+  choice,
+  money,
+  onChoose,
+  row,
+}: {
+  choice: MyInvestorTwinChoice;
+  money: (minor: number) => string;
+  onChoose: (key: string, choice: MyInvestorTwinChoice) => void;
+  row: MyInvestorProductRow;
+}) {
+  const twin = row.portfolioTwin;
+  if (!twin) return null;
+  const portfolio = portfolioOfChoice(row, choice);
+  const cashLine = portfolio ? myInvestorPortfolioCashLine(portfolio, money) : null;
+  return (
+    <div className="myinvestorTwin" data-off={choice === "skip" || undefined}>
+      <div className="myinvestorTwinHead">
+        <ProductText money={money} row={row} />
+        <ProductNum money={money} row={row} />
+      </div>
+      <fieldset className="myinvestorTwinChoice">
+        <legend className="conexSub">{myInvestorPortfolioTwinLegend(twin)}</legend>
+        {myInvestorPortfolioTwinOptions(twin).map((option) => (
+          <label data-disabled={option.disabled || undefined} key={option.value}>
+            <input
+              checked={choice === option.value}
+              disabled={option.disabled}
+              name={myInvestorTwinField(row.key)}
+              onChange={() => onChoose(row.key, option.value)}
+              type="radio"
+              value={option.value}
+            />
+            <span>
+              {option.label}
+              {option.note ? (
+                <span className="myinvestorNotes">
+                  <span>
+                    {option.note}
+                    {option.href ? (
+                      <>
+                        {" "}
+                        <Link href={option.href}>Abrir la cartera</Link>
+                      </>
+                    ) : null}
+                  </span>
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {/* Choosing «Enlazar» mounts the verdicts below: said once, as they appear. */}
+      <p aria-live="polite" className="srOnly">
+        {portfolio
+          ? portfolio.members
+              .map((member) =>
+                member.careo
+                  ? `${myInvestorPortfolioMemberHead(member, money)} ${myInvestorCareoVerdict(member.careo, money)}`
+                  : myInvestorPortfolioMemberHead(member, money),
+              )
+              .join(" ")
+          : ""}
+      </p>
+      {portfolio ? (
+        <ul className="myinvestorPortfolioCareo">
+          {portfolio.members.map((member) => (
+            <li key={member.productKey}>
+              <p className="myinvestorVerdict">
+                {myInvestorPortfolioMemberHead(member, money)}
+              </p>
+              {member.careo ? <Careo careo={member.careo} money={money} /> : null}
+            </li>
+          ))}
+          {cashLine ? (
+            <li>
+              <p className="myinvestorVerdict">{cashLine}</p>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 /** A product a manual holding already is, or may be: three ways out (#1881). */
 function TwinProduct({
   choice,
@@ -239,6 +350,11 @@ function TwinProduct({
   onChoose: (key: string, choice: MyInvestorTwinChoice) => void;
   row: MyInvestorProductRow;
 }) {
+  if (row.portfolioTwin) {
+    return (
+      <PortfolioTwinProduct choice={choice} money={money} onChoose={onChoose} row={row} />
+    );
+  }
   const twin = row.twin;
   if (!twin) return null;
   const careo = careoOfChoice(row, choice);

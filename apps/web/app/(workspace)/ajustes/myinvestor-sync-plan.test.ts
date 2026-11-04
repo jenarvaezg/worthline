@@ -64,6 +64,7 @@ function fund(isin: string, units: string): MyInvestorDiscoveredProduct {
   return {
     accountKey: ACCOUNT,
     cash: null,
+    declared: null,
     identifier: isin,
     instrument: { code: isin, scheme: "isin" },
     key: keyOf(isin),
@@ -71,6 +72,7 @@ function fund(isin: string, units: string): MyInvestorDiscoveredProduct {
     members: [],
     name: `Fondo ${isin.slice(-1)}`,
     otherHolder: false,
+    portfolioKey: null,
     units,
   };
 }
@@ -78,6 +80,7 @@ function fund(isin: string, units: string): MyInvestorDiscoveredProduct {
 const CASH: MyInvestorDiscoveredProduct = {
   accountKey: "cash:9",
   cash: { balance: "1234.57", currency: "EUR", withheld: "0" },
+  declared: null,
   identifier: "ES·· 0009",
   instrument: null,
   key: "cash:9",
@@ -85,6 +88,7 @@ const CASH: MyInvestorDiscoveredProduct = {
   members: [],
   name: "Cuenta",
   otherHolder: false,
+  portfolioKey: null,
   units: null,
 };
 
@@ -93,7 +97,7 @@ function discovery(
   products: MyInvestorDiscoveredProduct[],
   readOn = "2026-10-01",
 ): MyInvestorDiscovery {
-  return { accounts: [], operations, products, readOn, version: 1 };
+  return { accounts: [], operations, products, readOn, version: 2 };
 }
 
 describe("refreshing the stored read with the window just read", () => {
@@ -245,6 +249,34 @@ describe("the batch of a periodic sync", () => {
     });
     expect(plan.witnesses).toEqual([
       { assetId: "asset-gone", productKey: keyOf(B), units: "0" },
+    ]);
+  });
+
+  test("a linked robo-advisor's declared balance of today is its portfolio's witness (#1883)", () => {
+    const block: MyInvestorDiscoveredProduct = {
+      ...fund(A, "0"),
+      declared: { currency: "EUR", value: "721.19" },
+      identifier: null,
+      instrument: null,
+      key: "portfolio:1",
+      kind: "managed",
+      units: null,
+    };
+    const member = { ...fund(A, "3.0317"), portfolioKey: "portfolio:1" };
+    const plan = planMyInvestorSync(discovery([], [block, member], "2026-11-05"), {
+      cursor: "2026-11-05",
+      links: [{ assetId: "asset-a", productKey: keyOf(A) }],
+      sourceId: SOURCE,
+      windowKeys: new Set(),
+    });
+    expect(plan.portfolioWitnesses).toEqual([
+      {
+        assetId: "asset-a",
+        witness: {
+          declaredDate: "2026-11-05",
+          declaredValue: { amountMinor: 72_119, currency: "EUR" },
+        },
+      },
     ]);
   });
 });

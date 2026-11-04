@@ -39,7 +39,12 @@ import {
   myInvestorHoldingKey,
 } from "@worthline/pricing";
 
-export const MYINVESTOR_DISCOVERY_VERSION = 1;
+/**
+ * 2 since #1883: a robo-advisor's funds and cash are products of their own, inside
+ * the managed portfolio, with the balance its manager declares as the witness. A
+ * version-1 document is read again rather than trusted (it has neither).
+ */
+export const MYINVESTOR_DISCOVERY_VERSION = 2;
 
 /** What a product is, in the words the fold uses. */
 export type MyInvestorProductKind =
@@ -84,6 +89,22 @@ export interface MyInvestorDiscoveredProduct {
   /** A managed portfolio's funds and its cash, as names (S8 links it as a block). */
   readonly members: readonly string[];
   readonly otherHolder: boolean;
+  /**
+   * The managed portfolio a robo-advisor's fund or cash account belongs to (#1883):
+   * it is included, linked and shown with its portfolio, never on its own. Null for
+   * every loose product and for the portfolio itself.
+   */
+  readonly portfolioKey: string | null;
+  /**
+   * A managed portfolio's witness (#1869 P5): the market value of its FUNDS as the
+   * manager declares it, cash left out (ADR 0085 as amended by #1550). Compared with
+   * worthline's own figure, never adopted. Null for everything else, and for a
+   * portfolio whose manager states none.
+   */
+  readonly declared: {
+    readonly value: DecimalString;
+    readonly currency: string;
+  } | null;
 }
 
 export interface MyInvestorDiscovery {
@@ -166,9 +187,11 @@ function unitKind(
  *
  * - Each securities account is an account of the fold, with a product per fund or
  *   broker position today and per instrument it traded and no longer holds.
- * - A robo-advisor account (`SECURITIES_PORTFOLIO`) is ONE product, a managed
- *   portfolio with its funds and its own cash account inside: that cash account is
- *   not offered on its own, since S8 (#1883) links the three as one block.
+ * - A robo-advisor account (`SECURITIES_PORTFOLIO`) is a managed portfolio (#1883):
+ *   ONE product the fold offers, with the balance its manager declares as witness,
+ *   and under it its funds (those the manager sold whole too, at 0) and its own
+ *   cash account, each a product of its own carrying the portfolio's key. They are
+ *   included and linked with the portfolio, as one block, never one by one.
  * - Each pension account is an account, with a product per plan (by DGS code).
  * - Each other cash account is an account with one product, its balance.
  * - Whose an account is follows the adapter (#1878): a securities account is its
@@ -188,6 +211,7 @@ export function buildMyInvestorDiscovery(
     accountId: string,
     otherHolder: boolean,
     seen: Set<string>,
+    portfolioKey: string | null = null,
   ) => {
     for (const { payload } of operations) {
       if (payload.accountId !== accountId) continue;
@@ -197,6 +221,7 @@ export function buildMyInvestorDiscovery(
       products.push({
         accountKey,
         cash: null,
+        declared: null,
         identifier: payload.instrument.code,
         instrument: payload.instrument,
         key,
@@ -204,6 +229,7 @@ export function buildMyInvestorDiscovery(
         members: [],
         name: payload.instrumentName ?? payload.instrument.code,
         otherHolder,
+        portfolioKey,
         units: "0",
       });
     }
@@ -228,9 +254,14 @@ export function buildMyInvestorDiscovery(
           otherSub(ownership) ??
           `Roboadvisor · cuenta de valores ${lastDigits(summary.accountId)}`,
       });
+      const declared =
+        account.fundsMarketValue !== null && isPositiveDecimal(account.fundsMarketValue)
+          ? { currency: cash?.currency ?? "EUR", value: account.fundsMarketValue }
+          : null;
       products.push({
         accountKey: key,
         cash: null,
+        declared,
         identifier: null,
         instrument: null,
         key,
@@ -241,8 +272,39 @@ export function buildMyInvestorDiscovery(
         ],
         name: label,
         otherHolder,
+        portfolioKey: null,
         units: null,
       });
+      // Its funds are products of their own, keyed like any fund of the account the
+      // orders name (the adapter reads them as a securities account), so the fold
+      // and the dedup ledger need nothing new; they only belong to the portfolio.
+      const accountId = myInvestorAccountId("securities", summary.accountId);
+      const seen = new Set<string>();
+      for (const position of account.positions) {
+        if (!position.isin) continue;
+        const instrument: MyInvestorInstrument = { code: position.isin, scheme: "isin" };
+        const memberKey = myInvestorHoldingKey(accountId, instrument);
+        if (seen.has(memberKey)) continue;
+        seen.add(memberKey);
+        products.push({
+          accountKey: key,
+          cash: null,
+          declared: null,
+          identifier: position.isin,
+          instrument,
+          key: memberKey,
+          kind: "fund",
+          members: [],
+          name: position.name ?? position.isin,
+          otherHolder,
+          portfolioKey: key,
+          units: position.shares,
+        });
+      }
+      // A fund the manager sold whole is still a member, at 0 with its history: the
+      // portfolio's return against the manager's needs it (#1552).
+      addTradedWithoutPosition(key, accountId, otherHolder, seen, key);
+      if (cash) products.push(cashProduct(cash, key, otherHolder, key));
       continue;
     }
 
@@ -265,6 +327,7 @@ export function buildMyInvestorDiscovery(
       products.push({
         accountKey: accountId,
         cash: null,
+        declared: null,
         identifier: position.isin,
         instrument,
         key,
@@ -272,6 +335,7 @@ export function buildMyInvestorDiscovery(
         members: [],
         name: position.name ?? position.isin,
         otherHolder,
+        portfolioKey: null,
         units: position.shares,
       });
     }
@@ -299,6 +363,7 @@ export function buildMyInvestorDiscovery(
       products.push({
         accountKey: accountId,
         cash: null,
+        declared: null,
         identifier: plan.dgsCode,
         instrument,
         key,
@@ -306,6 +371,7 @@ export function buildMyInvestorDiscovery(
         members: [],
         name: plan.name ?? plan.dgsCode,
         otherHolder,
+        portfolioKey: null,
         units: plan.shares,
       });
     }
@@ -324,25 +390,7 @@ export function buildMyInvestorDiscovery(
       otherHolder,
       sub: otherSub(cash.ownership) ?? "Cuenta de efectivo",
     });
-    products.push({
-      accountKey: key,
-      // `enabledBalance` leaves out what is held for orders in progress, and those
-      // orders are not in the book until they finish (invariant 4): the held part
-      // still belongs to the user, so it counts here, once (#1869 P4).
-      cash: {
-        balance: addUnits(cash.enabledBalance, cash.withheldBalance),
-        currency: cash.currency,
-        withheld: cash.withheldBalance,
-      },
-      identifier: cash.ibanMasked,
-      instrument: null,
-      key,
-      kind: "cash",
-      members: [],
-      name,
-      otherHolder,
-      units: null,
-    });
+    products.push(cashProduct(cash, key, otherHolder, null));
   }
 
   return {
@@ -352,6 +400,36 @@ export function buildMyInvestorDiscovery(
     products,
     readOn: reads.readOn,
     version: MYINVESTOR_DISCOVERY_VERSION,
+  };
+}
+
+/** A cash account's product: loose, or the cash sibling of a managed portfolio. */
+function cashProduct(
+  cash: MyInvestorCashAccount,
+  accountKey: string,
+  otherHolder: boolean,
+  portfolioKey: string | null,
+): MyInvestorDiscoveredProduct {
+  return {
+    accountKey,
+    // `enabledBalance` leaves out what is held for orders in progress, and those
+    // orders are not in the book until they finish (invariant 4): the held part
+    // still belongs to the user, so it counts here, once (#1869 P4).
+    cash: {
+      balance: addUnits(cash.enabledBalance, cash.withheldBalance),
+      currency: cash.currency,
+      withheld: cash.withheldBalance,
+    },
+    declared: null,
+    identifier: cash.ibanMasked,
+    instrument: null,
+    key: myInvestorAccountId("cash", cash.accountId),
+    kind: "cash",
+    members: [],
+    name: cash.alias ?? "Cuenta de efectivo",
+    otherHolder,
+    portfolioKey,
+    units: null,
   };
 }
 

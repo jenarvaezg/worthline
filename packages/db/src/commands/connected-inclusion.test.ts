@@ -111,7 +111,7 @@ describe("including connected holdings", () => {
       today: TODAY,
     });
 
-    expect(result).toEqual({ applied: 3, created: 2, linked: 0 });
+    expect(result).toEqual({ applied: 3, created: 2, linked: 0, portfolios: 0 });
     expect(ripples.calls).toBe(1);
     const batches = await client.execute("SELECT id, trigger FROM fact_batch");
     expect(batches.rows).toHaveLength(1);
@@ -179,7 +179,7 @@ describe("including connected holdings", () => {
       today: TODAY,
     });
 
-    expect(replay).toEqual({ applied: 0, created: 0, linked: 0 });
+    expect(replay).toEqual({ applied: 0, created: 0, linked: 0, portfolios: 0 });
     expect((await store.operations.readOperations("f1")).length).toBe(1);
     const source = await client.execute(
       "SELECT ingest_cursor FROM connected_sources WHERE id = ?",

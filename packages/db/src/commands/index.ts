@@ -10,8 +10,11 @@ export type {
   StatementImportCommand,
 } from "./command-implementation-types";
 export type {
+  ConnectedCashLink,
   ConnectedHoldingCreation,
   ConnectedHoldingLink,
+  ConnectedPortfolioCreation,
+  ConnectedPortfolioLink,
   IncludeConnectedHoldingsCommand,
   IncludeConnectedHoldingsResult,
   SyncConnectedHoldingsCommand,

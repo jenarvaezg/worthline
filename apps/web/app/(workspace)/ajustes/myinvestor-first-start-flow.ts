@@ -14,9 +14,14 @@
  *    what was left out never asks MyInvestor again. The same batch links the
  *    products a manual holding already was (#1881).
  */
+import {
+  managedPortfolioFichaHref,
+  managedPortfolioPublicIdIndex,
+} from "@web/holding-route";
 import type { WorthlineStore } from "@web/store";
 import type {
   InvestmentPriceProvider,
+  ManagedPortfolio,
   ManualAsset,
   OwnershipShare,
 } from "@worthline/domain";
@@ -43,6 +48,10 @@ import {
   myInvestorFirstStartView,
   planMyInvestorInclusion,
 } from "./myinvestor-first-start";
+import {
+  findMyInvestorPortfolioTwins,
+  type MyInvestorManualPortfolio,
+} from "./myinvestor-portfolio";
 import type { MyInvestorFirstStartView } from "./myinvestor-selection";
 
 const MYINVESTOR_ADAPTER = "myinvestor";
@@ -73,12 +82,18 @@ export type MyInvestorFirstStartStore = {
   operations: Pick<WorthlineStore["operations"], "readHoldingLedgers">;
   contributionPlan: Pick<WorthlineStore["contributionPlan"], "readHoldingPlans">;
   managedPortfolios: Pick<WorthlineStore["managedPortfolios"], "readManagedPortfolios">;
+  agentView: Pick<WorthlineStore["agentView"], "readPublicIds">;
 };
 
 /** What loading the fold reads: everything but the command and the workspace. */
 type MyInvestorFoldStore = Pick<
   MyInvestorFirstStartStore,
-  "connectedSources" | "assets" | "operations" | "contributionPlan" | "managedPortfolios"
+  | "connectedSources"
+  | "assets"
+  | "operations"
+  | "contributionPlan"
+  | "managedPortfolios"
+  | "agentView"
 >;
 
 export type MyInvestorFlowResult = { ok: true } | { ok: false; error: string };
@@ -177,15 +192,11 @@ export async function readMyInvestorProducts(
  * and not a member of a managed portfolio — a portfolio kept by hand is linked as a
  * block, member by member (#1883), not one fund at a time here.
  */
-async function manualHoldings(
-  store: Pick<MyInvestorFoldStore, "managedPortfolios">,
+function manualHoldings(
+  portfolios: readonly ManagedPortfolio[],
   assets: readonly ManualAsset[],
-): Promise<MyInvestorManualHolding[]> {
-  const members = new Set(
-    (await store.managedPortfolios.readManagedPortfolios()).flatMap(
-      (portfolio) => portfolio.holdingIds,
-    ),
-  );
+): MyInvestorManualHolding[] {
+  const members = new Set(portfolios.flatMap((portfolio) => portfolio.holdingIds));
   return assets.flatMap((asset) =>
     asset.type === "investment" &&
     asset.connectedSourceId == null &&
@@ -193,6 +204,37 @@ async function manualHoldings(
       ? [{ code: asset.securityId?.value || null, id: asset.id, name: asset.name }]
       : [],
   );
+}
+
+/**
+ * The managed portfolios kept by hand (#1883): none of their live members is a
+ * source's. Each with its live members as the block's careo reads them, and its
+ * ficha, where a member MyInvestor lacks is taken out.
+ */
+function manualPortfolios(
+  portfolios: readonly ManagedPortfolio[],
+  assets: readonly ManualAsset[],
+  fichaOf: (portfolioId: string) => string | null,
+): MyInvestorManualPortfolio[] {
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+  return portfolios.flatMap((portfolio) => {
+    const live = portfolio.holdingIds.flatMap((id) => byId.get(id) ?? []);
+    if (live.some((asset) => asset.connectedSourceId != null)) return [];
+    return [
+      {
+        href: fichaOf(portfolio.id),
+        id: portfolio.id,
+        members: live.map((asset) => ({
+          code: asset.securityId?.value || null,
+          id: asset.id,
+          name: asset.name,
+          type: asset.type,
+          valueMinor: asset.currentValue.amountMinor,
+        })),
+        name: portfolio.name,
+      },
+    ];
+  });
 }
 
 /**
@@ -237,13 +279,51 @@ export async function loadMyInvestorFirstStart(
   const links = await store.connectedSources.readLinks(sourceId);
   const linkedKeys = new Set(links.map((link) => link.productKey));
   const assets = await store.assets.readAssets();
+  const portfolios = await store.managedPortfolios.readManagedPortfolios();
   const twins = findMyInvestorTwins(discovery, {
     linkedKeys,
-    manual: await manualHoldings(store, assets),
+    manual: manualHoldings(portfolios, assets),
   });
-  // Only the candidates' ledgers are read, all of them at once.
+  const publicIds = managedPortfolioPublicIdIndex(
+    await store.agentView.readPublicIds(),
+  ).publicByInternal;
+  const portfolioTwins = findMyInvestorPortfolioTwins(discovery, {
+    linkedKeys,
+    portfolios: manualPortfolios(portfolios, assets, (id) => {
+      const publicId = publicIds.get(id);
+      return publicId ? managedPortfolioFichaHref(publicId) : null;
+    }),
+  });
+  // The portfolio each linked robo-advisor block lives in: what its manager bought
+  // since joins it there (#1883). Read off its members, never a stored pointer.
+  const assetOfKey = new Map(links.map((link) => [link.productKey, link.assetId]));
+  const connectedPortfolios = new Map<string, { portfolioId: string; name: string }>();
+  for (const product of discovery.products) {
+    if (!product.portfolioKey) continue;
+    const assetId = assetOfKey.get(product.key);
+    const portfolio = assetId
+      ? portfolios.find((candidate) => candidate.holdingIds.includes(assetId))
+      : undefined;
+    if (portfolio && !connectedPortfolios.has(product.portfolioKey)) {
+      connectedPortfolios.set(product.portfolioKey, {
+        name: portfolio.name,
+        portfolioId: portfolio.id,
+      });
+    }
+  }
+  // Only the candidates' ledgers are read, all of them at once: the holdings a
+  // product may be, and the investment members of the portfolios a block may be.
   const candidates = [
-    ...new Set([...twins.values()].flatMap((match) => match.holdings.map((h) => h.id))),
+    ...new Set([
+      ...[...twins.values()].flatMap((match) => match.holdings.map((h) => h.id)),
+      ...[...portfolioTwins.values()].flatMap((list) =>
+        list.flatMap((portfolio) =>
+          portfolio.members
+            .filter((member) => member.type === "investment")
+            .map((member) => member.id),
+        ),
+      ),
+    ]),
   ];
   const view = myInvestorFirstStartView(discovery, {
     ledgers: await twinLedgers(
@@ -252,6 +332,8 @@ export async function loadMyInvestorFirstStart(
       new Map(assets.map((asset) => [asset.id, asset.name])),
     ),
     linkedKeys,
+    connectedPortfolios,
+    portfolioTwins,
     sourceId,
     today,
     twins,
@@ -292,11 +374,29 @@ export async function includeMyInvestorProducts(
   const ownership: OwnershipShare[] = [{ memberId: member.id, shareBps: 10_000 }];
 
   const keys = [...new Set(input.productKeys)];
-  const ids = new Map(keys.map((key) => [key, deps.newAssetId()]));
+  const ids = new Map<string, string>();
+  const assetIdFor = (key: string): string => {
+    const known = ids.get(key);
+    if (known) return known;
+    const fresh = deps.newAssetId();
+    ids.set(key, fresh);
+    return fresh;
+  };
+  // A robo-advisor's block brings its funds (#1883): their symbols are looked up too.
+  const blockKeys = new Set([
+    ...keys,
+    ...(input.links ?? []).map((link) => link.productKey),
+  ]);
+  const quoted = [
+    ...keys,
+    ...loaded.discovery.products
+      .filter((product) => product.portfolioKey && blockKeys.has(product.portfolioKey))
+      .map((product) => product.key),
+  ];
   // The price symbols are looked up before the batch opens: a provider's network
   // has no place inside the transaction. A product nobody quotes is valued at cost.
   const symbols = new Map<string, MyInvestorPriceSymbol | null>();
-  for (const key of keys) {
+  for (const key of quoted) {
     const product = loaded.discovery.products.find((candidate) => candidate.key === key);
     if (!product?.instrument) continue;
     const instrument =
@@ -309,7 +409,7 @@ export async function includeMyInvestorProducts(
   }
 
   const plan = planMyInvestorInclusion(loaded.discovery, {
-    assetIdFor: (key) => ids.get(key)!,
+    assetIdFor,
     links: input.links ?? [],
     ownership,
     productKeys: keys,
@@ -321,12 +421,20 @@ export async function includeMyInvestorProducts(
   if (!plan.ok) return plan;
 
   const result = await deps.store.command.includeConnectedHoldings(plan.command);
-  // The success band names what is now MyInvestor's (#1881, design C).
-  const candidates = loaded.view.rows.flatMap((row) => row.twin?.candidates ?? []);
+  // The success band names what is now MyInvestor's (#1881, design C): a holding,
+  // or a portfolio kept by hand (#1883).
+  const names = new Map([
+    ...loaded.view.rows.flatMap((row) =>
+      (row.twin?.candidates ?? []).map((item) => [item.assetId, item.name] as const),
+    ),
+    ...loaded.view.rows.flatMap((row) =>
+      (row.portfolioTwin?.candidates ?? []).map(
+        (item) => [item.portfolioId, item.name] as const,
+      ),
+    ),
+  ]);
   const linked = (input.links ?? []).map(
-    (link) =>
-      candidates.find((candidate) => candidate.assetId === link.assetId)?.name ??
-      link.assetId,
+    (link) => names.get(link.assetId) ?? link.assetId,
   );
   return { applied: result.applied, created: result.created, linked, ok: true };
 }

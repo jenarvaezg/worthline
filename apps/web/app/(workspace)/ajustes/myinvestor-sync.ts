@@ -405,6 +405,7 @@ async function readAndApply(
   const { applied } = await store.command.syncConnectedHoldings({
     cashBalances: plan.cashBalances,
     facts: { cursor: plan.facts.cursor, facts },
+    portfolioWitnesses: plan.portfolioWitnesses,
     sourceId,
     today,
   });

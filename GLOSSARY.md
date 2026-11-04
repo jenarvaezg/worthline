@@ -150,6 +150,11 @@ contributions wait for the investment threshold — and a **declared balance**
 (saldo declarado): the reconciliation witness below. It can also be registered
 WITHOUT enumerating its composition, in which case it carries an **undetailed
 aggregate** below. An internal rebalance is a **traspaso** pair between members.
+A connected robo-advisor (MyInvestor, #1883) brings the whole block: its funds
+are the source's holdings — those its manager sold whole stay as members at 0,
+with their history — its own cash account is the sibling, and the balance the
+manager declares is the witness. A cartera kept by hand is linked to it WHOLE or
+not at all: a manual member the source does not have blocks the link.
 UI label: "cartera gestionada".
 _Avoid_: nested holdings, container holding (its value would fight the sum),
 grouping tag (no cash, no witness, no figures).

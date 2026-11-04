@@ -4899,6 +4899,30 @@ svg a:hover .compositionBand {
   text-align: right;
 }
 
+/* Los fondos que el gestor de un roboadvisor vendió enteros (#1883): miembros a 0
+   con su historial, plegados bajo la composición — no pesan, pero cuentan en la
+   rentabilidad. Misma lista de líneas con filete que el índice. */
+.carterasSold {
+  margin-top: 0.6rem;
+}
+
+.carterasSold > summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* Una fila de .carterasRow con la nota debajo del nombre, no a su derecha. */
+.carterasSoldRow {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.carterasSoldNote {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 /* El testigo (#1550): el gestor enseña el efectivo en su propia casilla, así que
    la ficha reparte la cifra grande en dos lecturas — fondos y caja — antes de
    carear. Dos columnas de texto, sin tarjetas ni tintes (canon §3). */
@@ -10274,6 +10298,30 @@ td.rowActions > * {
   font-size: 0.88rem;
   gap: 8px;
   grid-template-columns: auto minmax(0, 1fr);
+}
+
+/* «Enlazar» bloqueado por un miembro que MyInvestor no tiene (#1883): el radio no
+   se puede marcar y su porqué queda a la vista, sin cursor de acción. */
+.myinvestorTwinChoice label[data-disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Una cartera hecha a mano frente al bloque (#1883): un veredicto por fondo, cada
+   uno con su careo plegado, y la línea del efectivo al final. */
+.myinvestorPortfolioCareo {
+  display: grid;
+  gap: 0.6rem;
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.myinvestorPortfolioCareo > li {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .myinvestorCareo {

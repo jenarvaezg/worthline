@@ -11,11 +11,18 @@ import type {
   MyInvestorCareoPlan,
 } from "@web/ajustes/myinvestor-careo";
 import type {
+  MyInvestorPortfolioCandidate,
+  MyInvestorPortfolioMemberCareo,
+  MyInvestorPortfolioTwin,
   MyInvestorProductRow,
   MyInvestorTwin,
   MyInvestorTwinChoice,
 } from "@web/ajustes/myinvestor-selection";
-import { myInvestorLinkChoice } from "@web/ajustes/myinvestor-selection";
+import {
+  isPortfolioLinkable,
+  myInvestorLinkChoice,
+  myInvestorPortfolioBlockedReason,
+} from "@web/ajustes/myinvestor-selection";
 import { operationKindLabel } from "@web/operation-kind-copy";
 import type { ContributionCadence, PlannedContributionAmount } from "@worthline/domain";
 import { formatUnits } from "@worthline/domain";
@@ -34,7 +41,6 @@ export function myInvestorSinceLabel(day: string): string {
 /** What history the product brings: «31 operaciones desde mar 2024». */
 export function myInvestorHistoryLine(row: MyInvestorProductRow): string | null {
   if (row.kind === "cash") return "Saldo de hoy, sin movimientos";
-  if (row.kind === "managed") return null;
   if (row.operations === 0 || row.since === null) return "Sin operaciones terminadas";
   const noun = row.operations === 1 ? "operación" : "operaciones";
   return `${row.operations} ${noun} desde ${myInvestorSinceLabel(row.since)}`;
@@ -57,16 +63,123 @@ export function myInvestorRowNotes(
   if (row.inheritedCostPending) {
     notes.push("Entró por traspaso desde otra entidad: te preguntaremos lo que costó");
   }
-  if (row.block?.reason === "managed_portfolio") {
-    const members = row.members.length > 0 ? `: ${row.members.join(" · ")}` : "";
+  if (row.portfolio?.joins) {
     notes.push(
-      `Se enlazará entera, como cartera gestionada${members}. Aún no se puede incluir`,
+      `Lo nuevo de tu cartera «${row.portfolio.joins.name}»: entra en ella con su histórico`,
     );
   }
   if (row.block?.reason === "currency") {
     notes.push("Opera en otra divisa: aún no se puede incluir");
   }
   return notes;
+}
+
+// ── A robo-advisor's block (#1883) ──────────────────────────────────────────────
+
+/** What the block is made of, beside its kind: «3 fondos + efectivo». */
+export function myInvestorPortfolioComposition(row: MyInvestorProductRow): string | null {
+  const portfolio = row.portfolio;
+  if (!portfolio) return null;
+  const held = portfolio.members.filter((member) => !member.soldByManager).length;
+  const funds = held === 1 ? "1 fondo" : `${held} fondos`;
+  return portfolio.cash ? `${funds} + efectivo` : funds;
+}
+
+/**
+ * The line under the block (design of #1883): its funds today and its cash account,
+ * then how many the manager sold whole — they are created too, at 0, with their
+ * history, because the portfolio's return against the manager's needs them.
+ */
+export function myInvestorPortfolioMembersLine(row: MyInvestorProductRow): string | null {
+  const portfolio = row.portfolio;
+  if (!portfolio) return null;
+  const names = [
+    ...portfolio.members
+      .filter((member) => !member.soldByManager)
+      .map((member) => member.name),
+    ...(portfolio.cash ? [`${portfolio.cash.name} (efectivo)`] : []),
+  ];
+  const sold = portfolio.members.filter((member) => member.soldByManager).length;
+  const soldText =
+    sold === 0
+      ? ""
+      : sold === 1
+        ? ". Y 1 fondo que el gestor ya vendió, a 0 con su historial"
+        : `. Y ${sold} fondos que el gestor ya vendió, a 0 con su historial`;
+  return `${names.join(" · ")}${soldText}`;
+}
+
+/** The witness the block brings (#1550): what the manager declares for the funds. */
+export function myInvestorPortfolioWitnessLine(
+  row: MyInvestorProductRow,
+  money: (minor: number) => string,
+): string | null {
+  const declared = row.portfolio?.declaredMinor ?? null;
+  if (declared === null) return null;
+  return `MyInvestor declara ${money(declared)} en fondos, sin el efectivo: queda como saldo declarado de la cartera, para compararlo`;
+}
+
+/** Why the block has a twin, above its three choices. */
+export function myInvestorPortfolioTwinLegend(twin: MyInvestorPortfolioTwin): string {
+  const names = twin.candidates.map((candidate) => `«${candidate.name}»`);
+  return names.length === 1
+    ? `Ya llevas a mano la cartera ${names[0]}, con fondos de esta cuenta.`
+    : `Ya llevas a mano ${names.length} carteras con fondos de esta cuenta: ${names.join(", ")}. Elige con cuál enlazarla.`;
+}
+
+/** The three ways out of the block's twin; «Enlazar» disabled while blocked. */
+export function myInvestorPortfolioTwinOptions(twin: MyInvestorPortfolioTwin): {
+  value: MyInvestorTwinChoice;
+  label: string;
+  note: string | null;
+  href: string | null;
+  disabled: boolean;
+}[] {
+  return [
+    ...twin.candidates.map((candidate) => ({
+      disabled: !isPortfolioLinkable(candidate),
+      href: isPortfolioLinkable(candidate) ? null : candidate.href,
+      label: `Enlazar con la cartera «${candidate.name}»: MyInvestor sustituye sus fondos y su efectivo`,
+      note: isPortfolioLinkable(candidate)
+        ? null
+        : myInvestorPortfolioBlockedReason(candidate),
+      value: myInvestorLinkChoice(candidate.portfolioId),
+    })),
+    {
+      disabled: false,
+      href: null,
+      label: "Crear aparte: contaría dos veces si es la misma",
+      note: null,
+      value: "separate",
+    },
+    { disabled: false, href: null, label: "No incluir", note: null, value: "skip" },
+  ];
+}
+
+/** One fund of the block against the portfolio kept by hand: its verdict. */
+export function myInvestorPortfolioMemberHead(
+  member: MyInvestorPortfolioMemberCareo,
+  money: (minor: number) => string,
+): string {
+  if (member.assetName === null) {
+    return `«${member.name}» entra nuevo en la cartera: ${money(member.enteringMinor)}.`;
+  }
+  return member.assetName === member.name
+    ? `«${member.name}»:`
+    : `«${member.assetName}» ← «${member.name}»:`;
+}
+
+/** The cash line under the block's careo. */
+export function myInvestorPortfolioCashLine(
+  candidate: MyInvestorPortfolioCandidate,
+  money: (minor: number) => string,
+): string | null {
+  const cash = candidate.cash;
+  if (cash === null) return null;
+  if (cash.assetId === null) {
+    return `El efectivo entra nuevo en la cartera: ${money(cash.afterMinor)}.`;
+  }
+  return `Efectivo «${cash.name}»: ${money(cash.beforeMinor)} → ${money(cash.afterMinor)}, el saldo de MyInvestor.`;
 }
 
 export type MyInvestorRowState =

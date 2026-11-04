@@ -29,8 +29,11 @@
  * manual operations. Its careo comes from those rows too.
  */
 import type {
+  ConnectedCashLink,
   ConnectedHoldingCreation,
   ConnectedHoldingLink,
+  ConnectedPortfolioCreation,
+  ConnectedPortfolioLink,
   HoldingContributionPlan,
   IncludeConnectedHoldingsCommand,
 } from "@worthline/db";
@@ -63,14 +66,24 @@ import {
   type MyInvestorProductKind,
 } from "./myinvestor-discovery";
 import {
+  type MyInvestorManualPortfolio,
+  myInvestorPortfolioCandidate,
+  myInvestorPortfolioParts,
+  myInvestorPortfolioTwin,
+} from "./myinvestor-portfolio";
+import {
+  isPortfolioLinkable,
   type MyInvestorAccountGroup,
   type MyInvestorFirstStartView,
   type MyInvestorInclusionBlock,
+  type MyInvestorPortfolioCandidate,
   type MyInvestorProductRow,
   type MyInvestorRung,
   type MyInvestorTwin,
   type MyInvestorTwinChoice,
   myInvestorLinkChoice,
+  myInvestorPortfolioBlockedReason,
+  portfolioOfChoice,
 } from "./myinvestor-selection";
 
 const EUR = "EUR";
@@ -301,6 +314,8 @@ export function findMyInvestorTwins(
   const twins = new Map<string, MyInvestorTwinMatch>();
   for (const product of discovery.products) {
     if (product.instrument === null || input.linkedKeys.has(product.key)) continue;
+    // A robo-advisor's fund is careed with its portfolio, as a block (#1883).
+    if (product.portfolioKey) continue;
     const { code, scheme } = product.instrument;
     const strong = input.manual.filter((holding) => holding.code === code);
     if (strong.length > 0) {
@@ -334,7 +349,12 @@ export interface MyInvestorTwinLedger {
  *
  * `twins` are the manual holdings each product may be ({@link findMyInvestorTwins}),
  * and `ledgers` what was read of each of them, by holding id, for its careo;
- * `linkedKeys` are the products already linked.
+ * `linkedKeys` are the products already linked. `portfolioTwins` are the portfolios
+ * kept by hand each robo-advisor block may be ({@link findMyInvestorPortfolioTwins}),
+ * whose members' ledgers are in `ledgers` too.
+ *
+ * A robo-advisor's account is ONE row (#1883): its funds and cash ride under it,
+ * never as rows of their own.
  */
 export function myInvestorFirstStartView(
   discovery: MyInvestorDiscovery,
@@ -344,6 +364,15 @@ export function myInvestorFirstStartView(
     twins: ReadonlyMap<string, MyInvestorTwinMatch>;
     ledgers: ReadonlyMap<string, MyInvestorTwinLedger>;
     today: string;
+    portfolioTwins?: ReadonlyMap<string, readonly MyInvestorManualPortfolio[]>;
+    /**
+     * The portfolio each robo-advisor block already linked lives in, by the block's
+     * key: what it bought since joins it there (#1883).
+     */
+    connectedPortfolios?: ReadonlyMap<
+      string,
+      { readonly portfolioId: string; readonly name: string }
+    >;
   },
 ): MyInvestorFirstStartView {
   const folded = foldMyInvestorOperations(discovery, input.sourceId);
@@ -394,53 +423,146 @@ export function myInvestorFirstStartView(
     return { candidates, defaultChoice, reason: match.reason, scheme: match.scheme };
   };
 
+  const valueOf = (product: MyInvestorDiscoveredProduct): number =>
+    product.cash !== null
+      ? toMinor(product.cash.balance)
+      : derivePosition([...(folded.get(product.key) ?? [])], {
+          assetId: product.key,
+          currency: EUR,
+        }).costBasis.amountMinor;
+  const inOtherCurrency = (product: MyInvestorDiscoveredProduct): boolean =>
+    (factsByProduct.get(product.key) ?? []).some((fact) => fact.currency !== EUR) ||
+    (product.cash !== null && product.cash.currency !== EUR);
+
+  /** A robo-advisor's block (#1883): its funds, its cash, its witness and its twin. */
+  const portfolioOf = (product: MyInvestorDiscoveredProduct) => {
+    const all = myInvestorPortfolioParts(discovery, product.key);
+    const allParts = [...all.funds, ...(all.cash ? [all.cash] : [])];
+    const linkedParts = allParts.filter((part) => input.linkedKeys.has(part.key));
+    // A block already linked whose manager bought a fund since: only what is new
+    // is offered, and it joins the portfolio the block lives in (#1883).
+    const joins =
+      linkedParts.length > 0 && linkedParts.length < allParts.length
+        ? (input.connectedPortfolios?.get(product.key) ?? null)
+        : null;
+    const isNew = (part: MyInvestorDiscoveredProduct) =>
+      joins === null || !input.linkedKeys.has(part.key);
+    const funds = all.funds.filter(isNew);
+    const cash = all.cash && isNew(all.cash) ? all.cash : null;
+    const parts = [...funds, ...(cash ? [cash] : [])];
+    const fundRows = funds.map((fund) => ({
+      product: fund,
+      rows: folded.get(fund.key) ?? [],
+      valueMinor: valueOf(fund),
+    }));
+    const block = {
+      cash:
+        cash === null
+          ? null
+          : {
+              identifier: cash.identifier,
+              key: cash.key,
+              name: cash.name,
+              valueMinor: valueOf(cash),
+            },
+      declaredMinor: product.declared ? toMinor(product.declared.value) : null,
+      joins,
+      members: fundRows.map(({ product: fund, rows, valueMinor }) => ({
+        identifier: fund.identifier,
+        key: fund.key,
+        name: fund.name,
+        operations: rows.length,
+        soldByManager: fund.units === null || !isPositiveDecimal(fund.units),
+        units: fund.units,
+        valueMinor,
+      })),
+    };
+    const candidates = (
+      joins === null ? (input.portfolioTwins?.get(product.key) ?? []) : []
+    ).map((portfolio) =>
+      myInvestorPortfolioCandidate({
+        cash: block.cash,
+        funds: fundRows,
+        ledgers: input.ledgers,
+        portfolio,
+        today: input.today,
+      }),
+    );
+    const facts = funds.flatMap((fund) => factsByProduct.get(fund.key) ?? []);
+    const rows = fundRows.flatMap((fund) => fund.rows);
+    return {
+      block,
+      cashWithheld: cash?.cash?.withheld ?? null,
+      currency: parts.some(inOtherCurrency),
+      linked: joins === null && linkedParts.length > 0,
+      operations: rows.length,
+      pending: facts.some(pendingInheritedCost),
+      since:
+        rows
+          .map((row) => row.executedAt.slice(0, 10))
+          .sort()
+          .at(0) ?? null,
+      twin:
+        candidates.length === 0
+          ? null
+          : myInvestorPortfolioTwin(candidates, product.otherHolder),
+      valueMinor:
+        block.members.reduce((sum, member) => sum + member.valueMinor, 0) +
+        (block.cash?.valueMinor ?? 0),
+    };
+  };
+
   const rowOf = (product: MyInvestorDiscoveredProduct): MyInvestorProductRow => {
+    const managed = product.kind === "managed" ? portfolioOf(product) : null;
     const rows = folded.get(product.key) ?? [];
     const facts = factsByProduct.get(product.key) ?? [];
     const block: MyInvestorInclusionBlock | null =
-      product.kind === "managed"
-        ? { reason: "managed_portfolio" }
-        : facts.some((fact) => fact.currency !== EUR) ||
-            (product.cash !== null && product.cash.currency !== EUR)
-          ? { reason: "currency" }
-          : null;
-    const linked = input.linkedKeys.has(product.key);
-    const twin = block === null && !linked ? twinOf(product, rows) : null;
-    const valueMinor =
-      product.cash !== null
-        ? toMinor(product.cash.balance)
-        : derivePosition([...rows], { assetId: product.key, currency: EUR }).costBasis
-            .amountMinor;
-    const withheld = product.cash?.withheld ?? null;
+      (managed?.currency ?? inOtherCurrency(product)) ? { reason: "currency" } : null;
+    const linked = managed?.linked ?? input.linkedKeys.has(product.key);
+    const twin =
+      block === null && !linked && managed === null ? twinOf(product, rows) : null;
+    const portfolioTwin = block === null && !linked ? (managed?.twin ?? null) : null;
+    const withheld = managed ? managed.cashWithheld : (product.cash?.withheld ?? null);
     return {
       accountKey: product.accountKey,
       block,
       identifier: product.identifier,
-      inheritedCostPending: facts.some(pendingInheritedCost),
+      inheritedCostPending: managed?.pending ?? facts.some(pendingInheritedCost),
       key: product.key,
       kind: product.kind,
       linked,
       members: product.members,
       name: product.name,
-      operations: rows.length,
+      operations: managed?.operations ?? rows.length,
       otherHolder: product.otherHolder,
+      portfolio: managed?.block ?? null,
+      portfolioTwin,
       rung: rungOf(product.kind),
       selectedByDefault:
         !linked &&
         block === null &&
         twin === null &&
+        portfolioTwin === null &&
         !product.otherHolder &&
-        holdsSomethingToday(product),
-      since: rows[0]?.executedAt.slice(0, 10) ?? null,
+        // A robo-advisor holds something when a fund has units or its cash a balance:
+        // an emptied one is offered, never ticked.
+        (managed
+          ? managed.valueMinor > 0 ||
+            managed.block.members.some((member) => !member.soldByManager)
+          : holdsSomethingToday(product)),
+      since: managed ? managed.since : (rows[0]?.executedAt.slice(0, 10) ?? null),
       twin,
       units: product.units,
-      valueMinor,
+      valueMinor: managed?.valueMinor ?? valueOf(product),
       withheldMinor:
         withheld !== null && isPositiveDecimal(withheld) ? toMinor(withheld) : null,
     };
   };
 
-  const rows = settleTwinDefaults(discovery.products.map(rowOf));
+  // A robo-advisor's funds and cash are not rows: they ride under their block.
+  const rows = settleTwinDefaults(
+    discovery.products.filter((product) => !product.portfolioKey).map(rowOf),
+  );
   const groups = discovery.accounts.map((account) => ({
     account,
     products: rows.filter((row) => row.accountKey === account.key),
@@ -511,6 +633,12 @@ export interface MyInvestorLinkChoice {
  * ids, ownership and price symbols are the caller's. Refuses a product that is
  * unknown, already linked or another slice's, a link to a holding that is not one of
  * the product's twins, and a holding claimed twice; nothing is half-planned.
+ *
+ * A robo-advisor's block (#1883) is included as ONE managed portfolio — its funds,
+ * those the manager sold whole too, and its cash as the sibling, with the declared
+ * balance as witness — or linked with a portfolio kept by hand, whole: each fund to
+ * the member of its ISIN, the cash to the sibling, the funds it lacked created into
+ * it. A blocked portfolio is refused with the reason the fold shows.
  */
 export function planMyInvestorInclusion(
   discovery: MyInvestorDiscovery,
@@ -518,7 +646,7 @@ export function planMyInvestorInclusion(
     sourceId: string;
     today: string;
     productKeys: readonly string[];
-    /** Twins to link (#1881); none when absent. */
+    /** Twins to link (#1881) and portfolios kept by hand (#1883); none when absent. */
     links?: readonly MyInvestorLinkChoice[];
     view: MyInvestorFirstStartView;
     ownership: OwnershipShare[];
@@ -535,25 +663,49 @@ export function planMyInvestorInclusion(
   const productByKey = new Map(
     discovery.products.map((product) => [product.key, product]),
   );
+  const gone = {
+    error: "Ese producto ya no está en lo que leímos de MyInvestor. Vuelve a leerlo.",
+    ok: false as const,
+  };
   const claimed = new Map<string, string>();
+  const holdingLinks: { link: MyInvestorLinkChoice; row: MyInvestorProductRow }[] = [];
+  const portfolioLinks: {
+    candidate: MyInvestorPortfolioCandidate;
+    row: MyInvestorProductRow;
+  }[] = [];
   for (const link of links) {
     const row = rowByKey.get(link.productKey);
-    if (!row || !productByKey.has(link.productKey)) {
-      return {
-        error: "Ese producto ya no está en lo que leímos de MyInvestor. Vuelve a leerlo.",
-        ok: false,
-      };
-    }
+    if (!row || !productByKey.has(link.productKey)) return gone;
     if (row.linked) return { error: `«${row.name}» ya está incluido.`, ok: false };
-    const candidate = row.twin?.candidates.find((item) => item.assetId === link.assetId);
-    if (row.block !== null || !candidate) {
-      return { error: `«${row.name}» no se puede enlazar con ese holding.`, ok: false };
-    }
     if (keys.includes(link.productKey)) {
       return {
         error: `«${row.name}» se enlaza o se crea aparte, no las dos cosas.`,
         ok: false,
       };
+    }
+    const portfolio = portfolioOfChoice(row, myInvestorLinkChoice(link.assetId));
+    if (row.block === null && portfolio !== null) {
+      if (!isPortfolioLinkable(portfolio)) {
+        return { error: myInvestorPortfolioBlockedReason(portfolio), ok: false };
+      }
+      const other = claimed.get(portfolio.portfolioId);
+      if (other !== undefined) {
+        return {
+          error: `«${portfolio.name}» solo se puede enlazar con una cartera: elige entre «${other}» y «${row.name}».`,
+          ok: false,
+        };
+      }
+      claimed.set(portfolio.portfolioId, row.name);
+      for (const member of portfolio.members) {
+        if (member.assetId !== null) claimed.set(member.assetId, row.name);
+      }
+      if (portfolio.cash?.assetId) claimed.set(portfolio.cash.assetId, row.name);
+      portfolioLinks.push({ candidate: portfolio, row });
+      continue;
+    }
+    const candidate = row.twin?.candidates.find((item) => item.assetId === link.assetId);
+    if (row.block !== null || !candidate) {
+      return { error: `«${row.name}» no se puede enlazar con ese holding.`, ok: false };
     }
     const other = claimed.get(link.assetId);
     if (other !== undefined) {
@@ -563,10 +715,10 @@ export function planMyInvestorInclusion(
       };
     }
     claimed.set(link.assetId, row.name);
+    holdingLinks.push({ link, row });
   }
   // A traspaso is replaced whole or not at all (#1393): both its holdings link.
-  for (const link of links) {
-    const row = rowByKey.get(link.productKey)!;
+  for (const { link, row } of holdingLinks) {
     const candidate = row.twin!.candidates.find((item) => item.assetId === link.assetId)!;
     const stranded = candidate.pairedWith.find((pair) => !claimed.has(pair.assetId));
     if (stranded) {
@@ -579,10 +731,15 @@ export function planMyInvestorInclusion(
   for (const key of keys) {
     const row = rowByKey.get(key);
     if (!row || !productByKey.has(key)) {
-      return {
-        error: "Ese producto ya no está en lo que leímos de MyInvestor. Vuelve a leerlo.",
-        ok: false,
-      };
+      // A robo-advisor's fund or cash is included with its portfolio, never alone.
+      const part = productByKey.get(key);
+      if (part?.portfolioKey) {
+        return {
+          error: `«${part.name}» se incluye con su cartera gestionada, no por separado.`,
+          ok: false,
+        };
+      }
+      return gone;
     }
     if (row.linked) return { error: `«${row.name}» ya está incluido.`, ok: false };
     if (row.block !== null) {
@@ -599,38 +756,21 @@ export function planMyInvestorInclusion(
       fact.key,
     ]),
   );
-
-  const linkCommands: ConnectedHoldingLink[] = [];
-  for (const link of links) {
-    const row = rowByKey.get(link.productKey)!;
-    const product = productByKey.get(link.productKey)!;
-    linkCommands.push({
-      assetId: link.assetId,
-      productKey: link.productKey,
-      // Alike only by name, the holding carries no identifier: it takes this one.
-      ...(row.twin?.reason === "name" && product.instrument
-        ? {
-            securityId: {
-              kind: product.instrument.scheme,
-              value: product.instrument.code,
-            },
-          }
-        : {}),
-    });
-    for (const operation of folded.get(link.productKey) ?? []) {
+  /** The product's operations, written into `assetId`. */
+  const writeInto = (productKey: string, assetId: string) => {
+    for (const operation of folded.get(productKey) ?? []) {
       const factKey = factKeyById.get(operation.id);
       if (factKey === undefined) continue;
       facts.push({
         dateKey: operation.executedAt.slice(0, 10),
         key: factKey,
-        payload: operationInput(operation, link.assetId),
+        payload: operationInput(operation, assetId),
       });
     }
-  }
-
-  for (const key of keys) {
-    const product = productByKey.get(key)!;
-    const assetId = input.assetIdFor(key);
+  };
+  /** Create one product as a holding of the source, with its history. */
+  const create = (product: MyInvestorDiscoveredProduct): string | null => {
+    const assetId = input.assetIdFor(product.key);
     if (product.kind === "cash" && product.cash !== null) {
       holdings.push({
         holding: {
@@ -646,19 +786,19 @@ export function planMyInvestorInclusion(
           },
           kind: "cash",
         },
-        productKey: key,
+        productKey: product.key,
       });
-      continue;
+      return assetId;
     }
     if (
       product.instrument === null ||
       product.kind === "managed" ||
       product.kind === "cash"
     ) {
-      return { error: `«${product.name}» aún no se puede incluir.`, ok: false };
+      return null;
     }
     const instrument = KIND_INSTRUMENT[product.kind];
-    const symbol = input.symbols.get(key) ?? null;
+    const symbol = input.symbols.get(product.key) ?? null;
     holdings.push({
       holding: {
         asset: {
@@ -675,30 +815,136 @@ export function planMyInvestorInclusion(
         },
         kind: "investment",
       },
-      productKey: key,
+      productKey: product.key,
     });
-    for (const row of folded.get(key) ?? []) {
-      const factKey = factKeyById.get(row.id);
-      if (factKey === undefined) continue;
-      facts.push({
-        dateKey: row.executedAt.slice(0, 10),
-        key: factKey,
-        payload: operationInput(row, assetId),
+    writeInto(product.key, assetId);
+    return assetId;
+  };
+
+  const linkCommands: ConnectedHoldingLink[] = [];
+  for (const { link, row } of holdingLinks) {
+    const product = productByKey.get(link.productKey)!;
+    linkCommands.push({
+      assetId: link.assetId,
+      productKey: link.productKey,
+      // Alike only by name, the holding carries no identifier: it takes this one.
+      ...(row.twin?.reason === "name" && product.instrument
+        ? {
+            securityId: {
+              kind: product.instrument.scheme,
+              value: product.instrument.code,
+            },
+          }
+        : {}),
+    });
+    writeInto(link.productKey, link.assetId);
+  }
+
+  const portfolios: ConnectedPortfolioCreation[] = [];
+  const portfolioLinkCommands: ConnectedPortfolioLink[] = [];
+  const cashLinks: ConnectedCashLink[] = [];
+  const witnessOf = (product: MyInvestorDiscoveredProduct) =>
+    product.declared === null
+      ? null
+      : {
+          declaredDate: discovery.readOn,
+          declaredValue: {
+            amountMinor: toMinor(product.declared.value),
+            currency: product.declared.currency,
+          },
+        };
+  // The portfolio is the scope's its holdings are: the connecting member's.
+  const scopeId =
+    input.ownership.length === 1 ? input.ownership[0]!.memberId : "household";
+
+  for (const { candidate, row } of portfolioLinks) {
+    const product = productByKey.get(row.key)!;
+    const { cash } = myInvestorPortfolioParts(discovery, row.key);
+    const added: string[] = [];
+    for (const member of candidate.members) {
+      if (member.assetId !== null) {
+        linkCommands.push({ assetId: member.assetId, productKey: member.productKey });
+        writeInto(member.productKey, member.assetId);
+        continue;
+      }
+      const assetId = create(productByKey.get(member.productKey)!);
+      if (assetId !== null) added.push(assetId);
+    }
+    if (cash !== null && cash.cash !== null && candidate.cash !== null) {
+      if (candidate.cash.assetId !== null) {
+        cashLinks.push({
+          assetId: candidate.cash.assetId,
+          balanceMinor: toMinor(cash.cash.balance),
+          productKey: cash.key,
+        });
+      } else {
+        const assetId = create(cash);
+        if (assetId !== null) added.push(assetId);
+      }
+    }
+    portfolioLinkCommands.push({
+      addMemberAssetIds: added,
+      portfolioId: candidate.portfolioId,
+      productKey: row.key,
+      witness: witnessOf(product),
+    });
+  }
+
+  for (const key of keys) {
+    const product = productByKey.get(key)!;
+    if (product.kind === "managed") {
+      // The parts the row offers: the whole block, or what is new in one linked.
+      const block = rowByKey.get(key)!.portfolio!;
+      const offered = [
+        ...block.members.map((member) => member.key),
+        ...(block.cash ? [block.cash.key] : []),
+      ];
+      const members = offered.flatMap(
+        (partKey) => create(productByKey.get(partKey)!) ?? [],
+      );
+      if (block.joins !== null) {
+        portfolioLinkCommands.push({
+          addMemberAssetIds: members,
+          portfolioId: block.joins.portfolioId,
+          productKey: key,
+          witness: witnessOf(product),
+        });
+        continue;
+      }
+      portfolios.push({
+        memberAssetIds: members,
+        name: product.name,
+        productKey: key,
+        provider: MYINVESTOR_PROVIDER,
+        scopeId,
+        witness: witnessOf(product),
       });
+      continue;
+    }
+    if (create(product) === null) {
+      return { error: `«${product.name}» aún no se puede incluir.`, ok: false };
     }
   }
 
   return {
     command: {
+      ...(cashLinks.length > 0 ? { cashLinks } : {}),
       facts: { cursor: discovery.readOn, facts },
       holdings,
       links: linkCommands,
+      ...(portfolioLinkCommands.length > 0
+        ? { portfolioLinks: portfolioLinkCommands }
+        : {}),
+      ...(portfolios.length > 0 ? { portfolios } : {}),
       sourceId: input.sourceId,
       today: input.today,
     },
     ok: true,
   };
 }
+
+/** The manager a robo-advisor's portfolio is born with. */
+const MYINVESTOR_PROVIDER = "MyInvestor";
 
 /**
  * A folded row back as the input that writes it, into the holding it belongs to.

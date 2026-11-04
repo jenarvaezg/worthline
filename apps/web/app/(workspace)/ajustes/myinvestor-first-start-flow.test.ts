@@ -10,12 +10,14 @@
  * - The cash account counts what is held for an order in progress once: inside its
  *   balance, and never as an operation of the plan the order is for (#1869 P4).
  */
+
+import { portfolioWitnessView } from "@web/patrimonio/carteras/carteras-view";
+import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
 import { createStoreFromSqlite, openLibsqlClient } from "@worthline/db";
 import { derivePosition, fixedClock } from "@worthline/domain";
 import { createMyInvestorClient } from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
 import { beforeEach, describe, expect, test } from "vitest";
-
 import { startMyInvestorConnect } from "./myinvestor-connect";
 import {
   includeMyInvestorProducts,
@@ -42,13 +44,22 @@ function fixtureClient(deviceId: string) {
   });
 }
 
-async function connectAndRead(): Promise<string> {
+/** The same account with a robo-advisor that holds funds: the synthetic one (#1883). */
+function roboClient(deviceId: string) {
+  return createMyInvestorClient({
+    deviceId,
+    sleep: async () => {},
+    transport: fixtureTransport({ prefer: (file) => file.includes("roboadvisor") }),
+  });
+}
+
+async function connectAndRead(clientFor = fixtureClient): Promise<string> {
   const step = await startMyInvestorConnect(
     {
       acceptedBy: null,
       afterConnect: ({ reader, sourceId }) =>
         storeMyInvestorDiscovery({ now: NOW, store, today: TODAY }, { reader, sourceId }),
-      clientFor: fixtureClient,
+      clientFor,
       newDeviceId: () => "device-sintetico",
       now: NOW,
       store: store.connectedSources,
@@ -116,10 +127,12 @@ describe("the first start of MyInvestor, over the fixtures", () => {
         expect(row.selectedByDefault).toBe(false);
       }
     }
-    // The robo-advisor is offered as ONE block, and not yet (#1883).
+    // The robo-advisor is offered as ONE block (#1883); the captured one is empty —
+    // no fund, no balance — so it is offered unticked.
     const managed = view.rows.filter((row) => row.kind === "managed");
     expect(managed).toHaveLength(1);
-    expect(managed[0]!.block).toEqual({ reason: "managed_portfolio" });
+    expect(managed[0]).toMatchObject({ block: null, selectedByDefault: false });
+    expect(isIncludable(managed[0]!)).toBe(true);
   });
 
   test("including everything of one's own: MyInvestor's units, one batch, nothing of the minor", async () => {
@@ -145,6 +158,12 @@ describe("the first start of MyInvestor, over the fixtures", () => {
     expect(operationBatches.rows).toEqual([{ batch_id: batches.rows[0]!.id }]);
 
     for (const row of own) {
+      if (row.kind === "managed") {
+        // The robo-advisor is a portfolio, not a holding: its cash is its member.
+        const [portfolio] = await store.managedPortfolios.readManagedPortfolios();
+        expect(portfolio?.name).toBe(row.name);
+        continue;
+      }
       const assetId = await linkedAssetFor(sourceId, row.key);
       expect(assetId, row.key).not.toBeNull();
       const product = discovery.products.find((candidate) => candidate.key === row.key)!;
@@ -311,5 +330,218 @@ describe("linking a holding kept by hand (#1881), over the fixtures", () => {
     ).toEqual(["hand-buy"]);
     const plan = await store.contributionPlan.readContributionPlan("default");
     expect(plan.contributions[0]!.endDate).toBe(TODAY);
+  });
+});
+
+describe("the robo-advisor as a managed portfolio (#1883), over the fixtures", () => {
+  const BLOCK = "portfolio:9100007";
+
+  test("it creates the portfolio with its funds — the sold one too — and its cash; the witness squares", async () => {
+    const sourceId = await connectAndRead(roboClient);
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const row = view.rows.find((candidate) => candidate.key === BLOCK)!;
+    expect(row).toMatchObject({
+      kind: "managed",
+      name: "CARTERA SINTETICA",
+      selectedByDefault: true,
+    });
+    expect(row.portfolio!.declaredMinor).toBe(60_863);
+    expect(
+      row.portfolio!.members.map((member) => [member.identifier, member.soldByManager]),
+    ).toEqual([
+      ["IE00SINTET11", false],
+      ["IE00SINTET29", false],
+      ["LU00SINTET32", true],
+    ]);
+
+    const result = await include(sourceId, [BLOCK]);
+    expect(result).toMatchObject({ created: 4, ok: true });
+    expect((await client.execute("SELECT id FROM fact_batch")).rows).toHaveLength(1);
+
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios();
+    expect(portfolio).toMatchObject({
+      name: "CARTERA SINTETICA",
+      provider: "MyInvestor",
+      scopeId: "mJ",
+      witness: {
+        declaredDate: TODAY,
+        declaredValue: { amountMinor: 60_863, currency: "EUR" },
+      },
+    });
+    expect(portfolio!.holdingIds).toHaveLength(4);
+
+    // MyInvestor's units, exactly; the fund the manager sold is a member at 0.
+    const gold = await linkedAssetFor(sourceId, "securities:9100007|isin:IE00SINTET11");
+    const copper = await linkedAssetFor(sourceId, "securities:9100007|isin:LU00SINTET32");
+    const cash = await linkedAssetFor(sourceId, "cash:9100006");
+    expect(Number(await unitsOf(gold!))).toBe(14.433);
+    expect(Number(await unitsOf(copper!))).toBe(0);
+    expect(
+      (await store.operations.readOperations(copper!)).map((row) => row.kind),
+    ).toEqual(["buy", "sell"]);
+    expect(portfolio!.holdingIds).toEqual(expect.arrayContaining([gold, copper, cash]));
+    expect(await store.managedPortfolios.readCashContainerName(cash!)).toBe(
+      "CARTERA SINTETICA",
+    );
+
+    // The witness faces the funds alone, the cash left out (#1550), and squares.
+    const model = await loadCarteras({
+      baseCurrency: "EUR",
+      scopeId: "mJ",
+      store,
+      today: TODAY,
+    });
+    const witness = portfolioWitnessView({
+      baseCurrency: "EUR",
+      moneyByHoldingId: model.moneyByHoldingId,
+      portfolio: portfolio!,
+      typeByHoldingId: model.typeByHoldingId,
+    });
+    expect(witness.cashMinor).toBe(583);
+    expect(witness.declaredMinor).toBe(60_863);
+    expect(witness.state).toBe("aligned");
+  });
+
+  test("a portfolio kept by hand is offered as a block and, confirmed, is linked whole", async () => {
+    const sourceId = await connectAndRead(roboClient);
+    const owner = [{ memberId: "mJ", shareBps: 10_000 }];
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "hand-rv",
+      instrument: "fund",
+      liquidityTier: "market",
+      name: "Renta variable (a mano)",
+      ownership: owner,
+      securityId: { kind: "isin", value: "IE00SINTET11" },
+    });
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "hand-rv",
+        currency: "EUR",
+        executedAt: "2025-02-11",
+        feesMinor: 0,
+        id: "hand-buy",
+        kind: "buy",
+        pricePerUnit: "27.3262",
+        source: "manual",
+        units: "11.0213",
+      },
+      { today: TODAY },
+    );
+    const manual = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: owner,
+      memberHoldingIds: ["hand-rv"],
+      name: "Mi cartera indexada",
+      provider: "MyInvestor",
+      scopeId: "mJ",
+    });
+    const box = manual.holdingIds.find((id) => id !== "hand-rv")!;
+
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const row = view.rows.find((candidate) => candidate.key === BLOCK)!;
+    expect(row.selectedByDefault).toBe(false);
+    expect(row.portfolioTwin?.defaultChoice).toBe(`link:${manual.id}`);
+    const [candidate] = row.portfolioTwin!.candidates;
+    expect(candidate!.blockers).toEqual([]);
+    expect(candidate!.members.map((member) => member.assetId)).toEqual([
+      "hand-rv",
+      null,
+      null,
+    ]);
+    // The same buy on both sides: it pairs, and MyInvestor brings the later one.
+    expect(candidate!.members[0]!.careo!.counts).toMatchObject({
+      enters: 1,
+      manual: 1,
+      same: 1,
+    });
+
+    const batchesBefore = (await client.execute("SELECT id FROM fact_batch")).rows.length;
+    const result = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { links: [{ assetId: manual.id, productKey: BLOCK }], productKeys: [], sourceId },
+    );
+    expect(result).toMatchObject({ linked: ["Mi cartera indexada"], ok: true });
+    // The whole block — members, cash, new funds, witness — in ONE more batch.
+    expect((await client.execute("SELECT id FROM fact_batch")).rows).toHaveLength(
+      batchesBefore + 1,
+    );
+
+    const [after] = await store.managedPortfolios.readManagedPortfolios();
+    expect(after!.id).toBe(manual.id);
+    expect(after!.holdingIds).toHaveLength(4);
+    expect(after!.witness?.declaredValue.amountMinor).toBe(60_863);
+    const assets = await store.assets.readAssets();
+    const members = assets.filter((asset) => after!.holdingIds.includes(asset.id));
+    expect(members.every((asset) => asset.connectedSourceId === sourceId)).toBe(true);
+    expect(members.find((asset) => asset.id === box)!.currentValue.amountMinor).toBe(583);
+    expect(Number(await unitsOf("hand-rv"))).toBe(14.433);
+    expect(
+      (await store.connectedSources.readReplacedOperations("hand-rv")).map(
+        (entry) => entry.operation.id,
+      ),
+    ).toEqual(["hand-buy"]);
+  });
+
+  test("a manual member MyInvestor lacks blocks the link until it leaves the portfolio", async () => {
+    const sourceId = await connectAndRead(roboClient);
+    const owner = [{ memberId: "mJ", shareBps: 10_000 }];
+    for (const [id, isin] of [
+      ["hand-rv", "IE00SINTET11"],
+      ["hand-other", "IE00SINTET94"],
+    ] as const) {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id,
+        instrument: "fund",
+        liquidityTier: "market",
+        name: `${id} (a mano)`,
+        ownership: owner,
+        securityId: { kind: "isin", value: isin },
+      });
+    }
+    const manual = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: owner,
+      memberHoldingIds: ["hand-rv", "hand-other"],
+      name: "Mi cartera indexada",
+      scopeId: "mJ",
+    });
+
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const row = view.rows.find((candidate) => candidate.key === BLOCK)!;
+    expect(row.portfolioTwin!.candidates[0]!.blockers).toEqual(["hand-other (a mano)"]);
+    expect(row.portfolioTwin!.candidates[0]!.href).toMatch(/^\/patrimonio\/carteras\//);
+    expect(row.portfolioTwin!.defaultChoice).toBe("skip");
+
+    const refused = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { links: [{ assetId: manual.id, productKey: BLOCK }], productKeys: [], sourceId },
+    );
+    expect(refused.ok).toBe(false);
+    expect((await client.execute("SELECT id FROM fact_batch")).rows).toHaveLength(0);
+
+    // Out of the portfolio, the link goes through.
+    await store.managedPortfolios.updateManagedPortfolio(manual.id, {
+      memberHoldingIds: ["hand-rv"],
+    });
+    const linked = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { links: [{ assetId: manual.id, productKey: BLOCK }], productKeys: [], sourceId },
+    );
+    expect(linked.ok).toBe(true);
   });
 });

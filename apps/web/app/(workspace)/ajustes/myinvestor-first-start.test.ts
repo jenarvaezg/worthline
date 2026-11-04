@@ -68,6 +68,7 @@ function fund(
   return {
     accountKey: ACCOUNT,
     cash: null,
+    declared: null,
     identifier: isin,
     instrument: { code: isin, scheme: "isin" as const },
     key: keyOf(isin),
@@ -75,6 +76,7 @@ function fund(
     members: [],
     name: `Fondo ${isin.slice(-1)}`,
     otherHolder: false,
+    portfolioKey: null,
     units,
     ...extra,
   };
@@ -97,7 +99,7 @@ function discovery(
     operations,
     products,
     readOn: "2026-11-04",
-    version: 1,
+    version: 2,
   };
 }
 
@@ -378,51 +380,6 @@ describe("the cost a traspaso carries", () => {
 });
 
 describe("what can be included in this slice", () => {
-  test("the robo-advisor waits for its slice", () => {
-    const d = discovery(
-      [
-        op("b1", A, { amount: "10", units: "1" }),
-        op("b2", B, { amount: "10", units: "1" }),
-      ],
-      [
-        fund(A, "1"),
-        fund(B, "1"),
-        {
-          accountKey: ACCOUNT,
-          cash: null,
-          identifier: null,
-          instrument: null,
-          key: "portfolio:9",
-          kind: "managed",
-          members: ["Fondo de oro", "Cuenta Ahorro (efectivo)"],
-          name: "Cartera",
-          otherHolder: false,
-          units: null,
-        },
-      ],
-    );
-    const v = view(d);
-    const byKey = new Map(v.rows.map((row) => [row.key, row]));
-
-    expect(byKey.get("portfolio:9")!.block).toEqual({ reason: "managed_portfolio" });
-    expect(byKey.get(keyOf(B))!.selectedByDefault).toBe(true);
-
-    const all = new Set(v.rows.map((row) => row.key));
-    const summary = summarizeMyInvestorSelection(v.rows, all);
-    expect(summary.count).toBe(2);
-
-    const plan = planMyInvestorInclusion(d, {
-      assetIdFor: (key) => key,
-      ownership: [],
-      productKeys: ["portfolio:9"],
-      sourceId: SOURCE,
-      symbols: new Map(),
-      today: "2026-11-04",
-      view: v,
-    });
-    expect(plan.ok).toBe(false);
-  });
-
   test("the cash account is a stored balance in Líquido, with no operation", () => {
     const d = discovery(
       [],
@@ -430,6 +387,7 @@ describe("what can be included in this slice", () => {
         {
           accountKey: "cash:7",
           cash: { balance: "149.45", currency: "EUR", withheld: "149.23" },
+          declared: null,
           identifier: "ES00 ···0000",
           instrument: null,
           key: "cash:7",
@@ -437,6 +395,7 @@ describe("what can be included in this slice", () => {
           members: [],
           name: "Cuenta",
           otherHolder: false,
+          portfolioKey: null,
           units: null,
         },
       ],

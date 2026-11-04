@@ -10,6 +10,12 @@ import {
   myInvestorCareoVerdict,
   myInvestorHistoryLine,
   myInvestorPlanSentence,
+  myInvestorPortfolioCashLine,
+  myInvestorPortfolioComposition,
+  myInvestorPortfolioMemberHead,
+  myInvestorPortfolioMembersLine,
+  myInvestorPortfolioTwinOptions,
+  myInvestorPortfolioWitnessLine,
   myInvestorRowNotes,
   myInvestorRowState,
   myInvestorSinceLabel,
@@ -29,6 +35,8 @@ const ROW: MyInvestorProductRow = {
   name: "Fondo",
   operations: 31,
   otherHolder: false,
+  portfolio: null,
+  portfolioTwin: null,
   rung: "invested",
   selectedByDefault: true,
   since: "2024-03-18",
@@ -59,12 +67,6 @@ describe("the words of the first start (#1880)", () => {
     expect(
       myInvestorRowNotes({ ...ROW, inheritedCostPending: true }, euros)[0],
     ).toContain("te preguntaremos lo que costó");
-    expect(
-      myInvestorRowNotes(
-        { ...ROW, block: { reason: "managed_portfolio" }, members: ["Oro", "Plata"] },
-        euros,
-      )[0],
-    ).toContain("Oro · Plata");
   });
 
   test("the row's state: read, choose, then whether the last read is today's", () => {
@@ -178,5 +180,124 @@ describe("the careo of a twin, in words (#1881, design C)", () => {
       mark: "+ entra",
       units: "6,9413",
     });
+  });
+});
+
+describe("a robo-advisor's block, in words (#1883)", () => {
+  const block: MyInvestorProductRow = {
+    ...ROW,
+    identifier: null,
+    key: "portfolio:9",
+    kind: "managed",
+    name: "Cartera sintética",
+    portfolio: {
+      cash: {
+        identifier: "ES00 ···0000",
+        key: "cash:7",
+        name: "Cuenta",
+        valueMinor: 734,
+      },
+      declaredMinor: 61_237,
+      joins: null,
+      members: [
+        {
+          identifier: "IE0000000001",
+          key: "a",
+          name: "Oro",
+          operations: 3,
+          soldByManager: false,
+          units: "4.1",
+          valueMinor: 30_011,
+        },
+        {
+          identifier: "IE0000000002",
+          key: "b",
+          name: "Plata",
+          operations: 2,
+          soldByManager: false,
+          units: "2.9",
+          valueMinor: 31_013,
+        },
+        {
+          identifier: "IE0000000003",
+          key: "c",
+          name: "Cobre",
+          operations: 2,
+          soldByManager: true,
+          units: "0",
+          valueMinor: 0,
+        },
+      ],
+    },
+  };
+
+  test("one row: its funds today, its cash, and the funds the manager sold", () => {
+    expect(myInvestorPortfolioComposition(block)).toBe("2 fondos + efectivo");
+    expect(myInvestorPortfolioMembersLine(block)).toBe(
+      "Oro · Plata · Cuenta (efectivo). Y 1 fondo que el gestor ya vendió, a 0 con su historial",
+    );
+    expect(myInvestorPortfolioWitnessLine(block, euros)).toContain(
+      "MyInvestor declara 612.37 € en fondos, sin el efectivo",
+    );
+    expect(myInvestorPortfolioComposition(ROW)).toBeNull();
+  });
+
+  const blocked = {
+    blockers: ["Bronce (a mano)"],
+    cash: { afterMinor: 734, assetId: "box", beforeMinor: 517, name: "Efectivo Metal" },
+    href: "/patrimonio/carteras/wl_prt_1",
+    members: [],
+    name: "Metal",
+    portfolioId: "p1",
+    strandedTransfers: [],
+    valueDeltaMinor: 217,
+  };
+
+  test("a manual member MyInvestor lacks disables «Enlazar», with its reason and remedy", () => {
+    const [link, apart, skip] = myInvestorPortfolioTwinOptions({
+      candidates: [blocked],
+      defaultChoice: "skip",
+    });
+    expect(link).toMatchObject({
+      disabled: true,
+      href: "/patrimonio/carteras/wl_prt_1",
+      label:
+        "Enlazar con la cartera «Metal»: MyInvestor sustituye sus fondos y su efectivo",
+      note: "No se puede enlazar: «Bronce (a mano)» está en tu cartera y MyInvestor no lo tiene en esta cuenta. Sácalo de la cartera o envíalo a la papelera, y vuelve aquí.",
+    });
+    expect(apart!.disabled).toBe(false);
+    expect(skip!.value).toBe("skip");
+  });
+
+  test("each fund says what it replaces, and the cash its balance before and after", () => {
+    expect(
+      myInvestorPortfolioMemberHead(
+        {
+          assetId: null,
+          assetName: null,
+          careo: null,
+          enteringMinor: 31_013,
+          name: "Plata",
+          productKey: "b",
+        },
+        euros,
+      ),
+    ).toBe("«Plata» entra nuevo en la cartera: 310.13 €.");
+    expect(
+      myInvestorPortfolioMemberHead(
+        {
+          assetId: "h",
+          assetName: "Oro (a mano)",
+          careo: null,
+          enteringMinor: 0,
+          name: "Oro",
+          productKey: "a",
+        },
+        euros,
+      ),
+    ).toBe("«Oro (a mano)» ← «Oro»:");
+    expect(myInvestorPortfolioCashLine(blocked, euros)).toBe(
+      "Efectivo «Efectivo Metal»: 5.17 € → 7.34 €, el saldo de MyInvestor.",
+    );
   });
 });

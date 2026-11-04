@@ -189,9 +189,11 @@ function normalizeHoldingIds(holdingIds: readonly string[]): string[] {
 
 /**
  * Every member must be a LIVE, MANUAL, INVESTMENT holding that belongs to no
- * other portfolio. Sync-owned holdings cannot be members for now (ADR 0085):
- * their rows are written by a connector, and a rebalance the owner never saw
- * must not silently rewrite a grouping he declared by hand.
+ * other portfolio. Sync-owned holdings cannot be members through THIS door (ADR
+ * 0085): their rows are written by a connector, and a rebalance the owner never
+ * saw must not silently rewrite a grouping he declared by hand. A connector that
+ * brings the whole group — a robo-advisor (#1883) — writes it through
+ * `insertConnectedManagedPortfolio` / `joinConnectedManagedPortfolio` instead.
  */
 async function assertMemberEligibility(
   ctx: StoreContext,
@@ -274,9 +276,15 @@ async function assertMemberEligibility(
 async function readMemberRowsWithTypes(
   ctx: StoreContext,
   portfolioId: string,
-): Promise<Array<{ assetId: string; assetType: string }>> {
+): Promise<
+  Array<{ assetId: string; assetType: string; connectedSourceId: string | null }>
+> {
   return ctx.db
-    .select({ assetId: managedPortfolioHoldings.assetId, assetType: assets.type })
+    .select({
+      assetId: managedPortfolioHoldings.assetId,
+      assetType: assets.type,
+      connectedSourceId: assets.connectedSourceId,
+    })
     .from(managedPortfolioHoldings)
     .innerJoin(assets, eq(assets.id, managedPortfolioHoldings.assetId))
     .where(eq(managedPortfolioHoldings.portfolioId, portfolioId))
@@ -617,14 +625,32 @@ async function updateManagedPortfolio(
     memberRows.map((row) => row.assetId),
     new Map(memberRows.map((row) => [row.assetId, row.assetType])),
   );
-  const plumbingAssetIds = [roles.cashHoldingId, roles.undetailedHoldingId].filter(
-    (holdingId): holdingId is string => holdingId !== null,
-  );
+  // A member a connected source owns (a robo-advisor linked as a block, #1883) is
+  // preserved the same way: the SOURCE says which funds the portfolio holds, so the
+  // form never offers it as a chip and a save that does not mention it keeps it.
+  const sourceOwnedIds = memberRows
+    .filter((row) => row.connectedSourceId !== null)
+    .map((row) => row.assetId);
+  const plumbingAssetIds = [
+    ...new Set(
+      [roles.cashHoldingId, roles.undetailedHoldingId, ...sourceOwnedIds].filter(
+        (holdingId): holdingId is string => holdingId !== null,
+      ),
+    ),
+  ];
 
   let finalMembers: string[] | undefined;
   if (patch.memberHoldingIds !== undefined) {
     const requested = normalizeHoldingIds(patch.memberHoldingIds);
     finalMembers = requested.filter((holdingId) => !plumbingAssetIds.includes(holdingId));
+    // A portfolio a source writes (a robo-advisor, #1883) takes no hand-made member:
+    // its funds are the source's, and a manual one would block every fund the
+    // manager buys later from joining it.
+    if (sourceOwnedIds.length > 0 && finalMembers.length > 0) {
+      throw new Error(
+        "Esta cartera la pone al día una conexión: sus fondos los trae la fuente, no se añaden a mano.",
+      );
+    }
     await assertMemberEligibility(ctx, finalMembers, id);
   }
 
@@ -659,6 +685,76 @@ async function deleteManagedPortfolio(ctx: StoreContext, id: string): Promise<vo
   });
 
   await ctx.writeAuditEntry("delete_managed_portfolio", "managed_portfolio", id);
+}
+
+/**
+ * A managed portfolio a connected source brings whole (#1883, ADR 0085 as amended):
+ * a robo-advisor's account, whose funds and cash the SAME batch creates as the
+ * source's holdings. Unlike the alta, nothing is created here — the cash sibling is
+ * the source's own cash account, not a 0 € box — and the members are the source's,
+ * which the alta's door refuses. Runs inside the caller's transaction: the group
+ * lands with the holdings it groups, or not at all.
+ */
+export interface ConnectedManagedPortfolioInput {
+  scopeId: string;
+  name: string;
+  provider: string | null;
+  /** Every member, the cash sibling included. */
+  memberHoldingIds: readonly string[];
+  /** The balance the manager declares, read by the source: a witness (#1550). */
+  witness: ManagedPortfolioWitness | null;
+}
+
+export async function insertConnectedManagedPortfolio(
+  ctx: StoreContext,
+  input: ConnectedManagedPortfolioInput,
+): Promise<string> {
+  const name = input.name.trim();
+  assertManagedPortfolioInput({ name });
+  if (input.witness !== null) assertManagedPortfolioWitnessInput(input.witness);
+  const id = ctx.newId();
+  await ctx.db
+    .insert(managedPortfolios)
+    .values({
+      id,
+      name,
+      provider: normalizeProvider(input.provider),
+      scopeId: input.scopeId,
+      ...witnessColumns(input.witness),
+    })
+    .run();
+  await ensureAgentViewPublicIds(ctx, publicIdTargetsForManagedPortfolio(id));
+  await insertMembers(ctx, id, input.memberHoldingIds);
+  await ctx.writeAuditEntries([
+    { action: "create_managed_portfolio", entityId: id, entityType: "managed_portfolio" },
+    ...(input.witness === null ? [] : [witnessAuditEntry(id, input.witness)]),
+  ]);
+  return id;
+}
+
+/**
+ * A managed portfolio kept by hand that a connected source has just taken over as a
+ * block (#1883): the source's holdings it did not have join it, and the balance the
+ * manager declares becomes its witness. Runs inside the caller's transaction.
+ */
+export async function joinConnectedManagedPortfolio(
+  ctx: StoreContext,
+  input: {
+    portfolioId: string;
+    addMemberHoldingIds: readonly string[];
+    witness: ManagedPortfolioWitness | null;
+  },
+): Promise<void> {
+  if (input.witness !== null) assertManagedPortfolioWitnessInput(input.witness);
+  await insertMembers(ctx, input.portfolioId, input.addMemberHoldingIds);
+  if (input.witness !== null) {
+    await ctx.db
+      .update(managedPortfolios)
+      .set({ ...witnessColumns(input.witness), updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(managedPortfolios.id, input.portfolioId))
+      .run();
+    await ctx.writeAuditEntries([witnessAuditEntry(input.portfolioId, input.witness)]);
+  }
 }
 
 async function insertMembers(

@@ -140,7 +140,7 @@ describe("linking a manual holding to an owning source", () => {
       today: TODAY,
     });
 
-    expect(result).toEqual({ applied: 3, created: 1, linked: 1 });
+    expect(result).toEqual({ applied: 3, created: 1, linked: 1, portfolios: 0 });
     // ONE batch for the whole application, and ONE ripple whose floor reaches the
     // earliest of the replaced and the incoming dates.
     const batches = (await client.execute("SELECT id FROM fact_batch")).rows;

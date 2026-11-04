@@ -4,6 +4,10 @@ import { readAppliedFactKeys } from "@db/connected-source-owning-store";
 import { closeHoldingPlansOnLink } from "@db/contribution-plan-store";
 import { readHoldingLedgers, readSplitTransfers } from "@db/holding-ledger-reads";
 import {
+  insertConnectedManagedPortfolio,
+  joinConnectedManagedPortfolio,
+} from "@db/managed-portfolio-store";
+import {
   assetOperations,
   assets,
   connectedSourceLinks,
@@ -11,16 +15,19 @@ import {
   connectorAppliedFacts,
   factBatchReplacedOperations,
   investmentAssets,
+  managedPortfolioHoldings,
+  managedPortfolios,
 } from "@db/schema";
 import type { StoreContext } from "@db/store-context";
 import type {
   CreateInvestmentOperationInput,
   CreateManualAssetInput,
+  ManagedPortfolioWitness,
   NormalizedBatch,
   SecurityId,
 } from "@worthline/domain";
 import { isMirroredSourceAdapter, reconcileFacts } from "@worthline/domain";
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type {
   DatedFactCommandImplementations,
   DatedFactStores,
@@ -59,6 +66,45 @@ export interface ConnectedHoldingLink {
 }
 
 /**
+ * A manual cash account that becomes the source's (#1883): the cash sibling of a
+ * managed portfolio kept by hand, when the robo-advisor's block is linked with it.
+ * Its balance becomes the source's — a stored balance, with no movements (#1869 P4).
+ */
+export interface ConnectedCashLink {
+  productKey: string;
+  assetId: string;
+  balanceMinor: number;
+}
+
+/**
+ * A managed portfolio the source brings whole (#1883, ADR 0085 as amended): a
+ * robo-advisor's account, grouping holdings THIS batch creates.
+ */
+export interface ConnectedPortfolioCreation {
+  /** The portfolio's key at the source; its members carry their own links. */
+  productKey: string;
+  name: string;
+  provider: string | null;
+  scopeId: string;
+  /** The created holdings it groups, its cash sibling included. */
+  memberAssetIds: readonly string[];
+  witness: ManagedPortfolioWitness | null;
+}
+
+/**
+ * A managed portfolio kept by hand that the source takes over as a block (#1883):
+ * its members are linked (`links`), its cash sibling too (`cashLinks`), and the
+ * funds it lacked are created and join it.
+ */
+export interface ConnectedPortfolioLink {
+  productKey: string;
+  portfolioId: string;
+  /** Holdings this batch creates that join it (funds it did not have, or its cash). */
+  addMemberAssetIds: readonly string[];
+  witness: ManagedPortfolioWitness | null;
+}
+
+/**
  * Including products of a source that OWNS its holdings (#1880, ADR 0115): the
  * holdings to create, the manual holdings to link (#1881), and the operations that
  * give them their history, as the ingestion port carries them — each operation a
@@ -70,6 +116,12 @@ export interface IncludeConnectedHoldingsCommand {
   holdings: readonly ConnectedHoldingCreation[];
   /** Manual holdings that become the source's (#1881); none when absent. */
   links?: readonly ConnectedHoldingLink[];
+  /** Manual cash accounts that become the source's (#1883); none when absent. */
+  cashLinks?: readonly ConnectedCashLink[];
+  /** Managed portfolios the source brings whole (#1883); none when absent. */
+  portfolios?: readonly ConnectedPortfolioCreation[];
+  /** Managed portfolios kept by hand the source takes over (#1883); none when absent. */
+  portfolioLinks?: readonly ConnectedPortfolioLink[];
   /** The operations, keyed for the dedup ledger; the cursor is where the port resumes. */
   facts: NormalizedBatch<CreateInvestmentOperationInput>;
 }
@@ -78,6 +130,8 @@ export interface IncludeConnectedHoldingsResult {
   created: number;
   /** Manual holdings that became the source's (#1881). */
   linked: number;
+  /** Managed portfolios created or taken over as a block (#1883). */
+  portfolios: number;
   applied: number;
 }
 
@@ -92,6 +146,11 @@ export interface SyncConnectedHoldingsCommand {
   facts: NormalizedBatch<CreateInvestmentOperationInput>;
   /** A linked cash account's balance today (#1869 P4): stored, with no movements. */
   cashBalances: readonly { assetId: string; valueMinor: number }[];
+  /**
+   * The balance a linked robo-advisor's manager declares today, by a member of its
+   * block (#1883): the portfolio that member lives in takes it as its witness.
+   */
+  portfolioWitnesses?: readonly { assetId: string; witness: ManagedPortfolioWitness }[];
 }
 
 export interface SyncConnectedHoldingsResult {
@@ -136,31 +195,49 @@ export function createConnectedInclusionCommands(
   return {
     includeConnectedHoldingsAndRipple: async (command) => {
       const links = command.links ?? [];
+      const cashLinks = command.cashLinks ?? [];
       const applied = await commitOwnedFacts(ctx, stores, uow, {
         beforeFacts: async (batchId) => {
           await assertProductsUnlinked(ctx, command.sourceId, [
             ...command.holdings.map((entry) => entry.productKey),
             ...links.map((link) => link.productKey),
+            ...cashLinks.map((link) => link.productKey),
           ]);
+          assertPortfolioMembersCreated(command);
+          await assertPortfoliosTakenWhole(ctx, command);
           await createLinkedHoldings(ctx, stores, command.sourceId, command.holdings);
-          return linkManualHoldings(ctx, {
+          const replaced = await linkManualHoldings(ctx, {
             batchId,
             links,
             sourceId: command.sourceId,
             today: command.today,
           });
+          await linkManualCash(ctx, command.sourceId, cashLinks);
+          await groupPortfolios(ctx, command);
+          return replaced;
         },
         facts: command.facts,
         sourceId: command.sourceId,
         today: command.today,
         trigger: "connect",
       });
-      return { applied, created: command.holdings.length, linked: links.length };
+      return {
+        applied,
+        created: command.holdings.length,
+        linked: links.length,
+        portfolios:
+          (command.portfolios?.length ?? 0) + (command.portfolioLinks?.length ?? 0),
+      };
     },
     syncConnectedHoldingsAndRipple: async (command) => {
       const applied = await commitOwnedFacts(ctx, stores, uow, {
         beforeFacts: async () => {
           await writeLinkedCashBalances(ctx, command.sourceId, command.cashBalances);
+          await refreshPortfolioWitnesses(
+            ctx,
+            command.sourceId,
+            command.portfolioWitnesses ?? [],
+          );
           return new Map();
         },
         facts: command.facts,
@@ -326,6 +403,259 @@ async function writeLinkedCashBalances(
       .run();
     await ctx.writeAuditEntry("update_valuation", "asset", assetId, {
       currentValueMinor: valueMinor,
+    });
+  }
+}
+
+/** A portfolio the source brings whole groups only holdings this batch creates. */
+function assertPortfolioMembersCreated(command: IncludeConnectedHoldingsCommand): void {
+  const created = new Set(command.holdings.map(({ holding }) => holding.asset.id));
+  const joining = [
+    ...(command.portfolios ?? []).flatMap((portfolio) => portfolio.memberAssetIds),
+    ...(command.portfolioLinks ?? []).flatMap((link) => link.addMemberAssetIds),
+  ];
+  const stray = joining.find((assetId) => !created.has(assetId));
+  if (stray !== undefined) {
+    throw new Error(
+      `Holding "${stray}" joins a portfolio but this batch does not create it.`,
+    );
+  }
+}
+
+/**
+ * A portfolio kept by hand is taken over WHOLE or not at all (#1883): every
+ * live member must be one this batch links — a fund to its product, the cash
+ * sibling to the source's cash. A member left manual would sit inside a group the
+ * source now writes, and the robo-advisor does not have it.
+ */
+async function assertPortfoliosTakenWhole(
+  ctx: StoreContext,
+  command: IncludeConnectedHoldingsCommand,
+): Promise<void> {
+  const portfolioLinks = command.portfolioLinks ?? [];
+  const linkingIds = [
+    ...(command.links ?? []).map((link) => link.assetId),
+    ...(command.cashLinks ?? []).map((link) => link.assetId),
+  ];
+  // A member of a portfolio kept by hand is linked with its whole portfolio, never
+  // on its own: one fund the source's would leave the rest of the group manual.
+  if (linkingIds.length > 0) {
+    const takenOver = new Set(portfolioLinks.map((link) => link.portfolioId));
+    const memberships = await ctx.db
+      .select({
+        assetId: managedPortfolioHoldings.assetId,
+        portfolioId: managedPortfolioHoldings.portfolioId,
+      })
+      .from(managedPortfolioHoldings)
+      .where(inArray(managedPortfolioHoldings.assetId, linkingIds))
+      .all();
+    const loose = memberships.find((row) => !takenOver.has(row.portfolioId));
+    if (loose) {
+      throw new Error(
+        `Holding "${loose.assetId}" is a member of portfolio "${loose.portfolioId}": ` +
+          "it is linked with its whole portfolio, not on its own.",
+      );
+    }
+  }
+  if (portfolioLinks.length === 0) return;
+  const ids = portfolioLinks.map((link) => link.portfolioId);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("The same portfolio cannot be linked twice in one batch.");
+  }
+  const found = await ctx.db
+    .select({ id: managedPortfolios.id })
+    .from(managedPortfolios)
+    .where(inArray(managedPortfolios.id, ids))
+    .all();
+  if (found.length !== ids.length) {
+    throw new Error("A portfolio to link does not exist.");
+  }
+  const linking = new Set([
+    ...(command.links ?? []).map((link) => link.assetId),
+    ...(command.cashLinks ?? []).map((link) => link.assetId),
+  ]);
+  const members = await ctx.db
+    .select({
+      assetId: managedPortfolioHoldings.assetId,
+      connectedSourceId: assets.connectedSourceId,
+      deletedAt: assets.deletedAt,
+      portfolioId: managedPortfolioHoldings.portfolioId,
+      type: assets.type,
+    })
+    .from(managedPortfolioHoldings)
+    .innerJoin(assets, eq(assets.id, managedPortfolioHoldings.assetId))
+    .where(inArray(managedPortfolioHoldings.portfolioId, ids))
+    .all();
+  // A member already the source's is fine: a block linked earlier whose manager
+  // bought a fund since takes the new one in (#1883). So is the container's cash
+  // box when the source brings no cash account for it: it stays the owner's, the
+  // same rule the fold's careo applies (`myInvestorPortfolioCandidate`).
+  const left = members.find(
+    (member) =>
+      member.deletedAt === null &&
+      member.connectedSourceId !== command.sourceId &&
+      member.type !== "cash" &&
+      !linking.has(member.assetId),
+  );
+  if (left) {
+    throw new Error(
+      `Holding "${left.assetId}" is in portfolio "${left.portfolioId}" and is not linked: ` +
+        "a portfolio is linked whole.",
+    );
+  }
+}
+
+/**
+ * Make live manual cash accounts the source's (#1883): each takes the source's
+ * balance, and from then on only the source writes it.
+ */
+async function linkManualCash(
+  ctx: StoreContext,
+  sourceId: string,
+  cashLinks: readonly ConnectedCashLink[],
+): Promise<void> {
+  if (cashLinks.length === 0) return;
+  const assetIds = cashLinks.map((link) => link.assetId);
+  if (new Set(assetIds).size !== assetIds.length) {
+    throw new Error("The same cash account cannot be linked twice in one batch.");
+  }
+  const rows = await ctx.db
+    .select({
+      connectedSourceId: assets.connectedSourceId,
+      deletedAt: assets.deletedAt,
+      id: assets.id,
+      type: assets.type,
+    })
+    .from(assets)
+    .where(inArray(assets.id, assetIds))
+    .all();
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  for (const link of cashLinks) {
+    const row = byId.get(link.assetId);
+    if (
+      !row ||
+      row.type !== "cash" ||
+      row.connectedSourceId !== null ||
+      row.deletedAt !== null
+    ) {
+      throw new Error(
+        `Holding "${link.assetId}" is not a live manual cash account: it cannot be linked.`,
+      );
+    }
+    if (!Number.isInteger(link.balanceMinor)) {
+      throw new Error("Money must be stored as integer minor units.");
+    }
+    await ctx.db
+      .update(assets)
+      .set({
+        connectedSourceId: sourceId,
+        currentValueMinor: link.balanceMinor,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(assets.id, link.assetId))
+      .run();
+    await ctx.writeAuditEntry("update_valuation", "asset", link.assetId, {
+      currentValueMinor: link.balanceMinor,
+    });
+  }
+  await ctx.db
+    .insert(connectedSourceLinks)
+    .values(
+      cashLinks.map((link) => ({
+        assetId: link.assetId,
+        productKey: link.productKey,
+        sourceId,
+      })),
+    )
+    .run();
+}
+
+/**
+ * Today's declared balance of each linked robo-advisor (#1883): into the portfolio
+ * its member lives in, and only through a member this source owns.
+ */
+async function refreshPortfolioWitnesses(
+  ctx: StoreContext,
+  sourceId: string,
+  witnesses: readonly { assetId: string; witness: ManagedPortfolioWitness }[],
+): Promise<void> {
+  if (witnesses.length === 0) return;
+  const rows = await ctx.db
+    .select({
+      assetId: managedPortfolioHoldings.assetId,
+      portfolioId: managedPortfolioHoldings.portfolioId,
+    })
+    .from(managedPortfolioHoldings)
+    .innerJoin(assets, eq(assets.id, managedPortfolioHoldings.assetId))
+    .where(
+      and(
+        inArray(
+          managedPortfolioHoldings.assetId,
+          witnesses.map((entry) => entry.assetId),
+        ),
+        eq(assets.connectedSourceId, sourceId),
+      ),
+    )
+    .all();
+  const portfolioOf = new Map(rows.map((row) => [row.assetId, row.portfolioId]));
+  for (const { assetId, witness } of witnesses) {
+    const portfolioId = portfolioOf.get(assetId);
+    // A block whose portfolio the owner dissolved has nowhere to keep it.
+    if (portfolioId === undefined) continue;
+    await joinConnectedManagedPortfolio(ctx, {
+      addMemberHoldingIds: [],
+      portfolioId,
+      witness,
+    });
+  }
+}
+
+/** Create the portfolios the source brings whole and join the ones it takes over. */
+async function groupPortfolios(
+  ctx: StoreContext,
+  command: IncludeConnectedHoldingsCommand,
+): Promise<void> {
+  for (const portfolio of command.portfolios ?? []) {
+    await insertConnectedManagedPortfolio(ctx, {
+      memberHoldingIds: portfolio.memberAssetIds,
+      name: portfolio.name,
+      provider: portfolio.provider,
+      scopeId: portfolio.scopeId,
+      witness: portfolio.witness,
+    });
+  }
+  for (const link of command.portfolioLinks ?? []) {
+    // A member in the Papelera leaves the group the source now writes: restored
+    // later, it would be a hand-made row inside it.
+    const trashed = await ctx.db
+      .select({ assetId: managedPortfolioHoldings.assetId })
+      .from(managedPortfolioHoldings)
+      .innerJoin(assets, eq(assets.id, managedPortfolioHoldings.assetId))
+      .where(
+        and(
+          eq(managedPortfolioHoldings.portfolioId, link.portfolioId),
+          isNotNull(assets.deletedAt),
+        ),
+      )
+      .all();
+    if (trashed.length > 0) {
+      await ctx.db
+        .delete(managedPortfolioHoldings)
+        .where(
+          and(
+            eq(managedPortfolioHoldings.portfolioId, link.portfolioId),
+            inArray(
+              managedPortfolioHoldings.assetId,
+              trashed.map((row) => row.assetId),
+            ),
+          ),
+        )
+        .run();
+    }
+    await joinConnectedManagedPortfolio(ctx, {
+      addMemberHoldingIds: link.addMemberAssetIds,
+      portfolioId: link.portfolioId,
+      witness: link.witness,
     });
   }
 }

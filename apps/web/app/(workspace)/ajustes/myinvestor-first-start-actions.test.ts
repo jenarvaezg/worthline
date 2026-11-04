@@ -207,10 +207,16 @@ describe("including", () => {
     );
     const row = await store.connectedSources.readDiscovery(sourceId);
     const discovery = JSON.parse(row!.payloadJson) as {
-      products: { key: string; kind: string; otherHolder: boolean }[];
+      products: {
+        key: string;
+        kind: string;
+        otherHolder: boolean;
+        portfolioKey: string | null;
+      }[];
     };
     const cash = discovery.products.find(
-      (product) => product.kind === "cash" && !product.otherHolder,
+      (product) =>
+        product.kind === "cash" && !product.otherHolder && !product.portfolioKey,
     )!;
     const plan = discovery.products.find((product) => product.kind === "plan")!;
 

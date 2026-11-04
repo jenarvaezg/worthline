@@ -1,6 +1,7 @@
 import { holdingDetailHref, managedPortfolioFichaHref } from "@web/holding-route";
 import type {
   CurrencyCode,
+  InvestmentOperation,
   ManagedPortfolio,
   ManagedPortfolioReconciliation,
   ManagedPortfolioReconciliationState,
@@ -9,9 +10,11 @@ import type {
 } from "@worthline/domain";
 import {
   computeManagedPortfolioFigures,
+  derivePosition,
   formatDateKeyEs,
   formatDriftBps,
   formatMoneyMinor,
+  isPositiveDecimal,
   managedPortfolioMemberRoles,
   managedPortfolioMemberValues,
   reconcileManagedPortfolio,
@@ -55,6 +58,19 @@ export function managedPortfolioMemberOptions(input: {
 
     return true;
   });
+}
+
+/**
+ * Whether a connected source writes this portfolio (a robo-advisor, #1883): one of
+ * its members is the source's. Such a portfolio takes no hand-made member, so the
+ * ficha offers no chips — the store refuses them too.
+ */
+export function isSourceOwnedPortfolio(
+  portfolio: ManagedPortfolio,
+  assets: readonly Pick<ManualAsset, "id" | "connectedSourceId">[],
+): boolean {
+  const members = new Set(portfolio.holdingIds);
+  return assets.some((asset) => members.has(asset.id) && asset.connectedSourceId != null);
 }
 
 export interface PortfolioListRowView {
@@ -105,6 +121,36 @@ export interface PortfolioCompositionRowView {
   href: string | null;
 }
 
+/**
+ * The members a connected source's manager sold whole (#1883): funds of a portfolio
+ * a source brings — a robo-advisor — that hold no units today but have a history.
+ * They stay members, at 0, because the portfolio's return against the manager's
+ * needs their flows (#1552); the ficha folds them away under «Vendidos por el
+ * gestor». A fund kept by hand at 0 is not one: the owner chose to keep it.
+ */
+export function soldByManagerHoldingIds(input: {
+  portfolio: ManagedPortfolio;
+  assets: readonly Pick<ManualAsset, "id" | "type" | "connectedSourceId" | "currency">[];
+  operationsByHoldingId: ReadonlyMap<string, readonly InvestmentOperation[]>;
+}): ReadonlySet<string> {
+  const byId = new Map(input.assets.map((asset) => [asset.id, asset]));
+  return new Set(
+    input.portfolio.holdingIds.filter((holdingId) => {
+      const asset = byId.get(holdingId);
+      if (!asset || asset.type !== "investment" || asset.connectedSourceId == null) {
+        return false;
+      }
+      const operations = input.operationsByHoldingId.get(holdingId) ?? [];
+      if (operations.length === 0) return false;
+      const { currentUnits } = derivePosition([...operations], {
+        assetId: holdingId,
+        currency: asset.currency,
+      });
+      return !isPositiveDecimal(currentUnits);
+    }),
+  );
+}
+
 /** The composition block of the ficha, everything decided before any JSX. */
 export function portfolioCompositionView(input: {
   portfolio: ManagedPortfolio;
@@ -112,9 +158,13 @@ export function portfolioCompositionView(input: {
   nameById: ReadonlyMap<string, string>;
   typeByHoldingId: ReadonlyMap<string, string>;
   publicIdByHolding?: Readonly<Record<string, string>> | undefined;
+  /** Funds the manager sold whole ({@link soldByManagerHoldingIds}); none when absent. */
+  soldByManager?: ReadonlySet<string> | undefined;
 }): {
   totalMinor: number;
   rows: PortfolioCompositionRowView[];
+  /** The funds the manager sold whole, at 0: shown folded, apart from the rows. */
+  soldByManager: PortfolioCompositionRowView[];
   /**
    * Members with no live holding behind them (trashed or hard-gone). They are
    * NOT silently dropped from the count: the ficha names them as invisible so
@@ -154,8 +204,10 @@ export function portfolioCompositionView(input: {
       : null,
   }));
 
+  const sold = input.soldByManager ?? new Set<string>();
   return {
-    rows,
+    rows: rows.filter((row) => !sold.has(row.holdingId)),
+    soldByManager: rows.filter((row) => sold.has(row.holdingId)),
     totalMinor: figures.totalMinor,
     unknownMemberIds: roles.unknownHoldingIds,
   };

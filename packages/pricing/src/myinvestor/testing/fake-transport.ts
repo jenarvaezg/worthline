@@ -65,14 +65,29 @@ function sameQuery(
   );
 }
 
-/** Answers every GET with the fixture whose manifest entry records that exact request. */
-export function fixtureTransport(): RecordingTransport {
+/**
+ * Answers every GET with the fixture whose manifest entry records that exact request.
+ * `prefer` puts some fixtures first — a synthetic account that answers the same
+ * request as a captured one (the robo-advisor of #1883 answers the account lists).
+ */
+export function fixtureTransport(
+  options: { prefer?: (file: string) => boolean } = {},
+): RecordingTransport {
   const requests: MyInvestorRequest[] = [];
+  const prefer = options.prefer;
+  const fixtures = prefer
+    ? [
+        ...MYINVESTOR_FIXTURES.filter(
+          (entry) => entry.file !== null && prefer(entry.file),
+        ),
+        ...MYINVESTOR_FIXTURES,
+      ]
+    : MYINVESTOR_FIXTURES;
   return {
     requests,
     async send(request) {
       requests.push(request);
-      const entry = MYINVESTOR_FIXTURES.find(
+      const entry = fixtures.find(
         (candidate) =>
           candidate.file !== null &&
           candidate.method === request.method &&

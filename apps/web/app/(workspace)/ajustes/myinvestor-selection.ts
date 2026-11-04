@@ -32,10 +32,131 @@ export const MYINVESTOR_KIND_LABEL: Record<MyInvestorProductKind, string> = {
 
 /** Why a product cannot be included in this slice; each one is another slice's. */
 export type MyInvestorInclusionBlock =
-  /** The robo-advisor's account links as one block: portfolio, funds and cash (#1883). */
-  | { readonly reason: "managed_portfolio" }
   /** An operation in another currency: the holding would sum two currencies (#1401). */
-  | { readonly reason: "currency" };
+  { readonly reason: "currency" };
+
+/** A fund of a robo-advisor's managed portfolio, under its row (#1883). */
+export interface MyInvestorPortfolioMember {
+  readonly key: string;
+  readonly name: string;
+  readonly identifier: string | null;
+  readonly units: DecimalString | null;
+  /** Its cost from the same fold the batch writes, until worthline prices it. */
+  readonly valueMinor: number;
+  readonly operations: number;
+  /** No participaciones today but a history: the manager sold it whole. */
+  readonly soldByManager: boolean;
+}
+
+/** The robo-advisor's own cash account: the portfolio's cash sibling (ADR 0085). */
+export interface MyInvestorPortfolioCash {
+  readonly key: string;
+  readonly name: string;
+  readonly identifier: string | null;
+  readonly valueMinor: number;
+}
+
+/** What a managed portfolio row is made of (#1883): its funds, its cash, its witness. */
+export interface MyInvestorPortfolioBlock {
+  readonly members: readonly MyInvestorPortfolioMember[];
+  readonly cash: MyInvestorPortfolioCash | null;
+  /** The funds' value the manager declares, cash left out (#1550); null when none. */
+  readonly declaredMinor: number | null;
+  /**
+   * The portfolio a block already linked lives in, when its manager bought funds
+   * since: the row then offers only those, and they join it. Null otherwise.
+   */
+  readonly joins: { readonly portfolioId: string; readonly name: string } | null;
+}
+
+/**
+ * One fund of the robo-advisor in the careo of a portfolio kept by hand (#1883): the
+ * manual member it replaces, with the careo of #1881, or none when it enters new.
+ */
+export interface MyInvestorPortfolioMemberCareo {
+  readonly productKey: string;
+  readonly name: string;
+  /** The manual member it replaces; null when the fund enters the portfolio new. */
+  readonly assetId: string | null;
+  readonly assetName: string | null;
+  readonly careo: MyInvestorCareo | null;
+  /** What the fund adds when it enters new: its value; 0 when it replaces one. */
+  readonly enteringMinor: number;
+}
+
+/** A managed portfolio kept by hand that the robo-advisor's block may be (#1883). */
+export interface MyInvestorPortfolioCandidate {
+  readonly portfolioId: string;
+  readonly name: string;
+  /** The ficha of the portfolio, where a member is taken out; null without one. */
+  readonly href: string | null;
+  readonly members: readonly MyInvestorPortfolioMemberCareo[];
+  /**
+   * MyInvestor's cash account against the manual cash sibling it replaces, before
+   * and after; `assetId` null when the portfolio has no sibling and it enters new.
+   * Null when MyInvestor has no cash account for the block.
+   */
+  readonly cash: {
+    readonly assetId: string | null;
+    readonly name: string;
+    readonly beforeMinor: number;
+    readonly afterMinor: number;
+  } | null;
+  /**
+   * The manual members MyInvestor does not have in this account. Any one blocks the
+   * link: «Crear aparte» would count them twice, linking would orphan them (#1883).
+   */
+  readonly blockers: readonly string[];
+  /**
+   * The holdings outside the portfolio holding the other half of a member's
+   * traspaso: linking would leave that half behind (#1393), so they block too.
+   */
+  readonly strandedTransfers: readonly string[];
+  /** What linking adds to the patrimonio: differences, plus what enters new. */
+  readonly valueDeltaMinor: number;
+}
+
+/** Whether nothing stands in the way of linking the block with this portfolio. */
+export function isPortfolioLinkable(candidate: MyInvestorPortfolioCandidate): boolean {
+  return candidate.blockers.length === 0 && candidate.strandedTransfers.length === 0;
+}
+
+function quotedList(names: readonly string[]): string {
+  const quoted = names.map((name) => `«${name}»`);
+  if (quoted.length <= 1) return quoted.join("");
+  return `${quoted.slice(0, -1).join(", ")} y ${quoted.at(-1)}`;
+}
+
+/**
+ * Why the block cannot be linked with this portfolio, and what to do about it
+ * (#1883): the fold shows it beside the disabled «Enlazar», and the batch refuses
+ * with the same words. Empty when it can be linked.
+ */
+export function myInvestorPortfolioBlockedReason(
+  candidate: MyInvestorPortfolioCandidate,
+): string {
+  if (candidate.blockers.length > 0) {
+    const many = candidate.blockers.length > 1;
+    return `No se puede enlazar: ${quotedList(candidate.blockers)} ${
+      many ? "están" : "está"
+    } en tu cartera y MyInvestor no ${many ? "los" : "lo"} tiene en esta cuenta. ${
+      many ? "Sácalos" : "Sácalo"
+    } de la cartera o ${many ? "envíalos" : "envíalo"} a la papelera, y vuelve aquí.`;
+  }
+  if (candidate.strandedTransfers.length > 0) {
+    return `No se puede enlazar: un fondo de tu cartera tiene un traspaso con ${quotedList(
+      candidate.strandedTransfers,
+    )}, fuera de la cartera. Deshaz el traspaso antes, y vuelve aquí.`;
+  }
+  return "";
+}
+
+/** The manual portfolios a robo-advisor's block may be, and its opening choice. */
+export interface MyInvestorPortfolioTwin {
+  readonly candidates: readonly MyInvestorPortfolioCandidate[];
+  /** «Enlazar» for the one candidate nothing blocks; «No incluir» otherwise. */
+  readonly defaultChoice: MyInvestorTwinChoice;
+}
 
 /** A live manual holding a product could be (#1881), with its careo. */
 export interface MyInvestorTwinCandidate {
@@ -109,6 +230,10 @@ export interface MyInvestorProductRow {
   readonly block: MyInvestorInclusionBlock | null;
   /** A live manual holding is, or may be, this product (#1881); null when none. */
   readonly twin: MyInvestorTwin | null;
+  /** A managed portfolio's funds, cash and witness (#1883); null for the rest. */
+  readonly portfolio: MyInvestorPortfolioBlock | null;
+  /** The portfolios kept by hand this block may be (#1883); null when none. */
+  readonly portfolioTwin: MyInvestorPortfolioTwin | null;
   /** Already a linked holding. */
   readonly linked: boolean;
   /** Ticked when the fold opens: what is the user's and holds something today. */
@@ -131,12 +256,30 @@ export interface MyInvestorFirstStartView {
 
 /** Whether a row can be ticked: not linked yet, and not another slice's. */
 export function isIncludable(row: MyInvestorProductRow): boolean {
-  return !row.linked && row.block === null && row.twin === null;
+  return (
+    !row.linked && row.block === null && row.twin === null && row.portfolioTwin === null
+  );
 }
 
 /** Whether a row is decided by its twin's three choices instead of a box. */
 export function isTwinDecision(row: MyInvestorProductRow): boolean {
-  return !row.linked && row.block === null && row.twin !== null;
+  return (
+    !row.linked && row.block === null && (row.twin !== null || row.portfolioTwin !== null)
+  );
+}
+
+/** The portfolio kept by hand a choice links the block to, or null (#1883). */
+export function portfolioOfChoice(
+  row: MyInvestorProductRow,
+  choice: MyInvestorTwinChoice,
+): MyInvestorPortfolioCandidate | null {
+  const portfolioId = linkedAssetOf(choice);
+  if (portfolioId === null || row.portfolioTwin === null) return null;
+  return (
+    row.portfolioTwin.candidates.find(
+      (candidate) => candidate.portfolioId === portfolioId,
+    ) ?? null
+  );
 }
 
 /** The careo of the holding a choice links to, or null when it does not link. */
@@ -156,9 +299,11 @@ export function defaultMyInvestorTwinChoices(
   rows: readonly MyInvestorProductRow[],
 ): ReadonlyMap<string, MyInvestorTwinChoice> {
   return new Map(
-    rows.flatMap((row) =>
-      isTwinDecision(row) && row.twin ? [[row.key, row.twin.defaultChoice] as const] : [],
-    ),
+    rows.flatMap((row) => {
+      if (!isTwinDecision(row)) return [];
+      const twin = row.twin ?? row.portfolioTwin;
+      return twin ? [[row.key, twin.defaultChoice] as const] : [];
+    }),
   );
 }
 
@@ -204,21 +349,37 @@ export function summarizeMyInvestorSelection(
       (selected.has(row.key) && isIncludable(row)) ||
       (isTwinDecision(row) && choices.get(row.key) === "separate"),
   );
+  // A link is one holding's careo (#1881) or a whole portfolio's (#1883): one each.
   const linked = rows.flatMap((row) => {
     if (!isTwinDecision(row)) return [];
-    const careo = careoOfChoice(row, choices.get(row.key) ?? "skip");
-    return careo ? [{ careo, row }] : [];
+    const choice = choices.get(row.key) ?? "skip";
+    const careo = careoOfChoice(row, choice);
+    if (careo) return [{ careos: [careo], deltaMinor: careo.valueDeltaMinor, row }];
+    const portfolio = portfolioOfChoice(row, choice);
+    if (!portfolio || !isPortfolioLinkable(portfolio)) return [];
+    return [
+      {
+        careos: portfolio.members.flatMap((member) =>
+          member.careo ? [member.careo] : [],
+        ),
+        deltaMinor: portfolio.valueDeltaMinor,
+        row,
+      },
+    ];
   });
   const byRung: Record<MyInvestorRung, number> = {
     invested: 0,
     liquid: 0,
     retirement: 0,
   };
-  for (const row of created) byRung[row.rung] += row.valueMinor;
-  const linkedDeltaMinor = linked.reduce(
-    (sum, { careo }) => sum + careo.valueDeltaMinor,
-    0,
-  );
+  for (const row of created) {
+    // A robo-advisor's cash is a current account: Líquido, as the patrimonio files
+    // it; its funds are Invertido (#1883).
+    const cashMinor = row.portfolio?.cash?.valueMinor ?? 0;
+    byRung[row.rung] += row.valueMinor - cashMinor;
+    byRung.liquid += cashMinor;
+  }
+  const linkedDeltaMinor = linked.reduce((sum, link) => sum + link.deltaMinor, 0);
   return {
     byRung,
     count: created.length,
@@ -230,9 +391,9 @@ export function summarizeMyInvestorSelection(
     pendingCost: [...created, ...linked.map(({ row }) => row)].filter(
       (row) => row.inheritedCostPending,
     ).length,
-    plansClosing: linked.filter(
-      ({ careo }) => careo.plan !== null && careo.plan.lines.length > 0,
-    ).length,
+    plansClosing: linked
+      .flatMap((link) => link.careos)
+      .filter((careo) => careo.plan !== null && careo.plan.lines.length > 0).length,
     valueMinor: created.reduce((sum, row) => sum + row.valueMinor, 0) + linkedDeltaMinor,
   };
 }

@@ -21,6 +21,7 @@ import type {
   CreateInvestmentOperationInput,
   DecimalString,
   InvestmentOperation,
+  ManagedPortfolioWitness,
   NormalizedBatch,
   NormalizedFact,
 } from "@worthline/domain";
@@ -90,6 +91,14 @@ export interface MyInvestorSyncPlan {
   readonly facts: NormalizedBatch<CreateInvestmentOperationInput>;
   readonly cashBalances: readonly { assetId: string; valueMinor: number }[];
   readonly witnesses: readonly MyInvestorUnitsWitness[];
+  /**
+   * The balance a linked robo-advisor's manager declares today (#1883), by a member
+   * of its block: the portfolio that member lives in takes it as its witness.
+   */
+  readonly portfolioWitnesses: readonly {
+    readonly assetId: string;
+    readonly witness: ManagedPortfolioWitness;
+  }[];
 }
 
 /**
@@ -153,7 +162,33 @@ export function planMyInvestorSync(
     }
   }
 
-  return { cashBalances, facts: { cursor: input.cursor, facts }, witnesses };
+  // Each linked robo-advisor's declared balance, by any linked part of its block.
+  const portfolioWitnesses = discovery.products.flatMap((product) => {
+    if (product.kind !== "managed" || product.declared === null) return [];
+    const member = input.links.find(
+      (link) => productByKey.get(link.productKey)?.portfolioKey === product.key,
+    );
+    if (!member) return [];
+    return [
+      {
+        assetId: member.assetId,
+        witness: {
+          declaredDate: discovery.readOn,
+          declaredValue: {
+            amountMinor: multiplyToMinor(product.declared.value, "1"),
+            currency: product.declared.currency,
+          },
+        },
+      },
+    ];
+  });
+
+  return {
+    cashBalances,
+    facts: { cursor: input.cursor, facts },
+    portfolioWitnesses,
+    witnesses,
+  };
 }
 
 /**
