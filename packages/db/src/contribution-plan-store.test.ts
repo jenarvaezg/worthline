@@ -7,6 +7,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { openLibsqlClient } from "./libsql-client";
+import { createStoreFromSqlite } from "./testing";
 import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 async function freshStore(): Promise<
@@ -98,6 +100,81 @@ describe("contribution plan CRUD", () => {
       scopeId: "default",
       contributions: [],
     });
+  });
+
+  it("refuses a line for a holding MyInvestor owns: its schedule is MyInvestor's (#1886, ADR 0115)", async () => {
+    const client = openLibsqlClient(":memory:");
+    const store = await createStoreFromSqlite(client);
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Uno" }],
+      mode: "individual",
+    });
+    for (const id of ["linked", "closed", "manual"]) {
+      await store.assets.createManualAsset({
+        currency: "EUR",
+        currentValueMinor: 4_917_03,
+        id,
+        instrument: "pension_plan",
+        liquidityTier: "term-locked",
+        name: id,
+        ownership: [{ memberId: "m1", shareBps: 10_000 }],
+        type: "investment",
+      });
+    }
+    const connected = await store.connectedSources.connectOwningSource({
+      adapter: "myinvestor",
+      credentialsJson: "{}",
+      label: "MyInvestor",
+    });
+    const line = {
+      amount: { mode: "money" as const, value: 8_743 },
+      cadence: { dayOfMonth: 5, kind: "monthly" as const },
+      scopeId: "default",
+      startDate: "2026-12-05",
+    };
+    // A line written before linking, which linking closed.
+    const closed = await store.contributionPlan.createPlannedContribution({
+      ...line,
+      destinationHoldingId: "closed",
+      endDate: "2026-12-31",
+      startDate: "2026-01-05",
+    });
+    for (const [assetId, productKey] of [
+      ["linked", "pension:7741|dgs:N0042"],
+      ["closed", "pension:7741|dgs:N0043"],
+    ] as const) {
+      await client.execute({
+        args: [connected?.sourceId ?? "", productKey, assetId],
+        sql: "INSERT INTO connected_source_links (source_id, product_key, asset_id) VALUES (?, ?, ?)",
+      });
+    }
+
+    await expect(
+      store.contributionPlan.createPlannedContribution({
+        ...line,
+        destinationHoldingId: "linked",
+      }),
+    ).rejects.toThrow(/MyInvestor/);
+
+    // Moving a line onto it is the same door.
+    const manual = await store.contributionPlan.createPlannedContribution({
+      ...line,
+      destinationHoldingId: "manual",
+    });
+    await expect(
+      store.contributionPlan.updatePlannedContribution(manual.id, {
+        destinationHoldingId: "linked",
+      }),
+    ).rejects.toThrow(/MyInvestor/);
+
+    // And a closed line cannot be reopened in place by pushing its end out.
+    await expect(
+      store.contributionPlan.updatePlannedContribution(closed.id, {
+        endDate: "2027-12-31",
+      }),
+    ).rejects.toThrow(/MyInvestor/);
+    // It can still be deleted.
+    await store.contributionPlan.deletePlannedContribution(closed.id);
   });
 
   it("rejects negative money amounts", async () => {

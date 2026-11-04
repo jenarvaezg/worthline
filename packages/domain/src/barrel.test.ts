@@ -178,6 +178,7 @@ const KEY_EXPORTS = [
   "collectDataQualitySignals",
   // contribution-allowance (#1427)
   "computeContributionAllowanceUsage",
+  "forecastContributionAllowance",
   "assertContributionAllowanceInput",
   "keepsAnOperationLedger",
   // managed-portfolio (ADR 0085, #1547 / #1551)

@@ -9,6 +9,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { openLibsqlClient } from "./libsql-client";
+import { createStoreFromSqlite } from "./testing";
 import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 async function freshStore(): Promise<
@@ -254,6 +256,49 @@ describe("contribution allowance CRUD", () => {
     expect(
       await store.contributionAllowances.readContributionAllowances("household"),
     ).toEqual([]);
+  });
+});
+
+describe("a pension plan MyInvestor owns (#1886, ADR 0115)", () => {
+  async function storeWithLinkedPlan() {
+    const client = openLibsqlClient(":memory:");
+    const store = await createStoreFromSqlite(client);
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Uno" }],
+      mode: "individual",
+    });
+    const connected = await store.connectedSources.connectOwningSource({
+      adapter: "myinvestor",
+      credentialsJson: "{}",
+      label: "MyInvestor",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 3_917_41,
+      id: "pp-linked",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
+      name: "Plan enlazado",
+      ownership: [{ memberId: "m1", shareBps: 10_000 }],
+      type: "investment",
+    });
+    // What the include writes on linking (`connected-inclusion`), set directly.
+    await client.execute({
+      args: [connected?.sourceId ?? "", "pp-linked"],
+      sql: "UPDATE assets SET connected_source_id = ? WHERE id = ?",
+    });
+    return store;
+  }
+
+  it("is a destination: its ledger is MyInvestor's, operation by operation", async () => {
+    const store = await storeWithLinkedPlan();
+    const created = await store.contributionAllowances.createContributionAllowance({
+      annualCapMinor: 1_500_00,
+      holdingIds: ["pp-linked"],
+      label: "Planes de pensiones",
+      scopeId: "household",
+    });
+    expect(created.holdingIds).toEqual(["pp-linked"]);
   });
 });
 

@@ -1,3 +1,4 @@
+import { MYINVESTOR_DISCOVERY_VERSION } from "@web/ajustes/myinvestor-discovery";
 import type {
   ContributionAllowance,
   ContributionPlan,
@@ -11,7 +12,7 @@ import type {
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 /** Lo que la página necesita del plan: la forma del registro, sin el resto del store. */
 type AmortizationPlanRecordish = {
@@ -64,6 +65,9 @@ const calls = vi.hoisted(() => {
 
   return {
     buildProjectionContext: vi.fn(async () => projectionContext),
+    listSources: vi.fn(async (): Promise<unknown[]> => []),
+    readDiscovery: vi.fn(async (): Promise<unknown> => null),
+    readLinks: vi.fn(async (): Promise<unknown[]> => []),
     projectionContext,
     readAssets: vi.fn(async () => assets),
     readPublicIds: vi.fn(async () => []),
@@ -155,6 +159,12 @@ const calls = vi.hoisted(() => {
           },
           contributionAllowances: {
             readContributionAllowances: calls.readContributionAllowances,
+          },
+          // By default no connection: nothing a source schedules (#1886).
+          connectedSources: {
+            listSources: calls.listSources,
+            readDiscovery: calls.readDiscovery,
+            readLinks: calls.readLinks,
           },
           contributionPlan: {
             readContributionPlan: calls.readContributionPlan,
@@ -1415,6 +1425,121 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     expect(html).toContain(euros(1_000_00));
     expect(html).toContain(`quedan ${euros(500_00)}`);
     expect(html).not.toContain("te has pasado");
+  });
+
+  describe("un plan enlazado con MyInvestor (#1886)", () => {
+    const linkedPlan: ManualAsset = {
+      ...pensionPlan,
+      connectedSourceId: "src_mi",
+      id: "asset_pp_mi",
+      name: "Plan enlazado",
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-20T10:00:00.000Z"));
+      calls.listSources.mockResolvedValueOnce([
+        { adapter: "myinvestor", assetId: null, id: "src_mi", label: "MyInvestor" },
+      ]);
+      calls.readDiscovery.mockResolvedValueOnce({
+        payloadJson: JSON.stringify({
+          accounts: [],
+          contributions: [
+            {
+              amount: "61.37",
+              contributionId: "c-1",
+              contributionType: "ONE_DATE",
+              currency: "EUR",
+              fromAccountId: null,
+              fundName: "Plan enlazado",
+              productCode: "N0042",
+              status: "ACTIVE",
+              subscriptionType: "SUCCESSIVE_SUBSCRIPTION",
+              timeFrame: {
+                endDate: null,
+                nextExecutionDate: "2026-12-02",
+                recurrence: "ONE_MONTH",
+                startDate: "2026-01-02",
+              },
+              toAccountId: "7741",
+              toAccountType: "PENSION_PLAN",
+            },
+          ],
+          operations: [],
+          products: [],
+          readOn: "2026-11-20",
+          version: MYINVESTOR_DISCOVERY_VERSION,
+        }),
+        readOn: "2026-11-20",
+      });
+      calls.readLinks.mockResolvedValueOnce([
+        { assetId: "asset_pp_mi", productKey: "pension:7741|dgs:N0042" },
+      ]);
+      calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
+        assets: [linkedPlan],
+        liabilities: [],
+      });
+      calls.buildProjectionContext.mockResolvedValueOnce({
+        ...calls.projectionContext,
+        operationsByAsset: new Map([
+          [
+            "asset_pp_mi",
+            [{ ...contribution("op_mi", "2026-03-03", "7.13"), assetId: "asset_pp_mi" }],
+          ],
+        ]),
+      });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("consume el cupo, y la previsión usa la aportación de MyInvestor", async () => {
+      calls.readContributionAllowances.mockResolvedValueOnce([
+        { ...cupo, holdingIds: [] },
+      ]);
+      const html = await renderedHtml();
+      const cupoPanel = html.slice(html.indexOf('aria-label="Cupo anual de aportación"'));
+
+      expect(cupoPanel).toContain("este cupo: Plan enlazado");
+      expect(cupoPanel).toContain(`quedan ${euros(1_500_00 - 713_00)}`);
+      // December's 61,37 €, the only one left this year.
+      expect(cupoPanel).toContain("de ellos en MyInvestor");
+      expect(cupoPanel).toContain(`acabarías el año en ${euros(713_00 + 61_37)}`);
+    });
+
+    test("el reparto mensual la enseña, de solo lectura y marcada", async () => {
+      const html = await renderedHtml();
+      const split = html.slice(html.indexOf('aria-label="Reparto mensual"'));
+
+      expect(split).toContain("Plan enlazado");
+      expect(split).toContain("de MyInvestor, se cambia allí");
+    });
+
+    test("la línea de worthline que el enlace cerró no suma otra vez el mismo mes", async () => {
+      // Closed on linking (ADR 0115) on the 10th: November's occurrence of the 2nd is
+      // still inside it, and MyInvestor schedules that same one.
+      calls.readContributionPlan.mockResolvedValueOnce({
+        contributions: [
+          {
+            amount: { mode: "money", value: 61_37 },
+            cadence: { dayOfMonth: 2, kind: "monthly" },
+            destinationHoldingId: "asset_pp_mi",
+            endDate: "2026-11-10",
+            id: "line-closed",
+            startDate: "2026-01-02",
+          },
+        ],
+        scopeId: "household",
+      });
+      const html = await renderedHtml();
+      const split = html.slice(
+        html.indexOf('aria-label="Reparto mensual"'),
+        html.indexOf('aria-label="Cupo anual de aportación"'),
+      );
+
+      expect(split).toContain(`Previsto · noviembre 2026</span><strong>${euros(61_37)}`);
+      expect(split.match(/Plan enlazado/g)).toHaveLength(1);
+    });
   });
 
   test("sin planes de pensiones no se puede crear el cupo", async () => {

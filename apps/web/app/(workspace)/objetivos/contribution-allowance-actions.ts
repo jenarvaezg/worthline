@@ -2,6 +2,7 @@
 
 import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
 import { currentUrlOf } from "@web/ajustes/connected-source-helpers";
+import { readOwningSourceIds } from "@web/ajustes/myinvestor-schedules-read";
 import { formAction } from "@web/form-action";
 import {
   appendParam,
@@ -41,8 +42,14 @@ function preserveAllowanceFields(formData: FormData): Record<string, string> {
 }
 
 async function pensionPlanHoldingIds(store: WorthlineStore): Promise<string[]> {
-  const assets = await store.assets.readAssets();
-  return assets.filter(consumesContributionAllowance).map((asset) => asset.id);
+  // A plan MyInvestor owns counts too (#1886): its ledger is the source's.
+  const [assets, owningSourceIds] = await Promise.all([
+    store.assets.readAssets(),
+    readOwningSourceIds(store),
+  ]);
+  return assets
+    .filter((asset) => consumesContributionAllowance(asset, owningSourceIds))
+    .map((asset) => asset.id);
 }
 
 /**

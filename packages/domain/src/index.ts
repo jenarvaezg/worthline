@@ -245,11 +245,14 @@ export type {
   ComputeContributionAllowanceUsageInput,
   ContributionAllowance,
   ContributionAllowanceEntry,
+  ContributionAllowanceForecast,
   ContributionAllowanceUsage,
+  ScheduledAllowanceEntry,
 } from "./contribution-allowance";
 export {
   assertContributionAllowanceInput,
   computeContributionAllowanceUsage,
+  forecastContributionAllowance,
 } from "./contribution-allowance";
 export type { ContributionLot, HoldingAvailability } from "./contribution-lots";
 export { resolveHoldingLots } from "./contribution-lots";

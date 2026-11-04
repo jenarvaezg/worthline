@@ -21,6 +21,7 @@ import { chunk } from "./chunk";
 import {
   assetOperations,
   assets,
+  connectedSourceLinks,
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   plannedContributions,
@@ -181,11 +182,34 @@ async function readContributionRow(
     .get();
 }
 
+/**
+ * A holding a source owns has no worthline plan (ADR 0115, decision 5; #1886): its
+ * scheduled contributions are the source's, changed there and read on each pass.
+ * Linking closes its lines (`closeContributionPlanOnLink`); this is the door that
+ * keeps a new one from being written for it, by any writer.
+ */
+async function assertNotSourceScheduled(
+  ctx: StoreContext,
+  destinationHoldingId: string,
+): Promise<void> {
+  const link = await ctx.db
+    .select({ assetId: connectedSourceLinks.assetId })
+    .from(connectedSourceLinks)
+    .where(eq(connectedSourceLinks.assetId, destinationHoldingId))
+    .get();
+  if (link) {
+    throw new Error(
+      "Este activo lo trae MyInvestor: su aportación se programa allí y worthline la lee al ponerse al día.",
+    );
+  }
+}
+
 async function createPlannedContribution(
   ctx: StoreContext,
   input: CreatePlannedContributionInput,
 ): Promise<PlannedContribution> {
   assertPlannedContributionInput(input);
+  await assertNotSourceScheduled(ctx, input.destinationHoldingId);
   const id = ctx.newId();
   const endDate = input.endDate ?? null;
   await ctx.db
@@ -233,6 +257,11 @@ async function updatePlannedContribution(
     ...next,
     endDate: next.endDate ?? null,
   });
+  // Any edit that leaves the line on a linked holding is refused, not only a move
+  // onto one: a line linking closed could otherwise be reopened by pushing its end
+  // date out, and the month's split would count MyInvestor's contribution twice.
+  // Such a line can still be deleted.
+  await assertNotSourceScheduled(ctx, next.destinationHoldingId);
 
   const set: Partial<typeof plannedContributions.$inferInsert> = {};
   if (patch.destinationHoldingId !== undefined) {

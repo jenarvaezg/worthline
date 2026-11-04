@@ -2,10 +2,16 @@ import type { ContributionAllowance, ManualAsset } from "@worthline/domain";
 import {
   assertContributionAllowanceInput,
   consumesContributionAllowance,
+  isMirroredSourceAdapter,
 } from "@worthline/domain";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, contributionAllowanceHoldings, contributionAllowances } from "./schema";
+import {
+  assets,
+  connectedSources,
+  contributionAllowanceHoldings,
+  contributionAllowances,
+} from "./schema";
 import type { StoreContext } from "./store-context";
 
 /**
@@ -69,8 +75,11 @@ async function assertPensionPlanDestinations(
   ctx: StoreContext,
   holdingIds: readonly string[],
 ): Promise<void> {
+  // The source's adapter rides the same read: a plan a source OWNS (MyInvestor,
+  // ADR 0115) keeps the source's ledger and is a destination too (#1886).
   const rows = await ctx.db
     .select({
+      adapter: connectedSources.adapter,
       connectedSourceId: assets.connectedSourceId,
       id: assets.id,
       instrument: assets.instrument,
@@ -78,9 +87,19 @@ async function assertPensionPlanDestinations(
       type: assets.type,
     })
     .from(assets)
+    .leftJoin(connectedSources, eq(connectedSources.id, assets.connectedSourceId))
     .where(inArray(assets.id, [...holdingIds]))
     .all();
   const rowById = new Map(rows.map((row) => [row.id, row]));
+  const owningSourceIds = new Set(
+    rows.flatMap((row) =>
+      row.connectedSourceId != null &&
+      row.adapter != null &&
+      !isMirroredSourceAdapter(row.adapter)
+        ? [row.connectedSourceId]
+        : [],
+    ),
+  );
 
   for (const holdingId of holdingIds) {
     const row = rowById.get(holdingId);
@@ -97,7 +116,7 @@ async function assertPensionPlanDestinations(
         ? { connectedSourceId: row.connectedSourceId }
         : {}),
     } as ManualAsset;
-    if (!consumesContributionAllowance(asset)) {
+    if (!consumesContributionAllowance(asset, owningSourceIds)) {
       throw new Error(
         "Un cupo solo cuenta aportaciones a planes de pensiones: son el instrumento nativo, y los únicos que registran cada aportación una a una.",
       );

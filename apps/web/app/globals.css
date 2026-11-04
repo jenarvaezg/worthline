@@ -6015,6 +6015,58 @@ p.muted {
   padding: 0 10px;
 }
 
+/* #1886 — La pestaña «Aportación» de un holding de MyInvestor: la programación en
+   una línea abierta por regla, como un asiento al margen, y debajo el mismo libro
+   compacto de las operaciones. «No ha llegado» va en el tono de aviso; lo demás, en
+   tinta. */
+.fichaSchedule + .fichaSchedule {
+  margin-top: 18px;
+}
+
+.fichaScheduleLine {
+  border-left: 2px solid var(--line-strong);
+  margin: 0 0 6px;
+  max-width: 64ch;
+  padding-left: 8px;
+}
+
+.fichaScheduleNote {
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.fichaScheduleMissing {
+  color: var(--gold);
+}
+
+/* Tres columnas que caben en el teléfono sin recolocarse: la orden que casa es la
+   única que puede partirse en dos renglones. */
+.fichaScheduleTable {
+  table-layout: auto;
+}
+
+.fichaScheduleTable th,
+.fichaScheduleTable td {
+  line-height: 1.5;
+  padding: 7px 14px 7px 0;
+  vertical-align: baseline;
+}
+
+.fichaScheduleTable th:last-child,
+.fichaScheduleTable td:last-child {
+  padding-right: 0;
+}
+
+.fichaScheduleTable td.fichaScheduleFigure {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+.fichaScheduleTable td.fichaScheduleFigure:first-child {
+  white-space: nowrap;
+}
+
 .opsMore {
   margin-top: 10px;
 }

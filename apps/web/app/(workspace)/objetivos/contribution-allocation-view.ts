@@ -4,7 +4,11 @@
  * URL mirroring and grouping live here with their own tests.
  */
 
-import type { AssetType, MonthlyAllocationDestination } from "@worthline/domain";
+import type {
+  AssetType,
+  MonthlyAllocationDestination,
+  ScheduledAllowanceEntry,
+} from "@worthline/domain";
 import { isContributionMonthKey } from "@worthline/domain";
 import { formatMonth } from "./format-day";
 
@@ -93,4 +97,49 @@ export function groupAllocationByType(
       plannedMinor,
     }))
     .sort((a, b) => b.plannedMinor - a.plannedMinor || a.label.localeCompare(b.label));
+}
+
+/** One holding a connected source schedules contributions to, in one month (#1886). */
+export interface SourceAllocationRow {
+  holdingId: string;
+  plannedMinor: number;
+  occurrenceCount: number;
+}
+
+/**
+ * The contributions a connected source schedules (MyInvestor, ADR 0115 decision 5),
+ * per month of the window and per holding, largest first: the read-only rows the
+ * split adds beside the plan's so the month's total is complete (#1886). Every
+ * month of the window gets a list, empty when nothing is scheduled.
+ */
+export function sourceAllocationByMonth(
+  entries: readonly ScheduledAllowanceEntry[],
+  monthKeys: readonly string[],
+): Record<string, SourceAllocationRow[]> {
+  const byMonth: Record<string, Map<string, SourceAllocationRow>> = Object.fromEntries(
+    monthKeys.map((key) => [key, new Map()]),
+  );
+  for (const entry of entries) {
+    const month = byMonth[entry.dateISO.slice(0, 7)];
+    if (!month) continue;
+    const row = month.get(entry.holdingId) ?? {
+      holdingId: entry.holdingId,
+      occurrenceCount: 0,
+      plannedMinor: 0,
+    };
+    month.set(entry.holdingId, {
+      ...row,
+      occurrenceCount: row.occurrenceCount + 1,
+      plannedMinor: row.plannedMinor + entry.amountMinor,
+    });
+  }
+  return Object.fromEntries(
+    Object.entries(byMonth).map(([key, rows]) => [
+      key,
+      [...rows.values()].sort(
+        (a, b) =>
+          b.plannedMinor - a.plannedMinor || a.holdingId.localeCompare(b.holdingId),
+      ),
+    ]),
+  );
 }

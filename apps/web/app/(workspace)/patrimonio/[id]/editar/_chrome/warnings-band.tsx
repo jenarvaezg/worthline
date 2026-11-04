@@ -90,6 +90,7 @@ export function WarningsBand({
               className="btnSmall btnWarning"
               href={notice.remedy.href}
               {...(notice.remedy.action ? { action: notice.remedy.action } : {})}
+              {...(notice.remedy.tab ? { tab: notice.remedy.tab } : {})}
             >
               {notice.remedy.label}
             </FichaLink>

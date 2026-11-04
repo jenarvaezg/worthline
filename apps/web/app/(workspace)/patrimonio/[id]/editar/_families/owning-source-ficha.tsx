@@ -15,9 +15,14 @@
  */
 
 import {
+  type MyInvestorSchedule,
+  myInvestorSchedulesByAsset,
+} from "@web/ajustes/myinvestor-contributions";
+import {
   hasSavedPassword,
   readMyInvestorCredentials,
 } from "@web/ajustes/myinvestor-credentials";
+import { parseMyInvestorDiscovery } from "@web/ajustes/myinvestor-discovery";
 import { parseMyInvestorUnitsCheck } from "@web/ajustes/myinvestor-sync-outcome";
 import MyInvestorSyncPanel from "@web/ajustes/myinvestor-sync-panel";
 import {
@@ -102,6 +107,38 @@ export async function loadOwningSourceFicha(
     sourceId: source.id,
     standing: myInvestorStanding({ now, savedPassword, state }),
     unitsLine: mine ? myInvestorUnitsLine(mine) : null,
+  };
+}
+
+/** A linked holding's scheduled contributions, and the day they were read. */
+export interface OwningSourceSchedules {
+  schedules: MyInvestorSchedule[];
+  /** The day of the last read: whether a window has closed is measured against it. */
+  readOn: string;
+}
+
+/**
+ * The scheduled contributions MyInvestor has for this holding (#1886), from the
+ * stored read the last pass refreshed — never from MyInvestor itself. Null when
+ * the holding is not owned or there is no read; an empty list when it has none.
+ * Takes the source, not the loaded ficha, so it runs in the same wave.
+ */
+export async function loadOwningSourceSchedules(
+  store: WorthlineStore,
+  source: ConnectedSource | null,
+  assetId: string,
+  today: string,
+): Promise<OwningSourceSchedules | null> {
+  if (!source || source.adapter !== "myinvestor") return null;
+  const [row, links] = await Promise.all([
+    store.connectedSources.readDiscovery(source.id),
+    store.connectedSources.readLinks(source.id),
+  ]);
+  const discovery = row ? parseMyInvestorDiscovery(row.payloadJson) : null;
+  if (!discovery) return null;
+  return {
+    readOn: discovery.readOn,
+    schedules: myInvestorSchedulesByAsset(discovery, links, today).get(assetId) ?? [],
   };
 }
 

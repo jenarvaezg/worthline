@@ -189,4 +189,26 @@ describe("consumesContributionAllowance (#1567)", () => {
       ),
     ).toBe(false);
   });
+
+  test("a pension plan a source OWNS keeps its ledger and consumes the cupo (#1886, ADR 0115)", () => {
+    const linked = asset({
+      connectedSourceId: "src_myinvestor",
+      instrument: "pension_plan",
+      type: "investment",
+    });
+    expect(consumesContributionAllowance(linked, new Set(["src_myinvestor"]))).toBe(true);
+    // Another source's holding is still out: only the owning ones keep a ledger.
+    expect(consumesContributionAllowance(linked, new Set(["src_other"]))).toBe(false);
+    // And an owned fund is still not a plan.
+    expect(
+      consumesContributionAllowance(
+        asset({
+          connectedSourceId: "src_myinvestor",
+          instrument: "fund",
+          type: "investment",
+        }),
+        new Set(["src_myinvestor"]),
+      ),
+    ).toBe(false);
+  });
 });

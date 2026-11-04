@@ -1,3 +1,4 @@
+import { MYINVESTOR_DISCOVERY_VERSION } from "@web/ajustes/myinvestor-discovery";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -171,6 +172,9 @@ const calls = vi.hoisted(() => ({
   readSyncState: vi.fn(async (): Promise<unknown> => null),
   // Its attempt log, as data health reads it (#1885); empty by default.
   readSyncAttempts: vi.fn(async (): Promise<unknown[]> => []),
+  // Its stored read and links (#1886): the scheduled contributions.
+  readDiscovery: vi.fn(async (): Promise<unknown> => null),
+  readLinks: vi.fn(async (): Promise<unknown[]> => []),
   readSourcePositions: vi.fn(async (): Promise<unknown[]> => []),
   // Liability-side reads — never touched by an asset ficha
   readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
@@ -223,6 +227,8 @@ vi.mock("@web/page-shell", () => ({
         },
         connectedSources: {
           listSources: calls.listSources,
+          readDiscovery: calls.readDiscovery,
+          readLinks: calls.readLinks,
           readPositions: calls.readSourcePositions,
           readSource: calls.readSource,
           readSourceIdForAsset: calls.readSourceIdForAsset,
@@ -979,6 +985,90 @@ describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al
     );
     expect(band(html)).toContain("Ver la conexión →");
     expect(band(html)).toContain('href="/ajustes/conexiones"');
+  });
+
+  describe("its scheduled contribution, in the «Aportación» tab (#1886)", () => {
+    const PRODUCT = "securities:6603|isin:IE00B4L5Y983";
+    const discovery = (contributions: unknown[]) => ({
+      payloadJson: JSON.stringify({
+        accounts: [],
+        contributions,
+        operations: [],
+        products: [],
+        readOn: "2026-11-20",
+        version: MYINVESTOR_DISCOVERY_VERSION,
+      }),
+      readOn: "2026-11-20",
+    });
+    const MONTHLY = {
+      amount: "61.37",
+      contributionId: "c-1",
+      contributionType: "ONE_DATE",
+      currency: "EUR",
+      fromAccountId: null,
+      fundName: "Fondo Azul",
+      productCode: "IE00B4L5Y983",
+      status: "ACTIVE",
+      subscriptionType: "SUCCESSIVE_SUBSCRIPTION",
+      timeFrame: {
+        endDate: null,
+        nextExecutionDate: "2026-12-02",
+        recurrence: "ONE_MONTH",
+        startDate: "2026-10-02",
+      },
+      toAccountId: "6603",
+      toAccountType: "SECURITIES_ACCOUNT",
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-20T10:00:00.000Z"));
+      calls.readLinks.mockResolvedValue([{ assetId: ASSET_ID, productKey: PRODUCT }]);
+      // October's arrived three days late; November's never did.
+      calls.readOperations.mockResolvedValue([
+        OPERATION,
+        { ...OPERATION, executedAt: "2026-10-05", id: "op_oct", units: "0.6137" },
+      ]);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("with the password saved: the tab lists each one and the band says the one that did not arrive", async () => {
+      calls.readSource.mockResolvedValue({ ...SOURCE, credentialsJson: SAVED });
+      calls.readDiscovery.mockResolvedValue(discovery([MONTHLY]));
+      const html = await renderedHtml({ pestaña: "aportacion" });
+
+      expect(html).toContain(">Aportación<");
+      const tab = tabBody(html);
+      expect(tab).toContain("Programada en MyInvestor:");
+      expect(tab).toContain("el día 2 de cada mes");
+      expect(tab).toContain("Si una no llega a los 5 días hábiles, te avisa.");
+      expect(tab).toContain("llegó");
+      expect(tab).toContain('<span class="fichaScheduleMissing">no ha llegado</span>');
+      expect(band(html)).toContain(
+        "La aportación del 2 nov 2026 no ha llegado: MyInvestor la tenía programada",
+      );
+      expect(band(html)).toContain("Ver la aportación");
+    });
+
+    test("without the password: «sin comprobar», and no warning of its own", async () => {
+      calls.readDiscovery.mockResolvedValue(discovery([MONTHLY]));
+      const html = await renderedHtml({ pestaña: "aportacion" });
+
+      expect(tabBody(html)).toContain("sin comprobar");
+      expect(tabBody(html)).toContain(
+        "Sin la contraseña guardada no puede avisarte de si llega.",
+      );
+      expect(band(html)).not.toContain("no ha llegado");
+    });
+
+    test("without scheduled contributions there is no tab", async () => {
+      calls.readDiscovery.mockResolvedValue(discovery([]));
+      const html = await renderedHtml();
+
+      expect(html).not.toContain(">Aportación<");
+    });
   });
 });
 

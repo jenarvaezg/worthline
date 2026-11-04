@@ -214,8 +214,8 @@ export interface FichaSourceNotice {
   /** Stable within the band. */
   key: string;
   text: string;
-  /** The remedy: a panel of this ficha (`action`), or a page elsewhere. */
-  remedy: { label: string; href: string; action?: string } | null;
+  /** The remedy: a panel (`action`) or a tab (`tab`, #1886) of this ficha, or a page elsewhere. */
+  remedy: { label: string; href: string; action?: string; tab?: string } | null;
 }
 
 /** What a ficha carries — the common pieces render the rest (#1826). */
