@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:16.776291734Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "ETFS EUR HEDGED SILVER",
+      "instrumentIsin": "JE00B5SV2703",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "CONT. ITALIANO",
+      "orderReference": "202607011161612",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "COMPRA",
+      "orderOperationTypeEnum": "BUY",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-07-01T10:04:01.000Z",
+      "finishDate": "2026-07-02T00:00:00.000Z",
+      "shares": 8,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-07-01T10:04:02.000Z",
+      "priceCurrency": 8.98,
+      "executedShares": 8,
+      "grossAmountOperationCurrency": 71.84,
+      "tradeCommissions": 0.99,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 72.83,
+      "netAmountAccountCurrency": 72.83,
+      "netAmountCurrency": 72.83
+    }
+  }
+}

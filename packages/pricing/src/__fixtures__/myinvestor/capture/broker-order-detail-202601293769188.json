@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:41.318667632Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "ETFS COPPER ETC",
+      "instrumentIsin": "GB00B15KXQ89",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "CONT. ITALIANO",
+      "orderReference": "202601293769188",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "COMPRA",
+      "orderOperationTypeEnum": "BUY",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-01-29T20:11:47.000Z",
+      "finishDate": "2026-01-30T00:00:00.000Z",
+      "shares": 4,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-01-30T08:04:04.000Z",
+      "priceCurrency": 44.08,
+      "executedShares": 4,
+      "grossAmountOperationCurrency": 176.32,
+      "tradeCommissions": 0.99,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 177.31,
+      "netAmountAccountCurrency": 177.31,
+      "netAmountCurrency": 177.31
+    }
+  }
+}

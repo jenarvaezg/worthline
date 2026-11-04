@@ -1,0 +1,4600 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:46.861792716Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "positions": {
+        "N5394": [
+          {
+            "date": "2024-06-06T00:00:00Z",
+            "marketValue": 11117.999624,
+            "investmentAddedValue": 11118,
+            "returnValue": -0.00000338,
+            "currencyMarketValue": 11117.999624,
+            "totalShares": 720.467,
+            "avgPositionCost": 15.431657522
+          },
+          {
+            "date": "2024-06-13T00:00:00Z",
+            "marketValue": 11446.943242,
+            "investmentAddedValue": 11118,
+            "returnValue": 2.95865481,
+            "currencyMarketValue": 11446.943242,
+            "totalShares": 720.467,
+            "avgPositionCost": 15.431657522
+          },
+          {
+            "date": "2024-07-18T00:00:00Z",
+            "marketValue": 12195.231151,
+            "investmentAddedValue": 11422.4,
+            "returnValue": 6.76592617,
+            "currencyMarketValue": 12195.231151,
+            "totalShares": 739.152,
+            "avgPositionCost": 15.453384419
+          },
+          {
+            "date": "2024-07-25T00:00:00Z",
+            "marketValue": 12084.398265,
+            "investmentAddedValue": 11422.4,
+            "returnValue": 5.79561445,
+            "currencyMarketValue": 12084.398265,
+            "totalShares": 739.152,
+            "avgPositionCost": 15.453384419
+          },
+          {
+            "date": "2024-08-01T00:00:00Z",
+            "marketValue": 11844.891582,
+            "investmentAddedValue": 11422.4,
+            "returnValue": 3.69879869,
+            "currencyMarketValue": 11844.891582,
+            "totalShares": 739.152,
+            "avgPositionCost": 15.453384419
+          },
+          {
+            "date": "2024-08-08T00:00:00Z",
+            "marketValue": 11493.93995,
+            "investmentAddedValue": 11612.74,
+            "returnValue": -1.02301481,
+            "currencyMarketValue": 11493.93995,
+            "totalShares": 751.554,
+            "avgPositionCost": 15.45163754
+          },
+          {
+            "date": "2024-08-29T00:00:00Z",
+            "marketValue": 12045.060511,
+            "investmentAddedValue": 11612.74,
+            "returnValue": 3.72281228,
+            "currencyMarketValue": 12045.060511,
+            "totalShares": 751.554,
+            "avgPositionCost": 15.45163754
+          },
+          {
+            "date": "2024-09-12T00:00:00Z",
+            "marketValue": 12002.649484,
+            "investmentAddedValue": 11761.97,
+            "returnValue": 2.04625147,
+            "currencyMarketValue": 12002.649484,
+            "totalShares": 760.856,
+            "avgPositionCost": 15.458864752
+          },
+          {
+            "date": "2024-09-19T00:00:00Z",
+            "marketValue": 12329.986474,
+            "investmentAddedValue": 11761.97,
+            "returnValue": 4.82926307,
+            "currencyMarketValue": 12329.986474,
+            "totalShares": 760.856,
+            "avgPositionCost": 15.458864752
+          },
+          {
+            "date": "2024-09-26T00:00:00Z",
+            "marketValue": 12438.915184,
+            "investmentAddedValue": 11761.97,
+            "returnValue": 5.75537248,
+            "currencyMarketValue": 12438.915184,
+            "totalShares": 760.856,
+            "avgPositionCost": 15.458864752
+          },
+          {
+            "date": "2024-10-03T00:00:00Z",
+            "marketValue": 12654.215621,
+            "investmentAddedValue": 11911.2,
+            "returnValue": 6.23795773,
+            "currencyMarketValue": 12654.215621,
+            "totalShares": 769.911,
+            "avgPositionCost": 15.470879102
+          },
+          {
+            "date": "2024-10-10T00:00:00Z",
+            "marketValue": 12851.985739,
+            "investmentAddedValue": 11911.2,
+            "returnValue": 7.89832879,
+            "currencyMarketValue": 12851.985739,
+            "totalShares": 769.911,
+            "avgPositionCost": 15.470879102
+          },
+          {
+            "date": "2024-10-17T00:00:00Z",
+            "marketValue": 13137.310906,
+            "investmentAddedValue": 11911.2,
+            "returnValue": 10.29376474,
+            "currencyMarketValue": 13137.310906,
+            "totalShares": 769.911,
+            "avgPositionCost": 15.470879102
+          },
+          {
+            "date": "2024-10-24T00:00:00Z",
+            "marketValue": 13283.898881,
+            "investmentAddedValue": 11911.2,
+            "returnValue": 11.52443818,
+            "currencyMarketValue": 13283.898881,
+            "totalShares": 769.911,
+            "avgPositionCost": 15.470879102
+          },
+          {
+            "date": "2024-10-31T00:00:00Z",
+            "marketValue": 13248.827125,
+            "investmentAddedValue": 11911.2,
+            "returnValue": 11.22999467,
+            "currencyMarketValue": 13248.827125,
+            "totalShares": 769.911,
+            "avgPositionCost": 15.470879102
+          },
+          {
+            "date": "2024-11-14T00:00:00Z",
+            "marketValue": 14146.390175,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 15.8622777,
+            "currencyMarketValue": 14146.390175,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-11-21T00:00:00Z",
+            "marketValue": 13991.357758,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 14.59252557,
+            "currencyMarketValue": 13991.357758,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-11-28T00:00:00Z",
+            "marketValue": 14398.192765,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 17.9246004,
+            "currencyMarketValue": 14398.192765,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-12-05T00:00:00Z",
+            "marketValue": 14439.375512,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 18.26189683,
+            "currencyMarketValue": 14439.375512,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-12-12T00:00:00Z",
+            "marketValue": 14427.184638,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 18.16205069,
+            "currencyMarketValue": 14427.184638,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-12-19T00:00:00Z",
+            "marketValue": 14472.201028,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 18.53074556,
+            "currencyMarketValue": 14472.201028,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2024-12-26T00:00:00Z",
+            "marketValue": 14342.255252,
+            "investmentAddedValue": 12209.66,
+            "returnValue": 17.46645895,
+            "currencyMarketValue": 14342.255252,
+            "totalShares": 786.711,
+            "avgPositionCost": 15.5198796
+          },
+          {
+            "date": "2025-01-02T00:00:00Z",
+            "marketValue": 14504.875196,
+            "investmentAddedValue": 12358.89,
+            "returnValue": 17.36389915,
+            "currencyMarketValue": 14504.875196,
+            "totalShares": 794.87,
+            "avgPositionCost": 15.548316077
+          },
+          {
+            "date": "2025-01-09T00:00:00Z",
+            "marketValue": 14522.141362,
+            "investmentAddedValue": 12358.89,
+            "returnValue": 17.5036056,
+            "currencyMarketValue": 14522.141362,
+            "totalShares": 794.87,
+            "avgPositionCost": 15.548316077
+          },
+          {
+            "date": "2025-01-16T00:00:00Z",
+            "marketValue": 14355.471431,
+            "investmentAddedValue": 12358.89,
+            "returnValue": 16.15502226,
+            "currencyMarketValue": 14355.471431,
+            "totalShares": 794.87,
+            "avgPositionCost": 15.548316077
+          },
+          {
+            "date": "2025-01-23T00:00:00Z",
+            "marketValue": 14788.363197,
+            "investmentAddedValue": 12358.89,
+            "returnValue": 19.65769739,
+            "currencyMarketValue": 14788.363197,
+            "totalShares": 794.87,
+            "avgPositionCost": 15.548316077
+          },
+          {
+            "date": "2025-01-30T00:00:00Z",
+            "marketValue": 14691.377928,
+            "investmentAddedValue": 12358.89,
+            "returnValue": 18.87295645,
+            "currencyMarketValue": 14691.377928,
+            "totalShares": 794.87,
+            "avgPositionCost": 15.548316077
+          },
+          {
+            "date": "2025-02-06T00:00:00Z",
+            "marketValue": 14883.54309,
+            "investmentAddedValue": 12508.12,
+            "returnValue": 18.99104814,
+            "currencyMarketValue": 14883.54309,
+            "totalShares": 802.916,
+            "avgPositionCost": 15.578366853
+          },
+          {
+            "date": "2025-02-13T00:00:00Z",
+            "marketValue": 14985.660355,
+            "investmentAddedValue": 12508.12,
+            "returnValue": 19.80745592,
+            "currencyMarketValue": 14985.660355,
+            "totalShares": 802.916,
+            "avgPositionCost": 15.578366853
+          },
+          {
+            "date": "2025-02-20T00:00:00Z",
+            "marketValue": 14976.486237,
+            "investmentAddedValue": 12508.12,
+            "returnValue": 19.73411062,
+            "currencyMarketValue": 14976.486237,
+            "totalShares": 802.916,
+            "avgPositionCost": 15.578366853
+          },
+          {
+            "date": "2025-02-27T00:00:00Z",
+            "marketValue": 14702.009402,
+            "investmentAddedValue": 12508.12,
+            "returnValue": 17.53972141,
+            "currencyMarketValue": 14702.009402,
+            "totalShares": 802.916,
+            "avgPositionCost": 15.578366853
+          },
+          {
+            "date": "2025-03-06T00:00:00Z",
+            "marketValue": 14098.942131,
+            "investmentAddedValue": 12657.35,
+            "returnValue": 11.38936769,
+            "currencyMarketValue": 14098.942131,
+            "totalShares": 811.506,
+            "avgPositionCost": 15.597358491
+          },
+          {
+            "date": "2025-03-13T00:00:00Z",
+            "marketValue": 13207.348604,
+            "investmentAddedValue": 12657.35,
+            "returnValue": 4.34529032,
+            "currencyMarketValue": 13207.348604,
+            "totalShares": 811.506,
+            "avgPositionCost": 15.597358491
+          },
+          {
+            "date": "2025-03-20T00:00:00Z",
+            "marketValue": 13303.204504,
+            "investmentAddedValue": 12657.35,
+            "returnValue": 5.10260445,
+            "currencyMarketValue": 13303.204504,
+            "totalShares": 811.506,
+            "avgPositionCost": 15.597358491
+          },
+          {
+            "date": "2025-03-27T00:00:00Z",
+            "marketValue": 13825.146499,
+            "investmentAddedValue": 12657.35,
+            "returnValue": 9.22623218,
+            "currencyMarketValue": 13825.146499,
+            "totalShares": 811.506,
+            "avgPositionCost": 15.597358491
+          },
+          {
+            "date": "2025-04-03T00:00:00Z",
+            "marketValue": 13633.470445,
+            "investmentAddedValue": 12806.58,
+            "returnValue": 6.45676242,
+            "currencyMarketValue": 13633.470445,
+            "totalShares": 820.487,
+            "avgPositionCost": 15.608510555
+          },
+          {
+            "date": "2025-04-10T00:00:00Z",
+            "marketValue": 12381.071704,
+            "investmentAddedValue": 12806.58,
+            "returnValue": -3.32257555,
+            "currencyMarketValue": 12381.071704,
+            "totalShares": 820.487,
+            "avgPositionCost": 15.608510555
+          },
+          {
+            "date": "2025-04-17T00:00:00Z",
+            "marketValue": 12460.457103,
+            "investmentAddedValue": 12806.58,
+            "returnValue": -2.70269578,
+            "currencyMarketValue": 12460.457103,
+            "totalShares": 820.487,
+            "avgPositionCost": 15.608510555
+          },
+          {
+            "date": "2025-04-24T00:00:00Z",
+            "marketValue": 12112.180064,
+            "investmentAddedValue": 12806.58,
+            "returnValue": -5.42221214,
+            "currencyMarketValue": 12112.180064,
+            "totalShares": 820.487,
+            "avgPositionCost": 15.608510555
+          },
+          {
+            "date": "2025-05-01T00:00:00Z",
+            "marketValue": 12865.448303,
+            "investmentAddedValue": 12955.81,
+            "returnValue": -0.69746081,
+            "currencyMarketValue": 12865.448303,
+            "totalShares": 829.825,
+            "avgPositionCost": 15.612701473
+          },
+          {
+            "date": "2025-05-08T00:00:00Z",
+            "marketValue": 13146.27685,
+            "investmentAddedValue": 12955.81,
+            "returnValue": 1.47012692,
+            "currencyMarketValue": 13146.27685,
+            "totalShares": 829.825,
+            "avgPositionCost": 15.612701473
+          },
+          {
+            "date": "2025-05-15T00:00:00Z",
+            "marketValue": 13979.521559,
+            "investmentAddedValue": 12955.81,
+            "returnValue": 7.90156354,
+            "currencyMarketValue": 13979.521559,
+            "totalShares": 829.825,
+            "avgPositionCost": 15.612701473
+          },
+          {
+            "date": "2025-05-22T00:00:00Z",
+            "marketValue": 13998.703794,
+            "investmentAddedValue": 12955.81,
+            "returnValue": 8.04962248,
+            "currencyMarketValue": 13998.703794,
+            "totalShares": 829.825,
+            "avgPositionCost": 15.612701473
+          },
+          {
+            "date": "2025-05-29T00:00:00Z",
+            "marketValue": 13803.399501,
+            "investmentAddedValue": 12955.81,
+            "returnValue": 6.54215754,
+            "currencyMarketValue": 13803.399501,
+            "totalShares": 829.825,
+            "avgPositionCost": 15.612701473
+          },
+          {
+            "date": "2025-06-05T00:00:00Z",
+            "marketValue": 14048.095101,
+            "investmentAddedValue": 13105.04,
+            "returnValue": 7.19612532,
+            "currencyMarketValue": 14048.095101,
+            "totalShares": 838.878,
+            "avgPositionCost": 15.622104764
+          },
+          {
+            "date": "2025-06-12T00:00:00Z",
+            "marketValue": 14124.168753,
+            "investmentAddedValue": 13105.04,
+            "returnValue": 7.77661688,
+            "currencyMarketValue": 14124.168753,
+            "totalShares": 838.878,
+            "avgPositionCost": 15.622104764
+          },
+          {
+            "date": "2025-06-19T00:00:00Z",
+            "marketValue": 13999.016544,
+            "investmentAddedValue": 13105.04,
+            "returnValue": 6.82162392,
+            "currencyMarketValue": 13999.016544,
+            "totalShares": 838.878,
+            "avgPositionCost": 15.622104764
+          },
+          {
+            "date": "2025-06-26T00:00:00Z",
+            "marketValue": 14055.582927,
+            "investmentAddedValue": 13105.04,
+            "returnValue": 7.25326231,
+            "currencyMarketValue": 14055.582927,
+            "totalShares": 838.878,
+            "avgPositionCost": 15.622104764
+          },
+          {
+            "date": "2025-07-03T00:00:00Z",
+            "marketValue": 14268.947237,
+            "investmentAddedValue": 13254.27,
+            "returnValue": 7.65547433,
+            "currencyMarketValue": 14268.947237,
+            "totalShares": 847.751,
+            "avgPositionCost": 15.634626205
+          },
+          {
+            "date": "2025-07-10T00:00:00Z",
+            "marketValue": 14415.36316,
+            "investmentAddedValue": 13254.27,
+            "returnValue": 8.76014416,
+            "currencyMarketValue": 14415.36316,
+            "totalShares": 847.751,
+            "avgPositionCost": 15.634626205
+          },
+          {
+            "date": "2025-07-17T00:00:00Z",
+            "marketValue": 14538.649892,
+            "investmentAddedValue": 13254.27,
+            "returnValue": 9.69031031,
+            "currencyMarketValue": 14538.649892,
+            "totalShares": 847.751,
+            "avgPositionCost": 15.634626205
+          },
+          {
+            "date": "2025-07-24T00:00:00Z",
+            "marketValue": 14672.522491,
+            "investmentAddedValue": 13254.27,
+            "returnValue": 10.70034405,
+            "currencyMarketValue": 14672.522491,
+            "totalShares": 847.751,
+            "avgPositionCost": 15.634626205
+          },
+          {
+            "date": "2025-07-31T00:00:00Z",
+            "marketValue": 14979.59062,
+            "investmentAddedValue": 13254.27,
+            "returnValue": 13.01709276,
+            "currencyMarketValue": 14979.59062,
+            "totalShares": 847.751,
+            "avgPositionCost": 15.634626205
+          },
+          {
+            "date": "2025-08-07T00:00:00Z",
+            "marketValue": 14890.327517,
+            "investmentAddedValue": 13403.5,
+            "returnValue": 11.09283036,
+            "currencyMarketValue": 14890.327517,
+            "totalShares": 856.402,
+            "avgPositionCost": 15.6509443
+          },
+          {
+            "date": "2025-08-14T00:00:00Z",
+            "marketValue": 15066.247047,
+            "investmentAddedValue": 13403.5,
+            "returnValue": 12.40531986,
+            "currencyMarketValue": 15066.247047,
+            "totalShares": 856.402,
+            "avgPositionCost": 15.6509443
+          },
+          {
+            "date": "2025-08-21T00:00:00Z",
+            "marketValue": 15106.670077,
+            "investmentAddedValue": 13403.5,
+            "returnValue": 12.70690549,
+            "currencyMarketValue": 15106.670077,
+            "totalShares": 856.402,
+            "avgPositionCost": 15.6509443
+          },
+          {
+            "date": "2025-08-28T00:00:00Z",
+            "marketValue": 15148.775938,
+            "investmentAddedValue": 13403.5,
+            "returnValue": 13.02104628,
+            "currencyMarketValue": 15148.775938,
+            "totalShares": 856.402,
+            "avgPositionCost": 15.6509443
+          },
+          {
+            "date": "2025-09-04T00:00:00Z",
+            "marketValue": 15142.638806,
+            "investmentAddedValue": 13552.73,
+            "returnValue": 11.73128075,
+            "currencyMarketValue": 15142.638806,
+            "totalShares": 864.838,
+            "avgPositionCost": 15.670830838
+          },
+          {
+            "date": "2025-09-11T00:00:00Z",
+            "marketValue": 15350.033877,
+            "investmentAddedValue": 13552.73,
+            "returnValue": 13.26156337,
+            "currencyMarketValue": 15350.033877,
+            "totalShares": 864.838,
+            "avgPositionCost": 15.670830838
+          },
+          {
+            "date": "2025-09-18T00:00:00Z",
+            "marketValue": 15432.944167,
+            "investmentAddedValue": 13552.73,
+            "returnValue": 13.87332417,
+            "currencyMarketValue": 15432.944167,
+            "totalShares": 864.838,
+            "avgPositionCost": 15.670830838
+          },
+          {
+            "date": "2025-09-25T00:00:00Z",
+            "marketValue": 15685.754476,
+            "investmentAddedValue": 13552.73,
+            "returnValue": 15.73870708,
+            "currencyMarketValue": 15685.754476,
+            "totalShares": 864.838,
+            "avgPositionCost": 15.670830838
+          },
+          {
+            "date": "2025-10-02T00:00:00Z",
+            "marketValue": 15836.406058,
+            "investmentAddedValue": 13701.96,
+            "returnValue": 15.5776696,
+            "currencyMarketValue": 15836.406058,
+            "totalShares": 873.013,
+            "avgPositionCost": 15.695024015
+          },
+          {
+            "date": "2025-10-09T00:00:00Z",
+            "marketValue": 15998.223383,
+            "investmentAddedValue": 13701.96,
+            "returnValue": 16.758649,
+            "currencyMarketValue": 15998.223383,
+            "totalShares": 873.013,
+            "avgPositionCost": 15.695024015
+          },
+          {
+            "date": "2025-10-16T00:00:00Z",
+            "marketValue": 16056.503985,
+            "investmentAddedValue": 13701.96,
+            "returnValue": 17.18399401,
+            "currencyMarketValue": 16056.503985,
+            "totalShares": 873.013,
+            "avgPositionCost": 15.695024015
+          },
+          {
+            "date": "2025-10-23T00:00:00Z",
+            "marketValue": 16224.825256,
+            "investmentAddedValue": 13701.96,
+            "returnValue": 18.41244067,
+            "currencyMarketValue": 16224.825256,
+            "totalShares": 873.013,
+            "avgPositionCost": 15.695024015
+          },
+          {
+            "date": "2025-10-30T00:00:00Z",
+            "marketValue": 16499.312766,
+            "investmentAddedValue": 13701.96,
+            "returnValue": 20.41571254,
+            "currencyMarketValue": 16499.312766,
+            "totalShares": 873.013,
+            "avgPositionCost": 15.695024015
+          },
+          {
+            "date": "2025-11-06T00:00:00Z",
+            "marketValue": 16738.424497,
+            "investmentAddedValue": 13851.19,
+            "returnValue": 20.84466748,
+            "currencyMarketValue": 16738.424497,
+            "totalShares": 880.866,
+            "avgPositionCost": 15.724514285
+          },
+          {
+            "date": "2025-11-13T00:00:00Z",
+            "marketValue": 16577.260373,
+            "investmentAddedValue": 13851.19,
+            "returnValue": 19.68112756,
+            "currencyMarketValue": 16577.260373,
+            "totalShares": 880.866,
+            "avgPositionCost": 15.724514285
+          },
+          {
+            "date": "2025-11-20T00:00:00Z",
+            "marketValue": 16149.873879,
+            "investmentAddedValue": 13851.19,
+            "returnValue": 16.59556962,
+            "currencyMarketValue": 16149.873879,
+            "totalShares": 880.866,
+            "avgPositionCost": 15.724514285
+          },
+          {
+            "date": "2025-11-27T00:00:00Z",
+            "marketValue": 16401.695851,
+            "investmentAddedValue": 13851.19,
+            "returnValue": 18.41362259,
+            "currencyMarketValue": 16401.695851,
+            "totalShares": 880.866,
+            "avgPositionCost": 15.724514285
+          },
+          {
+            "date": "2025-12-04T00:00:00Z",
+            "marketValue": 16710.969147,
+            "investmentAddedValue": 14000.42,
+            "returnValue": 19.36048452,
+            "currencyMarketValue": 16710.969147,
+            "totalShares": 888.803,
+            "avgPositionCost": 15.751994536
+          },
+          {
+            "date": "2025-12-11T00:00:00Z",
+            "marketValue": 16808.117092,
+            "investmentAddedValue": 14000.42,
+            "returnValue": 20.0543776,
+            "currencyMarketValue": 16808.117092,
+            "totalShares": 888.803,
+            "avgPositionCost": 15.751994536
+          },
+          {
+            "date": "2025-12-18T00:00:00Z",
+            "marketValue": 16430.008741,
+            "investmentAddedValue": 14000.42,
+            "returnValue": 17.35368468,
+            "currencyMarketValue": 16430.008741,
+            "totalShares": 888.803,
+            "avgPositionCost": 15.751994536
+          },
+          {
+            "date": "2025-12-25T00:00:00Z",
+            "marketValue": 16674.230475,
+            "investmentAddedValue": 14000.42,
+            "returnValue": 19.09807331,
+            "currencyMarketValue": 16674.230475,
+            "totalShares": 888.803,
+            "avgPositionCost": 15.751994536
+          },
+          {
+            "date": "2026-01-01T00:00:00Z",
+            "marketValue": 16886.231976,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.34028033,
+            "currencyMarketValue": 16886.231976,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-02T00:00:00Z",
+            "marketValue": 16886.231976,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.34028033,
+            "currencyMarketValue": 16886.231976,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-03T00:00:00Z",
+            "marketValue": 16886.231976,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.34028033,
+            "currencyMarketValue": 16886.231976,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-04T00:00:00Z",
+            "marketValue": 16886.231976,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.34028033,
+            "currencyMarketValue": 16886.231976,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-05T00:00:00Z",
+            "marketValue": 16886.231976,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.34028033,
+            "currencyMarketValue": 16886.231976,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-06T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-07T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-08T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-09T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-10T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-11T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-12T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-13T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-14T00:00:00Z",
+            "marketValue": 16868.396736,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.21423312,
+            "currencyMarketValue": 16868.396736,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-15T00:00:00Z",
+            "marketValue": 16952.615515,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.80943355,
+            "currencyMarketValue": 16952.615515,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-16T00:00:00Z",
+            "marketValue": 17089.504211,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 20.77686876,
+            "currencyMarketValue": 17089.504211,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-17T00:00:00Z",
+            "marketValue": 17176.967555,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 21.39499956,
+            "currencyMarketValue": 17176.967555,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-18T00:00:00Z",
+            "marketValue": 17176.967555,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 21.39499956,
+            "currencyMarketValue": 17176.967555,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-21T00:00:00Z",
+            "marketValue": 17216.393767,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 21.67363692,
+            "currencyMarketValue": 17216.393767,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-22T00:00:00Z",
+            "marketValue": 16950.239037,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.79263824,
+            "currencyMarketValue": 16950.239037,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-23T00:00:00Z",
+            "marketValue": 16845.330554,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.0512172,
+            "currencyMarketValue": 16845.330554,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-24T00:00:00Z",
+            "marketValue": 16845.330554,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.0512172,
+            "currencyMarketValue": 16845.330554,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-25T00:00:00Z",
+            "marketValue": 16845.330554,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.0512172,
+            "currencyMarketValue": 16845.330554,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-26T00:00:00Z",
+            "marketValue": 16845.330554,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.0512172,
+            "currencyMarketValue": 16845.330554,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-27T00:00:00Z",
+            "marketValue": 16884.146953,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.32554482,
+            "currencyMarketValue": 16884.146953,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-28T00:00:00Z",
+            "marketValue": 16884.146953,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 19.32554482,
+            "currencyMarketValue": 16884.146953,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-29T00:00:00Z",
+            "marketValue": 16740.452562,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 18.31001164,
+            "currencyMarketValue": 16740.452562,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-30T00:00:00Z",
+            "marketValue": 16740.452562,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 18.31001164,
+            "currencyMarketValue": 16740.452562,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-01-31T00:00:00Z",
+            "marketValue": 16813.73506,
+            "investmentAddedValue": 14149.65,
+            "returnValue": 18.82792196,
+            "currencyMarketValue": 16813.73506,
+            "totalShares": 896.784,
+            "avgPositionCost": 15.778214152
+          },
+          {
+            "date": "2026-02-01T00:00:00Z",
+            "marketValue": 16961.401586,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.62049046,
+            "currencyMarketValue": 16961.401586,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-02T00:00:00Z",
+            "marketValue": 16961.401586,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.62049046,
+            "currencyMarketValue": 16961.401586,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-03T00:00:00Z",
+            "marketValue": 16777.363888,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.33341274,
+            "currencyMarketValue": 16777.363888,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-04T00:00:00Z",
+            "marketValue": 16942.993564,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.49175295,
+            "currencyMarketValue": 16942.993564,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-05T00:00:00Z",
+            "marketValue": 17016.383202,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 19.0050074,
+            "currencyMarketValue": 17016.383202,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-06T00:00:00Z",
+            "marketValue": 16946.965926,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.51953388,
+            "currencyMarketValue": 16946.965926,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-07T00:00:00Z",
+            "marketValue": 16787.295246,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.40286824,
+            "currencyMarketValue": 16787.295246,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-08T00:00:00Z",
+            "marketValue": 16787.295246,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.40286824,
+            "currencyMarketValue": 16787.295246,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-09T00:00:00Z",
+            "marketValue": 16787.295246,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.40286824,
+            "currencyMarketValue": 16787.295246,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-10T00:00:00Z",
+            "marketValue": 16787.295246,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.40286824,
+            "currencyMarketValue": 16787.295246,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-11T00:00:00Z",
+            "marketValue": 16938.719046,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.46185887,
+            "currencyMarketValue": 16938.719046,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-12T00:00:00Z",
+            "marketValue": 16981.131316,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.7584714,
+            "currencyMarketValue": 16981.131316,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-13T00:00:00Z",
+            "marketValue": 16981.79805,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.76313425,
+            "currencyMarketValue": 16981.79805,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-14T00:00:00Z",
+            "marketValue": 16959.731583,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.6088112,
+            "currencyMarketValue": 16959.731583,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-15T00:00:00Z",
+            "marketValue": 16959.731583,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.6088112,
+            "currencyMarketValue": 16959.731583,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-16T00:00:00Z",
+            "marketValue": 16959.731583,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.6088112,
+            "currencyMarketValue": 16959.731583,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-17T00:00:00Z",
+            "marketValue": 16759.979037,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.21183084,
+            "currencyMarketValue": 16759.979037,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-18T00:00:00Z",
+            "marketValue": 16759.979037,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.21183084,
+            "currencyMarketValue": 16759.979037,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-19T00:00:00Z",
+            "marketValue": 16733.537634,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.02691144,
+            "currencyMarketValue": 16733.537634,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-20T00:00:00Z",
+            "marketValue": 16764.357591,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.24245249,
+            "currencyMarketValue": 16764.357591,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-21T00:00:00Z",
+            "marketValue": 16927.619772,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.38423549,
+            "currencyMarketValue": 16927.619772,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-22T00:00:00Z",
+            "marketValue": 16927.619772,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.38423549,
+            "currencyMarketValue": 16927.619772,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-23T00:00:00Z",
+            "marketValue": 16927.619772,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.38423549,
+            "currencyMarketValue": 16927.619772,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-24T00:00:00Z",
+            "marketValue": 16965.137832,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.6466201,
+            "currencyMarketValue": 16965.137832,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-25T00:00:00Z",
+            "marketValue": 16834.19282,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.73084899,
+            "currencyMarketValue": 16834.19282,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-26T00:00:00Z",
+            "marketValue": 16834.19282,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 17.73084899,
+            "currencyMarketValue": 16834.19282,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-27T00:00:00Z",
+            "marketValue": 17042.310758,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 19.18633318,
+            "currencyMarketValue": 17042.310758,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-02-28T00:00:00Z",
+            "marketValue": 16978.737585,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.74173072,
+            "currencyMarketValue": 16978.737585,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-03-01T00:00:00Z",
+            "marketValue": 16978.737585,
+            "investmentAddedValue": 14298.88,
+            "returnValue": 18.74173072,
+            "currencyMarketValue": 16978.737585,
+            "totalShares": 904.66,
+            "avgPositionCost": 15.805805496
+          },
+          {
+            "date": "2026-03-02T00:00:00Z",
+            "marketValue": 17128.11279,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 18.54915826,
+            "currencyMarketValue": 17128.11279,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-03T00:00:00Z",
+            "marketValue": 17021.978851,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.81457126,
+            "currencyMarketValue": 17021.978851,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-04T00:00:00Z",
+            "marketValue": 17175.600007,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 18.87783251,
+            "currencyMarketValue": 17175.600007,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-05T00:00:00Z",
+            "marketValue": 17110.303943,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 18.42589753,
+            "currencyMarketValue": 17110.303943,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-06T00:00:00Z",
+            "marketValue": 17276.629668,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 19.57709118,
+            "currencyMarketValue": 17276.629668,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-07T00:00:00Z",
+            "marketValue": 17229.45913,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 19.25060876,
+            "currencyMarketValue": 17229.45913,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-08T00:00:00Z",
+            "marketValue": 17229.45913,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 19.25060876,
+            "currencyMarketValue": 17229.45913,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-09T00:00:00Z",
+            "marketValue": 17229.45913,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 19.25060876,
+            "currencyMarketValue": 17229.45913,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-10T00:00:00Z",
+            "marketValue": 17033.588277,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.89492381,
+            "currencyMarketValue": 17033.588277,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-11T00:00:00Z",
+            "marketValue": 17033.588277,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.89492381,
+            "currencyMarketValue": 17033.588277,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-12T00:00:00Z",
+            "marketValue": 17033.588277,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.89492381,
+            "currencyMarketValue": 17033.588277,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-13T00:00:00Z",
+            "marketValue": 17114.228204,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 18.45305859,
+            "currencyMarketValue": 17114.228204,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-14T00:00:00Z",
+            "marketValue": 17024.266786,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.83040679,
+            "currencyMarketValue": 17024.266786,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-15T00:00:00Z",
+            "marketValue": 17024.266786,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.83040679,
+            "currencyMarketValue": 17024.266786,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-16T00:00:00Z",
+            "marketValue": 17024.266786,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.83040679,
+            "currencyMarketValue": 17024.266786,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-17T00:00:00Z",
+            "marketValue": 17024.266786,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.83040679,
+            "currencyMarketValue": 17024.266786,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-18T00:00:00Z",
+            "marketValue": 17037.064443,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.91898347,
+            "currencyMarketValue": 17037.064443,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-19T00:00:00Z",
+            "marketValue": 17037.064443,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 17.91898347,
+            "currencyMarketValue": 17037.064443,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-20T00:00:00Z",
+            "marketValue": 17063.425443,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 18.1014364,
+            "currencyMarketValue": 17063.425443,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-21T00:00:00Z",
+            "marketValue": 16703.835304,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 15.6125978,
+            "currencyMarketValue": 16703.835304,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-22T00:00:00Z",
+            "marketValue": 16703.835304,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 15.6125978,
+            "currencyMarketValue": 16703.835304,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-23T00:00:00Z",
+            "marketValue": 16703.835304,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 15.6125978,
+            "currencyMarketValue": 16703.835304,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-24T00:00:00Z",
+            "marketValue": 16703.835304,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 15.6125978,
+            "currencyMarketValue": 16703.835304,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-25T00:00:00Z",
+            "marketValue": 16703.835304,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 15.6125978,
+            "currencyMarketValue": 16703.835304,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-26T00:00:00Z",
+            "marketValue": 16607.528446,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.94602717,
+            "currencyMarketValue": 16607.528446,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-27T00:00:00Z",
+            "marketValue": 16607.528446,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.94602717,
+            "currencyMarketValue": 16607.528446,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-28T00:00:00Z",
+            "marketValue": 16546.038003,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.5204321,
+            "currencyMarketValue": 16546.038003,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-29T00:00:00Z",
+            "marketValue": 16546.038003,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.5204321,
+            "currencyMarketValue": 16546.038003,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-30T00:00:00Z",
+            "marketValue": 16546.038003,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.5204321,
+            "currencyMarketValue": 16546.038003,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-03-31T00:00:00Z",
+            "marketValue": 16546.038003,
+            "investmentAddedValue": 14448.11,
+            "returnValue": 14.5204321,
+            "currencyMarketValue": 16546.038003,
+            "totalShares": 912.619,
+            "avgPositionCost": 15.831480607
+          },
+          {
+            "date": "2026-04-01T00:00:00Z",
+            "marketValue": 16488.405174,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 12.95486146,
+            "currencyMarketValue": 16488.405174,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-02T00:00:00Z",
+            "marketValue": 16488.405174,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 12.95486146,
+            "currencyMarketValue": 16488.405174,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-03T00:00:00Z",
+            "marketValue": 16779.824331,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 14.95124681,
+            "currencyMarketValue": 16779.824331,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-04T00:00:00Z",
+            "marketValue": 16779.824331,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 14.95124681,
+            "currencyMarketValue": 16779.824331,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-05T00:00:00Z",
+            "marketValue": 16779.824331,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 14.95124681,
+            "currencyMarketValue": 16779.824331,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-06T00:00:00Z",
+            "marketValue": 16779.824331,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 14.95124681,
+            "currencyMarketValue": 16779.824331,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-07T00:00:00Z",
+            "marketValue": 16779.824331,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 14.95124681,
+            "currencyMarketValue": 16779.824331,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-08T00:00:00Z",
+            "marketValue": 16817.109689,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 15.20667251,
+            "currencyMarketValue": 16817.109689,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-09T00:00:00Z",
+            "marketValue": 16821.287395,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 15.23529215,
+            "currencyMarketValue": 16821.287395,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-10T00:00:00Z",
+            "marketValue": 17091.832756,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.08868024,
+            "currencyMarketValue": 17091.832756,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-11T00:00:00Z",
+            "marketValue": 17152.469804,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.50407817,
+            "currencyMarketValue": 17152.469804,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-12T00:00:00Z",
+            "marketValue": 17152.469804,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.50407817,
+            "currencyMarketValue": 17152.469804,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-13T00:00:00Z",
+            "marketValue": 17152.469804,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.50407817,
+            "currencyMarketValue": 17152.469804,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-14T00:00:00Z",
+            "marketValue": 17200.812224,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.83525097,
+            "currencyMarketValue": 17200.812224,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-15T00:00:00Z",
+            "marketValue": 17193.011139,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 17.78180914,
+            "currencyMarketValue": 17193.011139,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-16T00:00:00Z",
+            "marketValue": 17399.433272,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 19.19591701,
+            "currencyMarketValue": 17399.433272,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-17T00:00:00Z",
+            "marketValue": 17515.988228,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 19.9943841,
+            "currencyMarketValue": 17515.988228,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-18T00:00:00Z",
+            "marketValue": 17646.888452,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 20.89112436,
+            "currencyMarketValue": 17646.888452,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-19T00:00:00Z",
+            "marketValue": 17646.888452,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 20.89112436,
+            "currencyMarketValue": 17646.888452,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-20T00:00:00Z",
+            "marketValue": 17646.888452,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 20.89112436,
+            "currencyMarketValue": 17646.888452,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-21T00:00:00Z",
+            "marketValue": 17646.888452,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 20.89112436,
+            "currencyMarketValue": 17646.888452,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-22T00:00:00Z",
+            "marketValue": 17646.888452,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 20.89112436,
+            "currencyMarketValue": 17646.888452,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-23T00:00:00Z",
+            "marketValue": 17798.359526,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 21.92878652,
+            "currencyMarketValue": 17798.359526,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-24T00:00:00Z",
+            "marketValue": 17953.261531,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 22.98995249,
+            "currencyMarketValue": 17953.261531,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-25T00:00:00Z",
+            "marketValue": 18025.496156,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 23.48480035,
+            "currencyMarketValue": 18025.496156,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-26T00:00:00Z",
+            "marketValue": 18025.496156,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 23.48480035,
+            "currencyMarketValue": 18025.496156,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-27T00:00:00Z",
+            "marketValue": 18025.496156,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 23.48480035,
+            "currencyMarketValue": 18025.496156,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-28T00:00:00Z",
+            "marketValue": 18025.496156,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 23.48480035,
+            "currencyMarketValue": 18025.496156,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-29T00:00:00Z",
+            "marketValue": 18005.413334,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 23.34722171,
+            "currencyMarketValue": 18005.413334,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-04-30T00:00:00Z",
+            "marketValue": 17954.017514,
+            "investmentAddedValue": 14597.34,
+            "returnValue": 22.9951314,
+            "currencyMarketValue": 17954.017514,
+            "totalShares": 920.808,
+            "avgPositionCost": 15.852751062
+          },
+          {
+            "date": "2026-05-01T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-02T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-03T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-04T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-05T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-06T00:00:00Z",
+            "marketValue": 18165.637169,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.18550801,
+            "currencyMarketValue": 18165.637169,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-07T00:00:00Z",
+            "marketValue": 18191.412239,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 23.3602949,
+            "currencyMarketValue": 18191.412239,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-08T00:00:00Z",
+            "marketValue": 18441.057405,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 25.05319817,
+            "currencyMarketValue": 18441.057405,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-09T00:00:00Z",
+            "marketValue": 18651.333482,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.47913028,
+            "currencyMarketValue": 18651.333482,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-10T00:00:00Z",
+            "marketValue": 18651.333482,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.47913028,
+            "currencyMarketValue": 18651.333482,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-11T00:00:00Z",
+            "marketValue": 18651.333482,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.47913028,
+            "currencyMarketValue": 18651.333482,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-12T00:00:00Z",
+            "marketValue": 18658.333339,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.52659797,
+            "currencyMarketValue": 18658.333339,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-13T00:00:00Z",
+            "marketValue": 18658.333339,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.52659797,
+            "currencyMarketValue": 18658.333339,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-14T00:00:00Z",
+            "marketValue": 18625.534274,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 26.30417971,
+            "currencyMarketValue": 18625.534274,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-15T00:00:00Z",
+            "marketValue": 18825.32449,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 27.6590047,
+            "currencyMarketValue": 18825.32449,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-16T00:00:00Z",
+            "marketValue": 19110.062706,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 29.5898823,
+            "currencyMarketValue": 19110.062706,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-17T00:00:00Z",
+            "marketValue": 19110.062706,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 29.5898823,
+            "currencyMarketValue": 19110.062706,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-18T00:00:00Z",
+            "marketValue": 19110.062706,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 29.5898823,
+            "currencyMarketValue": 19110.062706,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-19T00:00:00Z",
+            "marketValue": 19004.68515,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.87529202,
+            "currencyMarketValue": 19004.68515,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-20T00:00:00Z",
+            "marketValue": 18846.135603,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 27.80012981,
+            "currencyMarketValue": 18846.135603,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-21T00:00:00Z",
+            "marketValue": 18820.964897,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 27.62944127,
+            "currencyMarketValue": 18820.964897,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-22T00:00:00Z",
+            "marketValue": 18963.221673,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.59411831,
+            "currencyMarketValue": 18963.221673,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-23T00:00:00Z",
+            "marketValue": 18985.115258,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.74258392,
+            "currencyMarketValue": 18985.115258,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-24T00:00:00Z",
+            "marketValue": 18985.115258,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.74258392,
+            "currencyMarketValue": 18985.115258,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-25T00:00:00Z",
+            "marketValue": 18985.115258,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.74258392,
+            "currencyMarketValue": 18985.115258,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-26T00:00:00Z",
+            "marketValue": 18985.115258,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 28.74258392,
+            "currencyMarketValue": 18985.115258,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-27T00:00:00Z",
+            "marketValue": 19192.162488,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 30.14662045,
+            "currencyMarketValue": 19192.162488,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-28T00:00:00Z",
+            "marketValue": 19213.394149,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 30.2905974,
+            "currencyMarketValue": 19213.394149,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-29T00:00:00Z",
+            "marketValue": 19217.994188,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 30.32179136,
+            "currencyMarketValue": 19217.994188,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-30T00:00:00Z",
+            "marketValue": 19277.787264,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 30.72726243,
+            "currencyMarketValue": 19277.787264,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-05-31T00:00:00Z",
+            "marketValue": 19277.787264,
+            "investmentAddedValue": 14746.57,
+            "returnValue": 30.72726243,
+            "currencyMarketValue": 19277.787264,
+            "totalShares": 928.363,
+            "avgPositionCost": 15.884486995
+          },
+          {
+            "date": "2026-06-01T00:00:00Z",
+            "marketValue": 19426.155725,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 30.41364495,
+            "currencyMarketValue": 19426.155725,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-02T00:00:00Z",
+            "marketValue": 19462.643344,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 30.65859735,
+            "currencyMarketValue": 19462.643344,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-03T00:00:00Z",
+            "marketValue": 19462.643344,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 30.65859735,
+            "currencyMarketValue": 19462.643344,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-04T00:00:00Z",
+            "marketValue": 19539.308224,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.17327182,
+            "currencyMarketValue": 19539.308224,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-05T00:00:00Z",
+            "marketValue": 19540.649743,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.18227784,
+            "currencyMarketValue": 19540.649743,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-06T00:00:00Z",
+            "marketValue": 19520.962913,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.05011421,
+            "currencyMarketValue": 19520.962913,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-07T00:00:00Z",
+            "marketValue": 19520.962913,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.05011421,
+            "currencyMarketValue": 19520.962913,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-08T00:00:00Z",
+            "marketValue": 19520.962913,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.05011421,
+            "currencyMarketValue": 19520.962913,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-09T00:00:00Z",
+            "marketValue": 19520.962913,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.05011421,
+            "currencyMarketValue": 19520.962913,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-10T00:00:00Z",
+            "marketValue": 19297.54957,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 29.55027303,
+            "currencyMarketValue": 19297.54957,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-11T00:00:00Z",
+            "marketValue": 19012.884776,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.63923237,
+            "currencyMarketValue": 19012.884776,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-12T00:00:00Z",
+            "marketValue": 18985.981437,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.45862214,
+            "currencyMarketValue": 18985.981437,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-13T00:00:00Z",
+            "marketValue": 18951.645487,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.22811455,
+            "currencyMarketValue": 18951.645487,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-14T00:00:00Z",
+            "marketValue": 18951.645487,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.22811455,
+            "currencyMarketValue": 18951.645487,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-15T00:00:00Z",
+            "marketValue": 18951.645487,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.22811455,
+            "currencyMarketValue": 18951.645487,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-16T00:00:00Z",
+            "marketValue": 18951.645487,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 27.22811455,
+            "currencyMarketValue": 18951.645487,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-17T00:00:00Z",
+            "marketValue": 19530.613613,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.11490227,
+            "currencyMarketValue": 19530.613613,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-18T00:00:00Z",
+            "marketValue": 19471.967552,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 30.72119357,
+            "currencyMarketValue": 19471.967552,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-19T00:00:00Z",
+            "marketValue": 19453.094614,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 30.59449384,
+            "currencyMarketValue": 19453.094614,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-20T00:00:00Z",
+            "marketValue": 19547.802637,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.23029738,
+            "currencyMarketValue": 19547.802637,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-21T00:00:00Z",
+            "marketValue": 19547.802637,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.23029738,
+            "currencyMarketValue": 19547.802637,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-22T00:00:00Z",
+            "marketValue": 19547.802637,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.23029738,
+            "currencyMarketValue": 19547.802637,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-23T00:00:00Z",
+            "marketValue": 19587.999545,
+            "investmentAddedValue": 14895.8,
+            "returnValue": 31.50015135,
+            "currencyMarketValue": 19587.999545,
+            "totalShares": 935.508,
+            "avgPositionCost": 15.922685856
+          },
+          {
+            "date": "2026-06-24T00:00:00Z",
+            "marketValue": 4896.495213,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.48095016,
+            "currencyMarketValue": 4896.495213,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-25T00:00:00Z",
+            "marketValue": 4896.495213,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.48095016,
+            "currencyMarketValue": 4896.495213,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-26T00:00:00Z",
+            "marketValue": 4893.650913,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.40457486,
+            "currencyMarketValue": 4893.650913,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-27T00:00:00Z",
+            "marketValue": 4853.000885,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.31303815,
+            "currencyMarketValue": 4853.000885,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-28T00:00:00Z",
+            "marketValue": 4853.000885,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.31303815,
+            "currencyMarketValue": 4853.000885,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-29T00:00:00Z",
+            "marketValue": 4853.000885,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.31303815,
+            "currencyMarketValue": 4853.000885,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-06-30T00:00:00Z",
+            "marketValue": 4853.000885,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.31303815,
+            "currencyMarketValue": 4853.000885,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-01T00:00:00Z",
+            "marketValue": 4844.530199,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.08558284,
+            "currencyMarketValue": 4844.530199,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-02T00:00:00Z",
+            "marketValue": 4904.37089,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.69242826,
+            "currencyMarketValue": 4904.37089,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-03T00:00:00Z",
+            "marketValue": 4942.127502,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.70627081,
+            "currencyMarketValue": 4942.127502,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-04T00:00:00Z",
+            "marketValue": 4902.343791,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.63799649,
+            "currencyMarketValue": 4902.343791,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-05T00:00:00Z",
+            "marketValue": 4902.343791,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.63799649,
+            "currencyMarketValue": 4902.343791,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-06T00:00:00Z",
+            "marketValue": 4902.343791,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.63799649,
+            "currencyMarketValue": 4902.343791,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-07T00:00:00Z",
+            "marketValue": 4902.343791,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.63799649,
+            "currencyMarketValue": 4902.343791,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-08T00:00:00Z",
+            "marketValue": 4912.103428,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.90006278,
+            "currencyMarketValue": 4912.103428,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-09T00:00:00Z",
+            "marketValue": 4940.149052,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.65314537,
+            "currencyMarketValue": 4940.149052,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-10T00:00:00Z",
+            "marketValue": 4884.94634,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.17083921,
+            "currencyMarketValue": 4884.94634,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-11T00:00:00Z",
+            "marketValue": 4884.94634,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.17083921,
+            "currencyMarketValue": 4884.94634,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-12T00:00:00Z",
+            "marketValue": 4884.94634,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.17083921,
+            "currencyMarketValue": 4884.94634,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-13T00:00:00Z",
+            "marketValue": 4884.94634,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.17083921,
+            "currencyMarketValue": 4884.94634,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-14T00:00:00Z",
+            "marketValue": 4932.269165,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.44155422,
+            "currencyMarketValue": 4932.269165,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-15T00:00:00Z",
+            "marketValue": 4953.418397,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 33.00945453,
+            "currencyMarketValue": 4953.418397,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-16T00:00:00Z",
+            "marketValue": 4961.730507,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 33.23265175,
+            "currencyMarketValue": 4961.730507,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-17T00:00:00Z",
+            "marketValue": 4943.492233,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.74291664,
+            "currencyMarketValue": 4943.492233,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-18T00:00:00Z",
+            "marketValue": 4951.016845,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.94496793,
+            "currencyMarketValue": 4951.016845,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-19T00:00:00Z",
+            "marketValue": 4951.016845,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.94496793,
+            "currencyMarketValue": 4951.016845,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-20T00:00:00Z",
+            "marketValue": 4951.016845,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.94496793,
+            "currencyMarketValue": 4951.016845,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-21T00:00:00Z",
+            "marketValue": 4951.796157,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.96589405,
+            "currencyMarketValue": 4951.796157,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-22T00:00:00Z",
+            "marketValue": 4893.376797,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.39721429,
+            "currencyMarketValue": 4893.376797,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-23T00:00:00Z",
+            "marketValue": 4928.333081,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.33586229,
+            "currencyMarketValue": 4928.333081,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-24T00:00:00Z",
+            "marketValue": 4935.134748,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 32.51850101,
+            "currencyMarketValue": 4935.134748,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-25T00:00:00Z",
+            "marketValue": 4871.57315,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.8117416,
+            "currencyMarketValue": 4871.57315,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-26T00:00:00Z",
+            "marketValue": 4871.57315,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.8117416,
+            "currencyMarketValue": 4871.57315,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-27T00:00:00Z",
+            "marketValue": 4871.57315,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.8117416,
+            "currencyMarketValue": 4871.57315,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-28T00:00:00Z",
+            "marketValue": 4871.57315,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.8117416,
+            "currencyMarketValue": 4871.57315,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-29T00:00:00Z",
+            "marketValue": 4902.055642,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.6302591,
+            "currencyMarketValue": 4902.055642,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-30T00:00:00Z",
+            "marketValue": 4874.807339,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 30.89858621,
+            "currencyMarketValue": 4874.807339,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-07-31T00:00:00Z",
+            "marketValue": 4891.180598,
+            "investmentAddedValue": 3724.11,
+            "returnValue": 31.33824183,
+            "currencyMarketValue": 4891.180598,
+            "totalShares": 233.887,
+            "avgPositionCost": 15.922689162
+          },
+          {
+            "date": "2026-08-01T00:00:00Z",
+            "marketValue": 4953.472893,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 27.88634339,
+            "currencyMarketValue": 4953.472893,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-02T00:00:00Z",
+            "marketValue": 4953.472893,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 27.88634339,
+            "currencyMarketValue": 4953.472893,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-03T00:00:00Z",
+            "marketValue": 4953.472893,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 27.88634339,
+            "currencyMarketValue": 4953.472893,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-04T00:00:00Z",
+            "marketValue": 4953.472893,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 27.88634339,
+            "currencyMarketValue": 4953.472893,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-05T00:00:00Z",
+            "marketValue": 4991.100908,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 28.8578051,
+            "currencyMarketValue": 4991.100908,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-06T00:00:00Z",
+            "marketValue": 5163.221088,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.30151983,
+            "currencyMarketValue": 5163.221088,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-07T00:00:00Z",
+            "marketValue": 5163.221088,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.30151983,
+            "currencyMarketValue": 5163.221088,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-08T00:00:00Z",
+            "marketValue": 5169.949756,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.47523729,
+            "currencyMarketValue": 5169.949756,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-09T00:00:00Z",
+            "marketValue": 5169.949756,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.47523729,
+            "currencyMarketValue": 5169.949756,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-10T00:00:00Z",
+            "marketValue": 5169.949756,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.47523729,
+            "currencyMarketValue": 5169.949756,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-11T00:00:00Z",
+            "marketValue": 5184.363203,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.84735662,
+            "currencyMarketValue": 5184.363203,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-12T00:00:00Z",
+            "marketValue": 5189.569035,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.98175825,
+            "currencyMarketValue": 5189.569035,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-13T00:00:00Z",
+            "marketValue": 5182.540137,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.8002896,
+            "currencyMarketValue": 5182.540137,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-14T00:00:00Z",
+            "marketValue": 5184.009481,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.8382244,
+            "currencyMarketValue": 5184.009481,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-15T00:00:00Z",
+            "marketValue": 5215.116048,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 34.64131855,
+            "currencyMarketValue": 5215.116048,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-16T00:00:00Z",
+            "marketValue": 5215.116048,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 34.64131855,
+            "currencyMarketValue": 5215.116048,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-17T00:00:00Z",
+            "marketValue": 5215.116048,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 34.64131855,
+            "currencyMarketValue": 5215.116048,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-18T00:00:00Z",
+            "marketValue": 5193.480458,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 34.08274146,
+            "currencyMarketValue": 5193.480458,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-19T00:00:00Z",
+            "marketValue": 5183.711901,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 33.83054163,
+            "currencyMarketValue": 5183.711901,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-20T00:00:00Z",
+            "marketValue": 5136.788325,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 32.61909166,
+            "currencyMarketValue": 5136.788325,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-21T00:00:00Z",
+            "marketValue": 5114.217588,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 32.0363714,
+            "currencyMarketValue": 5114.217588,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-22T00:00:00Z",
+            "marketValue": 5077.818685,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.0966423,
+            "currencyMarketValue": 5077.818685,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-23T00:00:00Z",
+            "marketValue": 5077.818685,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.0966423,
+            "currencyMarketValue": 5077.818685,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-24T00:00:00Z",
+            "marketValue": 5077.818685,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.0966423,
+            "currencyMarketValue": 5077.818685,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-25T00:00:00Z",
+            "marketValue": 5080.840742,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.17466429,
+            "currencyMarketValue": 5080.840742,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-26T00:00:00Z",
+            "marketValue": 5080.840742,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.17466429,
+            "currencyMarketValue": 5080.840742,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-27T00:00:00Z",
+            "marketValue": 5067.59135,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 30.83259796,
+            "currencyMarketValue": 5067.59135,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-28T00:00:00Z",
+            "marketValue": 5085.407321,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 31.292562,
+            "currencyMarketValue": 5085.407321,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-29T00:00:00Z",
+            "marketValue": 5117.145673,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 32.11196727,
+            "currencyMarketValue": 5117.145673,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-30T00:00:00Z",
+            "marketValue": 5117.145673,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 32.11196727,
+            "currencyMarketValue": 5117.145673,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-08-31T00:00:00Z",
+            "marketValue": 5117.145673,
+            "investmentAddedValue": 3873.34,
+            "returnValue": 32.11196727,
+            "currencyMarketValue": 5117.145673,
+            "totalShares": 240.955,
+            "avgPositionCost": 16.074951754
+          },
+          {
+            "date": "2026-09-01T00:00:00Z",
+            "marketValue": 5317.476125,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 32.19101532,
+            "currencyMarketValue": 5317.476125,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-02T00:00:00Z",
+            "marketValue": 5317.476125,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 32.19101532,
+            "currencyMarketValue": 5317.476125,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-03T00:00:00Z",
+            "marketValue": 5260.798172,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.78201677,
+            "currencyMarketValue": 5260.798172,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-04T00:00:00Z",
+            "marketValue": 5245.762257,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.408228,
+            "currencyMarketValue": 5245.762257,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-05T00:00:00Z",
+            "marketValue": 5297.350777,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.69070462,
+            "currencyMarketValue": 5297.350777,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-06T00:00:00Z",
+            "marketValue": 5297.350777,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.69070462,
+            "currencyMarketValue": 5297.350777,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-07T00:00:00Z",
+            "marketValue": 5297.350777,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.69070462,
+            "currencyMarketValue": 5297.350777,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-08T00:00:00Z",
+            "marketValue": 5297.350777,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.69070462,
+            "currencyMarketValue": 5297.350777,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-09T00:00:00Z",
+            "marketValue": 5274.52682,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.12330724,
+            "currencyMarketValue": 5274.52682,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-10T00:00:00Z",
+            "marketValue": 5257.477552,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.69946706,
+            "currencyMarketValue": 5257.477552,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-11T00:00:00Z",
+            "marketValue": 5257.477552,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.69946706,
+            "currencyMarketValue": 5257.477552,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-12T00:00:00Z",
+            "marketValue": 5219.194574,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 29.7477626,
+            "currencyMarketValue": 5219.194574,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-13T00:00:00Z",
+            "marketValue": 5219.194574,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 29.7477626,
+            "currencyMarketValue": 5219.194574,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-14T00:00:00Z",
+            "marketValue": 5219.194574,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 29.7477626,
+            "currencyMarketValue": 5219.194574,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-15T00:00:00Z",
+            "marketValue": 5254.985538,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.63751626,
+            "currencyMarketValue": 5254.985538,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-16T00:00:00Z",
+            "marketValue": 5243.357046,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.3484351,
+            "currencyMarketValue": 5243.357046,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-17T00:00:00Z",
+            "marketValue": 5243.357046,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.3484351,
+            "currencyMarketValue": 5243.357046,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-18T00:00:00Z",
+            "marketValue": 5243.357046,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 30.3484351,
+            "currencyMarketValue": 5243.357046,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-19T00:00:00Z",
+            "marketValue": 5283.13801,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.33737909,
+            "currencyMarketValue": 5283.13801,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-20T00:00:00Z",
+            "marketValue": 5283.13801,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.33737909,
+            "currencyMarketValue": 5283.13801,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-21T00:00:00Z",
+            "marketValue": 5283.13801,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.33737909,
+            "currencyMarketValue": 5283.13801,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-22T00:00:00Z",
+            "marketValue": 5283.13801,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.33737909,
+            "currencyMarketValue": 5283.13801,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-23T00:00:00Z",
+            "marketValue": 5284.725033,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 31.37683205,
+            "currencyMarketValue": 5284.725033,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-24T00:00:00Z",
+            "marketValue": 5389.365834,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.978174,
+            "currencyMarketValue": 5389.365834,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-25T00:00:00Z",
+            "marketValue": 5389.365834,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.978174,
+            "currencyMarketValue": 5389.365834,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-26T00:00:00Z",
+            "marketValue": 5359.1199,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.22626828,
+            "currencyMarketValue": 5359.1199,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-27T00:00:00Z",
+            "marketValue": 5359.1199,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.22626828,
+            "currencyMarketValue": 5359.1199,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-28T00:00:00Z",
+            "marketValue": 5359.1199,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.22626828,
+            "currencyMarketValue": 5359.1199,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-29T00:00:00Z",
+            "marketValue": 5359.1199,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.22626828,
+            "currencyMarketValue": 5359.1199,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-09-30T00:00:00Z",
+            "marketValue": 5381.398232,
+            "investmentAddedValue": 4022.57,
+            "returnValue": 33.78010158,
+            "currencyMarketValue": 5381.398232,
+            "totalShares": 248.011,
+            "avgPositionCost": 16.219320917
+          },
+          {
+            "date": "2026-10-01T00:00:00Z",
+            "marketValue": 5518.56949,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.28269548,
+            "currencyMarketValue": 5518.56949,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-02T00:00:00Z",
+            "marketValue": 5518.56949,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.28269548,
+            "currencyMarketValue": 5518.56949,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-03T00:00:00Z",
+            "marketValue": 5542.244558,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.85019795,
+            "currencyMarketValue": 5542.244558,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-04T00:00:00Z",
+            "marketValue": 5542.244558,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.85019795,
+            "currencyMarketValue": 5542.244558,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-05T00:00:00Z",
+            "marketValue": 5542.244558,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.85019795,
+            "currencyMarketValue": 5542.244558,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-06T00:00:00Z",
+            "marketValue": 5542.244558,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 32.85019795,
+            "currencyMarketValue": 5542.244558,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-07T00:00:00Z",
+            "marketValue": 5593.405109,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.07654032,
+            "currencyMarketValue": 5593.405109,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-08T00:00:00Z",
+            "marketValue": 5677.313968,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 36.08787497,
+            "currencyMarketValue": 5677.313968,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-09T00:00:00Z",
+            "marketValue": 5677.313968,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 36.08787497,
+            "currencyMarketValue": 5677.313968,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-10T00:00:00Z",
+            "marketValue": 5661.206217,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.70176463,
+            "currencyMarketValue": 5661.206217,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-11T00:00:00Z",
+            "marketValue": 5661.206217,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.70176463,
+            "currencyMarketValue": 5661.206217,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-12T00:00:00Z",
+            "marketValue": 5661.206217,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.70176463,
+            "currencyMarketValue": 5661.206217,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-13T00:00:00Z",
+            "marketValue": 5661.206217,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.70176463,
+            "currencyMarketValue": 5661.206217,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-14T00:00:00Z",
+            "marketValue": 5661.206217,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.70176463,
+            "currencyMarketValue": 5661.206217,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-15T00:00:00Z",
+            "marketValue": 5681.248219,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 36.18218081,
+            "currencyMarketValue": 5681.248219,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-16T00:00:00Z",
+            "marketValue": 5672.879782,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.98158545,
+            "currencyMarketValue": 5672.879782,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-17T00:00:00Z",
+            "marketValue": 5624.457663,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.82088458,
+            "currencyMarketValue": 5624.457663,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-18T00:00:00Z",
+            "marketValue": 5624.457663,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.82088458,
+            "currencyMarketValue": 5624.457663,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-19T00:00:00Z",
+            "marketValue": 5624.457663,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.82088458,
+            "currencyMarketValue": 5624.457663,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-20T00:00:00Z",
+            "marketValue": 5624.457663,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.82088458,
+            "currencyMarketValue": 5624.457663,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-21T00:00:00Z",
+            "marketValue": 5595.774578,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.1333376,
+            "currencyMarketValue": 5595.774578,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-22T00:00:00Z",
+            "marketValue": 5617.668022,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.65813371,
+            "currencyMarketValue": 5617.668022,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-23T00:00:00Z",
+            "marketValue": 5604.601162,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.34491495,
+            "currencyMarketValue": 5604.601162,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-24T00:00:00Z",
+            "marketValue": 5629.976316,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.95316928,
+            "currencyMarketValue": 5629.976316,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-25T00:00:00Z",
+            "marketValue": 5629.976316,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.95316928,
+            "currencyMarketValue": 5629.976316,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-26T00:00:00Z",
+            "marketValue": 5629.976316,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.95316928,
+            "currencyMarketValue": 5629.976316,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-27T00:00:00Z",
+            "marketValue": 5573.937447,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 33.60989134,
+            "currencyMarketValue": 5573.937447,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-28T00:00:00Z",
+            "marketValue": 5601.689714,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 34.27512618,
+            "currencyMarketValue": 5601.689714,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-29T00:00:00Z",
+            "marketValue": 5655.668453,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.56902184,
+            "currencyMarketValue": 5655.668453,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-30T00:00:00Z",
+            "marketValue": 5663.148626,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.74832509,
+            "currencyMarketValue": 5663.148626,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-10-31T00:00:00Z",
+            "marketValue": 5636.92878,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.1198231,
+            "currencyMarketValue": 5636.92878,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-11-01T00:00:00Z",
+            "marketValue": 5636.92878,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.1198231,
+            "currencyMarketValue": 5636.92878,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-11-02T00:00:00Z",
+            "marketValue": 5636.92878,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 35.1198231,
+            "currencyMarketValue": 5636.92878,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-11-03T00:00:00Z",
+            "marketValue": 5553.097383,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 33.11034525,
+            "currencyMarketValue": 5553.097383,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          },
+          {
+            "date": "2026-11-04T00:00:00Z",
+            "marketValue": 5553.097383,
+            "investmentAddedValue": 4171.8,
+            "returnValue": 33.11034525,
+            "currencyMarketValue": 5553.097383,
+            "totalShares": 254.809,
+            "avgPositionCost": 16.372263146
+          }
+        ],
+        "N5396": [
+          {
+            "date": "2026-06-29T00:00:00Z",
+            "marketValue": 14558.191691,
+            "investmentAddedValue": 14688.65,
+            "returnValue": -0.88815724,
+            "currencyMarketValue": 14558.191691,
+            "totalShares": 745.272,
+            "avgPositionCost": 19.709112914
+          },
+          {
+            "date": "2026-06-30T00:00:00Z",
+            "marketValue": 14558.191691,
+            "investmentAddedValue": 14688.65,
+            "returnValue": -0.88815724,
+            "currencyMarketValue": 14558.191691,
+            "totalShares": 745.272,
+            "avgPositionCost": 19.709112914
+          },
+          {
+            "date": "2026-07-01T00:00:00Z",
+            "marketValue": 14650.257635,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.26448229,
+            "currencyMarketValue": 14650.257635,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-02T00:00:00Z",
+            "marketValue": 14806.002289,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.21484006,
+            "currencyMarketValue": 14806.002289,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-03T00:00:00Z",
+            "marketValue": 14857.080476,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.12940175,
+            "currencyMarketValue": 14857.080476,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-04T00:00:00Z",
+            "marketValue": 14773.057144,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.43687411,
+            "currencyMarketValue": 14773.057144,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-05T00:00:00Z",
+            "marketValue": 14773.057144,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.43687411,
+            "currencyMarketValue": 14773.057144,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-06T00:00:00Z",
+            "marketValue": 14773.057144,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.43687411,
+            "currencyMarketValue": 14773.057144,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-07T00:00:00Z",
+            "marketValue": 14773.057144,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.43687411,
+            "currencyMarketValue": 14773.057144,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-08T00:00:00Z",
+            "marketValue": 14854.921977,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.11485453,
+            "currencyMarketValue": 14854.921977,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-09T00:00:00Z",
+            "marketValue": 14903.085025,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.43944974,
+            "currencyMarketValue": 14903.085025,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-10T00:00:00Z",
+            "marketValue": 14671.722158,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.11982198,
+            "currencyMarketValue": 14671.722158,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-11T00:00:00Z",
+            "marketValue": 14671.722158,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.11982198,
+            "currencyMarketValue": 14671.722158,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-12T00:00:00Z",
+            "marketValue": 14671.722158,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.11982198,
+            "currencyMarketValue": 14671.722158,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-13T00:00:00Z",
+            "marketValue": 14671.722158,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.11982198,
+            "currencyMarketValue": 14671.722158,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-14T00:00:00Z",
+            "marketValue": 14830.92327,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.04688493,
+            "currencyMarketValue": 14830.92327,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-15T00:00:00Z",
+            "marketValue": 14885.654417,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.32197603,
+            "currencyMarketValue": 14885.654417,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-16T00:00:00Z",
+            "marketValue": 14854.325699,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.11083591,
+            "currencyMarketValue": 14854.325699,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-17T00:00:00Z",
+            "marketValue": 14842.845077,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.03346217,
+            "currencyMarketValue": 14842.845077,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-18T00:00:00Z",
+            "marketValue": 14851.54156,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.09207218,
+            "currencyMarketValue": 14851.54156,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-19T00:00:00Z",
+            "marketValue": 14851.54156,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.09207218,
+            "currencyMarketValue": 14851.54156,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-20T00:00:00Z",
+            "marketValue": 14851.54156,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.09207218,
+            "currencyMarketValue": 14851.54156,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-21T00:00:00Z",
+            "marketValue": 14832.949262,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.03323074,
+            "currencyMarketValue": 14832.949262,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-22T00:00:00Z",
+            "marketValue": 14665.891879,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.15911519,
+            "currencyMarketValue": 14665.891879,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-23T00:00:00Z",
+            "marketValue": 14811.387618,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.1785456,
+            "currencyMarketValue": 14811.387618,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-24T00:00:00Z",
+            "marketValue": 14833.991997,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.02620322,
+            "currencyMarketValue": 14833.991997,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-25T00:00:00Z",
+            "marketValue": 14658.158326,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.21123553,
+            "currencyMarketValue": 14658.158326,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-26T00:00:00Z",
+            "marketValue": 14658.158326,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.21123553,
+            "currencyMarketValue": 14658.158326,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-27T00:00:00Z",
+            "marketValue": 14658.158326,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.21123553,
+            "currencyMarketValue": 14658.158326,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-28T00:00:00Z",
+            "marketValue": 14658.158326,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.21123553,
+            "currencyMarketValue": 14658.158326,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-29T00:00:00Z",
+            "marketValue": 14735.816083,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.68786051,
+            "currencyMarketValue": 14735.816083,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-30T00:00:00Z",
+            "marketValue": 14661.701365,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.18735719,
+            "currencyMarketValue": 14661.701365,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-07-31T00:00:00Z",
+            "marketValue": 14691.717066,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.98506616,
+            "currencyMarketValue": 14691.717066,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-01T00:00:00Z",
+            "marketValue": 14542.83865,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.98843332,
+            "currencyMarketValue": 14542.83865,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-02T00:00:00Z",
+            "marketValue": 14542.83865,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.98843332,
+            "currencyMarketValue": 14542.83865,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-03T00:00:00Z",
+            "marketValue": 14542.83865,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.98843332,
+            "currencyMarketValue": 14542.83865,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-04T00:00:00Z",
+            "marketValue": 14542.83865,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.98843332,
+            "currencyMarketValue": 14542.83865,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-05T00:00:00Z",
+            "marketValue": 14627.04192,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -1.42094477,
+            "currencyMarketValue": 14627.04192,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-06T00:00:00Z",
+            "marketValue": 15033.004491,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.31504292,
+            "currencyMarketValue": 15033.004491,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-07T00:00:00Z",
+            "marketValue": 15033.004491,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.31504292,
+            "currencyMarketValue": 15033.004491,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-08T00:00:00Z",
+            "marketValue": 15074.572336,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.59518972,
+            "currencyMarketValue": 15074.572336,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-09T00:00:00Z",
+            "marketValue": 15074.572336,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.59518972,
+            "currencyMarketValue": 15074.572336,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-10T00:00:00Z",
+            "marketValue": 15074.572336,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.59518972,
+            "currencyMarketValue": 15074.572336,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-11T00:00:00Z",
+            "marketValue": 15098.63805,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.75738077,
+            "currencyMarketValue": 15098.63805,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-12T00:00:00Z",
+            "marketValue": 15103.353318,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.78915935,
+            "currencyMarketValue": 15103.353318,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-13T00:00:00Z",
+            "marketValue": 15101.371746,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.77580454,
+            "currencyMarketValue": 15101.371746,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-14T00:00:00Z",
+            "marketValue": 15134.608254,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.99980222,
+            "currencyMarketValue": 15134.608254,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-15T00:00:00Z",
+            "marketValue": 15205.226611,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.47573515,
+            "currencyMarketValue": 15205.226611,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-16T00:00:00Z",
+            "marketValue": 15205.226611,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.47573515,
+            "currencyMarketValue": 15205.226611,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-17T00:00:00Z",
+            "marketValue": 15205.226611,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.47573515,
+            "currencyMarketValue": 15205.226611,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-18T00:00:00Z",
+            "marketValue": 15138.706164,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.02742012,
+            "currencyMarketValue": 15138.706164,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-19T00:00:00Z",
+            "marketValue": 15154.724375,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.13537497,
+            "currencyMarketValue": 15154.724375,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-20T00:00:00Z",
+            "marketValue": 14960.351108,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.82539492,
+            "currencyMarketValue": 14960.351108,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-21T00:00:00Z",
+            "marketValue": 14915.821445,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.52528693,
+            "currencyMarketValue": 14915.821445,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-22T00:00:00Z",
+            "marketValue": 14838.976043,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.00738679,
+            "currencyMarketValue": 14838.976043,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-23T00:00:00Z",
+            "marketValue": 14838.976043,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.00738679,
+            "currencyMarketValue": 14838.976043,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-24T00:00:00Z",
+            "marketValue": 14838.976043,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.00738679,
+            "currencyMarketValue": 14838.976043,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-25T00:00:00Z",
+            "marketValue": 14896.635128,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.39598061,
+            "currencyMarketValue": 14896.635128,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-26T00:00:00Z",
+            "marketValue": 14896.635128,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.39598061,
+            "currencyMarketValue": 14896.635128,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-27T00:00:00Z",
+            "marketValue": 14843.628069,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.03873915,
+            "currencyMarketValue": 14843.628069,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-28T00:00:00Z",
+            "marketValue": 14923.346451,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.57600177,
+            "currencyMarketValue": 14923.346451,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-29T00:00:00Z",
+            "marketValue": 14976.396423,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.93353244,
+            "currencyMarketValue": 14976.396423,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-30T00:00:00Z",
+            "marketValue": 14976.396423,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.93353244,
+            "currencyMarketValue": 14976.396423,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-08-31T00:00:00Z",
+            "marketValue": 14976.396423,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.93353244,
+            "currencyMarketValue": 14976.396423,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-01T00:00:00Z",
+            "marketValue": 15090.062028,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.69958261,
+            "currencyMarketValue": 15090.062028,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-02T00:00:00Z",
+            "marketValue": 15090.062028,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.69958261,
+            "currencyMarketValue": 15090.062028,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-03T00:00:00Z",
+            "marketValue": 14937.463647,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.67114471,
+            "currencyMarketValue": 14937.463647,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-04T00:00:00Z",
+            "marketValue": 14919.775555,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.55193569,
+            "currencyMarketValue": 14919.775555,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-05T00:00:00Z",
+            "marketValue": 15045.008362,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.3959431,
+            "currencyMarketValue": 15045.008362,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-06T00:00:00Z",
+            "marketValue": 15045.008362,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.3959431,
+            "currencyMarketValue": 15045.008362,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-07T00:00:00Z",
+            "marketValue": 15045.008362,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.3959431,
+            "currencyMarketValue": 15045.008362,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-08T00:00:00Z",
+            "marketValue": 15045.008362,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.3959431,
+            "currencyMarketValue": 15045.008362,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-09T00:00:00Z",
+            "marketValue": 15033.280797,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.31690509,
+            "currencyMarketValue": 15033.280797,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-10T00:00:00Z",
+            "marketValue": 15009.121727,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.15408486,
+            "currencyMarketValue": 15009.121727,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-11T00:00:00Z",
+            "marketValue": 15009.121727,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.15408486,
+            "currencyMarketValue": 15009.121727,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-12T00:00:00Z",
+            "marketValue": 14888.830052,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.34337825,
+            "currencyMarketValue": 14888.830052,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-13T00:00:00Z",
+            "marketValue": 14888.830052,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.34337825,
+            "currencyMarketValue": 14888.830052,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-14T00:00:00Z",
+            "marketValue": 14888.830052,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.34337825,
+            "currencyMarketValue": 14888.830052,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-15T00:00:00Z",
+            "marketValue": 14940.009877,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.68830505,
+            "currencyMarketValue": 14940.009877,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-16T00:00:00Z",
+            "marketValue": 14870.240013,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.21809054,
+            "currencyMarketValue": 14870.240013,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-17T00:00:00Z",
+            "marketValue": 14870.240013,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.21809054,
+            "currencyMarketValue": 14870.240013,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-18T00:00:00Z",
+            "marketValue": 14805.977444,
+            "investmentAddedValue": 14837.88,
+            "returnValue": -0.21500751,
+            "currencyMarketValue": 14805.977444,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-19T00:00:00Z",
+            "marketValue": 15006.679394,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.13762474,
+            "currencyMarketValue": 15006.679394,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-20T00:00:00Z",
+            "marketValue": 15006.679394,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.13762474,
+            "currencyMarketValue": 15006.679394,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-21T00:00:00Z",
+            "marketValue": 15006.679394,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.13762474,
+            "currencyMarketValue": 15006.679394,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-22T00:00:00Z",
+            "marketValue": 15006.679394,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.13762474,
+            "currencyMarketValue": 15006.679394,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-23T00:00:00Z",
+            "marketValue": 14966.615045,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 0.86761077,
+            "currencyMarketValue": 14966.615045,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-24T00:00:00Z",
+            "marketValue": 15257.277515,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.8265326,
+            "currencyMarketValue": 15257.277515,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-25T00:00:00Z",
+            "marketValue": 15257.277515,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.8265326,
+            "currencyMarketValue": 15257.277515,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-26T00:00:00Z",
+            "marketValue": 15125.642995,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.93938079,
+            "currencyMarketValue": 15125.642995,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-27T00:00:00Z",
+            "marketValue": 15125.642995,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.93938079,
+            "currencyMarketValue": 15125.642995,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-28T00:00:00Z",
+            "marketValue": 15125.642995,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.93938079,
+            "currencyMarketValue": 15125.642995,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-29T00:00:00Z",
+            "marketValue": 15125.642995,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.93938079,
+            "currencyMarketValue": 15125.642995,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-09-30T00:00:00Z",
+            "marketValue": 15195.551389,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.41052892,
+            "currencyMarketValue": 15195.551389,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-01T00:00:00Z",
+            "marketValue": 15168.601404,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.2288993,
+            "currencyMarketValue": 15168.601404,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-02T00:00:00Z",
+            "marketValue": 15168.601404,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.2288993,
+            "currencyMarketValue": 15168.601404,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-03T00:00:00Z",
+            "marketValue": 15166.344278,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.21368739,
+            "currencyMarketValue": 15166.344278,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-04T00:00:00Z",
+            "marketValue": 15166.344278,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.21368739,
+            "currencyMarketValue": 15166.344278,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-05T00:00:00Z",
+            "marketValue": 15166.344278,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.21368739,
+            "currencyMarketValue": 15166.344278,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-06T00:00:00Z",
+            "marketValue": 15166.344278,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.21368739,
+            "currencyMarketValue": 15166.344278,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-07T00:00:00Z",
+            "marketValue": 15309.094275,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.17575203,
+            "currencyMarketValue": 15309.094275,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-08T00:00:00Z",
+            "marketValue": 15516.008966,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 4.57025509,
+            "currencyMarketValue": 15516.008966,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-09T00:00:00Z",
+            "marketValue": 15516.008966,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 4.57025509,
+            "currencyMarketValue": 15516.008966,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-10T00:00:00Z",
+            "marketValue": 15374.392803,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.61583193,
+            "currencyMarketValue": 15374.392803,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-11T00:00:00Z",
+            "marketValue": 15374.392803,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.61583193,
+            "currencyMarketValue": 15374.392803,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-12T00:00:00Z",
+            "marketValue": 15374.392803,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.61583193,
+            "currencyMarketValue": 15374.392803,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-13T00:00:00Z",
+            "marketValue": 15374.392803,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.61583193,
+            "currencyMarketValue": 15374.392803,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-14T00:00:00Z",
+            "marketValue": 15374.392803,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.61583193,
+            "currencyMarketValue": 15374.392803,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-15T00:00:00Z",
+            "marketValue": 15459.7156,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 4.19086554,
+            "currencyMarketValue": 15459.7156,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-16T00:00:00Z",
+            "marketValue": 15424.624756,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.95437054,
+            "currencyMarketValue": 15424.624756,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-17T00:00:00Z",
+            "marketValue": 15304.913549,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.14757599,
+            "currencyMarketValue": 15304.913549,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-18T00:00:00Z",
+            "marketValue": 15304.913549,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.14757599,
+            "currencyMarketValue": 15304.913549,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-19T00:00:00Z",
+            "marketValue": 15304.913549,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.14757599,
+            "currencyMarketValue": 15304.913549,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-20T00:00:00Z",
+            "marketValue": 15304.913549,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.14757599,
+            "currencyMarketValue": 15304.913549,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-21T00:00:00Z",
+            "marketValue": 15257.216532,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.8261216,
+            "currencyMarketValue": 15257.216532,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-22T00:00:00Z",
+            "marketValue": 15291.811983,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.0592779,
+            "currencyMarketValue": 15291.811983,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-23T00:00:00Z",
+            "marketValue": 15255.303472,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.81322852,
+            "currencyMarketValue": 15255.303472,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-24T00:00:00Z",
+            "marketValue": 15341.547791,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.39447273,
+            "currencyMarketValue": 15341.547791,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-25T00:00:00Z",
+            "marketValue": 15341.547791,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.39447273,
+            "currencyMarketValue": 15341.547791,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-26T00:00:00Z",
+            "marketValue": 15341.547791,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.39447273,
+            "currencyMarketValue": 15341.547791,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-27T00:00:00Z",
+            "marketValue": 15156.65174,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.14836446,
+            "currencyMarketValue": 15156.65174,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-28T00:00:00Z",
+            "marketValue": 15230.780762,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 2.64795754,
+            "currencyMarketValue": 15230.780762,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-29T00:00:00Z",
+            "marketValue": 15371.582313,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.59689061,
+            "currencyMarketValue": 15371.582313,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-30T00:00:00Z",
+            "marketValue": 15399.648062,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.78603993,
+            "currencyMarketValue": 15399.648062,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-10-31T00:00:00Z",
+            "marketValue": 15352.30038,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.46693989,
+            "currencyMarketValue": 15352.30038,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-11-01T00:00:00Z",
+            "marketValue": 15352.30038,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.46693989,
+            "currencyMarketValue": 15352.30038,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-11-02T00:00:00Z",
+            "marketValue": 15352.30038,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 3.46693989,
+            "currencyMarketValue": 15352.30038,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-11-03T00:00:00Z",
+            "marketValue": 15133.527876,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.99252101,
+            "currencyMarketValue": 15133.527876,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          },
+          {
+            "date": "2026-11-04T00:00:00Z",
+            "marketValue": 15133.527876,
+            "investmentAddedValue": 14837.88,
+            "returnValue": 1.99252101,
+            "currencyMarketValue": 15133.527876,
+            "totalShares": 752.877,
+            "avgPositionCost": 19.708239194
+          }
+        ]
+      },
+      "labelGraph": "Rentabilidad",
+      "symbolGraph": "€",
+      "currency": "EUR"
+    }
+  }
+}

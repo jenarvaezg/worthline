@@ -1,0 +1,48 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:44.203640743Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "externalCodAccount": "84559816028117931820",
+      "accountType": "SECURITIES_PORTFOLIO",
+      "amount": 0,
+      "accountId": "8439552",
+      "codAccount": "8831415648",
+      "cashAccountId": "4689475",
+      "securitiesAccountInvestments": {},
+      "profit": 0,
+      "totalInvested": 0,
+      "marketValue": 0,
+      "totalReturn": 0,
+      "fundsProfit": 0,
+      "fundsTotalInvested": 0,
+      "fundsMarketValue": 0,
+      "fundsTotalReturn": 0,
+      "stocksProfit": 0,
+      "stocksTotalInvested": 0,
+      "stocksMarketValue": 0,
+      "stocksTotalReturn": 0,
+      "cashAccountBalance": 0,
+      "balanceWithholdings": 0,
+      "investmentAmountReached": false,
+      "shouldDoContribution": null,
+      "hasAddedValueFunds": true,
+      "portfolioName": "METAL",
+      "portfolioImage": "https://cdn.myinvestor.es/public/assets/carteras_indexada_metal.svg",
+      "portfolioProfileType": "VERY_AGGRESSIVE",
+      "rentId": null,
+      "status": "ACTIVE",
+      "addedValueInvestmentAmount": null,
+      "addedValueAmount": null,
+      "addedValueReturn": null,
+      "fundsAddedValueInvestmentAmount": null,
+      "fundsAddedValueReturn": null,
+      "stocksAddedValueInvestmentAmount": null,
+      "stocksAddedValueReturn": null,
+      "hasFundsOperations": false,
+      "hasBrokerOperations": false
+    }
+  }
+}

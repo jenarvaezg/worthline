@@ -1,0 +1,129 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:38.220734499Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "active": true,
+        "creationDate": "2024-04-18T16:25:59",
+        "hasCoOwner": false,
+        "message": null,
+        "accountId": "602552",
+        "accountUuid": "689a0a76-8877-4785-b0bd-002747d2658d",
+        "accountCode": "6659546816",
+        "accountExternalCode": "43484593341197824570",
+        "accountType": "CASH_ACCOUNT",
+        "alias": "Cuenta Proyectos",
+        "enabledBalance": 0.22,
+        "withheldBalance": 149.23,
+        "iban": "ES6996407994423535490252",
+        "onBoardingAccount": "ES7316557723820792525567",
+        "holders": [
+          {
+            "id": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "userId": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "name": "IGLESIAS SERGIO",
+            "documentNumber": "75113830X",
+            "surname1": "LUCÍA",
+            "surname2": "NOELIA",
+            "me": true,
+            "participantType": "OWNER"
+          }
+        ],
+        "openingType": "ONE_HOLDER",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      },
+      {
+        "active": true,
+        "creationDate": "2026-11-03T18:25:27",
+        "hasCoOwner": false,
+        "message": null,
+        "accountId": "4689475",
+        "accountUuid": "6cdaa9fd-b6a3-4ef7-9fc9-462b25464397",
+        "accountCode": "5701764148",
+        "accountExternalCode": "74992909709008558850",
+        "accountType": "CASH_PORTFOLIO",
+        "alias": "Cuenta Ahorro",
+        "enabledBalance": 0,
+        "withheldBalance": 0,
+        "iban": "ES2609420745907739182926",
+        "onBoardingAccount": "ES7316557723820792525567",
+        "holders": [
+          {
+            "id": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "userId": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "name": "IGLESIAS SERGIO",
+            "documentNumber": "75113830X",
+            "surname1": "LUCÍA",
+            "surname2": "NOELIA",
+            "me": true,
+            "participantType": "OWNER"
+          }
+        ],
+        "openingType": "ONE_HOLDER",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      },
+      {
+        "active": true,
+        "creationDate": "2026-05-22T11:37:34",
+        "hasCoOwner": true,
+        "message": null,
+        "accountId": "9098849",
+        "accountUuid": "3819935f-33fc-4d2b-9ce5-a6eddc7679ca",
+        "accountCode": "5585247342",
+        "accountExternalCode": "57417982155986663928",
+        "accountType": "CASH_ACCOUNT",
+        "alias": "Cuenta Colchón",
+        "enabledBalance": 0.28,
+        "withheldBalance": 298.62,
+        "iban": "ES5794244196040102007754",
+        "onBoardingAccount": "ES7316557723820792525567",
+        "holders": [
+          {
+            "id": "77fd66ee-0d84-4e0c-beff-6fee21d70554",
+            "userId": "77fd66ee-0d84-4e0c-beff-6fee21d70554",
+            "name": "HUGO",
+            "documentNumber": "77857304P",
+            "surname1": "SARA",
+            "surname2": "NEREA",
+            "me": false,
+            "participantType": "REPRESENTATIVE"
+          },
+          {
+            "id": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "userId": "195b492b-fccf-4ee8-9932-05c702f3f78f",
+            "name": "IGLESIAS SERGIO",
+            "documentNumber": "75113830X",
+            "surname1": "LUCÍA",
+            "surname2": "NOELIA",
+            "me": true,
+            "participantType": "REPRESENTATIVE"
+          },
+          {
+            "id": "d7e610ff-59bd-4d88-a714-0b7d4cfbb2f1",
+            "userId": "d7e610ff-59bd-4d88-a714-0b7d4cfbb2f1",
+            "name": "Sara",
+            "documentNumber": "K4313639V",
+            "surname1": "Noelia",
+            "surname2": "Pascual",
+            "me": false,
+            "participantType": "JUNIOR"
+          }
+        ],
+        "openingType": "JUNIOR",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      }
+    ]
+  }
+}

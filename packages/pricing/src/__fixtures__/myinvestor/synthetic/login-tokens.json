@@ -1,0 +1,15 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accessToken": "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInR5cCI6ImFjY2Vzcy1sb2dpbiJ9.sintetico",
+      "refreshToken": "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInR5cCI6InJlZnJlc2gtbG9naW4ifQ.sintetico",
+      "expiresIn": 900,
+      "refreshExpiresIn": 1800,
+      "tokenType": "Bearer"
+    }
+  }
+}

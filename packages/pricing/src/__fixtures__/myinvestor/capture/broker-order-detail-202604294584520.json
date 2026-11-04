@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:23.480981655Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "WT COPPER - EUR DAILY HEDGED",
+      "instrumentIsin": "JE00B4PDKD43",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "CONT. ITALIANO",
+      "orderReference": "202604294584520",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "VENTA",
+      "orderOperationTypeEnum": "SELL",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-04-29T22:59:12.000Z",
+      "finishDate": "2026-04-30T00:00:00.000Z",
+      "shares": 40,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-04-30T07:04:21.000Z",
+      "priceCurrency": 9.31,
+      "executedShares": 40,
+      "grossAmountOperationCurrency": 372.4,
+      "tradeCommissions": 0.99,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 371.41,
+      "netAmountAccountCurrency": 371.41,
+      "netAmountCurrency": 371.41
+    }
+  }
+}

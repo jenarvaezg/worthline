@@ -39,6 +39,11 @@ transcript.txt
 # directory itself cannot be ignored or the negation below would not be read.
 .claude/*
 !.claude/agents/
+# The MyInvestor fixtures skill is the repo's procedure for regenerating committed
+# fixtures (#1887), so it is versioned; every other skill stays local.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/myinvestor-fixtures/
 .github/hooks/
 .github/skills/
 

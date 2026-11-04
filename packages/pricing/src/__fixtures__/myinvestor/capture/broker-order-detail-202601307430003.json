@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:40.100039911Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "WISDOMTREE COR PHYSCL SILVER",
+      "instrumentIsin": "JE00BQRFDY49",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "XETRA",
+      "orderReference": "202601307430003",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "COMPRA",
+      "orderOperationTypeEnum": "BUY",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-01-30T08:12:44.000Z",
+      "finishDate": "2026-01-30T00:00:00.000Z",
+      "shares": 2,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-01-30T08:20:22.000Z",
+      "priceCurrency": 88.46,
+      "executedShares": 2,
+      "grossAmountOperationCurrency": 176.92,
+      "tradeCommissions": 0.99,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 177.91,
+      "netAmountAccountCurrency": 177.91,
+      "netAmountCurrency": 177.91
+    }
+  }
+}

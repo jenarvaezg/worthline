@@ -1,0 +1,13 @@
+{
+  "payload": {
+    "data": {
+      "signatureRequestId": "sig-req-sintetico-0001",
+      "status": "PENDING",
+      "pendingSignatureMethods": [["OTP_SMS"]],
+      "dataToSign": {}
+    }
+  },
+  "status": {
+    "code": "ACCEPTED"
+  }
+}

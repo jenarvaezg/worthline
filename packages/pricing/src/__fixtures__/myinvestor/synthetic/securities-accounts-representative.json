@@ -1,0 +1,30 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "externalCodAccount": "15449100000000000202",
+        "accountType": "SECURITIES_ACCOUNT",
+        "accountId": "9100002",
+        "codAccount": "9100000202",
+        "cashAccountId": "9100001",
+        "status": "ACTIVE",
+        "hasFundsOperations": true,
+        "hasBrokerOperations": false
+      },
+      {
+        "externalCodAccount": "15449100000000000505",
+        "accountType": "SECURITIES_ACCOUNT",
+        "accountId": "9100005",
+        "codAccount": "9100000505",
+        "cashAccountId": "9100004",
+        "status": "ACTIVE",
+        "hasFundsOperations": true,
+        "hasBrokerOperations": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "payload": {
+    "data": {
+      "errCode": "UNAUTHORIZED"
+    }
+  },
+  "status": {
+    "code": "BAD_REQUEST"
+  }
+}
