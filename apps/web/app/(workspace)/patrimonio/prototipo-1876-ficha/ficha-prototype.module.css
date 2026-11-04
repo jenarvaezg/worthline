@@ -1,0 +1,188 @@
+/* PROTOTIPO #1882 — desechable. */
+
+.prototype {
+  padding-bottom: 80px;
+}
+
+.costForm {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 36rem;
+}
+
+.context {
+  margin: 0;
+}
+
+.proposal {
+  border-left: 2px solid var(--blue);
+  display: grid;
+  gap: 0.4rem;
+  padding-left: 10px;
+}
+
+.proposal p {
+  margin: 0;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.money {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  max-width: 12rem;
+}
+
+.costForm :global(.stackForm) {
+  margin-top: 0;
+}
+
+.costForm :global(.stackForm) button {
+  justify-self: start;
+}
+
+.textControl {
+  background: none;
+  border: 0;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 0;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* C · la pregunta abierta: una entrada de papel abierta por regla gruesa, la
+   gramática de las propuestas del asistente, no una tarjeta. */
+.question {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding-top: 0.6rem;
+}
+
+.questionHead {
+  color: var(--gold);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.ops {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.6rem;
+  width: 100%;
+}
+
+.ops th,
+.ops td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.4rem 1rem 0.4rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ops thead th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ops th.num,
+.ops td.num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pending {
+  color: var(--gold);
+  font-family: var(--font-body);
+  font-weight: 650;
+}
+
+.inlineForm {
+  border-left: 2px solid var(--gold);
+  margin-top: 0.5rem;
+  padding-left: 10px;
+}
+
+.controls {
+  align-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  gap: 8px 16px;
+  margin-top: 2rem;
+  padding: 8px 12px;
+}
+
+.controls button,
+.toggle button {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.75rem;
+  min-height: 0;
+  padding: 2px 6px;
+}
+
+.toggle {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.toggle button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.switcher {
+  align-items: center;
+  background: #111;
+  border: 2px solid var(--gilt);
+  border-radius: var(--radius);
+  bottom: 20px;
+  color: #fff;
+  display: flex;
+  font-size: 0.8rem;
+  gap: 12px;
+  left: 50%;
+  padding: 8px 14px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 1000;
+}
+
+.switcher button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  height: 28px;
+  min-height: 0;
+  width: 28px;
+}
+
+@media (max-width: 640px) {
+  .switcherPrefix {
+    display: none;
+  }
+}
