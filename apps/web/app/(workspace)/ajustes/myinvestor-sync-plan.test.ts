@@ -4,8 +4,11 @@
  * SAME fold the first start includes with (#1438) — and the units check of P8,
  * which only ever reports: it never plans an adjustment (PRD #1876, invariant 6).
  */
-import type { CreateInvestmentOperationInput } from "@worthline/domain";
-import { createInvestmentOperation } from "@worthline/domain";
+import type {
+  CreateInvestmentOperationInput,
+  InvestmentOperation,
+} from "@worthline/domain";
+import { auditTransferPairs, createInvestmentOperation } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
@@ -315,6 +318,67 @@ describe("the cost a new traspaso inherits travels from the origin's BOOK", () =
       613_721,
     );
     expect(carried.find((fact) => fact.key === "out")).toEqual(facts[0]);
+  });
+
+  test("a chain in one batch (A→B, then B→C) carries the answered cost to the end", () => {
+    const answered = createInvestmentOperation(
+      row({
+        id: "entry",
+        kind: "transfer_in",
+        transferCostMinor: 613_721,
+        transferId: "myinvestor-external:e1",
+      }),
+    );
+    const book = new Map<string, InvestmentOperation[]>([
+      ["asset-a", [answered]],
+      ["asset-b", []],
+      ["asset-c", []],
+    ]);
+    const leg = (
+      key: string,
+      assetId: string,
+      kind: "transfer_out" | "transfer_in",
+      transferId: string,
+      executedAt: string,
+    ) => ({
+      dateKey: executedAt,
+      key,
+      payload: row({
+        assetId,
+        executedAt,
+        id: `mi-${key}`,
+        kind,
+        // The fold of the stored read only knows what arrived at A.
+        ...(kind === "transfer_in" ? { transferCostMinor: 987_143 } : {}),
+        transferId,
+      }),
+    });
+    const facts = [
+      leg("out1", "asset-a", "transfer_out", "t1", "2026-10-20"),
+      leg("in1", "asset-b", "transfer_in", "t1", "2026-10-20"),
+      leg("out2", "asset-b", "transfer_out", "t2", "2026-10-27"),
+      leg("in2", "asset-c", "transfer_in", "t2", "2026-10-27"),
+    ];
+
+    const carried = carryTransferCostsFromBook(facts, book);
+
+    const costOf = (key: string) =>
+      carried.find((fact) => fact.key === key)!.payload.transferCostMinor;
+    expect(costOf("in1")).toBe(613_721);
+    expect(costOf("in2")).toBe(613_721);
+    // The book these rows make squares with the audit's own fold: no pair drifts.
+    const after = new Map(
+      [...book].map(([assetId, rows]) => [
+        assetId,
+        [
+          ...rows,
+          ...carried
+            .filter((fact) => fact.payload.assetId === assetId)
+            .map((fact) => createInvestmentOperation(fact.payload)),
+        ],
+      ]),
+    );
+    expect(auditTransferPairs({ operationsByAssetId: after })).toEqual([]);
   });
 
   test("an entry still pending, or whose origin is not in the book, keeps its own", () => {

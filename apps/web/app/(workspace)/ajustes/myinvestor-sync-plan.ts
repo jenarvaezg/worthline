@@ -25,6 +25,7 @@ import type {
   NormalizedFact,
 } from "@worthline/domain";
 import {
+  compareInvestmentOperations,
   compareUnits,
   costLeavingOrigin,
   createInvestmentOperation,
@@ -185,21 +186,36 @@ export function carryTransferCostsFromBook(
     if (row.kind === "transfer_out" && row.transferId) outs.set(row.transferId, row);
   }
 
+  // The entries are corrected in ledger order, and each correction goes back into
+  // its holding's ledger before the next is folded: a chain inside the batch (A→B,
+  // then B→C) carries the corrected cost to its end, as the audit would fold it.
+  const corrected = new Map<string, number>();
+  const entries = facts
+    .map((fact) => fact.payload)
+    .filter(
+      (payload) =>
+        payload.kind === "transfer_in" &&
+        payload.transferId !== undefined &&
+        payload.transferLegState === undefined,
+    )
+    .map((payload) => createInvestmentOperation(payload))
+    .sort(compareInvestmentOperations);
+  for (const entry of entries) {
+    const out = outs.get(entry.transferId!);
+    if (!out || !books.has(out.assetId)) continue;
+    const cost = costLeavingOrigin(out, ledgers);
+    corrected.set(entry.id, cost);
+    const ledger = ledgers.get(entry.assetId);
+    if (!ledger) continue;
+    const at = ledger.findIndex((row) => row.id === entry.id);
+    if (at !== -1) ledger[at] = { ...ledger[at]!, transferCostMinor: cost };
+  }
+
   return facts.map((fact) => {
-    const { payload } = fact;
-    if (
-      payload.kind !== "transfer_in" ||
-      payload.transferId === undefined ||
-      payload.transferLegState !== undefined
-    ) {
-      return fact;
-    }
-    const out = outs.get(payload.transferId);
-    if (!out || !books.has(out.assetId)) return fact;
-    return {
-      ...fact,
-      payload: { ...payload, transferCostMinor: costLeavingOrigin(out, ledgers) },
-    };
+    const cost = corrected.get(fact.payload.id);
+    return cost === undefined
+      ? fact
+      : { ...fact, payload: { ...fact.payload, transferCostMinor: cost } };
   });
 }
 
