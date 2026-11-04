@@ -4,7 +4,8 @@
  * (ADR 0062), through the ingestion port's commit (ADR 0066), and only the source
  * writes into what it owns.
  */
-import { createStoreFromSqlite, openLibsqlClient } from "@worthline/db";
+import { openLibsqlClient } from "@worthline/db";
+import { createStoreFromSqlite } from "@worthline/db/testing";
 import type { CreateInvestmentOperationInput } from "@worthline/domain";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
