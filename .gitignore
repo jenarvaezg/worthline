@@ -34,11 +34,17 @@ playwright-report-routing/
 
 transcript.txt
 .playwright-mcp/
-# Repo-specific subagents are versioned (docs/agents/subagents.md); everything
-# else under .claude/ (settings, worktrees, local skills) is local-only. The
+# Repo-specific subagents and the MyInvestor fixtures skill are versioned
+# (docs/agents/subagents.md); everything else under .claude/ (settings, worktrees,
+# other skills) is local-only. The
 # directory itself cannot be ignored or the negation below would not be read.
 .claude/*
 !.claude/agents/
+# The MyInvestor fixtures skill is the repo's procedure for regenerating committed
+# fixtures (#1887), so it is versioned; every other skill stays local.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/myinvestor-fixtures/
 .github/hooks/
 .github/skills/
 

@@ -1,0 +1,14 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "signatureId": "sig-sintetico-0001",
+      "type": "OTP",
+      "channel": "SMS",
+      "destination": "+34 6** *** *00"
+    }
+  }
+}

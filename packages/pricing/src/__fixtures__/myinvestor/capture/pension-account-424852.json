@@ -1,0 +1,68 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:45.834180421Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "accountPensionId": 424852,
+        "dgsCode": "N5394",
+        "name": "MYINVESTOR INDEXADO SP 500 PP",
+        "urlDataSheet": null,
+        "idMorningstar": null,
+        "profit": 1383.0871618,
+        "totalInvested": 4171.8,
+        "marketValue": 5554.8871618,
+        "averageCost": 16.372263146,
+        "totalReturn": 33.15324708,
+        "shares": 254.809,
+        "currency": "EUR",
+        "liquidationValue": 21.8002,
+        "liquidationValueDate": "2026-11-02T00:00:00.000Z",
+        "ytd": null,
+        "yearOne": null,
+        "yearThree": null,
+        "yearFive": null,
+        "minFirstSubscription": {
+          "amount": 10.0,
+          "firstSubscriptionType": "AMOUNT"
+        },
+        "minNextSubscriptions": {
+          "amount": 10.0,
+          "firstSubscriptionType": "AMOUNT"
+        },
+        "status": "OPEN"
+      },
+      {
+        "accountPensionId": 424852,
+        "dgsCode": "N5396",
+        "name": "MYINVESTOR INDEXADO GLOBAL PP",
+        "urlDataSheet": null,
+        "idMorningstar": null,
+        "profit": 295.6252893,
+        "totalInvested": 14837.88,
+        "marketValue": 15133.5052893,
+        "averageCost": 19.708239194,
+        "totalReturn": 1.99236878,
+        "shares": 752.877,
+        "currency": "EUR",
+        "liquidationValue": 20.1009,
+        "liquidationValueDate": "2026-10-30T00:00:00.000Z",
+        "ytd": null,
+        "yearOne": null,
+        "yearThree": null,
+        "yearFive": null,
+        "minFirstSubscription": {
+          "amount": 10.0,
+          "firstSubscriptionType": "AMOUNT"
+        },
+        "minNextSubscriptions": {
+          "amount": 10.0,
+          "firstSubscriptionType": "AMOUNT"
+        },
+        "status": "OPEN"
+      }
+    ]
+  }
+}

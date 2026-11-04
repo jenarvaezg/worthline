@@ -1,0 +1,130 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:39.703229741Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "alias": null,
+        "amount": 101.72,
+        "contributionId": "229345",
+        "contributionTimeFrame": {
+          "recurrence": "ONE_MONTH",
+          "startDate": "2025-10-01",
+          "endDate": null,
+          "nextExecutionDate": "2026-07-01"
+        },
+        "contributionType": "ONE_DATE",
+        "fromAccountAlias": "Cuenta Proyectos",
+        "fromAccountIban": "ES6996407994423535490252",
+        "fromAccountId": "602552",
+        "fundName": "Fidelity MSCI World Index Fund P-ACC-EUR",
+        "isCancellableOrder": false,
+        "isCustomized": true,
+        "isin": "IE00BYX5NX33",
+        "isPeriodicOrder": false,
+        "orderRef": null,
+        "orderStatus": null,
+        "refundType": null,
+        "status": "CANCELED",
+        "subscriptionType": "SUCCESSIVE_SUBSCRIPTION",
+        "toAccountAlias": null,
+        "toAccountIban": null,
+        "toAccountId": "802006",
+        "toAccountType": "SECURITIES_ACCOUNT",
+        "currency": "€"
+      },
+      {
+        "alias": null,
+        "amount": 46.11,
+        "contributionId": "540024",
+        "contributionTimeFrame": {
+          "recurrence": "ONE_MONTH",
+          "startDate": "2025-05-03",
+          "endDate": "2045-05-03",
+          "nextExecutionDate": "2026-01-03"
+        },
+        "contributionType": "ONE_DATE",
+        "fromAccountAlias": "Cuenta Proyectos",
+        "fromAccountIban": "ES6996407994423535490252",
+        "fromAccountId": "602552",
+        "fundName": "Vanguard European Stock Index Fund Investor EUR Accumulation",
+        "isCancellableOrder": false,
+        "isCustomized": true,
+        "isin": "IE0007987690",
+        "isPeriodicOrder": false,
+        "orderRef": null,
+        "orderStatus": null,
+        "refundType": null,
+        "status": "CANCELED",
+        "subscriptionType": "SUCCESSIVE_SUBSCRIPTION",
+        "toAccountAlias": null,
+        "toAccountIban": null,
+        "toAccountId": "802006",
+        "toAccountType": "SECURITIES_ACCOUNT",
+        "currency": "€"
+      },
+      {
+        "alias": null,
+        "amount": 149.23,
+        "contributionId": "588935",
+        "contributionTimeFrame": {
+          "recurrence": "ONE_MONTH",
+          "startDate": "2024-11-01",
+          "endDate": null,
+          "nextExecutionDate": "2026-12-01"
+        },
+        "contributionType": "ONE_DATE",
+        "fromAccountAlias": "Cuenta Proyectos",
+        "fromAccountIban": "ES6996407994423535490252",
+        "fromAccountId": "602552",
+        "fundName": "MyInvestor Indexado S&P500, PP",
+        "isCancellableOrder": false,
+        "isCustomized": true,
+        "isin": "N5394",
+        "isPeriodicOrder": false,
+        "orderRef": null,
+        "orderStatus": null,
+        "refundType": null,
+        "status": "ACTIVE",
+        "subscriptionType": "SUCCESSIVE_SUBSCRIPTION",
+        "toAccountAlias": null,
+        "toAccountIban": null,
+        "toAccountId": "424852",
+        "toAccountType": "PENSION_PLAN",
+        "currency": "€"
+      },
+      {
+        "alias": null,
+        "amount": 149.23,
+        "contributionId": "388042",
+        "contributionTimeFrame": {
+          "recurrence": "ONE_MONTH",
+          "startDate": "2024-10-02",
+          "endDate": "2030-12-01",
+          "nextExecutionDate": "2025-02-01"
+        },
+        "contributionType": "ONE_DATE",
+        "fromAccountAlias": "Cuenta Proyectos",
+        "fromAccountIban": "ES6996407994423535490252",
+        "fromAccountId": "602552",
+        "fundName": "MyInvestor Indexado S&P500, PP",
+        "isCancellableOrder": false,
+        "isCustomized": true,
+        "isin": "N5394",
+        "isPeriodicOrder": false,
+        "orderRef": null,
+        "orderStatus": null,
+        "refundType": null,
+        "status": "CANCELED",
+        "subscriptionType": "SUCCESSIVE_SUBSCRIPTION",
+        "toAccountAlias": null,
+        "toAccountIban": null,
+        "toAccountId": "424852",
+        "toAccountType": "PENSION_PLAN",
+        "currency": "€"
+      }
+    ]
+  }
+}

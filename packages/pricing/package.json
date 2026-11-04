@@ -7,10 +7,15 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./myinvestor/protocol": {
+      "types": "./src/myinvestor/protocol.ts",
+      "default": "./src/myinvestor/protocol.ts"
     }
   },
   "dependencies": {
-    "@worthline/domain": "workspace:*"
+    "@worthline/domain": "workspace:*",
+    "zod": "^4.4.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

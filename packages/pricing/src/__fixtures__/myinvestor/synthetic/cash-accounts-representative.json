@@ -1,0 +1,96 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "active": true,
+        "creationDate": "2024-03-01T10:00:00",
+        "hasCoOwner": false,
+        "message": null,
+        "accountId": "9100001",
+        "accountUuid": "7a6b5c4d-3e2f-4a1b-9c8d-000009100001",
+        "accountCode": "9100000101",
+        "accountExternalCode": "15440000009100000101",
+        "accountType": "CASH_ACCOUNT",
+        "alias": "Cuenta Diaria",
+        "enabledBalance": 1234.56,
+        "withheldBalance": 162.53,
+        "iban": "ES0015449100000000000101",
+        "onBoardingAccount": "ES0099990000000000000001",
+        "holders": [
+          {
+            "id": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "userId": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "name": "MARTA",
+            "documentNumber": "40000001A",
+            "surname1": "VIDAL",
+            "surname2": "PASCUAL",
+            "me": true,
+            "participantType": "OWNER"
+          }
+        ],
+        "openingType": "ONE_HOLDER",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      },
+      {
+        "active": true,
+        "creationDate": "2024-03-01T10:00:00",
+        "hasCoOwner": true,
+        "message": null,
+        "accountId": "9100004",
+        "accountUuid": "7a6b5c4d-3e2f-4a1b-9c8d-000009100004",
+        "accountCode": "9100000404",
+        "accountExternalCode": "15440000009100000404",
+        "accountType": "CASH_ACCOUNT",
+        "alias": "Cuenta Hucha",
+        "enabledBalance": 87.65,
+        "withheldBalance": 0,
+        "iban": "ES0015449100000000000404",
+        "onBoardingAccount": "ES0099990000000000000001",
+        "holders": [
+          {
+            "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "userId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "name": "IVAN",
+            "documentNumber": "40000002B",
+            "surname1": "ROJAS",
+            "surname2": "SOLER",
+            "me": false,
+            "participantType": "REPRESENTATIVE"
+          },
+          {
+            "id": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "userId": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "name": "MARTA",
+            "documentNumber": "40000001A",
+            "surname1": "VIDAL",
+            "surname2": "PASCUAL",
+            "me": true,
+            "participantType": "REPRESENTATIVE"
+          },
+          {
+            "id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+            "userId": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+            "name": "Hugo",
+            "documentNumber": "K0000003C",
+            "surname1": "Rojas",
+            "surname2": "Vidal",
+            "me": false,
+            "participantType": "JUNIOR"
+          }
+        ],
+        "openingType": "JUNIOR",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      }
+    ]
+  }
+}

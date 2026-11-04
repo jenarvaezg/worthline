@@ -1,0 +1,137 @@
+[
+  {
+    "file": "synthetic/login-tokens.json",
+    "method": "POST",
+    "path": "/login/api/v2/auth/token",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Login directo desde un dispositivo conocido: cuerpo {customerId, password} y cabecera x-device-id."
+  },
+  {
+    "file": "synthetic/login-signature-pending.json",
+    "method": "POST",
+    "path": "/login/api/v2/auth/token",
+    "query": {},
+    "status": 202,
+    "origin": "synthetic",
+    "note": "Dispositivo que MyInvestor no conoce: en vez de tokens pide una firma por SMS."
+  },
+  {
+    "file": "synthetic/signature-start-sms.json",
+    "method": "POST",
+    "path": "/signature/api/v3/public/signature/sig-req-sintetico-0001",
+    "query": { "method": "OTP_SMS" },
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Primer paso del SMS: lo envía y devuelve el signatureId que valida el código."
+  },
+  {
+    "file": "synthetic/signature-validate-complete.json",
+    "method": "POST",
+    "path": "/signature/api/v3/public/signature/sig-req-sintetico-0001/validate/sig-sintetico-0001",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Segundo paso del SMS: cuerpo {code}. Un código erróneo responde 400 o 422."
+  },
+  {
+    "file": "synthetic/login-tokens.json",
+    "method": "POST",
+    "path": "/login/api/v2/auth/token",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "El login repetido con la cabecera x-signature-id una vez completada la firma."
+  },
+  {
+    "file": "synthetic/login-rejected-unauthorized.json",
+    "method": "POST",
+    "path": "/login/api/v2/auth/token",
+    "query": {},
+    "status": 401,
+    "origin": "synthetic",
+    "note": "Usuario o contraseña incorrectos (errCode UNAUTHORIZED). El cron no la reintenta (ADR 0114)."
+  },
+  {
+    "file": "synthetic/refresh-tokens.json",
+    "method": "POST",
+    "path": "/login/api/v1/auth/token/refresh",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Cuerpo {refreshToken}, sin Authorization. El access dura 15 min y el refresh 30."
+  },
+  {
+    "file": "synthetic/refresh-rejected.json",
+    "method": "POST",
+    "path": "/login/api/v1/auth/token/refresh",
+    "query": {},
+    "status": 400,
+    "origin": "synthetic",
+    "note": "Refresh caducado o rechazado: hace falta un login nuevo."
+  },
+  {
+    "file": null,
+    "method": "GET",
+    "path": "/cperf-server/api/v2/cash-accounts/self",
+    "query": {},
+    "status": 401,
+    "origin": "synthetic",
+    "note": "Access token caducado: un 401 en cualquier lectura, sin cuerpo útil. Se renueva con el refresh y se repite una sola vez."
+  },
+  {
+    "file": "synthetic/cash-accounts-representative.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/cash-accounts/self",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Una cuenta propia y la de un menor, donde el usuario es REPRESENTATIVE y el titular es JUNIOR."
+  },
+  {
+    "file": "synthetic/securities-accounts-representative.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/self-basic",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Las cuentas de valores de esas dos cuentas de efectivo, enlazadas por cashAccountId."
+  },
+  {
+    "file": "synthetic/securities-orders-internal-fund-transfer.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v3/securities-accounts/9100002/orders",
+    "query": { "dateFrom": "2000-01-01", "dateTo": "2025-06-20" },
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Un traspaso interno entre fondos: el par IIC_SWITCH_DEREGISTRATION / IIC_SWITCH_REGISTRATION con la misma fecha y el mismo importe, más suscripciones, una rechazada y una en curso."
+  },
+  {
+    "file": "synthetic/securities-account-internal-fund-transfer.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/9100002",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Las participaciones de hoy de esa cuenta, que cuadran con sus órdenes COMPLETE (P8)."
+  },
+  {
+    "file": "synthetic/pension-orders-external-mobilization.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/9100003/orders",
+    "query": { "dateFrom": "20000101", "dateTo": "20250620" },
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Un plan que abre con una movilización externa de entrada (sin importe ni coste) y sigue con aportaciones."
+  },
+  {
+    "file": "synthetic/pension-account-external-mobilization.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/9100003",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Las participaciones de hoy de ese plan, que cuadran con sus órdenes COMPLETE (P8)."
+  }
+]

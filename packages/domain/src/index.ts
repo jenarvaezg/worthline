@@ -192,6 +192,8 @@ export type {
   ConnectorCapability,
   ConnectorCapabilityKind,
   ConnectorCursor,
+  DateWindow,
+  DateWindowPolicy,
   FactDisposition,
   FactKey,
   FetchCapabilityKind,
@@ -203,6 +205,7 @@ export type {
 } from "./connector-port";
 export {
   assertCapability,
+  overlappingDateWindow,
   reconcileFacts,
   supportsCapability,
 } from "./connector-port";

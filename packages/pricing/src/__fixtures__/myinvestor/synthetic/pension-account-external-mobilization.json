@@ -1,0 +1,27 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "accountPensionId": 9100003,
+        "dgsCode": "N5396",
+        "name": "MYINVESTOR INDEXADO GLOBAL PP",
+        "urlDataSheet": null,
+        "idMorningstar": null,
+        "profit": 5261.548846,
+        "totalInvested": 180.01,
+        "marketValue": 5441.558846,
+        "averageCost": 0.576988416,
+        "totalReturn": 2922.92030765,
+        "shares": 311.982,
+        "currency": "EUR",
+        "liquidationValue": 17.4419,
+        "liquidationValueDate": "2024-12-31T00:00:00.000Z",
+        "status": "OPEN"
+      }
+    ]
+  }
+}

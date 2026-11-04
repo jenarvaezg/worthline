@@ -1,0 +1,634 @@
+[
+  {
+    "file": "capture/automatic-contributions.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/automatic-contributions/self",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202506093995012.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202506093995012",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202506309462937.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202506309462937",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202507304639407.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202507304639407",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202509025160222.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202509025160222",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202509309438474.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202509309438474",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202510293881599.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202510293881599",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202510294966913.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202510294966913",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202512011389781.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202512011389781",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202512013621522.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202512013621522",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601024368143.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601024368143",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601029694524.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601029694524",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601133200933.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601133200933",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601134630941.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601134630941",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601177544603.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601177544603",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601293183094.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601293183094",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601293769188.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601293769188",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601297401178.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601297401178",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601297795217.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601297795217",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601299327773.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601299327773",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601301231005.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601301231005",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202601307430003.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202601307430003",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603024101732.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603024101732",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603025179514.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603025179514",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603026346946.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603026346946",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603029493615.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603029493615",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603029879107.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603029879107",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603254147766.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603254147766",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603257199708.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603257199708",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603259959447.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603259959447",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603265068966.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603265068966",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603265489614.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603265489614",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603267369199.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603267369199",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202603268043171.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202603268043171",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202604271558265.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202604271558265",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202604271623310.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202604271623310",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202604274075742.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202604274075742",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202604294584520.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202604294584520",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202605291345654.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202605291345654",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202605293002661.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202605293002661",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202605294780511.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202605294780511",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202607011161612.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202607011161612",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202607011529414.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202607011529414",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202607019224244.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202607019224244",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202607285471974.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202607285471974",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202608289908557.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202608289908557",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202610012793947.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202610012793947",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-order-detail-202611021340747.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders/202611021340747",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-orders-3556577.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders",
+    "query": {
+      "stockAccountId": "3556577",
+      "type": "ALL",
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-orders-802006.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders",
+    "query": {
+      "stockAccountId": "802006",
+      "type": "ALL",
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/broker-orders-8439552.json",
+    "method": "GET",
+    "path": "/broker/v2/stock-orders",
+    "query": {
+      "stockAccountId": "8439552",
+      "type": "ALL",
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/cash-accounts.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/cash-accounts/self",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/pension-account-424852.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/424852",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/pension-accounts.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/self",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/pension-orders-424852.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/424852/orders",
+    "query": {
+      "dateFrom": "20000101",
+      "dateTo": "20261104"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/pension-positions-424852.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/pension-accounts/424852/positions",
+    "query": {
+      "groupType": "SINCE_BEGINNING"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/portfolios.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/portfolios",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-account-3556577.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/3556577",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-account-802006.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/802006",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-account-8439552.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/8439552",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-accounts.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/self-basic",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-orders-3556577.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v3/securities-accounts/3556577/orders",
+    "query": {
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-orders-802006.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v3/securities-accounts/802006/orders",
+    "query": {
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-orders-8439552.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v3/securities-accounts/8439552/orders",
+    "query": {
+      "dateFrom": "2000-01-01",
+      "dateTo": "2026-11-04"
+    },
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-transfers-pending-3556577.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/3556577/transfers/pending",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-transfers-pending-802006.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/802006/transfers/pending",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  },
+  {
+    "file": "capture/securities-transfers-pending-8439552.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/8439552/transfers/pending",
+    "query": {},
+    "status": 200,
+    "origin": "capture",
+    "note": null
+  }
+]

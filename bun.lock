@@ -19,6 +19,13 @@
         "vitest": "^4.1.10",
       },
     },
+    "apps/myinvestor-relay": {
+      "name": "@worthline/myinvestor-relay",
+      "version": "0.1.0",
+      "dependencies": {
+        "@worthline/pricing": "workspace:*",
+      },
+    },
     "apps/web": {
       "name": "@worthline/web",
       "version": "0.1.0",
@@ -82,6 +89,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@worthline/domain": "workspace:*",
+        "zod": "^4.4.3",
       },
     },
     "tests": {
@@ -716,6 +724,8 @@
     "@worthline/db": ["@worthline/db@workspace:packages/db"],
 
     "@worthline/domain": ["@worthline/domain@workspace:packages/domain"],
+
+    "@worthline/myinvestor-relay": ["@worthline/myinvestor-relay@workspace:apps/myinvestor-relay"],
 
     "@worthline/pricing": ["@worthline/pricing@workspace:packages/pricing"],
 

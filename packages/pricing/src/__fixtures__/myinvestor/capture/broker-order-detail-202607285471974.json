@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:15.757389729Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "X IE PHYSICAL GOLD ETC",
+      "instrumentIsin": "DE000A2T0VU5",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "XETRA",
+      "orderReference": "202607285471974",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "COMPRA",
+      "orderOperationTypeEnum": "BUY",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-07-28T13:00:31.000Z",
+      "finishDate": "2026-07-29T00:00:00.000Z",
+      "shares": 5,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-07-28T13:00:32.000Z",
+      "priceCurrency": 54.54,
+      "executedShares": 5,
+      "grossAmountOperationCurrency": 272.7,
+      "tradeCommissions": 0.99,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 273.69,
+      "netAmountAccountCurrency": 273.69,
+      "netAmountCurrency": 273.69
+    }
+  }
+}

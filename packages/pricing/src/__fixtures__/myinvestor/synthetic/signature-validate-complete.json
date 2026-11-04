@@ -1,0 +1,13 @@
+{
+  "status": {
+    "timestamp": "2025-06-20T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "signatureRequestId": "sig-req-sintetico-0001",
+      "status": "COMPLETE",
+      "pendingSignatureMethods": []
+    }
+  }
+}

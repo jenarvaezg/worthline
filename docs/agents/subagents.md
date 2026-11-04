@@ -14,8 +14,9 @@ A subagent is worth spawning when it reads a lot and returns a little.
   (`Read`, `Grep`, `Glob`, and `Bash` only when it has a command to run);
   it never gets `Write` or `Edit`.
 - Agents defined for this repo live in `.claude/agents/`, versioned in git.
-  The rest of `.claude/` stays ignored — see the `.claude/*` / `!.claude/agents/`
-  pair in `.gitignore`.
+  So is one skill, `.claude/skills/myinvestor-fixtures/`: the procedure that
+  regenerates the committed MyInvestor fixtures (#1887). The rest of `.claude/`
+  stays ignored — see the `.claude/*` negations in `.gitignore`.
 - The parent never sees a subagent's transcript, only its final report. So the
   report's shape belongs in the prompt: say what to return and how long it may be,
   or you get a narration of the work instead of the finding.

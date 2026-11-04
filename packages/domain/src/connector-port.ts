@@ -24,6 +24,8 @@
  * must exist before a shared boundary earns its keep.
  */
 
+import { isRealCalendarDay, MS_PER_DAY } from "./dates";
+
 /**
  * A stable, content-derived identity for one normalized fact — the **dedup key**.
  * Two fetches that re-observe the same underlying event (an overlapping window, a
@@ -116,6 +118,78 @@ export interface ConnectorAccount {
   externalId: string;
   /** Human label for the link picker. */
   label: string;
+  /**
+   * Whether the link picker should come with this account ticked. Absent means yes.
+   * A source that knows an account belongs to someone else (a minor the user
+   * represents, #1869 P3) says `false`, so it arrives marked «no incluir» and the
+   * user opts in, never out.
+   */
+  includedByDefault?: boolean;
+}
+
+/**
+ * How a date-cursored live source resumes: from where, and how much it re-reads.
+ *
+ * - `origin` (`YYYY-MM-DD`) is where the first sync starts, the source's whole history.
+ * - `overlapDays` is the window re-read before the last good sync, so an event that
+ *   settles late (an order still in progress at the last sync) is fetched again
+ *   rather than lost behind the cursor ({@link ConnectorCursor}'s monotonicity
+ *   contract). Reconciliation drops the repeats.
+ */
+export interface DateWindowPolicy {
+  origin: string;
+  overlapDays: number;
+}
+
+/** The days one fetch reads, both included, and the cursor a good commit stores. */
+export interface DateWindow {
+  from: string;
+  to: string;
+  next: ConnectorCursor;
+}
+
+function asCalendarDay(value: string): Date | null {
+  return isRealCalendarDay(value) ? new Date(`${value}T00:00:00.000Z`) : null;
+}
+
+/**
+ * The window a date-cursored source reads next (ADR 0066, ADR 0115 Consequences).
+ * The cursor is the day of the last good sync; the next fetch reads from that day
+ * minus the overlap up to today, and resumes from today once it commits. `null`, or
+ * a cursor that is not a calendar day, reads the whole history from the origin: a
+ * full re-read is safe because the dedup ledger drops what was applied, a skipped
+ * day is not. A cursor ahead of today (a skewed clock) is read as today for the
+ * same reason.
+ *
+ * Pure: the caller passes `today`, so a test or a replay never reads the clock.
+ */
+export function overlappingDateWindow(
+  cursor: ConnectorCursor | null,
+  today: string,
+  policy: DateWindowPolicy,
+): DateWindow {
+  const todayDay = asCalendarDay(today);
+  if (todayDay === null) {
+    throw new RangeError(`today must be a calendar day YYYY-MM-DD, got "${today}"`);
+  }
+  if (!Number.isInteger(policy.overlapDays) || policy.overlapDays < 0) {
+    throw new RangeError("overlapDays must be a non-negative whole number of days");
+  }
+  const originDay = asCalendarDay(policy.origin);
+  if (originDay === null) {
+    throw new RangeError(
+      `origin must be a calendar day YYYY-MM-DD, got "${policy.origin}"`,
+    );
+  }
+
+  const cursorDay = cursor === null ? null : asCalendarDay(cursor);
+  let from = policy.origin;
+  if (cursorDay !== null) {
+    const anchor = Math.min(cursorDay.getTime(), todayDay.getTime());
+    const start = Math.max(anchor - policy.overlapDays * MS_PER_DAY, originDay.getTime());
+    from = new Date(start).toISOString().slice(0, 10);
+  }
+  return { from, to: today, next: today };
 }
 
 /** A single fetch request: which fetch capability to run, resuming from `cursor`. */

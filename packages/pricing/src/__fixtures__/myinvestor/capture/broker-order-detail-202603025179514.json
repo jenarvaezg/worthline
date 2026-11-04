@@ -1,0 +1,37 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:51:34.131767114Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "accountNumber": "35216964339798754020",
+      "ordererCustomer": "HUGO ALBA IGLESIAS ELENA",
+      "currency": "EUR",
+      "instrumentName": "WT PHYSICAL GOLD-EUR DLY HDG",
+      "instrumentIsin": "JE00B8DFY052",
+      "instrumentCurrency": "EUR",
+      "instrumentMarket": "XETRA",
+      "orderReference": "202603025179514",
+      "orderStatus": "COMPLETE",
+      "orderOperationType": "COMPRA",
+      "orderOperationTypeEnum": "BUY",
+      "orderType": "MARKET_BEST",
+      "orderDate": "2026-03-02T13:23:25.000Z",
+      "finishDate": "2026-03-02T00:00:00.000Z",
+      "shares": 45,
+      "limitPrice": 0.0,
+      "grossAmountCurrency": 0,
+      "executionDate": "2026-03-02T13:23:25.000Z",
+      "priceCurrency": 28.57,
+      "executedShares": 45,
+      "grossAmountOperationCurrency": 1285.65,
+      "tradeCommissions": 1.57,
+      "otherCommissions": 0,
+      "exchangeRate": 1,
+      "netAmountEUR": 1287.22,
+      "netAmountAccountCurrency": 1287.22,
+      "netAmountCurrency": 1287.22
+    }
+  }
+}

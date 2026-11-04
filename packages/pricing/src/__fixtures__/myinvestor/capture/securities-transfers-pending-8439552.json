@@ -1,0 +1,11 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T08:23:45.348373318Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "pendingTransfers": 0
+    }
+  }
+}

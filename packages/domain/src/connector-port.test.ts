@@ -4,6 +4,7 @@ import {
   assertCapability,
   type ConnectorAdapter,
   type NormalizedBatch,
+  overlappingDateWindow,
   reconcileFacts,
   supportsCapability,
 } from "./connector-port";
@@ -79,5 +80,61 @@ describe("capabilities", () => {
       /reference does not support capability "fetch_positions"/,
     );
     expect(() => assertCapability(adapter, "disconnect")).not.toThrow();
+  });
+});
+
+// ADR 0066 lets a source that settles late re-serve an overlap window instead of
+// holding its cursor back; ADR 0114 (decision 5) fixes that overlap for MyInvestor.
+describe("overlappingDateWindow", () => {
+  const policy = { origin: "2000-01-01", overlapDays: 30 };
+
+  test("the first sync reads from the origin up to today and resumes from today", () => {
+    expect(overlappingDateWindow(null, "2026-07-19", policy)).toEqual({
+      from: "2000-01-01",
+      to: "2026-07-19",
+      next: "2026-07-19",
+    });
+  });
+
+  test("a later sync re-reads the overlap before the last good sync", () => {
+    expect(overlappingDateWindow("2026-07-19", "2026-07-25", policy)).toEqual({
+      from: "2026-06-19",
+      to: "2026-07-25",
+      next: "2026-07-25",
+    });
+  });
+
+  test("the overlap crosses months and years on the calendar", () => {
+    expect(overlappingDateWindow("2026-01-10", "2026-01-10", policy).from).toBe(
+      "2025-12-11",
+    );
+  });
+
+  test("never reads before the origin", () => {
+    expect(overlappingDateWindow("2000-01-15", "2000-02-01", policy).from).toBe(
+      "2000-01-01",
+    );
+  });
+
+  test("a cursor ahead of today (a skewed clock) is read as today, never skipping a day", () => {
+    expect(overlappingDateWindow("2026-09-01", "2026-07-19", policy)).toEqual({
+      from: "2026-06-19",
+      to: "2026-07-19",
+      next: "2026-07-19",
+    });
+  });
+
+  test("a cursor that is not a calendar day restarts from the origin", () => {
+    expect(overlappingDateWindow("7", "2026-07-19", policy).from).toBe("2000-01-01");
+    expect(overlappingDateWindow("2026-02-30", "2026-07-19", policy).from).toBe(
+      "2000-01-01",
+    );
+  });
+
+  test("refuses a today that is not a calendar day or a negative overlap", () => {
+    expect(() => overlappingDateWindow(null, "19/07/2026", policy)).toThrow(RangeError);
+    expect(() =>
+      overlappingDateWindow(null, "2026-07-19", { ...policy, overlapDays: -1 }),
+    ).toThrow(RangeError);
   });
 });
