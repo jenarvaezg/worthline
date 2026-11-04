@@ -27,7 +27,6 @@ import type {
 } from "@worthline/domain";
 import {
   addMonths,
-  addMonthsToDate,
   expandPlannedContribution,
   isDeclaredOpening,
   multiplyToMinor,
@@ -152,10 +151,7 @@ function lineStart(cadence: ContributionCadence, start: string, anchor: string):
   // day clamped in a short month (30 → 28 Feb) must not stay clamped.
   let cursor = anchor;
   for (let k = 1; k < 2_000; k += 1) {
-    // `addMonthsToDate`, not `addMonths`: the date-key one only walks forwards.
-    const previous = addMonthsToDate(new Date(`${anchor}T00:00:00Z`), -step * k)
-      .toISOString()
-      .slice(0, 10);
+    const previous = addMonths(anchor, -step * k);
     if (previous < start) break;
     cursor = previous;
   }

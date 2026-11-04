@@ -175,7 +175,8 @@ export function addMonths(dateKey: string, count: number): string {
   const day = Number(dateKey.slice(8, 10));
   const zeroBased = month - 1 + count;
   const newYear = year + Math.floor(zeroBased / 12);
-  const newMonth = (zeroBased % 12) + 1;
+  // `%` keeps the sign in JS: a negative `count` would land on month -11..0.
+  const newMonth = (((zeroBased % 12) + 12) % 12) + 1;
   // `daysInMonth` takes the 0-based month of `Date`; `newMonth` here is 1-based.
   const clampedDay = Math.min(day, daysInMonth(newYear, newMonth - 1));
   const mm = String(newMonth).padStart(2, "0");
