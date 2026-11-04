@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import AportacionPrototype from "./aportacion-prototype";
 import FichaPrototype from "./ficha-prototype";
 import SyncPrototype from "./sync-prototype";
 
@@ -36,5 +37,6 @@ async function WhichPrototype({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  if (params.s11) return <AportacionPrototype />;
   return params.s9 ? <SyncPrototype /> : <FichaPrototype />;
 }

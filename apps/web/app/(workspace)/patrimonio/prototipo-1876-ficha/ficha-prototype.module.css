@@ -180,6 +180,22 @@
   padding-left: 8px;
 }
 
+.scheduleLine {
+  border-left: 2px solid var(--line-strong);
+  margin: 0 0 0.5rem;
+  max-width: 64ch;
+  padding-left: 8px;
+}
+
+.ghostRow td {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.missingRow td {
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
 .controls {
   align-items: center;
   border: 1px dashed var(--line);
