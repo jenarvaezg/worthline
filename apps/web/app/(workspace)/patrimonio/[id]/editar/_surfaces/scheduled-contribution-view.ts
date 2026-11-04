@@ -14,6 +14,7 @@ import {
   myInvestorHoldingArrivals,
   myInvestorMissingArrivals,
 } from "@web/ajustes/myinvestor-contributions";
+import { contributionCadenceWords } from "@web/objetivos/contribution-cadence-words";
 import { formatDay } from "@web/objetivos/format-day";
 import type { ContributionCadence, InvestmentOperation } from "@worthline/domain";
 import { formatMoneyMinorExact, maskMoneyString } from "@worthline/domain";
@@ -26,17 +27,6 @@ const STATUS_WORDS: Record<MyInvestorArrivalStatus, string> = {
   // Due, with its window still open at the last read.
   waiting: "en plazo",
 };
-
-const WEEKDAYS = [
-  "",
-  "lunes",
-  "martes",
-  "miércoles",
-  "jueves",
-  "viernes",
-  "sábado",
-  "domingo",
-];
 
 export interface ScheduledContributionRow {
   key: string;
@@ -76,16 +66,7 @@ function cadenceWords(
     return recurrence
       ? `con una periodicidad que worthline no sabe leer (${recurrence})`
       : "sin periodicidad conocida";
-  switch (cadence.kind) {
-    case "monthly":
-      return `el día ${cadence.dayOfMonth} de cada mes`;
-    case "weekly":
-      return `cada ${WEEKDAYS[cadence.weekday]}`;
-    case "quarterly":
-      return "cada tres meses";
-    case "annual":
-      return "una vez al año";
-  }
+  return contributionCadenceWords(cadence);
 }
 
 function scheduleLine(

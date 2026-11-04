@@ -23,8 +23,9 @@ import {
   myInvestorLinkChoice,
   myInvestorPortfolioBlockedReason,
 } from "@web/ajustes/myinvestor-selection";
+import { contributionCadenceWords } from "@web/objetivos/contribution-cadence-words";
 import { operationKindLabel } from "@web/operation-kind-copy";
-import type { ContributionCadence, PlannedContributionAmount } from "@worthline/domain";
+import type { PlannedContributionAmount } from "@worthline/domain";
 import { formatUnits } from "@worthline/domain";
 
 const MONTH_YEAR = new Intl.DateTimeFormat("es-ES", {
@@ -273,29 +274,6 @@ export function myInvestorTwinOptions(
   ];
 }
 
-const WEEKDAYS = [
-  "lunes",
-  "martes",
-  "miércoles",
-  "jueves",
-  "viernes",
-  "sábado",
-  "domingo",
-];
-
-function cadenceLabel(cadence: ContributionCadence): string {
-  switch (cadence.kind) {
-    case "monthly":
-      return `el día ${cadence.dayOfMonth} de cada mes`;
-    case "weekly":
-      return `cada ${WEEKDAYS[cadence.weekday - 1]}`;
-    case "quarterly":
-      return "cada trimestre";
-    case "annual":
-      return "cada año";
-  }
-}
-
 function amountLabel(
   amount: PlannedContributionAmount,
   money: (minor: number) => string,
@@ -315,7 +293,7 @@ export function myInvestorPlanSentence(
     plan.lines.length === 0
       ? null
       : plan.lines.length === 1 && only
-        ? `Tu plan de ${amountLabel(only.amount, money)} ${cadenceLabel(only.cadence)} se cierra hoy`
+        ? `Tu plan de ${amountLabel(only.amount, money)} ${contributionCadenceWords(only.cadence)} se cierra hoy`
         : `Tus ${plan.lines.length} líneas del plan de aportación se cierran hoy`;
   const pending =
     plan.pending === 0
