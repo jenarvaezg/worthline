@@ -174,6 +174,24 @@ describe("the health signals of the connection (#1885)", () => {
     ]);
   });
 
+  test("failing on the positions: the figures stay at the last good sync, as data health says it", () => {
+    expect(
+      myInvestorHealthEntries({
+        attempts: [
+          failedOn("2026-11-04", "positions"),
+          failedOn("2026-11-03", "positions"),
+          failedOn("2026-11-02", "positions"),
+        ],
+        lastSyncAt: "2026-11-01T07:13:00.000Z",
+        now: NOW,
+        savedPassword: true,
+        state: null,
+      }).map((entry) => entry.text),
+    ).toEqual([
+      "El conector falla al leer las posiciones desde hace 3 días. Las cifras siguen en la última sincronización buena.",
+    ]);
+  });
+
   test("45 days with no password: the soft reminder", () => {
     expect(
       myInvestorHealthEntries({

@@ -49,7 +49,16 @@ export interface DataQualityOwningSourceHealthInput
   asOfDateKey: string;
 }
 
-const DATA_WORDS: Record<OwningSourceDataKind, { read: string; effect: string }> = {
+/**
+ * What the connector failed to read and what that does to the figures: the one
+ * wording for a failing source, said here by data health and by the holding's band
+ * and the Conexiones row (`myInvestorHealthEntries`). «Sincronización», as the
+ * design of #1885 names it and as `sync-health.ts` already says it.
+ */
+export const OWNING_SOURCE_FAILING_WORDS: Record<
+  OwningSourceDataKind,
+  { read: string; effect: string }
+> = {
   orders: { effect: "las operaciones nuevas pueden faltar", read: "las órdenes" },
   plans: { effect: "los planes pueden no estar al día", read: "los planes" },
   positions: {
@@ -105,7 +114,7 @@ function signalOf(
         severity: "high",
       };
     case "failing": {
-      const words = DATA_WORDS[notice.data];
+      const words = OWNING_SOURCE_FAILING_WORDS[notice.data];
       return {
         ...base(OWNING_SOURCE_FAILING_CODES[notice.data]),
         label: `El conector de "${source.label}" falla al leer ${words.read} desde hace ${notice.days} días: ${words.effect}.`,

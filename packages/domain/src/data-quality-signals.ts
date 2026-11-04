@@ -132,6 +132,7 @@ export {
 } from "./data-quality-manual-value-freshness";
 export {
   OWNING_SOURCE_FAILING_CODES,
+  OWNING_SOURCE_FAILING_WORDS,
   OWNING_SOURCE_STOPPED_CODE,
   OWNING_SOURCE_UNSYNCED_CODE,
 } from "./data-quality-owning-source-health";

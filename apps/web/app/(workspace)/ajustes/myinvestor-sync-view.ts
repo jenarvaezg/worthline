@@ -15,6 +15,7 @@
 import {
   formatUnits,
   isPositiveDecimal,
+  OWNING_SOURCE_FAILING_WORDS,
   type OwningSourceAttempt,
   type OwningSourceDataKind,
   type OwningSourceStop,
@@ -244,20 +245,20 @@ const SEE_CONNECTION: MyInvestorRemedy = {
   label: "Ver la conexión →",
 };
 
-const FAILING_REST: Record<OwningSourceDataKind, { read: string; rest: string }> = {
-  orders: {
-    read: "las órdenes",
-    rest: "Las posiciones sí se leen; las operaciones nuevas pueden faltar.",
-  },
-  plans: {
-    read: "los planes",
-    rest: "Las posiciones y las órdenes sí se leen; los planes pueden no estar al día.",
-  },
-  positions: {
-    read: "las posiciones",
-    rest: "Las cifras siguen en la última puesta al día buena.",
-  },
+/** What still reads when one kind fails; the rest of the sentence is data health's. */
+const FAILING_STILL_READ: Record<OwningSourceDataKind, string | null> = {
+  orders: "Las posiciones sí se leen",
+  plans: "Las posiciones y las órdenes sí se leen",
+  positions: null,
 };
+
+function failingRest(data: OwningSourceDataKind): string {
+  const { effect } = OWNING_SOURCE_FAILING_WORDS[data];
+  const stillRead = FAILING_STILL_READ[data];
+  return stillRead === null
+    ? `${effect.charAt(0).toUpperCase()}${effect.slice(1)}.`
+    : `${stillRead}; ${effect}.`;
+}
 
 /**
  * The connection's health signals (#1885, design A of #1884/#1885): «El conector
@@ -287,11 +288,11 @@ export function myInvestorHealthEntries(input: {
   return notices.flatMap((notice): MyInvestorBandEntry[] => {
     switch (notice.kind) {
       case "failing": {
-        const words = FAILING_REST[notice.data];
+        const { read } = OWNING_SOURCE_FAILING_WORDS[notice.data];
         return [
           {
             remedy: SEE_CONNECTION,
-            text: `El conector falla al leer ${words.read} desde hace ${notice.days} días. ${words.rest}`,
+            text: `El conector falla al leer ${read} desde hace ${notice.days} días. ${failingRest(notice.data)}`,
             tone: "warn",
           },
         ];
