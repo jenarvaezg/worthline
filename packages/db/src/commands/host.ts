@@ -55,6 +55,7 @@ const DATED_FACT_ALIASES = {
   createInvestmentHolding: "createInvestmentHoldingAndRipple",
   createDebtHolding: "createDebtHoldingAndRipple",
   includeConnectedHoldings: "includeConnectedHoldingsAndRipple",
+  resolveInheritedCost: "resolveInheritedCostAndRipple",
   createAmortizationPlan: "createAmortizationPlanAndRipple",
   updateAmortizationPlan: "updateAmortizationPlanAndRipple",
   deleteAmortizationPlan: "deleteAmortizationPlanAndRipple",

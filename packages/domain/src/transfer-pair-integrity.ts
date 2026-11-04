@@ -232,7 +232,7 @@ function faultOf(
  * way this module did not expect cannot quietly fold the traspaso (and everything
  * after it) into the origin it is being careado against.
  */
-function costLeavingOrigin(
+export function costLeavingOrigin(
   out: InvestmentOperation,
   operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>,
 ): number {

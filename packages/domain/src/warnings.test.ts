@@ -283,3 +283,73 @@ describe("collectWarnings — OVERSELL / OVER_TRANSFER from the ledger (#1443)",
     expect(warnings.map((warning) => warning.code)).toEqual(["OVER_TRANSFER"]);
   });
 });
+
+describe("collectWarnings — a traspaso whose cost is pending (#1882)", () => {
+  function pendingEntry(
+    id: string,
+    executedAt: string,
+    state: InvestmentOperation["transferLegState"] = "cost_pending",
+  ): InvestmentOperation {
+    return {
+      assetId: "plan",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id,
+      kind: "transfer_in",
+      pricePerUnit: "17.43",
+      source: "connected",
+      transferCostMinor: 70_133,
+      transferId: `myinvestor-external:${id}`,
+      ...(state ? { transferLegState: state } : {}),
+      units: "40.237",
+    };
+  }
+  const plan = asset("plan", "Plan Indexado", 0, "investment", undefined, "src-mi");
+
+  test("names the day of the entry whose cost is missing, and cannot be ignored", () => {
+    const warnings = collectWarnings(
+      [plan],
+      [{ code: "TRANSFER_COST_PENDING", entityId: "plan" }],
+      {
+        operationsByAssetId: new Map([["plan", [pendingEntry("in-1", "2026-01-14")]]]),
+      },
+    );
+
+    expect(warnings).toEqual([
+      {
+        code: "TRANSFER_COST_PENDING",
+        entityId: "plan",
+        entityType: "asset",
+        message:
+          "Falta el coste del traspaso del 14/01/2026: sin él, la ganancia no se puede medir.",
+        severity: "blocking",
+      },
+    ]);
+  });
+
+  test("with two pending, says how many and the first day", () => {
+    const warnings = collectWarnings([plan], [], {
+      operationsByAssetId: new Map([
+        [
+          "plan",
+          [pendingEntry("in-2", "2026-03-02"), pendingEntry("in-1", "2026-01-14")],
+        ],
+      ]),
+    });
+
+    expect(warnings[0]?.message).toBe(
+      "Falta el coste de 2 traspasos, el primero del 14/01/2026: sin él, la ganancia no se puede medir.",
+    );
+  });
+
+  test("an answered entry raises nothing", () => {
+    const warnings = collectWarnings([plan], [], {
+      operationsByAssetId: new Map([
+        ["plan", [pendingEntry("in-1", "2026-01-14", "cost_declared")]],
+      ]),
+    });
+
+    expect(warnings).toEqual([]);
+  });
+});

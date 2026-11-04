@@ -7377,7 +7377,8 @@ td.rowActions > * {
 .fichaPriceNotice a,
 .fichaPriceNotice button,
 .myinvestorCodeActions .myinvestorRestart,
-.myinvestorLeftList .myinvestorIncludeLater {
+.myinvestorLeftList .myinvestorIncludeLater,
+.inheritedCostElsewhere > summary {
   background: transparent;
   border: 0;
   min-height: 0;
@@ -9977,6 +9978,61 @@ td.rowActions > * {
 /* Por qué la fila sin conectar no ofrece pliegue: una línea, donde iría «Conectar». */
 .myinvestorGate {
   margin: 0.35rem 0 0;
+}
+
+/* «Coste del traspaso» (#1882, variante A): el panel lateral que pregunta el coste
+   que un traspaso trajo sin él. Un formulario de una sola pregunta: el contexto, la
+   propuesta o el campo, y la línea de por qué es lo único que se escribe a mano. */
+.inheritedCost {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 36rem;
+}
+
+.inheritedCost p {
+  margin: 0;
+}
+
+.inheritedCostProposal {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.inheritedCostProposal button {
+  justify-self: start;
+}
+
+/* «No, vienen de otro sitio»: control de texto (receta «Control de texto»), en el
+   azul de interacción — abre el campo, no descarta nada. Es un `<summary>` para que
+   funcione sin JS; sin el triángulo de la divulgación, que no es de la receta. */
+.inheritedCostElsewhere > summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.inheritedCostElsewhere > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inheritedCostElsewhere[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.inheritedCostForm {
+  margin-top: 0;
+}
+
+.inheritedCostForm button {
+  justify-self: start;
+}
+
+.inheritedCostMoney {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  max-width: 12rem;
 }
 
 /* El primer arranque de MyInvestor (#1880, variante D): el pliegue por cuenta con

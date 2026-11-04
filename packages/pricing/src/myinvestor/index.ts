@@ -38,6 +38,12 @@ export type {
   MyInvestorUnpairedReason,
 } from "./ingest/facts";
 export {
+  isMyInvestorExternalEntry,
+  isMyInvestorUnpairedLeg,
+  MYINVESTOR_EXTERNAL_TRANSFER_PREFIX,
+  MYINVESTOR_UNPAIRED_TRANSFER_PREFIX,
+} from "./ingest/facts";
+export {
   holdingKey as myInvestorHoldingKey,
   type MyInvestorAccountOrders,
   type MyInvestorBrokerExecution,

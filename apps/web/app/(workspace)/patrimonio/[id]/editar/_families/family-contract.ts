@@ -188,6 +188,11 @@ export interface FichaFix {
   tab: string;
   /** The `name` of the field to focus once the tab is on show. */
   field?: string;
+  /**
+   * The action whose panel opens over that tab, when the fix is a form there
+   * rather than a field in the tab — «Indicar el coste» (#1882).
+   */
+  action?: string;
   /** The link's words: «Ver operaciones». */
   label: string;
 }

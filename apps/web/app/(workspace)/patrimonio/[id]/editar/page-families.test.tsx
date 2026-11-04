@@ -156,9 +156,10 @@ const calls = vi.hoisted(() => ({
   readValuationAnchors: vi.fn(async (): Promise<unknown[]> => []),
   readValuationCadence: vi.fn(async (): Promise<string | null> => null),
   // Ledger-side reads
-  readOperations: vi.fn(async (): Promise<unknown[]> => []),
+  readOperations: vi.fn(async (_assetId?: string): Promise<unknown[]> => []),
   readPriceCache: vi.fn(async (): Promise<unknown> => null),
   readTransferCounterparts: vi.fn(async () => new Map<string, unknown>()),
+  readUnpairedOutLegs: vi.fn(async (): Promise<unknown[]> => []),
   readPositions: vi.fn(async (): Promise<unknown[]> => []),
   readSnapshotHoldings: vi.fn(async (): Promise<unknown[]> => []),
   // Connected sources
@@ -233,6 +234,7 @@ vi.mock("@web/page-shell", () => ({
           readOperations: calls.readOperations,
           readPriceCache: calls.readPriceCache,
           readTransferCounterparts: calls.readTransferCounterparts,
+          readUnpairedOutLegs: calls.readUnpairedOutLegs,
         },
         payouts: {
           readPayoutSchedulesForHolding: calls.readPayoutSchedulesForHolding,
@@ -588,6 +590,108 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
  * and of when, as the valuation that picked it says — never by comparing figures
  * afterwards — and the one warning about that price sits beside it.
  */
+describe("EditarPage — a traspaso that came in without its cost (#1882, variant A)", () => {
+  const LINKED = { ...FUND, connectedSourceId: "source_mi" };
+  const ORIGIN = { ...FUND, id: "asset_origen", name: "Fondo Origen" };
+
+  /** 40,237 units that were worth 701,33 € the day they arrived: provisional cost. */
+  function pendingEntry(transferId: string) {
+    return {
+      assetId: ASSET_ID,
+      currency: "EUR",
+      executedAt: "2026-01-14",
+      feesMinor: 0,
+      id: "op_entrada",
+      kind: "transfer_in",
+      pricePerUnit: "17.43",
+      source: "connected",
+      transferCostMinor: 701_33,
+      transferId,
+      transferLegState: "cost_pending",
+      units: "40.237",
+    };
+  }
+  const originBuy = {
+    assetId: "asset_origen",
+    currency: "EUR",
+    executedAt: "2025-03-04",
+    feesMinor: 0,
+    id: "op_compra",
+    kind: "buy",
+    pricePerUnit: "15.83",
+    source: "connected",
+    units: "41.9",
+  };
+  const reimbursement = {
+    ...originBuy,
+    executedAt: "2026-01-09",
+    id: "op_reembolso",
+    kind: "sell",
+    pricePerUnit: "16.79",
+    transferLegState: "unpaired_out",
+  };
+
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([LINKED, ORIGIN]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readPositions.mockResolvedValue([]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+  });
+
+  test("the band names it and opens the panel; the header measures nothing", async () => {
+    calls.readOperations.mockResolvedValue([pendingEntry("myinvestor-external:r1")]);
+    const html = await renderedHtml();
+
+    expect(html).toContain(
+      "Falta el coste del traspaso del 14/01/2026: sin él, la ganancia no se puede medir.",
+    );
+    expect(html).toMatch(/href="[^"]*accion=coste[^"]*"[^>]*>Indicar el coste</);
+    expect(html).not.toContain("No se puede ignorar");
+    expect(html).toContain("sin coste real: falta el de un traspaso");
+    // The provisional cost exists in the fold and is never shown as a COST: the
+    // row says it is missing (its importe is the value that arrived, as on any row).
+    expect(html).toContain("coste heredado: falta");
+    expect(html).not.toMatch(/coste heredado 701/);
+    expect(tabBody(await renderedHtml({ pestaña: "rentabilidad" }))).toContain(
+      "Sin rentabilidad que medir hasta que se sepa el coste del traspaso.",
+    );
+  });
+
+  test("an external entry's panel asks for the cost, with where to find it", async () => {
+    calls.readOperations.mockResolvedValue([pendingEntry("myinvestor-external:r1")]);
+    const body = panel(await renderedHtml({ accion: "coste" }));
+
+    expect(body).toContain("Coste del traspaso");
+    expect(body).toContain("Llegaron traspasadas desde otra entidad");
+    expect(body).toContain("Lo que te costaron esas 40,237 participaciones");
+    expect(body).toContain("Guardar el coste");
+    expect(body).toContain("Es lo único de este holding que escribes tú");
+    // Nothing inside MyInvestor is ever offered as an external entry's origin.
+    expect(calls.readUnpairedOutLegs).toHaveBeenCalledWith("source_mi");
+    expect(body).not.toContain("¿Vienen del");
+  });
+
+  test("an internal entry with a reimbursement in reach proposes it, and asks to confirm", async () => {
+    calls.readOperations.mockImplementation(async (assetId?: string) =>
+      assetId === ASSET_ID
+        ? [pendingEntry("myinvestor-unpaired:r2")]
+        : [originBuy, reimbursement],
+    );
+    calls.readUnpairedOutLegs.mockResolvedValue([reimbursement]);
+    const body = panel(await renderedHtml({ accion: "coste" }));
+
+    expect(body).toContain("¿Vienen del <strong>reembolso de Fondo Origen</strong>");
+    expect(body).toContain("Sí, vienen de ahí");
+    expect(body).toContain("No, vienen de otro sitio");
+    // The whole origin left: its whole cost, 41,9 × 15,83 = 663,28 €, would travel.
+    expect(body).toMatch(/663,28\s€/);
+    // What arrived and what left, cents-exact: checked against the statement.
+    expect(body).toMatch(/que valían 701,33\s€/);
+    expect(body).toMatch(/\(703,50\s€\)/);
+    expect(body).toContain('name="originId" value="op_reembolso"');
+  });
+});
+
 describe("EditarPage — the investment header says where its price comes from (#1828)", () => {
   /** The figures row: from the units to the end of the state header. */
   const figures = (html: string) =>

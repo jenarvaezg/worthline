@@ -619,6 +619,14 @@ const operationSchema = reproduces<InvestmentOperation>()(
      * no default: an absent mark reads as «nadie lo ha dicho», which is what it is.
      */
     costBasisGrade: costBasisGradeSchema.optional(),
+    /**
+     * What a connector-written traspaso leg still owes (#1882). Absent in every
+     * pre-#1882 file and on every row that owes nothing; without it a round trip
+     * would forget that a cost is provisional and show it as a real one.
+     */
+    transferLegState: z
+      .enum(["cost_pending", "cost_declared", "cost_from_origin", "unpaired_out"])
+      .optional(),
   }),
 );
 

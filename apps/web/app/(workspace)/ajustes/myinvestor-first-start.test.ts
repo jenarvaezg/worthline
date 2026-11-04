@@ -327,7 +327,53 @@ describe("the cost a traspaso carries", () => {
 
     // No figure of its own: valued at the nearest execution NAV of the same product.
     expect(entry.transferCostMinor).toBe(21000);
+    // And marked, so the ficha asks for the real cost (#1882).
+    expect(entry.transferLegState).toBe("cost_pending");
     expect(view(d).rows[0]!.inheritedCostPending).toBe(true);
+  });
+
+  test("an internal traspaso nobody paired: the way out is a sale, the way in is pending (#1882)", () => {
+    const d = discovery(
+      [
+        op("b1", A, { amount: "37", executedAt: "2025-03-04", units: "3.7" }),
+        op("out", A, {
+          amount: "41.3",
+          executedAt: "2026-06-11",
+          operation: "transfer_out",
+          transfer: {
+            inheritedCost: null,
+            pairing: "unpaired",
+            reason: "no_common_reference",
+            transferId: "myinvestor-unpaired:out",
+          },
+          units: "3.7",
+        }),
+        op("in", B, {
+          amount: "40.9",
+          executedAt: "2026-06-16",
+          operation: "transfer_in",
+          transfer: {
+            inheritedCost: "pending",
+            pairing: "unpaired",
+            reason: "no_common_reference",
+            transferId: "myinvestor-unpaired:in",
+          },
+          units: "4.1",
+        }),
+      ],
+      [fund(A, "0"), fund(B, "4.1")],
+    );
+    const rows = foldMyInvestorOperations(d, SOURCE);
+    const out = rows.get(keyOf(A))!.find((row) => row.executedAt === "2026-06-11")!;
+    const entry = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
+
+    expect(out).toMatchObject({ kind: "sell", transferLegState: "unpaired_out" });
+    expect(out.transferId).toBeUndefined();
+    expect(entry).toMatchObject({
+      transferCostMinor: 4090,
+      transferId: "myinvestor-unpaired:in",
+      transferLegState: "cost_pending",
+    });
   });
 });
 

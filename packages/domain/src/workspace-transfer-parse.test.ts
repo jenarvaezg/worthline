@@ -1706,6 +1706,27 @@ describe("parseWorkspaceExport — el traspaso y el apunte capturado viajan (#13
     expect(result.value.operations[1]?.transferCostMinor).toBe(50_000);
   });
 
+  test("un coste heredado pendiente sigue marcado como provisional al leerlo (#1882)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.operations = [
+          {
+            ...doc.operations[0]!,
+            id: "op_in",
+            kind: "transfer_in",
+            transferCostMinor: 70_133,
+            transferId: "myinvestor-external:r1",
+            transferLegState: "cost_pending",
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.operations[0]?.transferLegState).toBe("cost_pending");
+  });
+
   test("el apunte capturado sobrevive al documento, no se pierde al leerlo", () => {
     const result = parseWorkspaceExport(
       makeDocument((doc) => {

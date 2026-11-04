@@ -117,6 +117,42 @@ describe("transferRowNote (#1481)", () => {
   });
 });
 
+describe("transferRowNote — el coste heredado que falta (#1882)", () => {
+  test("pendiente, la nota dice que falta y NUNCA enseña la cifra provisional", () => {
+    const note = transferRowNote({
+      counterpart: { kind: "external" },
+      kind: "transfer_in",
+      privacyMode: false,
+      transferCostMinor: 70_133,
+      transferLegState: "cost_pending",
+    });
+
+    expect(note).toBe("desde otra entidad · coste heredado: falta");
+  });
+
+  test("contestado, la cifra dice de dónde salió", () => {
+    const cost = formatMoneyMinorExact({ amountMinor: 61_177, currency: "EUR" });
+    expect(
+      transferRowNote({
+        counterpart: { kind: "external" },
+        kind: "transfer_in",
+        privacyMode: false,
+        transferCostMinor: 61_177,
+        transferLegState: "cost_declared",
+      }),
+    ).toBe(`desde otra entidad · coste heredado ${cost} · lo pusiste tú`);
+    expect(
+      transferRowNote({
+        counterpart: { kind: "holding", name: "Fondo Azul" },
+        kind: "transfer_in",
+        privacyMode: false,
+        transferCostMinor: 61_177,
+        transferLegState: "cost_from_origin",
+      }),
+    ).toBe(`desde Fondo Azul · coste heredado ${cost} · viene del reembolso`);
+  });
+});
+
 describe("transferRowNote — la antigüedad heredada se puede LEER (#1518)", () => {
   test("una entrada externa con antigüedad la dice, junto a su coste heredado", () => {
     expect(

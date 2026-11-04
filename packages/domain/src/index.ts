@@ -816,6 +816,17 @@ export type {
 export { valueHousingAtDate } from "./housing-valuation";
 export type { IncomeDoubleCount } from "./income-double-count";
 export { describeIncomeDoubleCount, incomeDoubleCount } from "./income-double-count";
+export type { InheritedCostRefusal, InheritedCostResult } from "./inherited-cost";
+export {
+  answerInheritedCost,
+  confirmTransferOrigin,
+  hasPendingInheritedCost,
+  isTransferOriginFor,
+  pendingInheritedCostEntries,
+  proposeTransferOrigin,
+  TRANSFER_ORIGIN_TOLERANCE_BPS,
+  TRANSFER_ORIGIN_WINDOW_DAYS,
+} from "./inherited-cost";
 export type {
   Instrument,
   InstrumentDefaults,
@@ -861,6 +872,7 @@ export type {
   PositionSummary,
   PositionWarning,
   PositionWarningCode,
+  TransferLegState,
 } from "./investment-types";
 export type {
   CachedQuoteProvenance,

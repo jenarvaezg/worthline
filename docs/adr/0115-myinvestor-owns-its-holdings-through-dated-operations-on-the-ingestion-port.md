@@ -104,3 +104,64 @@ in the web yet.
 - `SourceAdapter` gains `myinvestor`. Every branch on the adapter tag
   (`instrumentForAdapter`, `frozenInstrumentForAdapter`, the daily capture) has to
   answer for it.
+
+## Amendment (#1882, 2026-11-04) — an internal fund transfer is resolved by a confirmed proposal
+
+Decision 4 left internal fund transfers open: the captured `INTERNAL_TRANSFER_*` pair
+shares no id, no day and no amount, so the adapter never pairs it. The design review chose
+**proposal + confirmation** (#1882, PRD #1876 open decision 1):
+
+1. **The unpaired legs are written as what they read as.** The outgoing
+   `INTERNAL_TRANSFER_REIMBURSEMENT` is a `sell` — capital left with no known
+   destination — and the incoming `INTERNAL_TRANSFER_SUBSCRIPTION` is a `transfer_in`
+   with its own `transferId` and a provisional cost (the value that arrived). A lone
+   `transfer_out` is not written: it would take capital out of the book with neither
+   a destination nor a gain, and the traspaso audit reads it as broken.
+2. **The mark is durable, on the row.** `asset_operations.transfer_leg_state` (v77):
+   `cost_pending` on an entry whose cost nobody gave, `cost_declared` once the user
+   typed it, `cost_from_origin` once it came from a confirmed origin, `unpaired_out`
+   on the reimbursement written as a sale. It survives every sync: the answer
+   updates the rows the connector wrote, whose ids are the orders' dedup keys, so
+   re-reading the same orders never rewrites it.
+3. **A rule by proximity PROPOSES the origin; it never pairs on its own.** For a
+   pending entry that is not from another institution, the candidate is an
+   `unpaired_out` reimbursement of another holding of the same source, in the same
+   currency, that left in the **10 days** up to the entry (its own day included), for
+   an amount within **±5 %** of what arrived. Of several, the nearest amount wins,
+   then the nearest day. The user sees it in the ficha's «Coste del traspaso» panel
+   and answers «Sí, vienen de ahí» or «No, vienen de otro sitio» (which opens the
+   field). An entry from another institution is never offered an origin.
+4. **Confirming turns both legs into ONE traspaso** (ADR 0082): the reimbursement
+   becomes the `transfer_out`, it stops realizing a gain, both share the entry's
+   `transferId`, and the entry inherits exactly what the origin's fold removes —
+   `costLeavingOrigin`, the same function the traspaso audit careos every pair
+   with. One fact batch, one transaction, one ripple of both holdings (ADR 0062).
+   Without confirmation the reimbursement stays a sale and the entry stays pending.
+5. **While a cost is pending, nothing measured against it is a figure.** The
+   holding's «Ganancia total» and TIR read «—» with «sin coste real: falta el de un
+   traspaso» (#1505's grammar) on the ficha, and the board row shows none — the
+   same `holdingReturns` returns no view for either; the ledger says
+   «coste heredado: falta»; a blocking warning, `TRANSFER_COST_PENDING`, names the day
+   and is also a data-health signal. The provisional cost is in the fold and never
+   shown as one.
+
+What it does not settle:
+
+- The window and the tolerance were read off the captured pair (five days apart);
+  the fixtures' amounts are invented, so ±5 % still has to be contrasted with the
+  real account. They are constants (`TRANSFER_ORIGIN_WINDOW_DAYS`,
+  `TRANSFER_ORIGIN_TOLERANCE_BPS`), not configuration.
+- A reimbursement on a product that was never included has no row to convert, so it
+  is not proposed; the entry is answered by typing the cost.
+- Until it is confirmed, the reimbursement is read as a sale everywhere a sale is
+  read: it realizes a gain, and the measured savings (ADR 0075) count it as money
+  taken out of the portfolio that month while the entry, a `transfer_in`, counts as
+  none. A real internal traspaso the user leaves unconfirmed — or answers «no, they
+  came from elsewhere» — keeps that reading for good. It is the design's choice
+  (#1882) and the price of never pairing on a guess; a softer reading for an
+  unconfirmed `unpaired_out` is open, not decided here.
+- Under ADR 0082 decision 4 the holding's own gain and IRR read a traspaso as a flow
+  at the day's value, so the answered cost does not change those two figures; it
+  changes the cost basis — the plusvalía latente, the realized P/L of later sales,
+  and the snapshots' cost. Hiding them while pending is the design's choice (#1882,
+  variant A), not an arithmetic dependency.

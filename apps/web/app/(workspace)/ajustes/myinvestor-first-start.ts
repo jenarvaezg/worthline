@@ -18,7 +18,11 @@
  *   here: its inherited cost is PENDING (#1882 asks for it). Until then it carries
  *   the amount that arrived, the default of every external entry (no latent gain
  *   invented), valued at the nearest execution NAV of the same product when
- *   MyInvestor states no figure for it.
+ *   MyInvestor states no figure for it. The row carries the `cost_pending` mark,
+ *   so the ficha asks for the real cost and never shows this one as a figure;
+ * - an outgoing leg nobody could pair is written as the sale it reads as, marked
+ *   `unpaired_out`, until the user confirms which entry it funded (#1882, ADR 0115
+ *   as amended 2026-11-04): then the two become one traspaso and the cost travels.
  *
  * A product a live manual holding already is (#1881) is not created again unless
  * the user says so: it is LINKED, and the same folded rows replace the holding's
@@ -99,6 +103,11 @@ function pendingInheritedCost(fact: MyInvestorOperationFact): boolean {
   return transfer.pairing === "external_in" || transfer.pairing === "unpaired";
 }
 
+/** An outgoing traspaso leg the adapter could not tie to its other half (#1882). */
+function unpairedOut(fact: MyInvestorOperationFact): boolean {
+  return fact.operation === "transfer_out" && fact.transfer?.pairing === "unpaired";
+}
+
 /**
  * The execution NAV of the same instrument closest in time, for an entry that states
  * no figure of its own (an external mobilization arrives with `cash: 0`).
@@ -171,20 +180,35 @@ export function foldMyInvestorOperations(
     fact: NormalizedFact<MyInvestorOperationFact>,
   ): CreateInvestmentOperationInput => {
     const { payload } = fact;
-    const transferId = payload.transfer?.transferId;
-    return {
+    const common = {
       assetId: productKeyOf(payload),
       currency: payload.currency,
       executedAt: payload.executedAt,
+      id: myInvestorOperationId(sourceId, fact.key),
+      pricePerUnit: rowPrice(payload, facts),
+      source: "connected" as const,
+      units: payload.units,
+    };
+    // An outgoing leg nothing tied to its entry is, until the user confirms where
+    // it went (#1882), what it reads as: a sale. A lone `transfer_out` would take
+    // the capital out of the book with neither a destination nor a gain, and the
+    // traspaso audit reads it as broken. The mark keeps it findable as a candidate.
+    if (unpairedOut(payload)) {
+      return { ...common, feesMinor: 0, kind: "sell", transferLegState: "unpaired_out" };
+    }
+    const transferId = payload.transfer?.transferId;
+    return {
+      ...common,
       // A traspaso's commission rides its `transfer_in` (ADR 0082); MyInvestor
       // charges none on funds and plans, and the broker only buys and sells.
       feesMinor: payload.operation === "transfer_out" ? 0 : toMinor(payload.fees),
-      id: myInvestorOperationId(sourceId, fact.key),
       kind: payload.operation,
-      pricePerUnit: rowPrice(payload, facts),
-      source: "connected",
       ...(transferId === undefined ? {} : { transferId }),
-      units: payload.units,
+      // The entry with no origin carries a provisional cost; the mark is what lets
+      // the ficha ask for the real one and never show this one as a figure.
+      ...(pendingInheritedCost(payload)
+        ? { transferLegState: "cost_pending" as const }
+        : {}),
     };
   };
 
@@ -694,6 +718,9 @@ function operationInput(
     ...(row.transferCostMinor === undefined
       ? {}
       : { transferCostMinor: row.transferCostMinor }),
+    ...(row.transferLegState === undefined
+      ? {}
+      : { transferLegState: row.transferLegState }),
     units: row.units,
   };
 }

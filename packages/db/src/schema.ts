@@ -25,6 +25,7 @@ import type {
   SecurityIdKind,
   SnapshotHoldingKind,
   SourceAdapter,
+  TransferLegState,
   TrashExit,
   ValuationCadence,
   ValuationMethod,
@@ -416,6 +417,12 @@ export const assetOperations = sqliteTable(
      * and only on the synthetic opening BUY it invents.
      */
     costBasisGrade: text("cost_basis_grade").$type<CostBasisGrade>(),
+    /**
+     * What a connector-written traspaso leg still owes (#1882, v77): its inherited
+     * cost pending, declared or carried from a confirmed origin, or an unpaired
+     * outgoing leg written as a sale. NULL on every other row.
+     */
+    transferLegState: text("transfer_leg_state").$type<TransferLegState>(),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },

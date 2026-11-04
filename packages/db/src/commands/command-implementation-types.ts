@@ -48,6 +48,10 @@ import type {
   IncludeConnectedHoldingsResult,
 } from "./connected-inclusion";
 import type {
+  ResolveInheritedCostCommand,
+  ResolveInheritedCostResult,
+} from "./inherited-cost";
+import type {
   RecordExternalTransferInCommand,
   RecordTransferCommand,
 } from "./investment-transfer";
@@ -311,6 +315,15 @@ export interface DatedFactCommandImplementations {
   includeConnectedHoldingsAndRipple: (
     command: IncludeConnectedHoldingsCommand,
   ) => Promise<IncludeConnectedHoldingsResult>;
+  /**
+   * Answer the inherited cost of a traspaso that came into a linked holding
+   * without it (#1882): typed, or carried from the reimbursement the user confirmed
+   * as its origin. The one write a user makes on a holding its source owns — ONE
+   * fact_batch, ONE transaction, ONE ripple (ADR 0062).
+   */
+  resolveInheritedCostAndRipple: (
+    command: ResolveInheritedCostCommand,
+  ) => Promise<ResolveInheritedCostResult>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts: { today: string },

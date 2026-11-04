@@ -53,11 +53,15 @@ export function WarningsBand({
                 href={fix.href}
                 tab={fix.tab}
                 {...(fix.field ? { field: fix.field } : {})}
+                {...(fix.action ? { action: fix.action } : {})}
               >
                 {fix.label}
               </FichaLink>
             ) : null}
-            {w.severity === "overrideable" ? (
+            {/* A blocking warning whose fix opens its form says nothing more: the
+                button IS the way out (#1882). One with no fix here still says it
+                cannot be ignored. */}
+            {fix?.action ? null : w.severity === "overrideable" ? (
               <form action={acknowledgeWarningAction}>
                 <input name="currentUrl" type="hidden" value={currentUrl} />
                 <input name="code" type="hidden" value={w.code} />

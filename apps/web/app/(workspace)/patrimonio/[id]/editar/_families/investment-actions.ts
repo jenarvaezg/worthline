@@ -13,6 +13,7 @@
  */
 
 import { recordExternalEntryAction } from "@web/inversiones/external-entry-action";
+import { resolveInheritedCostAction } from "@web/inversiones/inherited-cost-action";
 import {
   deleteOperationAction,
   recordOperationAction,
@@ -57,6 +58,12 @@ export function bindInvestmentActions(assetId: string) {
   async function recordExternalEntry(formData: FormData) {
     "use server";
     await recordExternalEntryAction(assetId, formData);
+  }
+
+  async function resolveInheritedCost(formData: FormData) {
+    "use server";
+    // Returns the refusal as state (#1311); success redirects to the ledger.
+    return resolveInheritedCostAction(assetId, formData);
   }
 
   async function previewStatement(prev: StatementPreviewState, formData: FormData) {
@@ -106,5 +113,6 @@ export function bindInvestmentActions(assetId: string) {
     recordExternalEntry,
     recordOperation,
     recordTransfer,
+    resolveInheritedCost,
   };
 }

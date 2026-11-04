@@ -144,6 +144,13 @@ export interface OperationsStore {
     assetId: string,
   ) => Promise<ReadonlyMap<string, { assetId: string }>>;
   /**
+   * The outgoing legs a source wrote with no pair (#1882): `sell` rows marked
+   * `unpaired_out`, on the holdings linked to `sourceId`. The candidates the
+   * coste-heredado panel proposes an origin from — one narrow query, so the ficha
+   * loads no other holding's ledger to find them.
+   */
+  readUnpairedOutLegs: (sourceId: string) => Promise<InvestmentOperation[]>;
+  /**
    * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
    * one entry per deleted row — the two asset ids and dates the caller ripples —
    * or an empty array when no row carries that `transferId`.
@@ -189,6 +196,21 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
     readTransferCounterparts: (assetId) => readTransferCounterparts(ctx, assetId),
+    readUnpairedOutLegs: async (sourceId) => {
+      const rows = await ctx.db
+        .select({ operation: assetOperations })
+        .from(assetOperations)
+        .innerJoin(assets, eq(assets.id, assetOperations.assetId))
+        .where(
+          and(
+            eq(assets.connectedSourceId, sourceId),
+            eq(assetOperations.transferLegState, "unpaired_out"),
+          ),
+        )
+        .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+        .all();
+      return rows.map((row) => toOperation(row.operation));
+    },
     deleteTransferPair: (transferId) => deleteTransferPair(ctx, transferId),
     updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),

@@ -12,6 +12,7 @@ import type {
   InvestmentOperation,
   OperationCapture,
   StoredSecurityId,
+  TransferLegState,
 } from "@worthline/domain";
 import {
   asDateKey,
@@ -99,14 +100,19 @@ export function operationTransferColumns(operation: {
   transferId?: string;
   transferCostMinor?: number;
   transferSeniorityAt?: string;
+  transferLegState?: TransferLegState;
 }): {
   transferId: string | null;
   transferCostMinor: number | null;
   transferSeniorityAt: DateKey | null;
+  transferLegState: TransferLegState | null;
 } {
   return {
     transferCostMinor: operation.transferCostMinor ?? null,
     transferId: operation.transferId ?? null,
+    // What a connector's leg still owes (#1882): through the same helper, so an
+    // export → import round-trip cannot turn a provisional cost into a real one.
+    transferLegState: operation.transferLegState ?? null,
     transferSeniorityAt:
       operation.transferSeniorityAt === undefined
         ? null
@@ -150,6 +156,7 @@ export function toOperation(
     ...(row.transferSeniorityAt === null
       ? {}
       : { transferSeniorityAt: row.transferSeniorityAt }),
+    ...(row.transferLegState === null ? {} : { transferLegState: row.transferLegState }),
     units: row.units,
   };
 }

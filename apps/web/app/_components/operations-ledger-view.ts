@@ -156,6 +156,11 @@ export function readLedgerRow(
       ...(operation.transferSeniorityAt !== undefined
         ? { transferSeniorityAt: operation.transferSeniorityAt }
         : {}),
+      // A connector's entry whose cost is pending says «falta», never its
+      // provisional figure (#1882).
+      ...(operation.transferLegState !== undefined
+        ? { transferLegState: operation.transferLegState }
+        : {}),
     }),
     price: price.price,
     priceCapture: price.capture,

@@ -44,6 +44,11 @@ export type {
   ImportBalanceHistoryResult,
 } from "./import-balance-history";
 export type {
+  ResolveInheritedCostCommand,
+  ResolveInheritedCostRefusal,
+  ResolveInheritedCostResult,
+} from "./inherited-cost";
+export type {
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
   UpdateAssetOwnershipSplitCommand,

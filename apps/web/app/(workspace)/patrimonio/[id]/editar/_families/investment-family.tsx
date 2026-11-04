@@ -23,6 +23,7 @@ import {
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
+import { INHERITED_COST_FORM_ID } from "@web/inversiones/inherited-cost-form-id";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
@@ -31,6 +32,14 @@ import {
   fichaTabUrl,
 } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
+import InheritedCostSection from "@web/patrimonio/[id]/editar/_surfaces/inherited-cost-section";
+import {
+  type InheritedCostView,
+  inheritedCostView,
+  pendingEntry,
+  proposedOrigin,
+  withUnknownOrigins,
+} from "@web/patrimonio/[id]/editar/_surfaces/inherited-cost-view";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
 import { SnapshotPriceCorrectionSection } from "@web/patrimonio/[id]/editar/_surfaces/snapshot-price-correction-section";
@@ -43,13 +52,14 @@ import { PendingSubmit } from "@web/pending-submit";
 import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { HoldingWarningCode } from "@worthline/domain";
+import type { HoldingWarningCode, InvestmentOperation } from "@worthline/domain";
 import {
   costBasisGradeMark,
   declaredSecurityId,
   detectSingleAssetBackfillCandidate,
   detectValueOnlyOpening,
   exposureLookthroughKey,
+  formatMoneyMinorExact,
   formatMoneyMinorPrivacy,
   formatUnits,
   holdingReturns,
@@ -57,6 +67,7 @@ import {
   INSTRUMENT_LABELS_ES,
   instrumentOfAsset,
   lastCapturedCurrency,
+  maskMoneyString,
   monthlyCloseValuesByHolding,
   usableCachedPrice,
   VALUE_ONLY_PNL_NOTICE,
@@ -90,6 +101,38 @@ const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL" satisfies HoldingWarningCode;
 
 /** The ledger is where a sale or a traspaso past the units held gets fixed. */
 const LEDGER_FIX = { label: "Ver operaciones", tab: "operaciones" } as const;
+
+/** The warning about a traspaso's missing cost, fixed in its own panel (#1882). */
+const COST_PENDING_WARNING = "TRANSFER_COST_PENDING" satisfies HoldingWarningCode;
+
+/** The «Coste del traspaso» panel's action key: the band's fix opens it. */
+const INHERITED_COST_ACTION = "coste";
+
+/**
+ * What the «Coste del traspaso» panel asks, or null when nothing is pending. The
+ * source's unpaired reimbursements are read only then, and the proposed origin's
+ * ledger only when there is one: the ordinary ficha pays nothing for this.
+ */
+async function readInheritedCost(
+  ctx: AssetFamilyContext,
+  operations: readonly InvestmentOperation[],
+): Promise<InheritedCostView | null> {
+  if (pendingEntry(operations) === null) return null;
+  const sourceId = ctx.asset.connectedSourceId;
+  const candidates = sourceId
+    ? await ctx.store.operations.readUnpairedOutLegs(sourceId)
+    : [];
+  const origin = proposedOrigin(operations, candidates);
+  const originLedger = origin
+    ? await ctx.store.operations.readOperations(origin.assetId)
+    : null;
+  return inheritedCostView({
+    candidates,
+    holdingNames: new Map(ctx.allAssets.map((holding) => [holding.id, holding.name])),
+    operations,
+    originLedger,
+  });
+}
 
 export async function loadInvestmentSurface(
   ctx: AssetFamilyContext,
@@ -133,6 +176,9 @@ export async function loadInvestmentSurface(
     ]);
 
   const position = positions.find((p) => p.assetId === id) ?? null;
+  // A traspaso that came into this linked holding without its cost (#1882): what
+  // the «Coste del traspaso» panel asks, read only when an entry is pending.
+  const inheritedCost = await readInheritedCost(ctx, operations);
   const twrMonthlyCloses = monthlyCloseValuesByHolding(twrSnapshotRows).get(id) ?? [];
   const instrument = instrumentOfAsset(asset);
 
@@ -165,7 +211,11 @@ export async function loadInvestmentSurface(
   // Where the price comes from and of when rides the same call (#1828): the cache
   // row's provenance and the day the hand-set price was set go IN with the prices,
   // and the origin comes OUT with the valuation that picked one.
-  const { valuation, view: returnsView } = holdingReturns({
+  const {
+    inheritedCostPending,
+    valuation,
+    view: returnsView,
+  } = holdingReturns({
     assetId: id,
     cachedPrice: priceCache?.price,
     currency: baseCurrency,
@@ -299,7 +349,18 @@ export async function loadInvestmentSurface(
     },
     {
       // The board row's figure, by its same rules: no ratio, no claim (#551), and a
-      // gain of zero reads as the board's ▲, not as a loss.
+      // gain of zero reads as the board's ▲, not as a loss. A traspaso that came in
+      // without its cost measures nothing (#1882): «—» with why, never the
+      // provisional figure — the gramática of #1505.
+      ...(inheritedCostPending
+        ? {
+            detail: (
+              <small className="priceRefreshCaption">
+                sin coste real: falta el de un traspaso
+              </small>
+            ),
+          }
+        : {}),
       ...(returnsView && gainRatio !== null
         ? {
             tone: gainRatio >= 0 ? ("pos" as const) : ("neg" as const),
@@ -403,6 +464,42 @@ export async function loadInvestmentSurface(
   // places them (#1846).
   const cobros = fichaCobros({ currentUrl, payoutsPanel, tabs: FICHA_TABS });
   actions.push(cobros.action);
+  if (inheritedCost !== null) {
+    // «Coste del traspaso» (#1882, variant A): the one write on a holding its
+    // source owns. In «Más», opened by the band's «Indicar el coste»; gone once
+    // nothing is pending.
+    const roundTripped = formError?.formId === INHERITED_COST_FORM_ID ? formError : null;
+    // Cents-exact (#1315's rule): these are the figures checked against the old
+    // provider's papers and MyInvestor's statement. Privacy masks, never drops.
+    const exact = (amountMinor: number) => {
+      const figure = formatMoneyMinorExact({ amountMinor, currency: baseCurrency });
+      return privacyMode ? maskMoneyString(figure) : figure;
+    };
+    actions.push({
+      content: (
+        <InheritedCostSection
+          currentUrl={tabUrl("operaciones")}
+          figures={{
+            arrived: exact(inheritedCost.arrivedMinor),
+            proposalAmount: inheritedCost.proposal
+              ? exact(inheritedCost.proposal.amountMinor)
+              : null,
+            proposalCost: inheritedCost.proposal
+              ? exact(inheritedCost.proposal.costMinor)
+              : null,
+          }}
+          initialCost={roundTripped?.values["inheritedCost"] ?? ""}
+          initialError={roundTripped?.message ?? null}
+          readOnly={isDemo}
+          resolveAction={action.resolveInheritedCost}
+          view={inheritedCost}
+        />
+      ),
+      key: INHERITED_COST_ACTION,
+      label: "Coste del traspaso",
+      tier: "more",
+    });
+  }
   if (hasManualLedger) {
     // «Traer de otra entidad» (#1518): the movilización that arrives at a holding
     // this book ALREADY keeps. Gated on the same manual ledger as «Traspasar» — a
@@ -485,6 +582,7 @@ export async function loadInvestmentSurface(
       actions,
       errorTargets: {
         externalEntry: { action: "entrada" },
+        [INHERITED_COST_FORM_ID]: { action: INHERITED_COST_ACTION },
         // The no-JS terminal of the record form; with JS its refusal comes back
         // as state and the panel never closed (#1311).
         operation: { action: "operacion" },
@@ -497,7 +595,7 @@ export async function loadInvestmentSurface(
       instrument: INSTRUMENT_LABELS_ES[instrument],
       // The forms that print their own refusal, in their panel: the page band would
       // say it a second time — «Traer de otra entidad» used to (#1518).
-      ownErrorForms: ["operation", "transfer", "externalEntry"],
+      ownErrorForms: ["operation", "transfer", "externalEntry", INHERITED_COST_FORM_ID],
       // What each tab lists, so the row a terminal adds is pointed at (#1829).
       rows: {
         ...payoutsPanel.rows,
@@ -531,10 +629,13 @@ export async function loadInvestmentSurface(
                 // names. A counterpart whose holding is not in `allAssets`
                 // (Papelera) resolves as `unresolved` — the row claims nothing
                 // rather than mislabelling it as external.
-                transferCounterparts={transferCounterpartByOperationId(
+                transferCounterparts={withUnknownOrigins(
                   operations,
-                  counterparts,
-                  new Map(allAssets.map((a) => [a.id, a.name])),
+                  transferCounterpartByOperationId(
+                    operations,
+                    counterparts,
+                    new Map(allAssets.map((a) => [a.id, a.name])),
+                  ),
                 )}
               />
             </>
@@ -554,7 +655,11 @@ export async function loadInvestmentSurface(
             />
           ) : (
             <>
-              <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
+              <p className="emptyLine">
+                {inheritedCostPending
+                  ? "Sin rentabilidad que medir hasta que se sepa el coste del traspaso."
+                  : "Sin rentabilidad que medir todavía."}
+              </p>
               {benchmarkCard}
             </>
           ),
@@ -565,7 +670,21 @@ export async function loadInvestmentSurface(
       ],
       value: money(valuation.valueMinor),
       warnings,
-      warningFixes: { OVERSELL: LEDGER_FIX, OVER_TRANSFER: LEDGER_FIX },
+      warningFixes: {
+        OVERSELL: LEDGER_FIX,
+        OVER_TRANSFER: LEDGER_FIX,
+        // «Indicar el coste» opens the panel over the ledger, where the entry shows
+        // «falta» (#1882). Only while the panel is offered.
+        ...(inheritedCost !== null
+          ? {
+              [COST_PENDING_WARNING]: {
+                action: INHERITED_COST_ACTION,
+                label: "Indicar el coste",
+                tab: "operaciones",
+              },
+            }
+          : {}),
+      },
       // The record form and the ledger are in different places now and still one
       // list: the row being recorded shows in the tab before its action resolves.
       wrap: (ficha) => (

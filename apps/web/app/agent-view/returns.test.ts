@@ -467,6 +467,30 @@ describe("buildHoldingReturns pliega los cobros del holding (#1627)", () => {
     expect(Number(withPayout!.moneyWeighted.rate)).toBeGreaterThan(0);
   });
 
+  test("un traspaso con el coste pendiente no se mide, como en la ficha (#1882)", async () => {
+    const entry: InvestmentOperation = {
+      assetId: "h1",
+      currency: "EUR",
+      executedAt: "2023-03-14",
+      feesMinor: 0,
+      id: "in-1",
+      kind: "transfer_in",
+      pricePerUnit: "17.43",
+      source: "connected",
+      transferCostMinor: 70_133,
+      transferId: "myinvestor-external:in-1",
+      transferLegState: "cost_pending",
+      units: "40.237",
+    };
+
+    expect(await holdingReturns({ operations: [entry] })).toBeNull();
+    expect(
+      await holdingReturns({
+        operations: [{ ...entry, transferLegState: "cost_declared" }],
+      }),
+    ).not.toBeNull();
+  });
+
   test("la TWR sigue midiendo solo precio, y la señal lo declara", async () => {
     const operations = [buy("h1", "10", "100", "2023-12-01")];
     const snapshotRows = [

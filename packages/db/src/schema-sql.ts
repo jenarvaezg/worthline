@@ -165,6 +165,7 @@ CREATE TABLE \`asset_operations\` (
 	\`transfer_cost_minor\` integer,
 	\`transfer_seniority_at\` text,
 	\`cost_basis_grade\` text,
+	\`transfer_leg_state\` text,
 	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade,

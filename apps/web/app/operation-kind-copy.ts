@@ -1,5 +1,5 @@
 import { formatIsoDayEs } from "@web/asistente/iso-day-es";
-import type { OperationKind } from "@worthline/domain";
+import type { OperationKind, TransferLegState } from "@worthline/domain";
 import {
   BASE_CURRENCY,
   formatMoneyMinorExact,
@@ -65,6 +65,8 @@ export function transferRowNote(input: {
   counterpart: TransferRowCounterpart;
   transferCostMinor?: number | undefined;
   transferSeniorityAt?: string | undefined;
+  /** What a connector's leg still owes (#1882): a pending cost is never printed. */
+  transferLegState?: TransferLegState | undefined;
   privacyMode: boolean;
 }): string | null {
   if (!isTransferKind(input.kind)) return null;
@@ -78,7 +80,12 @@ export function transferRowNote(input: {
     segments.push(`${preposition} ${name}`);
   }
 
-  if (input.kind === "transfer_in" && input.transferCostMinor !== undefined) {
+  if (input.kind === "transfer_in" && input.transferLegState === "cost_pending") {
+    // The figure on the row is provisional — the value that arrived — and a
+    // provisional cost is never shown as one (#1882). What is true is that it is
+    // missing, and the band above says where to give it.
+    segments.push("coste heredado: falta");
+  } else if (input.kind === "transfer_in" && input.transferCostMinor !== undefined) {
     // Always BASE_CURRENCY, not the operation's capture currency: the ledger is
     // stored in EUR (#1401) and the inherited cost is a fold-derived figure, so
     // euros is the only currency it exists in.
@@ -87,6 +94,12 @@ export function transferRowNote(input: {
       currency: BASE_CURRENCY,
     });
     segments.push(`coste heredado ${input.privacyMode ? maskMoneyString(exact) : exact}`);
+    // Who gave it, on a connector's entry (#1882): the user, or the reimbursement
+    // the user confirmed as its origin.
+    if (input.transferLegState === "cost_declared") segments.push("lo pusiste tú");
+    if (input.transferLegState === "cost_from_origin") {
+      segments.push("viene del reembolso");
+    }
   }
 
   if (input.kind === "transfer_in" && input.transferSeniorityAt !== undefined) {

@@ -682,6 +682,11 @@ export function okMessage(key: string | undefined): string | null {
     // confirmed is the same thing the alta's message confirms: that this did not go
     // in as a compra.
     external_entry_recorded: "Entrada por traspaso desde otra entidad registrada.",
+    // The answer to a traspaso that came into a linked holding without its cost
+    // (#1882): the band is gone and the figures measure, so it only says which way.
+    inherited_cost_declared: "Coste del traspaso guardado.",
+    inherited_cost_from_origin:
+      "Hecho: el coste viene del reembolso y ese reembolso ya no cuenta como venta.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
     valuation_cadence_saved: "Cadencia de valoración guardada.",

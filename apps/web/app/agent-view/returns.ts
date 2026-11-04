@@ -15,6 +15,7 @@ import type {
 } from "@worthline/domain";
 import {
   derivePosition,
+  hasPendingInheritedCost,
   holdingIrr,
   monthlyCloseValuesByHolding,
   operationTwrCashflows,
@@ -74,6 +75,14 @@ export async function buildHoldingReturns(input: {
   }
 
   if (input.operations.length === 0) {
+    return null;
+  }
+
+  // A traspaso came in without its cost (#1882): the cost basis holds a provisional
+  // figure nobody gave, so nothing is measured — the same answer `holdingReturns`
+  // gives the ficha and the board, or the assistant would quote a gain the owner
+  // cannot see.
+  if (hasPendingInheritedCost(input.operations)) {
     return null;
   }
 

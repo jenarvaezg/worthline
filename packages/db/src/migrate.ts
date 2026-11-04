@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 76;
+export const SCHEMA_VERSION = 77;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2559,6 +2559,61 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       `);
     }
     await writeSchemaVersion(client, 76);
+  }
+
+  if (version < 77) {
+    // #1882 (ADR 0115, amended 2026-11-04): `asset_operations.transfer_leg_state` —
+    // what a connector-written traspaso leg still owes. Nullable: every manual,
+    // imported or paired row owes nothing.
+    //
+    // The backfill is NOT a heuristic: it reads only the ids the MyInvestor adapter
+    // mints for a leg with no pair in the book (#1878), so it marks exactly the rows
+    // the first start of #1880 wrote before this column existed.
+    // - An entry with no origin (`myinvestor-external:`/`myinvestor-unpaired:`)
+    //   carries a provisional cost: `cost_pending`.
+    // - An unpaired OUTGOING leg was a lone `transfer_out`, which the traspaso audit
+    //   reads as broken. It becomes what it is until someone pairs it: a sale, marked
+    //   `unpaired_out`. The cost basis it removes is the same either way (the average
+    //   cost does not care), so no snapshot moves. What moves is what a sale means
+    //   and a traspaso does not: the realized P/L, and the measured savings, which
+    //   count a sale as money taken out (ADR 0075). That is the design's reading of
+    //   an outgoing leg nobody has paired yet (#1882), undone by confirming it.
+    //
+    // The column is read BEFORE it is added (ADR 0002, amendment #1625): a step
+    // tolerates only «already applied», never a blind «duplicate column». A partial
+    // historical fixture with no operations table has nothing to extend.
+    const columnsOf = async () =>
+      (
+        (await client.execute("PRAGMA table_info(asset_operations)")).rows as unknown as {
+          name: string;
+        }[]
+      ).map((column) => String(column.name));
+    const existingColumns = await columnsOf();
+    if (existingColumns.length > 0 && !existingColumns.includes("transfer_leg_state")) {
+      await client.execute(
+        "ALTER TABLE asset_operations ADD COLUMN transfer_leg_state TEXT",
+      );
+    }
+    const operationColumns = await columnsOf();
+    // A partial historical fixture may lack the columns the backfill reads; it holds
+    // no connector rows to mark either.
+    const backfillColumns = ["kind", "source", "transfer_id", "transfer_leg_state"];
+    if (backfillColumns.every((column) => operationColumns.includes(column))) {
+      await client.execute(
+        `UPDATE asset_operations SET transfer_leg_state = 'cost_pending'
+          WHERE kind = 'transfer_in' AND source = 'connected'
+            AND transfer_leg_state IS NULL
+            AND (transfer_id LIKE 'myinvestor-external:%'
+              OR transfer_id LIKE 'myinvestor-unpaired:%')`,
+      );
+      await client.execute(
+        `UPDATE asset_operations
+            SET kind = 'sell', transfer_id = NULL, transfer_leg_state = 'unpaired_out'
+          WHERE kind = 'transfer_out' AND source = 'connected'
+            AND transfer_id LIKE 'myinvestor-unpaired:%'`,
+      );
+    }
+    await writeSchemaVersion(client, 77);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -36,7 +36,7 @@ import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
 import { FICHA_SUBJECT_WORDS, type FichaSubject } from "./_ficha/ficha-subject";
 import type { FichaTarget } from "./_ficha/ficha-view";
-import { FICHA_DATOS_TAB, fichaTabUrl } from "./_ficha/ficha-view";
+import { FICHA_DATOS_TAB, fichaActionUrl, fichaTabUrl } from "./_ficha/ficha-view";
 import { HoldingFicha } from "./_ficha/holding-ficha";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { TRASH_FORM_ID } from "./_surfaces/trash-exit-form";
@@ -194,7 +194,12 @@ export default async function EditarPage({
       fixes={Object.fromEntries(
         Object.entries(layout.warningFixes ?? {}).map(([code, fix]) => [
           code,
-          { ...fix, href: fichaTabUrl(currentUrl, fichaTabKeys, fix.tab) },
+          {
+            ...fix,
+            href: fix.action
+              ? fichaActionUrl(currentUrl, fichaTabKeys, fix.tab, fix.action)
+              : fichaTabUrl(currentUrl, fichaTabKeys, fix.tab),
+          },
         ]),
       )}
       id={id}
