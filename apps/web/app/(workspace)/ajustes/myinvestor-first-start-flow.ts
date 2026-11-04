@@ -27,6 +27,7 @@ import type {
 } from "@worthline/domain";
 import type {
   MyInvestorClient,
+  MyInvestorCredentials,
   MyInvestorErrorKind,
   MyInvestorReader,
 } from "@worthline/pricing";
@@ -168,7 +169,7 @@ export async function readMyInvestorProducts(
     now: string;
     today: string;
   },
-  input: { sourceId: string; typed: { customerId: string; password: string } | null },
+  input: { sourceId: string; typed: MyInvestorCredentials | null },
 ): Promise<MyInvestorFlowResult> {
   const connection = await readConnection(deps.store, input.sourceId);
   if (!connection) return { error: MYINVESTOR_NOT_FOUND, ok: false };

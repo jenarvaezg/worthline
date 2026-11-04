@@ -40,6 +40,7 @@ import type { DateKey, DecimalString } from "@worthline/domain";
 import { asDateKey, netUnitsFromOperations } from "@worthline/domain";
 import type {
   MyInvestorClient,
+  MyInvestorCredentials,
   MyInvestorError,
   MyInvestorErrorKind,
   MyInvestorReader,
@@ -131,7 +132,7 @@ export interface MyInvestorSyncInput {
   sourceId: string;
   trigger: MyInvestorSyncTrigger;
   /** The username and password typed now, when none is saved. Used once, never kept. */
-  typed: { customerId: string; password: string } | null;
+  typed: MyInvestorCredentials | null;
   /** «Resincronizar todo»: read the whole history again, from 2000-01-01. */
   fullHistory?: boolean;
 }
@@ -283,7 +284,7 @@ async function pass(
   input: MyInvestorSyncInput,
   connection: {
     deviceId: string;
-    login: { customerId: string; password: string };
+    login: MyInvestorCredentials;
     savedPassword: boolean;
     startedAt: string;
   },
