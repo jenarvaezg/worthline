@@ -144,6 +144,7 @@ const POSITION = {
  * shell's privacy mode, for the figures that must mask in it.
  */
 const url = vi.hoisted(() => ({ privacy: false, search: new URLSearchParams() }));
+const writeBlocked = vi.hoisted(() => ({ value: false }));
 
 const calls = vi.hoisted(() => ({
   // Asset-side reads
@@ -263,7 +264,10 @@ vi.mock("@web/page-shell", () => ({
   },
 }));
 
-vi.mock("@web/demo/write-guard", () => ({ isDemoMode: async () => false }));
+vi.mock("@web/demo/write-guard", () => ({
+  isDemoMode: async () => false,
+  isWriteBlocked: async () => writeBlocked.value,
+}));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -881,6 +885,18 @@ describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al
     );
     expect(panel(html)).toContain("Poner al día ahora");
     expect(panel(html)).not.toContain("Contraseña de MyInvestor");
+  });
+
+  test("a viewer sees the panel, but cannot press it", async () => {
+    writeBlocked.value = true;
+    try {
+      const html = await renderedHtml({ accion: "poner-al-dia" });
+      expect(panel(html)).toMatch(
+        /<button disabled="" type="submit">Poner al día<\/button>/,
+      );
+    } finally {
+      writeBlocked.value = false;
+    }
   });
 
   test("with no password saved, the panel asks for it once and points to Conexiones", async () => {

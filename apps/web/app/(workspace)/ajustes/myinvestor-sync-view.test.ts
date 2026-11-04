@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 
 import { serializeMyInvestorSyncOutcome } from "./myinvestor-sync-outcome";
 import {
+  formatMyInvestorLastGood,
   formatMyInvestorWhen,
   myInvestorResultView,
   myInvestorStanding,
@@ -43,6 +44,7 @@ describe("the standing of the connection", () => {
     expect(standing()).toEqual({
       blocked: null,
       dailyLine: "Se pone al día sola cada día",
+      lastLine: null,
       lasting: null,
       running: null,
     });
@@ -214,6 +216,23 @@ describe("the result of a pass", () => {
 });
 
 describe("when, in Madrid", () => {
+  test("the last good sync: today, yesterday, a date, or never", () => {
+    expect(formatMyInvestorLastGood("2026-11-04T06:12:00.000Z", NOW)).toBe("hoy, 07:12");
+    expect(formatMyInvestorLastGood("2026-11-03T06:12:00.000Z", NOW)).toBe("ayer, 07:12");
+    expect(formatMyInvestorLastGood("2026-11-01T06:12:00.000Z", NOW)).toBe(
+      "el 1 de noviembre, 07:12",
+    );
+    expect(formatMyInvestorLastGood(null, NOW)).toBe("Nunca");
+  });
+
+  test("the last pass is said to a panel that did not see it", () => {
+    expect(
+      standing({
+        outcome: { applied: 2, at: NOW, kind: "ok", mismatches: 0, resynced: false },
+      }).lastLine,
+    ).toBe("Al día: 2 operaciones nuevas.");
+  });
+
   test("today, tomorrow, or a date", () => {
     expect(formatMyInvestorWhen("2026-11-04T16:30:00.000Z", NOW)).toBe("hoy a las 17:30");
     expect(formatMyInvestorWhen("2026-11-05T08:00:00.000Z", NOW)).toBe(

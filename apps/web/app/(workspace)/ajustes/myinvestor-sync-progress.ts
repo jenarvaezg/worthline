@@ -10,6 +10,8 @@ export interface MyInvestorProgress {
   running: boolean;
   step: string | null;
   startedAt: string | null;
+  /** The server's clock when it answered: the panel compares on it, not its own. */
+  now: string;
 }
 
 /** How long before the press a pass must have started to be someone else's. */
@@ -21,14 +23,20 @@ export type MyInvestorProgressView =
   /** A pass that was running before the press: the press waits for it. */
   | { kind: "waiting"; startedAt: string };
 
-/** The pending press, read against the last poll (null before the first answer). */
+/**
+ * The pending press, read against the last poll (null before the first answer).
+ * `pressedAt` is the client's clock; `skewMs` (server minus client, measured by the
+ * poll) moves it onto the server's, so a client clock ahead never makes this press's
+ * own pass look like somebody else's.
+ */
 export function myInvestorProgressView(
   progress: MyInvestorProgress | null,
   pressedAt: number,
+  skewMs = 0,
 ): MyInvestorProgressView {
   if (progress?.running && progress.startedAt) {
     const started = Date.parse(progress.startedAt);
-    if (started < pressedAt - OWN_PASS_SLACK_MS) {
+    if (started < pressedAt + skewMs - OWN_PASS_SLACK_MS) {
       return { kind: "waiting", startedAt: progress.startedAt };
     }
   }

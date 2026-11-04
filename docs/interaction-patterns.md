@@ -300,6 +300,13 @@ Cada control interactivo nuevo **debe conservarla explícitamente**:
 - Si una superficie concreta sigue sintiéndose _server-bound_ después de Phase 0,
   _esa_ superficie (y solo esa) puede pasar a client-data + read API (la Option B
   reservada de ADR 0036) — nunca la app entera.
+- **Excepción anotada: los pasos de «Poner al día» de MyInvestor (#1884).** Una
+  pasada dura decenas de segundos y su Server Action solo contesta al terminar.
+  Mientras tanto, el panel pregunta cada segundo a `GET /api/myinvestor/progress`
+  en qué paso va, o a qué pasada en curso espera. No es una Server Action porque
+  el cliente las ejecuta de una en una, y la pasada ya ocupa ese turno. La
+  respuesta es un paso y una hora, nunca una cifra. La pregunta se hace solo
+  mientras la pulsación está pendiente, y nada más la usa.
 - **Demo no se ve afectado:** los **toggles de vista (read-only)** funcionan igual
   de fluidos. Pero las **mutaciones no deben fingir optimismo** en demo — el
   write-guard las rechaza, así que un cambio optimista seguido de revert sería un

@@ -14,11 +14,12 @@ import { schemaSql } from "@db/schema-sql";
 import { createStoreFromSqlite } from "@db/testing";
 import { wipeWorkspaceTables } from "@db/workspace-tables";
 import type { Client } from "@libsql/client";
+import { asDateKey } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 const SYNC_TABLE = "connected_source_sync_state";
-const DAY = "2026-11-04";
-const NEXT_DAY = "2026-11-05";
+const DAY = asDateKey("2026-11-04");
+const NEXT_DAY = asDateKey("2026-11-05");
 
 async function openStore() {
   const client: Client = openLibsqlClient(":memory:");
@@ -132,16 +133,49 @@ describe("the logins of the day (at most 10)", () => {
     expect(await sources.reserveSyncLogin({ cap: 10, day: NEXT_DAY, sourceId })).toBe(1);
   });
 
-  test("the rejections of the day count, and reset with the day", async () => {
+  test("a rejection is all or nothing: deleted, counted, and the third locks the day", async () => {
     const { sourceId, store } = await openStore();
     const sources = store.connectedSources;
+    const reject = (day: typeof DAY) =>
+      sources.recordPasswordRejection({
+        credentialsJson: JSON.stringify({ deviceId: "device-under-test" }),
+        day,
+        lockAfter: 3,
+        lockedUntil: "2026-11-05T00:00:00.000Z",
+        outcomeJson: { locked: '{"kind":"locked"}', rejected: '{"kind":"rejected"}' },
+        sourceId,
+      });
+
     await sources.reserveSyncLogin({ cap: 10, day: DAY, sourceId });
-    expect(await sources.recordSyncRejection({ day: DAY, sourceId })).toBe(1);
-    await sources.reserveSyncLogin({ cap: 10, day: DAY, sourceId });
-    expect(await sources.recordSyncRejection({ day: DAY, sourceId })).toBe(2);
+    expect(await reject(DAY)).toEqual({ locked: false, rejections: 1 });
+    expect(await reject(DAY)).toEqual({ locked: false, rejections: 2 });
+    expect(await sources.readSyncState(sourceId)).toMatchObject({
+      lastOutcomeJson: '{"kind":"rejected"}',
+      pausedUntil: null,
+    });
+    expect(await reject(DAY)).toEqual({ locked: true, rejections: 3 });
+    expect(await sources.readSyncState(sourceId)).toMatchObject({
+      lastOutcomeJson: '{"kind":"locked"}',
+      pausedUntil: "2026-11-05T00:00:00.000Z",
+    });
+    // The credentials were rewritten in the same transaction, without the password.
+    expect((await sources.readSource(sourceId))!.credentialsJson).toBe(
+      JSON.stringify({ deviceId: "device-under-test" }),
+    );
 
     await sources.reserveSyncLogin({ cap: 10, day: NEXT_DAY, sourceId });
-    expect(await sources.recordSyncRejection({ day: NEXT_DAY, sourceId })).toBe(1);
+    expect(await reject(NEXT_DAY)).toEqual({ locked: false, rejections: 1 });
+  });
+
+  test("a login day is a calendar day, never an instant", async () => {
+    const { sourceId, store } = await openStore();
+    await expect(
+      store.connectedSources.reserveSyncLogin({
+        cap: 10,
+        day: "2026-11-04T07:10:00.000Z" as typeof DAY,
+        sourceId,
+      }),
+    ).rejects.toThrow(/calendar day/);
   });
 });
 

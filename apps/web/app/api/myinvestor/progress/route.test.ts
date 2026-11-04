@@ -49,11 +49,19 @@ describe("GET /api/myinvestor/progress", () => {
     await store.connectedSources.setSyncStep(sourceId, "orders");
 
     const running = await GET(request(`?sourceId=${sourceId}`));
-    expect(await running.json()).toEqual({ running: true, startedAt, step: "orders" });
+    expect(await running.json()).toMatchObject({
+      running: true,
+      startedAt,
+      step: "orders",
+    });
 
     await store.connectedSources.releaseSyncLease(sourceId);
     const free = await GET(request(`?sourceId=${sourceId}`));
-    expect(await free.json()).toEqual({ running: false, startedAt: null, step: null });
+    expect(await free.json()).toMatchObject({
+      running: false,
+      startedAt: null,
+      step: null,
+    });
   });
 
   test("no session, no answer; no source id, a bad request", async () => {

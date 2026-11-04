@@ -966,7 +966,7 @@ export const connectedSourceSyncState = sqliteTable("connected_source_sync_state
   leaseStartedAt: text("lease_started_at"),
   leaseTrigger: text("lease_trigger").$type<"manual" | "cron">(),
   leaseStep: text("lease_step"),
-  loginDay: text("login_day"),
+  loginDay: text("login_day").$type<DateKey>(),
   loginsToday: integer("logins_today").notNull().default(0),
   rejectionsToday: integer("rejections_today").notNull().default(0),
   pausedUntil: text("paused_until"),

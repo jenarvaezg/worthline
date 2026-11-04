@@ -112,6 +112,7 @@ export type {
 } from "./connected-source-store";
 export type {
   ClaimSyncLeaseResult,
+  PasswordRejectionInput,
   SourceSyncState,
   SourceSyncStatePatch,
   SyncLease,

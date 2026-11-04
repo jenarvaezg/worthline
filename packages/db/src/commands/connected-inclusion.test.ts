@@ -345,6 +345,24 @@ describe("a periodic sync of the linked holdings (#1884)", () => {
     expect(cash.rows[0]!.current_value_minor).toBe(5_003);
   });
 
+  test("the units check reads every linked ledger at once, each in its own order", async () => {
+    await store.command.includeConnectedHoldings({
+      facts: facts([
+        buy("o2", "f1", "2025-06-10"),
+        buy("o1", "f1", "2025-01-10"),
+        buy("o3", "f2", "2025-03-10"),
+      ]),
+      holdings: [fundHolding("p1", "f1"), fundHolding("p2", "f2")],
+      sourceId,
+      today: TODAY,
+    });
+
+    const ledgers = await store.operations.readHoldingLedgers(["f1", "f2"]);
+
+    expect(ledgers.get("f1")!.operations.map((row) => row.id)).toEqual(["o1", "o2"]);
+    expect(ledgers.get("f2")!.operations.map((row) => row.id)).toEqual(["o3"]);
+  });
+
   test("the dedup ledger is read only for the keys of the batch", async () => {
     await store.command.includeConnectedHoldings({
       facts: facts([buy("o1", "f1", "2025-01-10"), buy("o2", "f1", "2025-02-10")]),

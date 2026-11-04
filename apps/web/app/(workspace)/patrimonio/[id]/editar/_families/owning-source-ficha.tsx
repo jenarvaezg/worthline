@@ -19,12 +19,13 @@ import {
 import { parseMyInvestorUnitsCheck } from "@web/ajustes/myinvestor-sync-outcome";
 import MyInvestorSyncPanel from "@web/ajustes/myinvestor-sync-panel";
 import {
+  formatMyInvestorLastGood,
   MYINVESTOR_RESYNC_LABEL,
   type MyInvestorStanding,
   myInvestorStanding,
   myInvestorUnitsLine,
 } from "@web/ajustes/myinvestor-sync-view";
-import { formatLastSync } from "@web/ajustes/numista-helpers";
+import { isWriteBlocked } from "@web/demo/write-guard";
 import { fichaActionUrl } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import type { WorthlineStore } from "@web/store";
 import type { ConnectedSource } from "./connected-source";
@@ -49,6 +50,12 @@ export interface OwningSourceFicha {
   unitsLine: string | null;
   /** Some linked holding does not square: the panel offers «Resincronizar todo». */
   anyMismatch: boolean;
+  /**
+   * The session cannot write — a viewer, the demo, an impersonating admin (ADR
+   * 0114 decision 3): the panel is shown, never pressable, and never asks for the
+   * holder's password.
+   */
+  readOnly: boolean;
 }
 
 /**
@@ -62,9 +69,10 @@ export async function loadOwningSourceFicha(
   now: string,
 ): Promise<OwningSourceFicha | null> {
   if (!source || source.adapter !== "myinvestor") return null;
-  const [full, state] = await Promise.all([
+  const [full, state, readOnly] = await Promise.all([
     store.connectedSources.readSource(source.id),
     store.connectedSources.readSyncState(source.id),
+    isWriteBlocked(),
   ]);
   const credentials = full ? readMyInvestorCredentials(full.credentialsJson) : null;
   const savedPassword = credentials !== null && hasSavedPassword(credentials);
@@ -73,7 +81,8 @@ export async function loadOwningSourceFicha(
   return {
     anyMismatch: check.length > 0,
     label: source.label,
-    lastGood: formatLastSync(source.lastSyncAt),
+    lastGood: formatMyInvestorLastGood(source.lastSyncAt, now),
+    readOnly,
     savedPassword,
     sourceId: source.id,
     standing: myInvestorStanding({ now, savedPassword, state }),
@@ -94,7 +103,8 @@ export function ponerAlDiaAction(
         dailyLine={owned.standing.dailyLine}
         lastGood={owned.lastGood}
         layout="panel"
-        readOnly={input.readOnly}
+        lastLine={owned.standing.lastLine}
+        readOnly={input.readOnly || owned.readOnly}
         resync={owned.anyMismatch}
         runningSince={owned.standing.running?.since ?? null}
         savedPassword={owned.savedPassword}

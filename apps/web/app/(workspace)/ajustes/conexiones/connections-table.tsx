@@ -200,6 +200,7 @@ export default function ConnectionsTable({
                               currentUrl={currentUrl}
                               dailyLine={myInvestor.sync.standing.dailyLine}
                               lastGood={formatLastSync(source.lastSyncAt)}
+                              lastLine={null}
                               layout="row"
                               readOnly={myInvestor.sync.readOnly}
                               resync={false}

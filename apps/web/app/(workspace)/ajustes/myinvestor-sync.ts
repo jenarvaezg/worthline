@@ -29,8 +29,8 @@
  * sends one (invariant 7).
  */
 import type { WorthlineStore } from "@web/store";
-import type { DecimalString } from "@worthline/domain";
-import { netUnitsFromOperations } from "@worthline/domain";
+import type { DateKey, DecimalString } from "@worthline/domain";
+import { asDateKey, netUnitsFromOperations } from "@worthline/domain";
 import type {
   MyInvestorClient,
   MyInvestorErrorKind,
@@ -92,7 +92,6 @@ export type MyInvestorSyncStore = {
   connectedSources: Pick<
     WorthlineStore["connectedSources"],
     | "readSource"
-    | "updateCredentials"
     | "readDiscovery"
     | "saveDiscovery"
     | "readLinks"
@@ -100,12 +99,12 @@ export type MyInvestorSyncStore = {
     | "setSyncStep"
     | "releaseSyncLease"
     | "reserveSyncLogin"
-    | "recordSyncRejection"
+    | "recordPasswordRejection"
     | "updateSyncState"
     | "readSyncState"
   >;
   command: Pick<WorthlineStore["command"], "syncConnectedHoldings">;
-  operations: Pick<WorthlineStore["operations"], "readOperations">;
+  operations: Pick<WorthlineStore["operations"], "readHoldingLedgers">;
 };
 
 export interface MyInvestorSyncDeps {
@@ -251,7 +250,7 @@ async function pass(
 ): Promise<MyInvestorSyncOutcome> {
   const sources = deps.store.connectedSources;
   const { sourceId } = input;
-  const day = deps.today();
+  const day = asDateKey(deps.today());
   const step = (key: MyInvestorSyncStep) => sources.setSyncStep(sourceId, key);
   const finish = async (
     outcome: MyInvestorSyncOutcome,
@@ -296,7 +295,7 @@ async function failed(
   deps: MyInvestorSyncDeps,
   context: {
     sourceId: string;
-    day: string;
+    day: DateKey;
     deviceId: string;
     savedPassword: boolean;
     finish: (
@@ -311,25 +310,29 @@ async function failed(
   switch (kind) {
     case "password_rejected": {
       // Never retried on its own: a saved password goes at once, the device stays.
-      if (context.savedPassword) {
-        await sources.updateCredentials(
-          context.sourceId,
-          serializeMyInvestorCredentials({ deviceId: context.deviceId }),
-        );
-      }
-      const rejections = await sources.recordSyncRejection({
-        day: context.day,
-        sourceId: context.sourceId,
-      });
-      if (rejections >= MYINVESTOR_REJECTIONS_TO_LOCK) {
-        const until = nextDayStart(context.day);
-        return context.finish({ at, kind: "locked", until }, { pausedUntil: until });
-      }
-      return context.finish({
+      // All of it in one transaction: deleted, counted, locked on the third and
+      // written down, or none of it.
+      const until = nextDayStart(context.day);
+      const rejected: MyInvestorSyncOutcome = {
         at,
         forgotten: context.savedPassword,
         kind: "password_rejected",
+      };
+      const locked: MyInvestorSyncOutcome = { at, kind: "locked", until };
+      const result = await sources.recordPasswordRejection({
+        credentialsJson: context.savedPassword
+          ? serializeMyInvestorCredentials({ deviceId: context.deviceId })
+          : null,
+        day: context.day,
+        lockAfter: MYINVESTOR_REJECTIONS_TO_LOCK,
+        lockedUntil: until,
+        outcomeJson: {
+          locked: serializeMyInvestorSyncOutcome(locked),
+          rejected: serializeMyInvestorSyncOutcome(rejected),
+        },
+        sourceId: context.sourceId,
       });
+      return result.locked ? locked : rejected;
     }
     case "rejected_no_reason": {
       const until = addMinutes(at, MYINVESTOR_PAUSE_HOURS * 60);
@@ -396,11 +399,15 @@ async function readAndApply(
     today,
   });
 
+  // Every linked ledger in one read, not one round trip per holding.
+  const ledgers = await store.operations.readHoldingLedgers(
+    plan.witnesses.map((witness) => witness.assetId),
+  );
   const bookUnits = new Map<string, DecimalString>();
   for (const witness of plan.witnesses) {
     bookUnits.set(
       witness.assetId,
-      netUnitsFromOperations(await store.operations.readOperations(witness.assetId)),
+      netUnitsFromOperations(ledgers.get(witness.assetId)?.operations ?? []),
     );
   }
   const mismatches = checkMyInvestorUnits(plan.witnesses, bookUnits);
@@ -432,6 +439,8 @@ async function readAndApply(
 export interface MyInvestorRefreshDeps {
   clientFor: ((deviceId: string) => MyInvestorSyncClient) | null;
   sleep?: (ms: number) => Promise<void>;
+  /** The wall clock; the tests pin it. */
+  now?: () => string;
 }
 
 /** The kinds a cron pass reports as a degradation (#1755): words, never data. */
@@ -450,15 +459,17 @@ const CRON_FAILURES: ReadonlySet<MyInvestorSyncOutcome["kind"]> = new Set([
  * pass per connection with a saved password. The premium gate is the capture's own
  * (`shouldSyncConnectedSources`, ADR 0114 decision 2), which skips this phase for a
  * lapsed plan. A failed pass is reported by its kind; a throw is reported, never
- * swallowed, and never stops the capture.
+ * swallowed, and never stops the capture. The capture's pinned instant is the
+ * snapshot's, not the pass's: the pass runs on the wall clock.
  */
 export async function runMyInvestorRefresh(
   store: WorthlineStore,
-  nowIso: string,
+  _captureInstant: string,
   refreshDeps: MyInvestorRefreshDeps,
 ): Promise<{ errors: string[] }> {
   const { clientFor } = refreshDeps;
   if (!clientFor) return { errors: [] };
+  const now = refreshDeps.now ?? (() => new Date().toISOString());
   const sources = (await store.connectedSources.listSources()).filter(
     (source) => source.adapter === MYINVESTOR_ADAPTER,
   );
@@ -468,12 +479,13 @@ export async function runMyInvestorRefresh(
       const result = await runMyInvestorSync(
         {
           clientFor,
-          // The capture pins its instant; the pass is minutes long, so the clock is
-          // the capture's instant moved by the time actually spent.
-          now: elapsedClock(nowIso),
+          // The WALL clock, never the capture's pinned instant: a job drained hours
+          // after it was enqueued would otherwise take a lease that already expired
+          // to the button, and count its login on another day.
+          now,
           sleep: refreshDeps.sleep ?? defaultSleep,
           store,
-          today: () => nowIso.slice(0, 10),
+          today: () => now().slice(0, 10),
         },
         { sourceId: source.id, trigger: "cron", typed: null },
       );

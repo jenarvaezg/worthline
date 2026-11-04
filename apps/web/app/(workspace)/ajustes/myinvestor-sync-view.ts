@@ -57,6 +57,20 @@ export function formatMyInvestorWhen(iso: string, now: string): string {
   return `el ${DATE_FORMAT.format(new Date(iso))} a las ${hour}`;
 }
 
+/**
+ * The last good sync as «Última vez al día» says it, in Madrid: «hoy, 07:12»,
+ * «ayer, 07:12», «el 2 de noviembre, 07:12», or «Nunca».
+ */
+export function formatMyInvestorLastGood(lastSyncAt: string | null, now: string): string {
+  if (!lastSyncAt || Number.isNaN(Date.parse(lastSyncAt))) return "Nunca";
+  const day = madridDay(lastSyncAt);
+  const hour = formatMyInvestorHour(lastSyncAt);
+  if (day === madridDay(now)) return `hoy, ${hour}`;
+  const yesterday = madridDay(new Date(Date.parse(now) - 86_400_000).toISOString());
+  if (day === yesterday) return `ayer, ${hour}`;
+  return `el ${DATE_FORMAT.format(new Date(lastSyncAt))}, ${hour}`;
+}
+
 export const MYINVESTOR_DAILY_ON = "Se pone al día sola cada día";
 export const MYINVESTOR_DAILY_MANUAL = "Se pone al día cuando pulsas";
 export const MYINVESTOR_DAILY_STOPPED = "La puesta al día diaria está parada";
@@ -96,6 +110,8 @@ export interface MyInvestorStanding {
   blocked: { line: string } | null;
   /** A pass is running now (the cron's, or another tab's), since this hour. */
   running: { since: string } | null;
+  /** What the last pass ended in, for a panel that did not see it happen. */
+  lastLine: string | null;
 }
 
 const PASSWORD_FORGOTTEN: MyInvestorBandEntry = {
@@ -176,7 +192,8 @@ export function myInvestorStanding(input: {
     lasting = SMS_REQUIRED;
   } else if (forgotten) {
     lasting = PASSWORD_FORGOTTEN;
-  } else if (outcome?.kind === "limit" && madridDay(outcome.at) === madridDay(now)) {
+  } else if (outcome?.kind === "limit" && outcome.at.slice(0, 10) === now.slice(0, 10)) {
+    // The logins are counted per the app's calendar day (UTC), as the pass counts them.
     lasting = LIMIT;
     blocked = { line: "«Poner al día» vuelve mañana." };
   } else if (outcome?.kind === "network") {
@@ -189,7 +206,8 @@ export function myInvestorStanding(input: {
   const running =
     lease && lease.until > now ? { since: formatMyInvestorHour(lease.startedAt) } : null;
 
-  return { blocked, dailyLine, lasting, running };
+  const lastLine = outcome ? outcomeView(outcome, now).text : null;
+  return { blocked, dailyLine, lastLine, lasting, running };
 }
 
 /** The band's line for a linked holding whose units do not square (P8). */

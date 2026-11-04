@@ -8,11 +8,21 @@
  * - {@link reserveSyncLogin}: one of the day's logins, reserved before MyInvestor is
  *   asked, so the cap of 10 holds whatever runs at once.
  *
+ * - {@link recordPasswordRejection}: the action of a rejected password (decision 7)
+ *   in ONE transaction — the saved password deleted, the rejection counted, the lock
+ *   and the outcome written — so a half-applied rejection can neither keep a
+ *   password the cron would retry nor count a third rejection with no lock.
+ *
  * The rest is what the passes leave for the button, the cron and the ficha to read.
+ * A login day is a calendar day (`DateKey`), refused otherwise: an instant there
+ * would never equal the next one, and the caps would reset on every login.
  */
+import type { DateKey } from "@worthline/domain";
+import { isRealCalendarDay } from "@worthline/domain";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 
-import { connectedSourceSyncState } from "./schema";
+import { sealSecret } from "./crypto";
+import { connectedSourceSyncState, connectedSources } from "./schema";
 import type { StoreContext } from "./store-context";
 
 export type SyncLeaseTrigger = "manual" | "cron";
@@ -152,8 +162,9 @@ export async function releaseSyncLease(
  */
 export async function reserveSyncLogin(
   ctx: StoreContext,
-  input: { sourceId: string; day: string; cap: number },
+  input: { sourceId: string; day: DateKey; cap: number },
 ): Promise<number | null> {
+  assertLoginDay(input.day);
   await ensureRow(ctx, input.sourceId);
   const table = connectedSourceSyncState;
   const sameDay = sql`${table.loginDay} = ${input.day}`;
@@ -177,25 +188,72 @@ export async function reserveSyncLogin(
   return row ? Number(row.loginsToday) : null;
 }
 
-/** Count one password rejection of `day`; returns how many the day has. */
-export async function recordSyncRejection(
+function assertLoginDay(day: string): void {
+  if (!isRealCalendarDay(day)) {
+    throw new Error(`A login day is a calendar day, got "${day}".`);
+  }
+}
+
+/** What a rejected password leaves, decided by how many the day already has. */
+export interface PasswordRejectionInput {
+  sourceId: string;
+  day: DateKey;
+  /** The credentials without the password, when a saved one is deleted; null otherwise. */
+  credentialsJson: string | null;
+  /** Rejections in a day that lock the connection. */
+  lockAfter: number;
+  /** Until when a lock holds: the start of the next day. */
+  lockedUntil: string;
+  /** The outcome to keep for a plain rejection, and for the one that locks. */
+  outcomeJson: { rejected: string; locked: string };
+}
+
+/**
+ * A rejected password (ADR 0114 decision 7), all of it or none: the saved password
+ * goes, the rejection is counted, and the third of the day pauses the connection
+ * until `lockedUntil`. Returns the day's count and whether it locked.
+ */
+export async function recordPasswordRejection(
   ctx: StoreContext,
-  input: { sourceId: string; day: string },
-): Promise<number> {
-  await ensureRow(ctx, input.sourceId);
-  const table = connectedSourceSyncState;
-  const sameDay = sql`${table.loginDay} = ${input.day}`;
-  const counted = await ctx.db
-    .update(table)
-    .set({
-      loginDay: input.day,
-      rejectionsToday: sql`CASE WHEN ${sameDay} THEN ${table.rejectionsToday} + 1 ELSE 1 END`,
-      updatedAt: sql`CURRENT_TIMESTAMP`,
-    })
-    .where(eq(table.sourceId, input.sourceId))
-    .returning({ rejectionsToday: table.rejectionsToday })
-    .all();
-  return Number(counted[0]?.rejectionsToday ?? 1);
+  input: PasswordRejectionInput,
+): Promise<{ rejections: number; locked: boolean }> {
+  assertLoginDay(input.day);
+  return ctx.transaction(async () => {
+    await ensureRow(ctx, input.sourceId);
+    if (input.credentialsJson !== null) {
+      await ctx.db
+        .update(connectedSources)
+        .set({
+          credentialsJson: sealSecret(input.credentialsJson),
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(connectedSources.id, input.sourceId))
+        .run();
+    }
+    const table = connectedSourceSyncState;
+    const sameDay = sql`${table.loginDay} = ${input.day}`;
+    const counted = await ctx.db
+      .update(table)
+      .set({
+        loginDay: input.day,
+        rejectionsToday: sql`CASE WHEN ${sameDay} THEN ${table.rejectionsToday} + 1 ELSE 1 END`,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(table.sourceId, input.sourceId))
+      .returning({ rejectionsToday: table.rejectionsToday })
+      .all();
+    const rejections = Number(counted[0]?.rejectionsToday ?? 1);
+    const locked = rejections >= input.lockAfter;
+    await ctx.db
+      .update(table)
+      .set({
+        lastOutcomeJson: locked ? input.outcomeJson.locked : input.outcomeJson.rejected,
+        ...(locked ? { pausedUntil: input.lockedUntil } : {}),
+      })
+      .where(eq(table.sourceId, input.sourceId))
+      .run();
+    return { locked, rejections };
+  });
 }
 
 export async function updateSyncState(

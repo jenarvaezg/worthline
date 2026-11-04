@@ -32,10 +32,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const progress = await withStore(async (store): Promise<MyInvestorProgress> => {
     const state = await store.connectedSources.readSyncState(sourceId);
     const lease = state?.lease ?? null;
-    if (!lease || lease.until <= new Date().toISOString()) {
-      return { running: false, startedAt: null, step: null };
+    const now = new Date().toISOString();
+    if (!lease || lease.until <= now) {
+      return { now, running: false, startedAt: null, step: null };
     }
-    return { running: true, startedAt: lease.startedAt, step: lease.step };
+    return { now, running: true, startedAt: lease.startedAt, step: lease.step };
   }, target);
   return NextResponse.json(progress, { headers: NO_STORE });
 }

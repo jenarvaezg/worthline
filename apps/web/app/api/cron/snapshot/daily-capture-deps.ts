@@ -171,12 +171,18 @@ export function buildDailyCaptureDeps(
     // MyInvestor (#1884, ADR 0114 decision 4) joins them: one pass per connection
     // with a saved password, never an SMS. Its client goes through the relay, so
     // with the relay unconfigured there is no client and the phase does nothing.
+    // It runs AFTER the other two, never beside them: on one store a concurrent
+    // `transaction` folds into the outermost one, so a Binance rollback would
+    // undo MyInvestor's deleted password and its counted rejection, and the cron
+    // would retry a rejected password the next day (decision 7).
     syncConnectedSources: async (store, now) => {
-      const [binance, numista, myInvestor] = await Promise.all([
+      const [binance, numista] = await Promise.all([
         runBinanceRefresh(store, now),
         runNumistaCoinRefresh(store, now),
-        runMyInvestorRefresh(store, now, { clientFor: myInvestorClientFactory(env) }),
       ]);
+      const myInvestor = await runMyInvestorRefresh(store, now, {
+        clientFor: myInvestorClientFactory(env),
+      });
       return { errors: [...binance.errors, ...numista.errors, ...myInvestor.errors] };
     },
     fetchPrices: async (pairs, now): Promise<DailyCaptureFetchedPrice[]> => {

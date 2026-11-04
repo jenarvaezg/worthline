@@ -1,5 +1,6 @@
 import type {
   ConnectedSource,
+  DateKey,
   DistributiveOmit,
   MirroredSourceAdapter,
   OwnershipShare,
@@ -44,8 +45,9 @@ import {
 import {
   type ClaimSyncLeaseResult,
   claimSyncLease,
+  type PasswordRejectionInput,
   readSyncState,
-  recordSyncRejection,
+  recordPasswordRejection,
   releaseSyncLease,
   reserveSyncLogin,
   type SourceSyncState,
@@ -245,11 +247,16 @@ export interface ConnectedSourceStore {
   /** Reserve one login of the day (decision 7): its number, or null past `cap`. */
   reserveSyncLogin(input: {
     sourceId: string;
-    day: string;
+    day: DateKey;
     cap: number;
   }): Promise<number | null>;
-  /** Count one password rejection of the day; returns the day's count. */
-  recordSyncRejection(input: { sourceId: string; day: string }): Promise<number>;
+  /**
+   * A rejected password, all of it or none (decision 7): the saved password deleted,
+   * the rejection counted, the lock of the day's third and the outcome written.
+   */
+  recordPasswordRejection(
+    input: PasswordRejectionInput,
+  ): Promise<{ rejections: number; locked: boolean }>;
   updateSyncState(sourceId: string, patch: SourceSyncStatePatch): Promise<void>;
   readSyncState(sourceId: string): Promise<SourceSyncState | null>;
 }
@@ -1035,7 +1042,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     setSyncStep: (sourceId, step) => setSyncStep(ctx, sourceId, step),
     releaseSyncLease: (sourceId) => releaseSyncLease(ctx, sourceId),
     reserveSyncLogin: (input) => reserveSyncLogin(ctx, input),
-    recordSyncRejection: (input) => recordSyncRejection(ctx, input),
+    recordPasswordRejection: (input) => recordPasswordRejection(ctx, input),
     updateSyncState: (sourceId, patch) => updateSyncState(ctx, sourceId, patch),
     readSyncState: (sourceId) => readSyncState(ctx, sourceId),
   };

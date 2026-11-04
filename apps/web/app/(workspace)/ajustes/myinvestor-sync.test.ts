@@ -182,7 +182,7 @@ async function connectIncludeAll(save: boolean): Promise<string> {
   const source = (await store.connectedSources.listSources()).find(
     (row) => row.adapter === "myinvestor",
   )!;
-  const { view } = (await loadMyInvestorFirstStart(store, source.id))!;
+  const { view } = (await loadMyInvestorFirstStart(store, source.id, TODAY))!;
   const own = view.own.flatMap((group) => group.products).filter(isIncludable);
   const included = await includeMyInvestorProducts(
     {
@@ -235,7 +235,7 @@ describe("a good pass", () => {
     expect(await operationCount()).toBe(before);
 
     // A new subscription of a linked fund, inside the window of the next pass.
-    const { discovery } = (await loadMyInvestorFirstStart(store, sourceId))!;
+    const { discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const linked = new Set(
       (await store.connectedSources.readLinks(sourceId)).map((link) => link.productKey),
     );
@@ -285,7 +285,7 @@ describe("a good pass", () => {
     expect(third).toMatchObject({ applied: 0, kind: "ok" });
     expect(await operationCount()).toBe(before + 1);
     // The stored read is refreshed with it, so a later include uses fresh data.
-    const refreshed = (await loadMyInvestorFirstStart(store, sourceId))!.discovery;
+    const refreshed = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!.discovery;
     expect(refreshed.operations.some((fact) => fact.key === "sintetica-nueva-1")).toBe(
       true,
     );
@@ -515,6 +515,7 @@ describe("the cron (the daily capture's source-sync phase)", () => {
 
     const result = await runMyInvestorRefresh(store, NOW, {
       clientFor: fake.clientFor,
+      now: () => NOW,
       sleep: async () => {},
     });
 
@@ -539,6 +540,7 @@ describe("the cron (the daily capture's source-sync phase)", () => {
         syncConnectedSources: (opened, now) =>
           runMyInvestorRefresh(opened, now, {
             clientFor: fake.clientFor,
+            now: () => NOW,
             sleep: async () => {},
           }),
       });
@@ -557,6 +559,7 @@ describe("the cron (the daily capture's source-sync phase)", () => {
 
     const result = await runMyInvestorRefresh(store, NOW, {
       clientFor: fake.clientFor,
+      now: () => NOW,
       sleep: async () => {},
     });
 

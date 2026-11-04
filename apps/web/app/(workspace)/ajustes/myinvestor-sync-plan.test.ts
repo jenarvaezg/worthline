@@ -175,6 +175,51 @@ describe("the batch of a periodic sync", () => {
     ]);
   });
 
+  test("a traspaso in the window carries the cost of its origin's WHOLE ledger", () => {
+    // 10 at 10 € and 10 at 20 € before the window: an average of 15 €. The 5 that
+    // leave inside the window take 75 €, not what 30 days alone would say.
+    const transfer = discovery(
+      [
+        op("a-buy-1", A, { amount: "100", executedAt: "2025-01-10", units: "10" }),
+        op("a-buy-2", A, { amount: "200", executedAt: "2025-06-10", units: "10" }),
+        op("out", A, {
+          amount: "100",
+          executedAt: "2026-10-20",
+          operation: "transfer_out",
+          transfer: { counterpartKey: "in", pairing: "paired", transferId: "t1" },
+          units: "5",
+        }),
+        op("in", B, {
+          amount: "100",
+          executedAt: "2026-10-20",
+          operation: "transfer_in",
+          transfer: { counterpartKey: "out", pairing: "paired", transferId: "t1" },
+          units: "4",
+        }),
+      ],
+      [fund(A, "15"), fund(B, "4")],
+      "2026-11-04",
+    );
+
+    const plan = planMyInvestorSync(transfer, {
+      cursor: "2026-11-04",
+      links: [
+        { assetId: "asset-a", productKey: keyOf(A) },
+        { assetId: "asset-b", productKey: keyOf(B) },
+      ],
+      sourceId: SOURCE,
+      windowKeys: new Set(["out", "in"]),
+    });
+
+    const entry = plan.facts.facts.find((fact) => fact.key === "in")!;
+    expect(entry.payload).toMatchObject({
+      assetId: "asset-b",
+      transferCostMinor: 7_500,
+      transferId: "t1",
+    });
+    expect(plan.facts.facts.map((fact) => fact.key).sort()).toEqual(["in", "out"]);
+  });
+
   test("«Resincronizar todo» plans the whole history of the linked holdings", () => {
     const plan = planMyInvestorSync(read, {
       cursor: "2026-11-04",
