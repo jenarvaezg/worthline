@@ -155,9 +155,11 @@ export const SCENARIOS: Record<CaseKey, Scenario> = {
 };
 
 export const eur = (minor: number) =>
-  new Intl.NumberFormat("es-ES", { currency: "EUR", style: "currency" }).format(
-    minor / 100,
-  );
+  new Intl.NumberFormat("es-ES", {
+    currency: "EUR",
+    style: "currency",
+    useGrouping: "always",
+  }).format(minor / 100);
 
 export const signedEur = (minor: number) =>
   `${minor >= 0 ? "+" : "−"}${eur(Math.abs(minor))}`;
