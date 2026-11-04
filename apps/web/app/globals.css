@@ -4899,6 +4899,30 @@ svg a:hover .compositionBand {
   text-align: right;
 }
 
+/* Los fondos que el gestor de un roboadvisor vendió enteros (#1883): miembros a 0
+   con su historial, plegados bajo la composición — no pesan, pero cuentan en la
+   rentabilidad. Misma lista de líneas con filete que el índice. */
+.carterasSold {
+  margin-top: 0.6rem;
+}
+
+.carterasSold > summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* Una fila de .carterasRow con la nota debajo del nombre, no a su derecha. */
+.carterasSoldRow {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.carterasSoldNote {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 /* El testigo (#1550): el gestor enseña el efectivo en su propia casilla, así que
    la ficha reparte la cifra grande en dos lecturas — fondos y caja — antes de
    carear. Dos columnas de texto, sin tarjetas ni tintes (canon §3). */
@@ -5989,6 +6013,58 @@ p.muted {
 .opsLedger .balanceMenu .opCaptureNote {
   max-width: 24ch;
   padding: 0 10px;
+}
+
+/* #1886 — La pestaña «Aportación» de un holding de MyInvestor: la programación en
+   una línea abierta por regla, como un asiento al margen, y debajo el mismo libro
+   compacto de las operaciones. «No ha llegado» va en el tono de aviso; lo demás, en
+   tinta. */
+.fichaSchedule + .fichaSchedule {
+  margin-top: 18px;
+}
+
+.fichaScheduleLine {
+  border-left: 2px solid var(--line-strong);
+  margin: 0 0 6px;
+  max-width: 64ch;
+  padding-left: 8px;
+}
+
+.fichaScheduleNote {
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.fichaScheduleMissing {
+  color: var(--gold);
+}
+
+/* Tres columnas que caben en el teléfono sin recolocarse: la orden que casa es la
+   única que puede partirse en dos renglones. */
+.fichaScheduleTable {
+  table-layout: auto;
+}
+
+.fichaScheduleTable th,
+.fichaScheduleTable td {
+  line-height: 1.5;
+  padding: 7px 14px 7px 0;
+  vertical-align: baseline;
+}
+
+.fichaScheduleTable th:last-child,
+.fichaScheduleTable td:last-child {
+  padding-right: 0;
+}
+
+.fichaScheduleTable td.fichaScheduleFigure {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+.fichaScheduleTable td.fichaScheduleFigure:first-child {
+  white-space: nowrap;
 }
 
 .opsMore {
@@ -7375,7 +7451,10 @@ td.rowActions > * {
 .lotRow button,
 .assistantProposal .assistantRowAside button,
 .fichaPriceNotice a,
-.fichaPriceNotice button {
+.fichaPriceNotice button,
+.myinvestorCodeActions .myinvestorRestart,
+.myinvestorLeftList .myinvestorIncludeLater,
+.inheritedCostElsewhere > summary {
   background: transparent;
   border: 0;
   min-height: 0;
@@ -9820,6 +9899,16 @@ td.rowActions > * {
   color: var(--red);
 }
 
+/* Un aviso que no es un fallo (#1885): el recordatorio de los 45 días, el conector
+   que lleva días fallando en un tipo de dato, una pausa. Oro, como los avisos. */
+.conexSyncError.isWarn {
+  border-left-color: var(--gold);
+}
+
+.conexSyncError.isWarn strong {
+  color: var(--gold);
+}
+
 /* El historial de corridas y el cambio de credenciales (#1224/#1225): pliegues
    bajo la fila, con la misma palabra discreta que «Desconectar». Cerrados por
    defecto — ninguno es la respuesta (esa va arriba, en .conexSyncError): uno es
@@ -9912,6 +10001,518 @@ td.rowActions > * {
 
 .conexConnect .stackForm button {
   justify-self: start;
+}
+
+/* MyInvestor (#1879, variante A). El aviso de guardar la contraseña (ADR 0114,
+   decisión 1) es una entrada de aviso ABIERTA —regla de oro a la izquierda, la
+   gramática de .premiumNotice sin su tinte, porque aquí no se vende nada—, con el
+   texto entero y la casilla debajo, en orden de lectura. Nunca plegado. */
+.myinvestorRisk {
+  border-left: 2px solid var(--gold);
+  display: grid;
+  gap: 10px;
+  max-width: 60ch;
+  padding: 2px 0 2px 12px;
+}
+
+.myinvestorRiskText {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* La etiqueta de la casilla es la frase que se acepta: se lee en tinta y a cuerpo
+   de texto, no como la etiqueta gris de un campo. La casilla es la nativa (canon
+   §7, «Capa CSS»). */
+.stackForm .myinvestorRiskCheck {
+  align-items: start;
+  color: var(--ink);
+  display: grid;
+  font-weight: 400;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.myinvestorRiskCheck input {
+  margin-top: 3px;
+}
+
+/* El código del SMS: cifras tabulares, espaciadas, en un campo del ancho de un
+   código y no de la página. */
+.myinvestorCode {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2em;
+  max-width: 10rem;
+}
+
+.myinvestorCodeActions {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
+/* «Empezar de nuevo» es un control de texto (receta «Control de texto»): aquí
+   solo su tono y su cuerpo, en el azul de interacción. */
+.myinvestorCodeActions .myinvestorRestart {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Por qué la fila sin conectar no ofrece pliegue: una línea, donde iría «Conectar». */
+.myinvestorGate {
+  margin: 0.35rem 0 0;
+}
+
+/* «Coste del traspaso» (#1882, variante A): el panel lateral que pregunta el coste
+   que un traspaso trajo sin él. Un formulario de una sola pregunta: el contexto, la
+   propuesta o el campo, y la línea de por qué es lo único que se escribe a mano. */
+.inheritedCost {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 36rem;
+}
+
+.inheritedCost p {
+  margin: 0;
+}
+
+.inheritedCostProposal {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.inheritedCostProposal button {
+  justify-self: start;
+}
+
+/* «No, vienen de otro sitio»: control de texto (receta «Control de texto»), en el
+   azul de interacción — abre el campo, no descarta nada. Es un `<summary>` para que
+   funcione sin JS; sin el triángulo de la divulgación, que no es de la receta. */
+.inheritedCostElsewhere > summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.inheritedCostElsewhere > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inheritedCostElsewhere[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.inheritedCostForm {
+  margin-top: 0;
+}
+
+.inheritedCostForm button {
+  justify-self: start;
+}
+
+.inheritedCostMoney {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  max-width: 12rem;
+}
+
+/* El primer arranque de MyInvestor (#1880, variante D): el pliegue por cuenta con
+   «Así queda tu patrimonio» al lado. Vive FUERA de .tableScroll (un sticky dentro
+   de un contenedor con scroll se pega al contenedor, no a la página). */
+.myinvestorChoose {
+  margin-top: 1rem;
+}
+
+.myinvestorInclude {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+}
+
+.myinvestorIncludeGrid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .myinvestorIncludeGrid {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  /* Bajo la barra de ámbitos cuando la hay, como la cesta del libro (#1837). */
+  .myinvestorBasket {
+    align-self: start;
+    position: sticky;
+    top: calc(var(--scope-bar-clearance, 0px) + 1rem);
+  }
+}
+
+.myinvestorGroup {
+  border-top: 1px solid var(--line-soft);
+  padding: 0.4rem 0 0.6rem;
+}
+
+/* Casilla nativa · texto · cifra: la casilla conserva su tamaño (canon §7). */
+.myinvestorGroupHead,
+.myinvestorProduct {
+  align-items: start;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.35rem 0;
+}
+
+.myinvestorGroupHead input,
+.myinvestorProduct input {
+  margin-top: 3px;
+}
+
+.myinvestorGroupLabel {
+  display: block;
+  font-weight: 700;
+}
+
+.myinvestorProduct {
+  border-top: 1px solid var(--hairline);
+  padding-left: 1.6rem;
+}
+
+.myinvestorProduct[data-off] .myinvestorProductName,
+.myinvestorProduct[data-off] .myinvestorProductNum,
+.myinvestorTwin[data-off] .myinvestorProductName,
+.myinvestorTwin[data-off] .myinvestorProductNum {
+  color: var(--muted);
+}
+
+.myinvestorProductMain {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.myinvestorProductName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.myinvestorProductNum {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* El identificador fuerte (ISIN, DGS o IBAN acortado) se lee en cifra. */
+.myinvestorCodeId {
+  font-family: var(--font-numeric);
+}
+
+/* Las notas: una línea cada una, con la regla de oro del aviso. */
+.myinvestorNotes {
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+}
+
+.myinvestorNotes > span {
+  border-left: 2px solid var(--gold);
+  color: var(--ink);
+  font-size: 0.78rem;
+  padding-left: 6px;
+}
+
+.myinvestorOthersHead {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 1rem 0 0;
+}
+
+/* La cesta: abierta por la regla gruesa, como la del libro (canon §4). */
+.myinvestorBasket {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 10px;
+  padding-top: 0.6rem;
+}
+
+.myinvestorBasket button {
+  justify-self: start;
+}
+
+.myinvestorBasketHead {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.myinvestorBasketNote {
+  border-left: 2px solid var(--gold);
+  font-size: 0.82rem;
+  margin: 0;
+  padding-left: 8px;
+}
+
+.myinvestorLedger {
+  display: grid;
+  margin: 0;
+}
+
+.myinvestorLedger > div {
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.myinvestorLedger dd {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* El total lleva la doble regla del catálogo (.totalRule), debajo. */
+.myinvestorLedger .myinvestorLedgerTotal {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink);
+  flex-wrap: wrap;
+  font-weight: 700;
+  margin-top: 3px;
+  padding-top: 6px;
+}
+
+.myinvestorLedgerTotal.totalRule::after {
+  flex-basis: 100%;
+}
+
+/* Lo que quedó fuera, tras incluir: cada producto con «Incluir con su histórico». */
+.myinvestorLeftList {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.4rem 0 0;
+  max-width: 40rem;
+  padding: 0;
+}
+
+.myinvestorLeftList li {
+  align-items: start;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding-bottom: 0.4rem;
+}
+
+.myinvestorLeftList li > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.myinvestorLeftList .myinvestorIncludeLater {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Un producto que ya llevas a mano (#1881, diseño C): sin casilla, tres radios con
+   el porqué encima; con «Enlazar», el veredicto y las operaciones plegadas. */
+.myinvestorTwin {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.35rem 0 0.6rem 1.6rem;
+}
+
+.myinvestorTwinHead {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.myinvestorTwinChoice {
+  border: 0;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.myinvestorTwinChoice legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+/* Radio nativo · texto: el radio conserva su tamaño (canon §7). */
+.myinvestorTwinChoice label {
+  align-items: baseline;
+  cursor: pointer;
+  display: grid;
+  font-size: 0.88rem;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+/* «Enlazar» bloqueado por un miembro que MyInvestor no tiene (#1883): el radio no
+   se puede marcar y su porqué queda a la vista, sin cursor de acción. */
+.myinvestorTwinChoice label[data-disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Una cartera hecha a mano frente al bloque (#1883): un veredicto por fondo, cada
+   uno con su careo plegado, y la línea del efectivo al final. */
+.myinvestorPortfolioCareo {
+  display: grid;
+  gap: 0.6rem;
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.myinvestorPortfolioCareo > li {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.myinvestorCareo {
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.myinvestorVerdict {
+  font-size: 0.88rem;
+  margin: 0;
+  max-width: 64ch;
+}
+
+.myinvestorCareoScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* La tabla del careo es la de corridas (.conexRunTable), la nota al pie de la
+   fila de esta misma página; solo añade las cifras a la derecha y la pista bajo
+   la marca. */
+.myinvestorCareoOps td {
+  vertical-align: top;
+}
+
+.myinvestorCareoOps .num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.myinvestorCareoOps td .conexSub {
+  white-space: normal;
+}
+
+/* Lo que coincide no cambia: se lee apagado; lo que se va o entra, con su signo. */
+.myinvestorCareoOps tr[data-mark="same"] td {
+  color: var(--muted);
+}
+
+.myinvestorCareoMark {
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Tras incluir, un gemelo que quedó fuera: las mismas tres salidas, en su fila. */
+.myinvestorLeftList .myinvestorLeftTwin {
+  display: block;
+}
+
+.myinvestorTwinLater {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.myinvestorTwinLater .myinvestorTwin {
+  border-top: 0;
+  padding: 0;
+}
+
+.myinvestorTwinLater button {
+  justify-self: start;
+}
+
+/* «Poner al día» (#1884, variante A): el panel de la pasada. Una columna de lectura:
+   cuándo fue la última, los pasos en vivo, el resultado y el botón. */
+.myinvestorSync {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 36rem;
+}
+
+.myinvestorSync .stackForm {
+  margin-top: 0;
+}
+
+/* Los pasos de la pasada: lo hecho en tinta, el que corre en negrita, lo que queda
+   en gris. Una lista, no una barra: cada paso es una lectura distinta. */
+.myinvestorSyncSteps {
+  display: grid;
+  font-size: 0.85rem;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.myinvestorSyncSteps li[data-state="todo"] {
+  color: var(--muted);
+}
+
+.myinvestorSyncSteps li[data-state="now"] {
+  font-weight: 700;
+}
+
+.myinvestorSyncButtons {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.myinvestorSyncResult {
+  margin: 0;
+}
+
+/* En la fila de Conexiones, donde las demás fuentes dicen «Sincronizar»: el botón,
+   y debajo una línea de paso o de resultado. */
+.myinvestorSyncRow {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  max-width: 18rem;
+}
+
+.myinvestorSyncInline {
+  display: grid;
+  gap: 6px;
+}
+
+.myinvestorSyncInline label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 4px;
 }
 
 /* Composition strip — the 100 %-stacked metal split, the signature. */

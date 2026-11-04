@@ -23,6 +23,11 @@
  */
 
 import {
+  myInvestorScheduledEntries,
+  myInvestorWaitingEntries,
+} from "@web/ajustes/myinvestor-contributions";
+import { readOwnedSchedules } from "@web/ajustes/myinvestor-schedules-read";
+import {
   readDebtModelByLiabilityId,
   readMonthlyDebtServiceByLiabilityId,
 } from "@web/debt-service-reads";
@@ -31,6 +36,7 @@ import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import type { WorthlineStore } from "@worthline/db";
 import type {
   ContributionAllowance,
+  ContributionAllowanceForecast,
   ContributionAllowanceUsage,
   ContributionPlan,
   ContributionReconciliationProjection,
@@ -52,6 +58,7 @@ import {
   collectHoldingPayouts,
   computeContributionAllowanceUsage,
   computeMonthlyContributionAllocation,
+  forecastContributionAllowance,
   instrumentOfAsset,
   investmentReturnsById,
   monthlyCloseValuesByHolding,
@@ -64,8 +71,13 @@ import {
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
 import { buildExposureDriftTrajectories } from "./build-exposure-drift";
-import { allocationMonthKeys } from "./contribution-allocation-view";
 import {
+  allocationMonthKeys,
+  type SourceAllocationRow,
+  sourceAllocationByMonth,
+} from "./contribution-allocation-view";
+import {
+  allowanceScheduledEntries,
   contributionAllowanceDestinationOptions,
   contributionAllowanceOperations,
   trashAssetToHolding,
@@ -130,6 +142,13 @@ export interface LoadObjetivosResult extends ObjetivosState {
   allowanceDestinationOptions: ManualAsset[];
   /** Consumed-vs-declared for each allowance, keyed by allowance id (#1427). */
   allowanceUsageById: Map<string, ContributionAllowanceUsage>;
+  /** Where each allowance ends the year if what is scheduled arrives (#1886). */
+  allowanceForecastById: Map<string, ContributionAllowanceForecast>;
+  /**
+   * What MyInvestor schedules for the linked holdings, per month of the split
+   * (#1886): read-only rows beside the plan's. Null without a scope.
+   */
+  sourceAllocations: Record<string, SourceAllocationRow[]> | null;
   /**
    * Holding names, papelera included: a destination whose contributions DO count
    * has to be nameable, or the panel would call it invisible (#1509).
@@ -172,6 +191,7 @@ export async function loadObjetivos(
     exposureProfiles,
     returnSnapshotRows,
     publicIdRows,
+    ownedSchedules,
   ] = await Promise.all([
     store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
@@ -197,6 +217,9 @@ export async function loadObjetivos(
       scopeId: selectedScope?.id ?? "household",
     }),
     store.agentView.readPublicIds(),
+    // The sources that own their holdings' ledgers and what MyInvestor has
+    // scheduled for each linked holding (#1886, ADR 0115 decision 5).
+    readOwnedSchedules(store, today),
   ]);
 
   // La cuota vigente de cada deuda (#1520), para que las dos tarjetas de €/mes digan
@@ -286,11 +309,51 @@ export async function loadObjetivos(
   const allocationWindow = allocationMonthKeys(today);
   const allocationDefaultMonth = allocationWindow[1] ?? today.slice(0, 7);
   const unitPrices = unitPriceMajorByHoldingId(priceCache);
+  // What MyInvestor schedules for the linked holdings (#1886): read-only rows of the
+  // split, beside the plan's, so the month's total is complete. A linked holding has
+  // no worthline plan (ADR 0115): the lines linking closed still hold occurrences
+  // before the link, so the split drops every plan line of a holding a source owns
+  // — the same rule the cupo forecast follows — and one schedule speaks per holding.
+  const liveHoldingIds = new Set(assets.map((asset) => asset.id));
+  const { owningSourceIds } = ownedSchedules;
+  const ownedLiveHoldingIds = new Set(
+    assets
+      .filter(
+        (asset) =>
+          asset.connectedSourceId != null && owningSourceIds.has(asset.connectedSourceId),
+      )
+      .map((asset) => asset.id),
+  );
+  const ownedSchedulesLive = [...ownedSchedules.schedulesByAsset]
+    .filter(([assetId]) => liveHoldingIds.has(assetId))
+    .flatMap(([, schedules]) => schedules);
+  const unownedPlanLines =
+    contributionPlan?.contributions.filter(
+      (line) => !ownedLiveHoldingIds.has(line.destinationHoldingId),
+    ) ?? [];
+  const sourceAllocations = selectedScope
+    ? sourceAllocationByMonth(
+        myInvestorScheduledEntries(ownedSchedulesLive, {
+          from: `${allocationWindow[0] ?? today.slice(0, 7)}-01`,
+          to: `${allocationWindow.at(-1) ?? today.slice(0, 7)}-31`,
+        }),
+        allocationWindow,
+      )
+    : null;
+  const anySourceAllocation =
+    sourceAllocations !== null &&
+    Object.values(sourceAllocations).some((rows) => rows.length > 0);
+  const allocationPlan =
+    contributionPlan && unownedPlanLines.length > 0
+      ? { ...contributionPlan, contributions: unownedPlanLines }
+      : anySourceAllocation && selectedScope
+        ? { contributions: [], scopeId: selectedScope.id }
+        : null;
   const monthlyAllocations =
-    contributionPlan && contributionPlan.contributions.length > 0
+    allocationPlan !== null
       ? allocationWindow.map((monthKey) =>
           computeMonthlyContributionAllocation({
-            plan: contributionPlan,
+            plan: allocationPlan,
             monthKey,
             today,
             unitPriceMajorByHoldingId: unitPrices,
@@ -324,14 +387,14 @@ export async function loadObjetivos(
   // marcado en un snapshot viejo no cuenta, ni vivo ni en la papelera. Un PP
   // dado de alta después del último save cuenta porque los destinos se
   // re-derivan del instrumento en cada lectura.
-  const liveHoldingIds = new Set(assets.map((asset) => asset.id));
+  //
+  // Un plan enlazado con MyInvestor también cuenta (#1886): su libro es de la
+  // fuente, operación a operación (ADR 0115), y sus aportaciones consumen cupo.
   const trashedHoldings =
     contributionAllowances.length > 0 ? (await store.readTrash()).assets : [];
+  const cupoHoldings = [...assets, ...trashedHoldings.map(trashAssetToHolding)];
   const derivedAllowances = contributionAllowances.map((allowance) =>
-    withDerivedAllowanceDestinations(allowance, [
-      ...assets,
-      ...trashedHoldings.map(trashAssetToHolding),
-    ]),
+    withDerivedAllowanceDestinations(allowance, cupoHoldings, owningSourceIds),
   );
   const allowanceOperations = contributionAllowanceOperations({
     allowances: derivedAllowances,
@@ -350,7 +413,55 @@ export async function loadObjetivos(
       }),
     ]),
   );
-  const allowanceDestinationOptions = contributionAllowanceDestinationOptions(assets);
+  // La previsión del resto del año (#1886): lo consumido más lo programado hasta el
+  // 31 de diciembre — por MyInvestor para un plan enlazado, por el plan de worthline
+  // para el resto. Al lado de lo consumido, nunca dentro (ADR 0080).
+  const scheduledThisYear = allowanceScheduledEntries({
+    ownedHoldingIds: new Set(
+      cupoHoldings
+        .filter(
+          (holding) =>
+            holding.connectedSourceId != null &&
+            owningSourceIds.has(holding.connectedSourceId),
+        )
+        .map((holding) => holding.id),
+    ),
+    plan: contributionPlan,
+    sourceEntries: [...ownedSchedules.schedulesByAsset].flatMap(
+      ([assetId, schedules]) => [
+        ...myInvestorScheduledEntries(schedules, {
+          from: today,
+          to: `${today.slice(0, 4)}-12-31`,
+        }),
+        // Due but still on its way: in neither the ledger nor the days to come.
+        ...myInvestorWaitingEntries(schedules, {
+          ledger: projectionContext.operationsByAsset.get(assetId) ?? [],
+          readOn: ownedSchedules.readOnByAsset.get(assetId) ?? today,
+          today,
+        }),
+      ],
+    ),
+    todayISO: today,
+    unitPriceMajorByHoldingId: unitPrices,
+  });
+  const allowanceForecastById = new Map(
+    derivedAllowances.flatMap((allowance) => {
+      const usage = allowanceUsageById.get(allowance.id);
+      const forecast = usage
+        ? forecastContributionAllowance({
+            allowance,
+            scheduled: scheduledThisYear,
+            todayISO: today,
+            usage,
+          })
+        : null;
+      return forecast ? [[allowance.id, forecast] as const] : [];
+    }),
+  );
+  const allowanceDestinationOptions = contributionAllowanceDestinationOptions(
+    assets,
+    owningSourceIds,
+  );
   // Los nombres incluyen los de la papelera: un destino cuyas aportaciones SÍ se
   // cuentan tiene que poder nombrarse, o el panel lo tacharía de invisible (#1509).
   const holdingNameById = new Map([
@@ -433,6 +544,7 @@ export async function loadObjetivos(
     allocationDefaultMonth,
     allocationWindow,
     allowanceDestinationOptions,
+    allowanceForecastById,
     allowanceUsageById,
     assets,
     contributionOperations,
@@ -447,6 +559,7 @@ export async function loadObjetivos(
     savedDraft,
     savingsSuggestion,
     seededFromPlan,
+    sourceAllocations,
     trashedHoldingIds,
     unitPrices,
   };

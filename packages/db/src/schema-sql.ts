@@ -165,6 +165,7 @@ CREATE TABLE \`asset_operations\` (
 	\`transfer_cost_minor\` integer,
 	\`transfer_seniority_at\` text,
 	\`cost_basis_grade\` text,
+	\`transfer_leg_state\` text,
 	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade,
@@ -369,15 +370,17 @@ CREATE TABLE \`connected_sources\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`adapter\` text NOT NULL,
 	\`label\` text NOT NULL,
-	\`asset_id\` text NOT NULL,
+	\`asset_id\` text,
 	\`credentials_json\` text NOT NULL,
 	\`token_json\` text,
 	\`last_sync_at\` text,
+	\`ingest_cursor\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_sources_myinvestor_unique\` ON \`connected_sources\` (\`adapter\`) WHERE adapter = 'myinvestor';--> statement-breakpoint
 CREATE TABLE \`positions\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`source_id\` text NOT NULL,
@@ -555,5 +558,69 @@ CREATE TABLE \`contribution_lots\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX \`contribution_lots_asset_idx\` ON \`contribution_lots\` (\`asset_id\`,\`available_from\`);
+CREATE INDEX \`contribution_lots_asset_idx\` ON \`contribution_lots\` (\`asset_id\`,\`available_from\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_pending_logins\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`adapter\` text NOT NULL,
+	\`payload_json\` text NOT NULL,
+	\`expires_at\` text NOT NULL,
+	\`attempts\` integer DEFAULT 0 NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_source_pending_logins_adapter_unique\` ON \`connected_source_pending_logins\` (\`adapter\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_discoveries\` (
+	\`source_id\` text PRIMARY KEY NOT NULL,
+	\`read_on\` text NOT NULL,
+	\`payload_json\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE \`connected_source_links\` (
+	\`source_id\` text NOT NULL,
+	\`product_key\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`source_id\`, \`product_key\`),
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_source_links_asset_unique\` ON \`connected_source_links\` (\`asset_id\`);--> statement-breakpoint
+CREATE TABLE \`connector_applied_facts\` (
+	\`source_id\` text NOT NULL,
+	\`fact_key\` text NOT NULL,
+	\`batch_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`source_id\`, \`fact_key\`),
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE \`fact_batch_replaced_operations\` (
+	\`operation_id\` text PRIMARY KEY NOT NULL,
+	\`batch_id\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`operation_json\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`fact_batch_replaced_operations_asset_idx\` ON \`fact_batch_replaced_operations\` (\`asset_id\`,\`batch_id\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_sync_state\` (
+	\`source_id\` text PRIMARY KEY NOT NULL,
+	\`lease_until\` text,
+	\`lease_started_at\` text,
+	\`lease_trigger\` text,
+	\`lease_step\` text,
+	\`login_day\` text,
+	\`logins_today\` integer DEFAULT 0 NOT NULL,
+	\`rejections_today\` integer DEFAULT 0 NOT NULL,
+	\`paused_until\` text,
+	\`stopped_reason\` text,
+	\`last_outcome_json\` text,
+	\`units_check_json\` text,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;

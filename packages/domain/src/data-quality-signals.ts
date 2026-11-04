@@ -50,6 +50,10 @@ import {
   type DataQualityMissingConfigurationInput,
 } from "./data-quality-missing-configuration";
 import {
+  collectOwningSourceHealthSignals,
+  type DataQualityOwningSourceHealthInput,
+} from "./data-quality-owning-source-health";
+import {
   collectPersistentSyncFailureSignals,
   type DataQualityPersistentSyncFailureInput,
 } from "./data-quality-persistent-sync-failure";
@@ -126,7 +130,16 @@ export {
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,
 } from "./data-quality-manual-value-freshness";
-export type { DataQualitySyncAttempt } from "./data-quality-persistent-sync-failure";
+export {
+  OWNING_SOURCE_FAILING_CODES,
+  OWNING_SOURCE_FAILING_WORDS,
+  OWNING_SOURCE_STOPPED_CODE,
+  OWNING_SOURCE_UNSYNCED_CODE,
+} from "./data-quality-owning-source-health";
+export type {
+  DataQualityOwningSourceStanding,
+  DataQualitySyncAttempt,
+} from "./data-quality-persistent-sync-failure";
 export {
   PERSISTENT_SYNC_FAILURE_CODE,
   PERSISTENT_SYNC_FAILURE_THRESHOLD,
@@ -168,6 +181,7 @@ export interface CollectDataQualitySignalsInput
     DataQualityManualValueFreshnessInput,
     DataQualityPriceFreshnessInput,
     DataQualityPersistentSyncFailureInput,
+    DataQualityOwningSourceHealthInput,
     DataQualityMissingConfigurationInput,
     DataQualityInstrumentIdentityInput,
     DataQualityCostBasisInput,
@@ -193,6 +207,7 @@ const DATA_QUALITY_COLLECTORS: readonly DataQualityCollector<CollectDataQualityS
     collectPriceFreshnessSignals,
     collectSourceFreshnessSignals,
     collectPersistentSyncFailureSignals,
+    collectOwningSourceHealthSignals,
     collectMissingConfigurationSignals,
     collectInstrumentIdentitySignals,
     collectCostBasisSignals,

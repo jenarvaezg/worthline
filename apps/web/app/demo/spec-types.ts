@@ -16,9 +16,9 @@ import type {
   FireScopeConfig,
   LiquidityTier,
   Member,
+  MirroredSourceAdapter,
   OwnershipShare,
   SecurityId,
-  SourceAdapter,
   WorkspaceMode,
 } from "@worthline/domain";
 
@@ -138,7 +138,8 @@ export interface FireSpec {
  * refreshers are no-ops in demo), so its valuation is frozen in the fixture.
  */
 export interface ConnectedSourceSpec {
-  adapter: SourceAdapter;
+  /** Only a mirroring source: the demo seeds positions, which MyInvestor has none of. */
+  adapter: MirroredSourceAdapter;
   label: string;
   ownership: OwnershipShare[];
   /** When the source was last synced (its positions' as-of). */

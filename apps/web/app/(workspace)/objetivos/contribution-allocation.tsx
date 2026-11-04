@@ -10,6 +10,7 @@ import {
   formatAllocationMonthLabel,
   groupAllocationByType,
   parseAllocationMonthParam,
+  type SourceAllocationRow,
 } from "./contribution-allocation-view";
 
 /**
@@ -17,6 +18,10 @@ import {
  * month. The server renders every month of the window once; switching month is
  * a client toggle mirrored to ?mes= with pushState — no round-trip. Figures are
  * forecast; confirmed money from S2 reconciliation is contrasted per row.
+ *
+ * What MyInvestor schedules for a linked holding (#1886) is listed too, read-only
+ * and marked «de MyInvestor», with no controls: it is changed in MyInvestor, and
+ * without it the month's total would leave out money that is going in.
  */
 export function ContributionAllocation({
   months,
@@ -25,6 +30,7 @@ export function ContributionAllocation({
   holdings,
   currency,
   privacyMode,
+  sourceMonths = {},
 }: {
   months: MonthlyContributionAllocation[];
   initialMonthKey: string;
@@ -32,6 +38,8 @@ export function ContributionAllocation({
   holdings: Record<string, { name: string; type: AssetType }>;
   currency: string;
   privacyMode: boolean;
+  /** By month: what a connected source schedules, per holding (#1886). */
+  sourceMonths?: Readonly<Record<string, readonly SourceAllocationRow[]>>;
 }) {
   const [monthKey, setMonthKey] = useState(initialMonthKey);
 
@@ -67,8 +75,16 @@ export function ContributionAllocation({
   const typeByHoldingId = Object.fromEntries(
     Object.entries(holdings).map(([id, holding]) => [id, holding.type]),
   );
-  const typeGroups = groupAllocationByType(allocation.destinations, typeByHoldingId);
   const monthLabel = formatAllocationMonthLabel(allocation.monthKey);
+  const sourceRows = sourceMonths[allocation.monthKey] ?? [];
+  const totalPlannedMinor =
+    allocation.totalPlannedMinor +
+    sourceRows.reduce((sum, row) => sum + row.plannedMinor, 0);
+  // The split by type adds up to the same total as «Previsto»: MyInvestor's rows too.
+  const typeGroups = groupAllocationByType(
+    [...allocation.destinations, ...sourceRows],
+    typeByHoldingId,
+  );
 
   return (
     <section className="firePanel contributionAllocation" aria-label="Reparto mensual">
@@ -94,14 +110,14 @@ export function ContributionAllocation({
         ))}
       </div>
 
-      {allocation.occurrenceCount === 0 ? (
+      {allocation.occurrenceCount === 0 && sourceRows.length === 0 ? (
         <p className="muted">El plan no prevé aportaciones en {monthLabel}.</p>
       ) : (
         <>
           <div className="contributionAllocationTotal">
             <div>
               <span className="memberProfileLabel">Previsto · {monthLabel}</span>
-              <strong>{fmt(allocation.totalPlannedMinor)}</strong>
+              <strong>{fmt(totalPlannedMinor)}</strong>
             </div>
             {allocation.totalExecutedMinor > 0 ? (
               <div>
@@ -116,7 +132,7 @@ export function ContributionAllocation({
               const holding = holdings[destination.holdingId];
               const widthPct = allocationBarWidthPct(
                 destination.plannedMinor,
-                allocation.totalPlannedMinor,
+                totalPlannedMinor,
               );
               return (
                 <li className="contributionAllocationRow" key={destination.holdingId}>
@@ -146,6 +162,30 @@ export function ContributionAllocation({
                 </li>
               );
             })}
+            {sourceRows.map((row) => (
+              <li className="contributionAllocationRow" key={`source-${row.holdingId}`}>
+                <div className="contributionAllocationRowHead">
+                  <span className="contributionAllocationName">
+                    {holdings[row.holdingId]?.name ?? "Destino"}
+                  </span>
+                  <span className="contributionAllocationAmount">
+                    {fmt(row.plannedMinor)}
+                  </span>
+                </div>
+                <div aria-hidden="true" className="contributionAllocationBar">
+                  <i
+                    style={{
+                      width: `${allocationBarWidthPct(row.plannedMinor, totalPlannedMinor)}%`,
+                    }}
+                  />
+                </div>
+                <span className="contributionAllocationMeta">
+                  {row.occurrenceCount}{" "}
+                  {row.occurrenceCount === 1 ? "aportación" : "aportaciones"} · de
+                  MyInvestor, se cambia allí
+                </span>
+              </li>
+            ))}
           </ul>
 
           {typeGroups.length > 1 ? (

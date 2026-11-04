@@ -1,5 +1,7 @@
+import { formatDateKeyEs } from "./dates";
 import { compareUnits, type DecimalString } from "./decimal";
 import { valuationMethodOfAsset } from "./holding-method";
+import { pendingInheritedCostEntries } from "./inherited-cost";
 import type { InvestmentOperation, PositionWarningCode } from "./investment-types";
 import { derivePosition } from "./positions";
 import type { ManualAsset } from "./workspace-types";
@@ -15,6 +17,8 @@ export type WarningSeverity = "blocking" | "overrideable";
 export type HoldingWarningCode =
   | "ZERO_VALUE_ASSET"
   | "MISSING_PROVIDER_SYMBOL"
+  /** A connector's traspaso entry whose inherited cost nobody has given (#1882). */
+  | "TRANSFER_COST_PENDING"
   | PositionWarningCode;
 
 export interface DomainWarning {
@@ -129,6 +133,27 @@ export function collectWarnings(
       });
 
     const operations = options.operationsByAssetId?.get(a.id);
+
+    // A traspaso that came in without its cost (#1882): blocking, because the only
+    // way out is the answer — «es intencional» would leave a gain measured against
+    // a cost nobody gave.
+    const pending = pendingInheritedCostEntries(operations ?? []);
+    const firstPending = pending[0];
+    if (firstPending !== undefined) {
+      const day = formatDateKeyEs(firstPending.executedAt.slice(0, 10));
+      const what =
+        pending.length === 1
+          ? `Falta el coste del traspaso del ${day}`
+          : `Falta el coste de ${pending.length} traspasos, el primero del ${day}`;
+      warnings.push({
+        code: "TRANSFER_COST_PENDING",
+        entityId: a.id,
+        entityType: "asset",
+        message: `${what}: sin él, la ganancia no se puede medir.`,
+        severity: "blocking",
+      });
+    }
+
     if (
       valuationMethodOfAsset(a) === "derived" &&
       operations !== undefined &&

@@ -9,16 +9,19 @@ import type {
 import {
   assertContributionCadence,
   assertPlannedContributionInput,
+  closeContributionPlanOnLink,
   expandPlannedContribution,
   parsePlannedContributionAmount,
   valuationMethodOfAsset,
 } from "@worthline/domain";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { classifiableAssetFromRow } from "./asset-classification";
+import { chunk } from "./chunk";
 import {
   assetOperations,
   assets,
+  connectedSourceLinks,
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   plannedContributions,
@@ -64,6 +67,20 @@ export interface ContributionPlanStore {
   setOccurrenceState: (input: SetOccurrenceStateInput) => Promise<void>;
   linkOperation: (input: LinkContributionOperationInput) => Promise<void>;
   assertStoredDestination: (contributionId: string, assetId: string) => Promise<void>;
+  /**
+   * Every line, in any scope, that has one of these holdings as its destination,
+   * with the reconciliations of their occurrences, by holding (#1881): what linking
+   * them would close. A holding with no line is absent.
+   */
+  readHoldingPlans: (
+    assetIds: readonly string[],
+  ) => Promise<Map<string, HoldingContributionPlan>>;
+}
+
+/** A holding's contribution plan across scopes (#1881). */
+export interface HoldingContributionPlan {
+  contributions: PlannedContribution[];
+  reconciliations: ContributionOccurrenceReconciliation[];
 }
 
 export interface SetOccurrenceStateInput {
@@ -90,6 +107,7 @@ export function createContributionPlanStore(ctx: StoreContext): ContributionPlan
     linkOperation: (input) => linkOperation(ctx, input),
     assertStoredDestination: (contributionId, assetId) =>
       assertStoredDestination(ctx, contributionId, assetId),
+    readHoldingPlans: (assetIds) => readHoldingPlans(ctx, assetIds),
   };
 }
 
@@ -164,11 +182,34 @@ async function readContributionRow(
     .get();
 }
 
+/**
+ * A holding a source owns has no worthline plan (ADR 0115, decision 5; #1886): its
+ * scheduled contributions are the source's, changed there and read on each pass.
+ * Linking closes its lines (`closeContributionPlanOnLink`); this is the door that
+ * keeps a new one from being written for it, by any writer.
+ */
+async function assertNotSourceScheduled(
+  ctx: StoreContext,
+  destinationHoldingId: string,
+): Promise<void> {
+  const link = await ctx.db
+    .select({ assetId: connectedSourceLinks.assetId })
+    .from(connectedSourceLinks)
+    .where(eq(connectedSourceLinks.assetId, destinationHoldingId))
+    .get();
+  if (link) {
+    throw new Error(
+      "Este activo lo trae MyInvestor: su aportación se programa allí y worthline la lee al ponerse al día.",
+    );
+  }
+}
+
 async function createPlannedContribution(
   ctx: StoreContext,
   input: CreatePlannedContributionInput,
 ): Promise<PlannedContribution> {
   assertPlannedContributionInput(input);
+  await assertNotSourceScheduled(ctx, input.destinationHoldingId);
   const id = ctx.newId();
   const endDate = input.endDate ?? null;
   await ctx.db
@@ -216,6 +257,11 @@ async function updatePlannedContribution(
     ...next,
     endDate: next.endDate ?? null,
   });
+  // Any edit that leaves the line on a linked holding is refused, not only a move
+  // onto one: a line linking closed could otherwise be reopened by pushing its end
+  // date out, and the month's split would count MyInvestor's contribution twice.
+  // Such a line can still be deleted.
+  await assertNotSourceScheduled(ctx, next.destinationHoldingId);
 
   const set: Partial<typeof plannedContributions.$inferInsert> = {};
   if (patch.destinationHoldingId !== undefined) {
@@ -459,4 +505,125 @@ async function assertStoredDestination(
   if (method !== "stored") {
     throw new Error("Only stored-value destinations use balance reconciliation.");
   }
+}
+
+/** Ids per `IN (…)` and rows per multi-row write: under the parameter cap. */
+const ROWS_PER_STATEMENT = 100;
+
+/**
+ * {@link ContributionPlanStore.readHoldingPlans}: two statements per chunk of
+ * holdings, never one read per holding (ADR 0030).
+ */
+export async function readHoldingPlans(
+  ctx: StoreContext,
+  assetIds: readonly string[],
+): Promise<Map<string, HoldingContributionPlan>> {
+  const plans = new Map<string, HoldingContributionPlan>();
+  for (const group of chunk([...new Set(assetIds)], ROWS_PER_STATEMENT)) {
+    const rows = await ctx.db
+      .select()
+      .from(plannedContributions)
+      .where(inArray(plannedContributions.destinationHoldingId, group))
+      .orderBy(asc(plannedContributions.startDate), asc(plannedContributions.id))
+      .all();
+    if (rows.length === 0) continue;
+    const holdingOf = new Map(rows.map((row) => [row.id, row.destinationHoldingId]));
+    for (const row of rows) {
+      const plan = plans.get(row.destinationHoldingId) ?? {
+        contributions: [],
+        reconciliations: [],
+      };
+      plan.contributions.push(rowToContribution(row));
+      plans.set(row.destinationHoldingId, plan);
+    }
+    for (const ids of chunk([...holdingOf.keys()], ROWS_PER_STATEMENT)) {
+      const reconciliations = await ctx.db
+        .select({
+          contributionId: contributionOccurrenceReconciliations.contributionId,
+          occurrenceId: contributionOccurrenceReconciliations.occurrenceId,
+          state: contributionOccurrenceReconciliations.state,
+          storedExecutionMinor:
+            contributionOccurrenceReconciliations.storedExecutionMinor,
+        })
+        .from(contributionOccurrenceReconciliations)
+        .where(inArray(contributionOccurrenceReconciliations.contributionId, ids))
+        .all();
+      for (const row of reconciliations) {
+        const holding = holdingOf.get(row.contributionId);
+        const plan = holding === undefined ? undefined : plans.get(holding);
+        // The executions are left out: what this read serves is a link, which
+        // replaces every operation of the holding, so none of them would survive it.
+        plan?.reconciliations.push({
+          occurrenceId: row.occurrenceId,
+          operationIds: [],
+          state: row.state,
+          ...(row.storedExecutionMinor === null
+            ? {}
+            : { storedExecutionMinor: row.storedExecutionMinor }),
+        });
+      }
+    }
+  }
+  return plans;
+}
+
+/**
+ * Close the contribution plans of holdings being linked to a source that owns them
+ * (#1881, ADR 0115 decision 5): each running line ends today, a line not started
+ * yet goes, and every occurrence up to today still pending is settled as skipped —
+ * the pure {@link closeContributionPlanOnLink} decides, this applies it in a fixed
+ * number of statements per chunk, whatever the age of the plan. The caller owns the
+ * transaction (the linking batch) and has already removed the holdings' operations,
+ * and with them (FK cascade) any execution an occurrence had. Returns how many
+ * lines it closed or removed.
+ */
+export async function closeHoldingPlansOnLink(
+  ctx: StoreContext,
+  assetIds: readonly string[],
+  today: string,
+): Promise<number> {
+  let touched = 0;
+  for (const plan of (await readHoldingPlans(ctx, assetIds)).values()) {
+    const closing = closeContributionPlanOnLink({ ...plan, today });
+    touched += closing.close.length + closing.remove.length;
+    // Every running line closes on the same day: one UPDATE for all of them.
+    for (const ids of chunk(
+      closing.close.map((line) => line.id),
+      ROWS_PER_STATEMENT,
+    )) {
+      await ctx.db
+        .update(plannedContributions)
+        .set({ endDate: today })
+        .where(inArray(plannedContributions.id, ids))
+        .run();
+    }
+    for (const ids of chunk(closing.remove, ROWS_PER_STATEMENT)) {
+      await ctx.db
+        .delete(plannedContributions)
+        .where(inArray(plannedContributions.id, ids))
+        .run();
+    }
+    for (const group of chunk(closing.skip, ROWS_PER_STATEMENT)) {
+      await ctx.db
+        .insert(contributionOccurrenceReconciliations)
+        .values(
+          group.map((occurrence) => ({
+            contributionId: occurrence.contributionId,
+            occurrenceId: occurrence.occurrenceId,
+            state: "skipped" as const,
+            storedExecutionMinor: null,
+          })),
+        )
+        .onConflictDoUpdate({
+          set: {
+            state: "skipped",
+            storedExecutionMinor: null,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          },
+          target: contributionOccurrenceReconciliations.occurrenceId,
+        })
+        .run();
+    }
+  }
+  return touched;
 }

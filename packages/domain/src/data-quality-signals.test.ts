@@ -52,6 +52,7 @@ function baseInput(
     liabilities: [],
     manualValueHistoryByAssetId: new Map(),
     netUnitsByAssetId: new Map(),
+    owningSourceStandingBySourceId: new Map(),
     positionsBySourceId: new Map(),
     priceFreshnessByAssetId: new Map(),
     scope: {

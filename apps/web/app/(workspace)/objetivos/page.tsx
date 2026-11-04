@@ -51,6 +51,7 @@ export async function ObjetivosContent({
     allocationDefaultMonth,
     allocationWindow,
     allowanceDestinationOptions,
+    allowanceForecastById,
     allowanceUsageById,
     assets,
     coastArrival,
@@ -80,6 +81,7 @@ export async function ObjetivosContent({
     savingsCoherence,
     savingsSuggestion,
     seededFromPlan,
+    sourceAllocations,
     sustainableSpending,
     trashedHoldingIds,
     unitPrices,
@@ -179,6 +181,7 @@ export async function ObjetivosContent({
           )}
           initialMonthKey={allocationInitialMonth}
           months={monthlyAllocations}
+          sourceMonths={sourceAllocations ?? {}}
           privacyMode={privacyMode}
         />
       ) : null}
@@ -204,6 +207,7 @@ export async function ObjetivosContent({
           privacyMode={privacyMode}
           scopeId={selectedScope.id}
           trashedHoldingIds={trashedHoldingIds}
+          forecastById={allowanceForecastById}
           usageById={allowanceUsageById}
         />
       ) : null}

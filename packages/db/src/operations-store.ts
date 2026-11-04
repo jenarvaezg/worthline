@@ -13,6 +13,7 @@ import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
+import { type HoldingLedger, readHoldingLedgers } from "./holding-ledger-reads";
 import {
   operationCaptureColumns,
   operationCostBasisColumns,
@@ -94,7 +95,26 @@ export interface OperationsStore {
     inputs: readonly CreateInvestmentOperationInput[],
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
+  /**
+   * The ONE writer of a linked holding's operations: its owning source (ADR 0115,
+   * decision 2). A linked holding is read-only to every hand-written path —
+   * {@link OperationsStore.recordOperations} refuses it — so the source writes
+   * through here instead, and only into holdings linked to IT: an operation for a
+   * manual holding or another source's throws, and nothing is written.
+   */
+  recordSourceOperations: (
+    sourceId: string,
+    inputs: readonly CreateInvestmentOperationInput[],
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
+  /**
+   * A few holdings' ledgers at once, with what their valuation reads and the
+   * holdings their traspasos pair them with (#1881): a fixed number of statements.
+   */
+  readHoldingLedgers: (
+    assetIds: readonly string[],
+  ) => Promise<Map<string, HoldingLedger>>;
   /**
    * Delete ONE operation. Returns its asset id and date, or null if not found.
    *
@@ -123,6 +143,13 @@ export interface OperationsStore {
   readTransferCounterparts: (
     assetId: string,
   ) => Promise<ReadonlyMap<string, { assetId: string }>>;
+  /**
+   * The outgoing legs a source wrote with no pair (#1882): `sell` rows marked
+   * `unpaired_out`, on the holdings linked to `sourceId`. The candidates the
+   * coste-heredado panel proposes an origin from — one narrow query, so the ficha
+   * loads no other holding's ledger to find them.
+   */
+  readUnpairedOutLegs: (sourceId: string) => Promise<InvestmentOperation[]>;
   /**
    * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
    * one entry per deleted row — the two asset ids and dates the caller ripples —
@@ -162,10 +189,28 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
   return {
     recordOperation: (input, opts) => recordOperations(ctx, [input], opts),
     recordOperations: (inputs, opts) => recordOperations(ctx, inputs, opts),
+    recordSourceOperations: (sourceId, inputs, opts) =>
+      recordSourceOperations(ctx, sourceId, inputs, opts),
     readOperations: (assetId) => readAssetOperations(ctx, assetId),
+    readHoldingLedgers: (assetIds) => readHoldingLedgers(ctx, assetIds),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
     readTransferCounterparts: (assetId) => readTransferCounterparts(ctx, assetId),
+    readUnpairedOutLegs: async (sourceId) => {
+      const rows = await ctx.db
+        .select({ operation: assetOperations })
+        .from(assetOperations)
+        .innerJoin(assets, eq(assets.id, assetOperations.assetId))
+        .where(
+          and(
+            eq(assets.connectedSourceId, sourceId),
+            eq(assetOperations.transferLegState, "unpaired_out"),
+          ),
+        )
+        .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+        .all();
+      return rows.map((row) => toOperation(row.operation));
+    },
     deleteTransferPair: (transferId) => deleteTransferPair(ctx, transferId),
     updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),
@@ -235,6 +280,43 @@ async function recordOperations(
 }
 
 /**
+ * {@link OperationsStore.recordSourceOperations}: one read of the target holdings'
+ * links, then the same batched insert. Like `recordOperations`, the caller owns the
+ * transaction a long batch spans.
+ */
+async function recordSourceOperations(
+  ctx: StoreContext,
+  sourceId: string,
+  inputs: readonly CreateInvestmentOperationInput[],
+  provenance?: FactPersistenceProvenance,
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  const assetIds = [...new Set(inputs.map((input) => input.assetId))];
+  const linked = new Set<string>();
+  for (const ids of chunk(assetIds, OPERATIONS_PER_INSERT)) {
+    const rows = await ctx.db
+      .select({ id: assets.id, sourceId: assets.connectedSourceId })
+      .from(assets)
+      .where(inArray(assets.id, ids))
+      .all();
+    for (const row of rows) if (row.sourceId === sourceId) linked.add(row.id);
+  }
+  const stranger = assetIds.find((assetId) => !linked.has(assetId));
+  if (stranger !== undefined) {
+    throw new Error(
+      `Connected source "${sourceId}" cannot write operations to holding "${stranger}": ` +
+        "it is not linked to that source.",
+    );
+  }
+
+  const rows = inputs.map((input) => operationRow(input, provenance));
+  for (const group of chunk(rows, OPERATIONS_PER_INSERT)) {
+    await ctx.db.insert(assetOperations).values(group).run();
+  }
+}
+
+/**
  * ONE holding's ledger, in the canonical order every fold depends on.
  *
  * Exported as a plain function (not only through the store) because the Papelera's
@@ -262,8 +344,8 @@ async function deleteOperation(
   ctx: StoreContext,
   operationId: string,
 ): Promise<{ assetId: string; executedAt: string } | null> {
-  const kind = await ctx.db
-    .select({ kind: assetOperations.kind })
+  const row = await ctx.db
+    .select({ assetId: assetOperations.assetId, kind: assetOperations.kind })
     .from(assetOperations)
     .where(eq(assetOperations.id, operationId))
     .get();
@@ -271,11 +353,14 @@ async function deleteOperation(
   // Half a traspaso is not a deletable unit (#1393). Same hazard as the statement
   // merge overwriting one row: the pair's atomic gate owns both, and a caller holding
   // one id calls `deleteTransferPair` with the `transferId` instead.
-  if (kind && isTransferKind(kind.kind)) {
+  if (row && isTransferKind(row.kind)) {
     throw new Error(
       "Half a traspaso cannot be deleted on its own; delete the pair (#1393).",
     );
   }
+  // A holding a source owns loses no row by hand (PRD #1876, invariant 5). Here and
+  // not in the web action: the assistant writes below the Server Actions.
+  if (row) await assertAssetAllowsOperationWrite(ctx, row.assetId);
 
   return removeOperationRow(ctx, operationId);
 }
@@ -354,10 +439,17 @@ async function deleteTransferPair(
   transferId: string,
 ): Promise<Array<{ assetId: string; executedAt: string }>> {
   const rows = await ctx.db
-    .select({ id: assetOperations.id })
+    .select({ assetId: assetOperations.assetId, id: assetOperations.id })
     .from(assetOperations)
     .where(eq(assetOperations.transferId, transferId))
     .all();
+
+  // Both legs are checked before either goes: deleting the manual half of a
+  // traspaso into a holding a source owns would take the source's leg with it
+  // (PRD #1876, invariant 5).
+  for (const assetId of new Set(rows.map((row) => row.assetId))) {
+    await assertAssetAllowsOperationWrite(ctx, assetId);
+  }
 
   const deleted: Array<{ assetId: string; executedAt: string }> = [];
   for (const { id } of rows) {

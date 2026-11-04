@@ -6,7 +6,36 @@ import {
   formatAllocationMonthLabel,
   groupAllocationByType,
   parseAllocationMonthParam,
+  sourceAllocationByMonth,
 } from "./contribution-allocation-view";
+
+describe("sourceAllocationByMonth — las aportaciones de MyInvestor en el reparto (#1886)", () => {
+  test("adds each month's scheduled contributions per holding, largest first", () => {
+    const byMonth = sourceAllocationByMonth(
+      [
+        {
+          amountMinor: 4_611,
+          dateISO: "2026-11-03",
+          holdingId: "fondo",
+          origin: "source",
+        },
+        { amountMinor: 8_743, dateISO: "2026-11-05", holdingId: "pp", origin: "source" },
+        { amountMinor: 8_743, dateISO: "2026-12-05", holdingId: "pp", origin: "source" },
+        // Outside the window: not served.
+        { amountMinor: 8_743, dateISO: "2027-03-05", holdingId: "pp", origin: "source" },
+      ],
+      ["2026-10", "2026-11", "2026-12"],
+    );
+    expect(byMonth).toEqual({
+      "2026-10": [],
+      "2026-11": [
+        { holdingId: "pp", occurrenceCount: 1, plannedMinor: 8_743 },
+        { holdingId: "fondo", occurrenceCount: 1, plannedMinor: 4_611 },
+      ],
+      "2026-12": [{ holdingId: "pp", occurrenceCount: 1, plannedMinor: 8_743 }],
+    });
+  });
+});
 
 describe("allocationMonthKeys", () => {
   test("offers previous, current and two forward months", () => {

@@ -1,11 +1,13 @@
 import type { ManualAsset } from "@worthline/domain";
 import { describe, expect, it, test } from "vitest";
 import {
+  isSourceOwnedPortfolio,
   managedPortfolioMemberOptions,
   portfolioCompositionView,
   portfolioListRowView,
   portfolioUndetailedView,
   portfolioWitnessView,
+  soldByManagerHoldingIds,
 } from "./carteras-view";
 
 const asset = (overrides: Partial<ManualAsset> & { id: string }): ManualAsset => ({
@@ -146,6 +148,81 @@ describe("portfolioCompositionView", () => {
     });
     expect(view.rows[1]?.isCash).toBe(true);
     expect(view.rows[1]?.label).toBe("Efectivo Metal");
+  });
+
+  it("folds the funds the manager sold whole apart from the rows (#1883)", () => {
+    const connected = {
+      connectedSourceId: "src",
+      currency: "EUR",
+      type: "investment" as const,
+    };
+    const buy = {
+      currency: "EUR",
+      executedAt: "2025-02-11",
+      feesMinor: 0,
+      pricePerUnit: "16.9794",
+      units: "3.0113",
+    };
+    const sold = soldByManagerHoldingIds({
+      assets: [
+        { ...connected, id: "f1" },
+        { ...connected, id: "gone-fund" },
+        { currency: "EUR", id: "hand-zero", type: "investment" as const },
+        { connectedSourceId: "src", currency: "EUR", id: "cash", type: "cash" as const },
+      ],
+      operationsByHoldingId: new Map([
+        ["f1", [{ ...buy, assetId: "f1", id: "b1", kind: "buy" as const }]],
+        [
+          "gone-fund",
+          [
+            { ...buy, assetId: "gone-fund", id: "b2", kind: "buy" as const },
+            {
+              ...buy,
+              assetId: "gone-fund",
+              executedAt: "2025-06-17",
+              id: "s2",
+              kind: "sell" as const,
+            },
+          ],
+        ],
+      ]),
+      portfolio: { ...portfolio, holdingIds: ["f1", "gone-fund", "hand-zero", "cash"] },
+    });
+    // A fund kept by hand at 0 is the owner's choice, not the manager's sale.
+    expect([...sold]).toEqual(["gone-fund"]);
+
+    const view = portfolioCompositionView({
+      nameById: new Map([
+        ["f1", "Fondo A"],
+        ["gone-fund", "Fondo vendido"],
+        ["cash", "Efectivo"],
+      ]),
+      portfolio: { ...portfolio, holdingIds: ["f1", "gone-fund", "cash"] },
+      soldByManager: sold,
+      typeByHoldingId: new Map([
+        ["f1", "investment"],
+        ["gone-fund", "investment"],
+        ["cash", "cash"],
+      ]),
+      valueMinorByHoldingId: new Map([
+        ["f1", 600_13],
+        ["gone-fund", 0],
+        ["cash", 5_83],
+      ]),
+    });
+    expect(view.rows.map((row) => row.holdingId)).toEqual(["f1", "cash"]);
+    expect(view.soldByManager.map((row) => row.label)).toEqual(["Fondo vendido"]);
+    expect(view.totalMinor).toBe(605_96);
+  });
+
+  it("a portfolio with a member a connection owns is the source's: no chips (#1883)", () => {
+    expect(
+      isSourceOwnedPortfolio(portfolio, [
+        { connectedSourceId: "src", id: "f1" },
+        { id: "cash" },
+      ]),
+    ).toBe(true);
+    expect(isSourceOwnedPortfolio(portfolio, [{ id: "f1" }, { id: "cash" }])).toBe(false);
   });
 
   it("links a member's own ficha through the registry", () => {

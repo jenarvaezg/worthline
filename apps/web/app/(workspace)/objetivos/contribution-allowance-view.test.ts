@@ -1,12 +1,16 @@
 import type {
   ContributionAllowance,
   ContributionAllowanceUsage,
+  ContributionPlan,
   InvestmentOperation,
   ManualAsset,
 } from "@worthline/domain";
+import { forecastContributionAllowance } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
+  allowanceForecastLine,
+  allowanceScheduledEntries,
   contributionAllowanceDestinationOptions,
   contributionAllowanceOperations,
   contributionAllowanceRowView,
@@ -381,5 +385,130 @@ describe("un destino en la papelera se nombra, no se cuenta como invisible (#150
 
     expect(view.unknownDestinationCount).toBe(0);
     expect(view.destinationNames).toEqual(["MyInvestor Value PP", "Plan de empleo"]);
+  });
+});
+
+describe("un plan enlazado con MyInvestor consume el cupo (#1886, ADR 0115)", () => {
+  const linked = {
+    connectedSourceId: "src_mi",
+    id: "pp-mi",
+    instrument: "pension_plan",
+    isPrimaryResidence: false,
+    name: "Plan enlazado",
+    type: "investment",
+  } as unknown as ManualAsset;
+
+  test("es destino cuando su fuente es dueña de su libro", () => {
+    expect(
+      contributionAllowanceDestinationOptions([linked], new Set(["src_mi"])).map(
+        (a) => a.id,
+      ),
+    ).toEqual(["pp-mi"]);
+    expect(
+      withDerivedAllowanceDestinations(allowance, [linked], new Set(["src_mi"]))
+        .holdingIds,
+    ).toEqual(["pp-mi"]);
+    // Sin saber que la fuente es dueña, se queda fuera, como antes.
+    expect(contributionAllowanceDestinationOptions([linked])).toEqual([]);
+  });
+});
+
+describe("allowanceScheduledEntries — la previsión del resto del año (#1886)", () => {
+  const plan: ContributionPlan = {
+    contributions: [
+      // The worthline line of the linked plan: closed on linking (ADR 0115), and
+      // even if it were still open it must not add to MyInvestor's.
+      {
+        amount: { mode: "money", value: 6_013 },
+        cadence: { dayOfMonth: 5, kind: "monthly" },
+        destinationHoldingId: "pp-mi",
+        id: "line-linked",
+        startDate: "2025-01-05",
+      },
+      // A plan worthline keeps: its line forecasts.
+      {
+        amount: { mode: "money", value: 2_317 },
+        cadence: { dayOfMonth: 15, kind: "monthly" },
+        destinationHoldingId: "pp-manual",
+        id: "line-manual",
+        startDate: "2025-01-15",
+      },
+    ],
+    scopeId: "household",
+  };
+  const fromMyInvestor = [
+    {
+      amountMinor: 8_743,
+      dateISO: "2026-12-05",
+      holdingId: "pp-mi",
+      origin: "source" as const,
+    },
+  ];
+
+  test("usa la aportación de MyInvestor para el plan enlazado y no duplica con su plan de worthline", () => {
+    const entries = allowanceScheduledEntries({
+      ownedHoldingIds: new Set(["pp-mi"]),
+      plan,
+      sourceEntries: fromMyInvestor,
+      todayISO: "2026-11-20",
+      unitPriceMajorByHoldingId: {},
+    });
+
+    expect(entries).toEqual([
+      ...fromMyInvestor,
+      {
+        amountMinor: 2_317,
+        dateISO: "2026-12-15",
+        holdingId: "pp-manual",
+        origin: "plan",
+      },
+    ]);
+
+    const forecast = forecastContributionAllowance({
+      allowance: { ...allowance, holdingIds: ["pp-mi", "pp-manual"] },
+      scheduled: entries,
+      todayISO: "2026-11-20",
+      usage: usage({ consumedMinor: 97_031 }),
+    });
+    expect(forecast).toMatchObject({
+      projectedMinor: 97_031 + 8_743 + 2_317,
+      sourceMinor: 8_743,
+    });
+  });
+});
+
+describe("allowanceForecastLine (#1886)", () => {
+  const fmt = (minor: number) => `${minor / 100} €`;
+
+  test("says what is scheduled, how much of it MyInvestor's, and where the year ends", () => {
+    expect(
+      allowanceForecastLine(
+        {
+          projectedMinor: 108_091,
+          projectedRemainingMinor: 41_909,
+          scheduledMinor: 11_060,
+          sourceMinor: 8_743,
+        },
+        fmt,
+      ),
+    ).toBe(
+      "Con lo programado hasta el 31 de diciembre (110.6 €, 87.43 € de ellos en MyInvestor), acabarías el año en 1080.91 €: quedarían 419.09 €.",
+    );
+  });
+
+  test("says when the schedule would pass the ceiling", () => {
+    expect(
+      allowanceForecastLine(
+        {
+          projectedMinor: 151_317,
+          projectedRemainingMinor: -1_317,
+          scheduledMinor: 2_317,
+          sourceMinor: 0,
+        },
+        fmt,
+      ),
+    ).toBe(
+      "Con lo programado hasta el 31 de diciembre (23.17 €), acabarías el año en 1513.17 €: te pasarías 13.17 €.",
+    );
   });
 });

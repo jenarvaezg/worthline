@@ -9,6 +9,17 @@ export type {
   InvestmentHoldingEntry,
   StatementImportCommand,
 } from "./command-implementation-types";
+export type {
+  ConnectedCashLink,
+  ConnectedHoldingCreation,
+  ConnectedHoldingLink,
+  ConnectedPortfolioCreation,
+  ConnectedPortfolioLink,
+  IncludeConnectedHoldingsCommand,
+  IncludeConnectedHoldingsResult,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
+} from "./connected-inclusion";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";
@@ -37,6 +48,11 @@ export type {
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
 } from "./import-balance-history";
+export type {
+  ResolveInheritedCostCommand,
+  ResolveInheritedCostRefusal,
+  ResolveInheritedCostResult,
+} from "./inherited-cost";
 export type {
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,

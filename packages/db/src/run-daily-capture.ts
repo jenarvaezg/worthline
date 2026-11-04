@@ -322,6 +322,10 @@ export async function runDailyCapture(
         await plan.store.operations.upsertPrices(pricesToUpsert);
       }
       await captureDailySnapshotForWorkspace(plan.store, deps.now);
+      // A tab closed on MyInvestor's SMS step leaves its pending login behind, with
+      // the password when the box was ticked; nothing else would ever expire it
+      // (#1879, ADR 0114 decision 6).
+      await plan.store.connectedSources.purgeExpiredPendingLogins(deps.now);
       captured += 1;
     } catch (error) {
       failures.push({

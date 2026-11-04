@@ -1,3 +1,4 @@
+import { MYINVESTOR_DISCOVERY_VERSION } from "@web/ajustes/myinvestor-discovery";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -144,6 +145,7 @@ const POSITION = {
  * shell's privacy mode, for the figures that must mask in it.
  */
 const url = vi.hoisted(() => ({ privacy: false, search: new URLSearchParams() }));
+const writeBlocked = vi.hoisted(() => ({ value: false }));
 
 const calls = vi.hoisted(() => ({
   // Asset-side reads
@@ -156,14 +158,23 @@ const calls = vi.hoisted(() => ({
   readValuationAnchors: vi.fn(async (): Promise<unknown[]> => []),
   readValuationCadence: vi.fn(async (): Promise<string | null> => null),
   // Ledger-side reads
-  readOperations: vi.fn(async (): Promise<unknown[]> => []),
+  readOperations: vi.fn(async (_assetId?: string): Promise<unknown[]> => []),
   readPriceCache: vi.fn(async (): Promise<unknown> => null),
   readTransferCounterparts: vi.fn(async () => new Map<string, unknown>()),
+  readUnpairedOutLegs: vi.fn(async (): Promise<unknown[]> => []),
   readPositions: vi.fn(async (): Promise<unknown[]> => []),
   readSnapshotHoldings: vi.fn(async (): Promise<unknown[]> => []),
   // Connected sources
   listSources: vi.fn(async (): Promise<unknown[]> => []),
   readSourceIdForAsset: vi.fn(async (): Promise<string | null> => null),
+  // An owning source (#1884): its row with the credentials, and its sync state.
+  readSource: vi.fn(async (): Promise<unknown> => null),
+  readSyncState: vi.fn(async (): Promise<unknown> => null),
+  // Its attempt log, as data health reads it (#1885); empty by default.
+  readSyncAttempts: vi.fn(async (): Promise<unknown[]> => []),
+  // Its stored read and links (#1886): the scheduled contributions.
+  readDiscovery: vi.fn(async (): Promise<unknown> => null),
+  readLinks: vi.fn(async (): Promise<unknown[]> => []),
   readSourcePositions: vi.fn(async (): Promise<unknown[]> => []),
   // Liability-side reads — never touched by an asset ficha
   readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
@@ -202,6 +213,7 @@ vi.mock("@web/page-shell", () => ({
           readAssetCreatedAtById: calls.readAssetCreatedAtById,
           readManualValueHistory: calls.readManualValueHistory,
           readPublicIds: calls.readPublicIds,
+          readSyncAttempts: calls.readSyncAttempts,
         },
         assets: {
           readAcquisitionCostMinor: calls.readAcquisitionCostMinor,
@@ -215,8 +227,12 @@ vi.mock("@web/page-shell", () => ({
         },
         connectedSources: {
           listSources: calls.listSources,
+          readDiscovery: calls.readDiscovery,
+          readLinks: calls.readLinks,
           readPositions: calls.readSourcePositions,
+          readSource: calls.readSource,
           readSourceIdForAsset: calls.readSourceIdForAsset,
+          readSyncState: calls.readSyncState,
         },
         liabilities: {
           readAmortizationPlan: calls.readAmortizationPlan,
@@ -233,6 +249,7 @@ vi.mock("@web/page-shell", () => ({
           readOperations: calls.readOperations,
           readPriceCache: calls.readPriceCache,
           readTransferCounterparts: calls.readTransferCounterparts,
+          readUnpairedOutLegs: calls.readUnpairedOutLegs,
         },
         payouts: {
           readPayoutSchedulesForHolding: calls.readPayoutSchedulesForHolding,
@@ -256,7 +273,10 @@ vi.mock("@web/page-shell", () => ({
   },
 }));
 
-vi.mock("@web/demo/write-guard", () => ({ isDemoMode: async () => false }));
+vi.mock("@web/demo/write-guard", () => ({
+  isDemoMode: async () => false,
+  isWriteBlocked: async () => writeBlocked.value,
+}));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -588,6 +608,108 @@ describe("EditarPage — the investment ficha is a state header with tabs (#1826
  * and of when, as the valuation that picked it says — never by comparing figures
  * afterwards — and the one warning about that price sits beside it.
  */
+describe("EditarPage — a traspaso that came in without its cost (#1882, variant A)", () => {
+  const LINKED = { ...FUND, connectedSourceId: "source_mi" };
+  const ORIGIN = { ...FUND, id: "asset_origen", name: "Fondo Origen" };
+
+  /** 40,237 units that were worth 701,33 € the day they arrived: provisional cost. */
+  function pendingEntry(transferId: string) {
+    return {
+      assetId: ASSET_ID,
+      currency: "EUR",
+      executedAt: "2026-01-14",
+      feesMinor: 0,
+      id: "op_entrada",
+      kind: "transfer_in",
+      pricePerUnit: "17.43",
+      source: "connected",
+      transferCostMinor: 701_33,
+      transferId,
+      transferLegState: "cost_pending",
+      units: "40.237",
+    };
+  }
+  const originBuy = {
+    assetId: "asset_origen",
+    currency: "EUR",
+    executedAt: "2025-03-04",
+    feesMinor: 0,
+    id: "op_compra",
+    kind: "buy",
+    pricePerUnit: "15.83",
+    source: "connected",
+    units: "41.9",
+  };
+  const reimbursement = {
+    ...originBuy,
+    executedAt: "2026-01-09",
+    id: "op_reembolso",
+    kind: "sell",
+    pricePerUnit: "16.79",
+    transferLegState: "unpaired_out",
+  };
+
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([LINKED, ORIGIN]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readPositions.mockResolvedValue([]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+  });
+
+  test("the band names it and opens the panel; the header measures nothing", async () => {
+    calls.readOperations.mockResolvedValue([pendingEntry("myinvestor-external:r1")]);
+    const html = await renderedHtml();
+
+    expect(html).toContain(
+      "Falta el coste del traspaso del 14/01/2026: sin él, la ganancia no se puede medir.",
+    );
+    expect(html).toMatch(/href="[^"]*accion=coste[^"]*"[^>]*>Indicar el coste</);
+    expect(html).not.toContain("No se puede ignorar");
+    expect(html).toContain("sin coste real: falta el de un traspaso");
+    // The provisional cost exists in the fold and is never shown as a COST: the
+    // row says it is missing (its importe is the value that arrived, as on any row).
+    expect(html).toContain("coste heredado: falta");
+    expect(html).not.toMatch(/coste heredado 701/);
+    expect(tabBody(await renderedHtml({ pestaña: "rentabilidad" }))).toContain(
+      "Sin rentabilidad que medir hasta que se sepa el coste del traspaso.",
+    );
+  });
+
+  test("an external entry's panel asks for the cost, with where to find it", async () => {
+    calls.readOperations.mockResolvedValue([pendingEntry("myinvestor-external:r1")]);
+    const body = panel(await renderedHtml({ accion: "coste" }));
+
+    expect(body).toContain("Coste del traspaso");
+    expect(body).toContain("Llegaron traspasadas desde otra entidad");
+    expect(body).toContain("Lo que te costaron esas 40,237 participaciones");
+    expect(body).toContain("Guardar el coste");
+    expect(body).toContain("Es lo único de este holding que escribes tú");
+    // Nothing inside MyInvestor is ever offered as an external entry's origin.
+    expect(calls.readUnpairedOutLegs).toHaveBeenCalledWith("source_mi");
+    expect(body).not.toContain("¿Vienen del");
+  });
+
+  test("an internal entry with a reimbursement in reach proposes it, and asks to confirm", async () => {
+    calls.readOperations.mockImplementation(async (assetId?: string) =>
+      assetId === ASSET_ID
+        ? [pendingEntry("myinvestor-unpaired:r2")]
+        : [originBuy, reimbursement],
+    );
+    calls.readUnpairedOutLegs.mockResolvedValue([reimbursement]);
+    const body = panel(await renderedHtml({ accion: "coste" }));
+
+    expect(body).toContain("¿Vienen del <strong>reembolso de Fondo Origen</strong>");
+    expect(body).toContain("Sí, vienen de ahí");
+    expect(body).toContain("No, vienen de otro sitio");
+    // The whole origin left: its whole cost, 41,9 × 15,83 = 663,28 €, would travel.
+    expect(body).toMatch(/663,28\s€/);
+    // What arrived and what left, cents-exact: checked against the statement.
+    expect(body).toMatch(/que valían 701,33\s€/);
+    expect(body).toMatch(/\(703,50\s€\)/);
+    expect(body).toContain('name="originId" value="op_reembolso"');
+  });
+});
+
 describe("EditarPage — the investment header says where its price comes from (#1828)", () => {
   /** The figures row: from the units to the end of the state header. */
   const figures = (html: string) =>
@@ -708,6 +830,246 @@ describe("EditarPage — the investment header says where its price comes from (
     expect(fix).toContain('href="/patrimonio/wl_hld_fondo/editar"');
     expect(fix).toContain('data-ficha-tab="operaciones"');
     expect(band(html)).toContain("Es intencional");
+  });
+});
+
+describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al día» (#1884)", () => {
+  const SOURCE = {
+    adapter: "myinvestor",
+    assetId: null,
+    credentialsJson: JSON.stringify({ deviceId: "device-sintetico" }),
+    id: "src_mi",
+    label: "MyInvestor",
+    lastSyncAt: "2026-08-28T07:12:00.000Z",
+  };
+  const SAVED = JSON.stringify({
+    acceptance: { acceptedAt: "2026-08-01T08:00:00.000Z", acceptedBy: null },
+    customerId: "00000000A",
+    deviceId: "device-sintetico",
+    password: "sintetica",
+  });
+  const bar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const band = (html: string) => {
+    const at = html.indexOf('aria-label="Avisos"');
+    return at === -1
+      ? ""
+      : html.slice(at, html.indexOf('aria-label="Estado del activo"'));
+  };
+
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([{ ...FUND, connectedSourceId: "src_mi" }]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readOperations.mockResolvedValue([OPERATION]);
+    calls.readPositions.mockResolvedValue([POSITION]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+    calls.listSources.mockResolvedValue([SOURCE]);
+    calls.readSource.mockResolvedValue(SOURCE);
+  });
+
+  test("«Poner al día» is the one habitual action; no form writes its units", async () => {
+    const html = await renderedHtml();
+
+    expect(bar(html)).toContain('class="btn" data-ficha-action="poner-al-dia"');
+    for (const action of ["operacion", "traspaso", "entrada", "extracto"]) {
+      expect(html).not.toContain(`data-ficha-action="${action}"`);
+    }
+    // The units say who puts them, and as of when.
+    expect(html).toContain("Las pone MyInvestor · al día");
+    // The ledger is the source's: no row offers «Eliminar».
+    expect(tabBody(html)).not.toContain("Eliminar");
+  });
+
+  test("its panel: when it was last up to date, and the whole connection, not only this", async () => {
+    calls.readSource.mockResolvedValue({ ...SOURCE, credentialsJson: SAVED });
+    const html = await renderedHtml({ accion: "poner-al-dia" });
+
+    expect(panel(html)).toContain("Última vez al día");
+    expect(panel(html)).toContain("Se pone al día sola cada día");
+    expect(panel(html)).toContain(
+      "Pone al día todos tus productos de MyInvestor, no solo este",
+    );
+    expect(panel(html)).toContain("Poner al día ahora");
+    expect(panel(html)).not.toContain("Contraseña de MyInvestor");
+  });
+
+  test("a viewer sees the panel, but cannot press it", async () => {
+    writeBlocked.value = true;
+    try {
+      const html = await renderedHtml({ accion: "poner-al-dia" });
+      expect(panel(html)).toMatch(
+        /<button disabled="" type="submit">Poner al día<\/button>/,
+      );
+    } finally {
+      writeBlocked.value = false;
+    }
+  });
+
+  test("with no password saved, the panel asks for it once and points to Conexiones", async () => {
+    const html = await renderedHtml({ accion: "poner-al-dia" });
+
+    expect(panel(html)).toContain("Contraseña de MyInvestor");
+    expect(panel(html)).toContain("Se usa para esta vez y se olvida");
+    expect(panel(html)).toContain('href="/ajustes/conexiones"');
+  });
+
+  test("units that do not square are in the band, with «Resincronizar todo» and no adjustment", async () => {
+    calls.readSyncState.mockResolvedValue({
+      lastOutcomeJson: null,
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: null,
+      unitsCheckJson: JSON.stringify([
+        {
+          assetId: ASSET_ID,
+          bookUnits: "401.77",
+          difference: "0.33",
+          productKey: "securities:1|isin:IE00B4L5Y983",
+          sourceUnits: "402.1",
+        },
+      ]),
+    });
+    const html = await renderedHtml();
+
+    expect(band(html)).toContain("el libro dice 401,77 y MyInvestor 402,1 (+0,33)");
+    expect(band(html)).toContain("worthline no crea ningún ajuste");
+    expect(band(html)).toContain("Resincronizar todo");
+    // The remedy opens the «Poner al día» panel, where it is offered.
+    expect(band(html)).toContain("accion=poner-al-dia");
+  });
+
+  test("a cash account it owns: its balance is the source's, never typed", async () => {
+    calls.readAssets.mockResolvedValue([{ ...CASH, connectedSourceId: "src_mi" }]);
+    const html = await renderedHtml();
+
+    expect(bar(html)).toContain('class="btn" data-ficha-action="poner-al-dia"');
+    expect(html).not.toContain('data-ficha-action="valor"');
+    expect(html).toContain("Lo pone MyInvestor");
+  });
+
+  test("the SMS stops the daily sync: the band sends to Conexiones", async () => {
+    calls.readSyncState.mockResolvedValue({
+      lastOutcomeJson: JSON.stringify({
+        at: "2026-08-29T07:10:00.000Z",
+        kind: "sms_required",
+      }),
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: "sms_required",
+      unitsCheckJson: null,
+    });
+    const html = await renderedHtml();
+
+    expect(band(html)).toContain("MyInvestor pide verificar el móvil otra vez");
+    expect(band(html)).toContain("Volver a entrar en Conexiones →");
+    expect(band(html)).toContain("/ajustes/conexiones#myinvestor-volver-a-entrar");
+  });
+
+  test("three days failing on the orders: the band says so, with «Ver la conexión →» (#1885)", async () => {
+    const failedOn = (day: string) => ({
+      at: `${day}T07:13:00.000Z`,
+      failedStep: "orders",
+      status: "error",
+    });
+    calls.readSyncAttempts.mockResolvedValueOnce([
+      failedOn("2026-08-29"),
+      failedOn("2026-08-28"),
+      failedOn("2026-08-27"),
+    ]);
+    const html = await renderedHtml();
+
+    expect(band(html)).toMatch(
+      /El conector falla al leer las órdenes desde hace \d+ días\./,
+    );
+    expect(band(html)).toContain("Ver la conexión →");
+    expect(band(html)).toContain('href="/ajustes/conexiones"');
+  });
+
+  describe("its scheduled contribution, in the «Aportación» tab (#1886)", () => {
+    const PRODUCT = "securities:6603|isin:IE00B4L5Y983";
+    const discovery = (contributions: unknown[]) => ({
+      payloadJson: JSON.stringify({
+        accounts: [],
+        contributions,
+        operations: [],
+        products: [],
+        readOn: "2026-11-20",
+        version: MYINVESTOR_DISCOVERY_VERSION,
+      }),
+      readOn: "2026-11-20",
+    });
+    const MONTHLY = {
+      amount: "61.37",
+      contributionId: "c-1",
+      contributionType: "ONE_DATE",
+      currency: "EUR",
+      fromAccountId: null,
+      fundName: "Fondo Azul",
+      productCode: "IE00B4L5Y983",
+      status: "ACTIVE",
+      subscriptionType: "SUCCESSIVE_SUBSCRIPTION",
+      timeFrame: {
+        endDate: null,
+        nextExecutionDate: "2026-12-02",
+        recurrence: "ONE_MONTH",
+        startDate: "2026-10-02",
+      },
+      toAccountId: "6603",
+      toAccountType: "SECURITIES_ACCOUNT",
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-20T10:00:00.000Z"));
+      calls.readLinks.mockResolvedValue([{ assetId: ASSET_ID, productKey: PRODUCT }]);
+      // October's arrived three days late; November's never did.
+      calls.readOperations.mockResolvedValue([
+        OPERATION,
+        { ...OPERATION, executedAt: "2026-10-05", id: "op_oct", units: "0.6137" },
+      ]);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("with the password saved: the tab lists each one and the band says the one that did not arrive", async () => {
+      calls.readSource.mockResolvedValue({ ...SOURCE, credentialsJson: SAVED });
+      calls.readDiscovery.mockResolvedValue(discovery([MONTHLY]));
+      const html = await renderedHtml({ pestaña: "aportacion" });
+
+      expect(html).toContain(">Aportación<");
+      const tab = tabBody(html);
+      expect(tab).toContain("Programada en MyInvestor:");
+      expect(tab).toContain("el día 2 de cada mes");
+      expect(tab).toContain("Si una no llega a los 5 días hábiles, te avisa.");
+      expect(tab).toContain("llegó");
+      expect(tab).toContain('<span class="fichaScheduleMissing">no ha llegado</span>');
+      expect(band(html)).toContain(
+        "La aportación del 2 nov 2026 no ha llegado: MyInvestor la tenía programada",
+      );
+      expect(band(html)).toContain("Ver la aportación");
+    });
+
+    test("without the password: «sin comprobar», and no warning of its own", async () => {
+      calls.readDiscovery.mockResolvedValue(discovery([MONTHLY]));
+      const html = await renderedHtml({ pestaña: "aportacion" });
+
+      expect(tabBody(html)).toContain("sin comprobar");
+      expect(tabBody(html)).toContain(
+        "Sin la contraseña guardada no puede avisarte de si llega.",
+      );
+      expect(band(html)).not.toContain("no ha llegado");
+    });
+
+    test("without scheduled contributions there is no tab", async () => {
+      calls.readDiscovery.mockResolvedValue(discovery([]));
+      const html = await renderedHtml();
+
+      expect(html).not.toContain(">Aportación<");
+    });
   });
 });
 

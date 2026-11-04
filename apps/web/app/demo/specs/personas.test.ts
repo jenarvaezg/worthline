@@ -149,7 +149,7 @@ describe("seedPersona — inversor (markets-heavy)", () => {
         (source) => source.adapter === "binance",
       )!;
       const rows = await store.snapshots.readSnapshotHoldings({
-        holdingId: binance.assetId,
+        holdingId: binance.assetId!,
         kind: "asset",
         scopeId: "household",
       });

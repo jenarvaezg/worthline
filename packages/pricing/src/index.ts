@@ -374,6 +374,8 @@ export {
   createMyInvestorClient,
   createRelayTransport,
   DEFAULT_RETRY_DELAYS_MS,
+  isMyInvestorExternalEntry,
+  isMyInvestorUnpairedLeg,
   MYINVESTOR_ADAPTER_ID,
   MYINVESTOR_CURSOR_OVERLAP_DAYS,
   MYINVESTOR_HISTORY_ORIGIN,

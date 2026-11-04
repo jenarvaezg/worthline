@@ -19,10 +19,12 @@ import {
   updateManagedPortfolioAction,
 } from "@web/patrimonio/carteras/carteras-actions";
 import {
+  isSourceOwnedPortfolio,
   managedPortfolioMemberOptions,
   portfolioCompositionView,
   portfolioUndetailedView,
   portfolioWitnessView,
+  soldByManagerHoldingIds,
 } from "@web/patrimonio/carteras/carteras-view";
 import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
 import { loadPortfolioReturns } from "@web/patrimonio/carteras/load-portfolio-returns";
@@ -115,6 +117,12 @@ async function FichaContent({
     publicIdByHolding: Object.fromEntries(
       holdingPublicIdIndex(publicIdRows).publicByInternal,
     ),
+    // The funds a robo-advisor's manager sold whole fold apart (#1883).
+    soldByManager: soldByManagerHoldingIds({
+      assets: model.assets,
+      operationsByHoldingId: model.operationsByHoldingId,
+      portfolio,
+    }),
     typeByHoldingId: model.typeByHoldingId,
     valueMinorByHoldingId: model.valueMinorByHoldingId,
   });
@@ -158,11 +166,15 @@ async function FichaContent({
   // Members editable here: the live manual investments this portfolio may hold
   // (its own included; holdings of OTHER portfolios hidden — membership is
   // exclusive). The cash sibling never appears: it is the portfolio's plumbing.
-  const options = managedPortfolioMemberOptions({
-    assets: model.assets,
-    memberIdsByPortfolio: model.memberIdsByPortfolio,
-    portfolioId: portfolio.id,
-  });
+  // A portfolio a connection writes (#1883) takes no hand-made member: no chips.
+  const sourceOwned = isSourceOwnedPortfolio(portfolio, model.assets);
+  const options = sourceOwned
+    ? []
+    : managedPortfolioMemberOptions({
+        assets: model.assets,
+        memberIdsByPortfolio: model.memberIdsByPortfolio,
+        portfolioId: portfolio.id,
+      });
 
   // The chips' preselection is the INVESTMENT members and only them: the cash
   // sibling and the "(sin detallar)" aggregate are the container's own plumbing,
@@ -341,6 +353,24 @@ async function FichaContent({
             </tbody>
           </table>
         )}
+
+        {composition.soldByManager.length > 0 ? (
+          // Members at 0 with their history: the return against the manager's needs
+          // their flows (#1552), but they hold nothing — folded, never in the weights.
+          <details className="carterasSold" suppressHydrationWarning>
+            <summary>Vendidos por el gestor ({composition.soldByManager.length})</summary>
+            <ul className="carterasList">
+              {composition.soldByManager.map((row) => (
+                <li className="carterasRow carterasSoldRow" key={row.holdingId}>
+                  {row.href ? <Link href={row.href}>{row.label}</Link> : row.label}
+                  <span className="carterasSoldNote">
+                    Sin participaciones hoy: su historial cuenta en la rentabilidad
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
 
         {composition.unknownMemberIds.length > 0 ? (
           <p className="muted">
@@ -560,7 +590,12 @@ async function FichaContent({
             />
           </label>
           <span className="memberProfileLabel">Elige qué fondos forman la cartera</span>
-          {options.length === 0 ? (
+          {sourceOwned ? (
+            <p className="muted">
+              Los fondos de esta cartera los trae su conexión, también los que el gestor
+              compre más adelante: no se asignan a mano.
+            </p>
+          ) : options.length === 0 ? (
             <p className="muted">
               No hay inversiones manuales vivas disponibles para asignar. Da de alta un
               fondo y vuelve.

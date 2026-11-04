@@ -9,10 +9,12 @@ import type {
   DatedFactCommandImplementations,
   DatedFactStores,
 } from "./command-implementation-types";
+import { createConnectedInclusionCommands } from "./connected-inclusion";
 import { createDebtBalanceCommands } from "./debt-balance-facts";
 import { debtPlanBand, rippleHistoricalSnapshotsForDebt } from "./debt-band";
 import { createDebtPlanCommands } from "./debt-plan-facts";
 import { createHoldingCreationCommands } from "./holding-creation";
+import { createInheritedCostCommands } from "./inherited-cost";
 import { createInvestmentOperationCommands } from "./investment-operations";
 import { createInvestmentTransferCommands } from "./investment-transfer";
 import { createOwnershipCommands } from "./ownership-facts";
@@ -41,6 +43,8 @@ export function createDatedFactCommandImplementations(
     ...createInvestmentOperationCommands(ctx, stores, uow),
     ...createInvestmentTransferCommands(ctx, stores, uow),
     ...createStatementImportCommands(ctx, stores, uow),
+    ...createConnectedInclusionCommands(ctx, stores, uow),
+    ...createInheritedCostCommands(ctx, stores, uow),
     ...createValuationCommands(ctx, stores, uow),
     ...createOwnershipCommands(ctx, stores),
     ...createDebtBalanceCommands(ctx, stores, uow),

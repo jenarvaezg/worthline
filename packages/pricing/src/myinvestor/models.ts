@@ -9,6 +9,9 @@
  *   orderer of a broker order never reach worthline.
  * - MyInvestor's own valuations (market value, «invertido», profit) are not read:
  *   worthline prices and costs everything itself (PRD #1876, invariants 2 and 3).
+ *   The one exception is a robo-advisor account's `fundsMarketValue`: the balance
+ *   its manager declares, read as the managed portfolio's WITNESS (#1869 P5 and P7,
+ *   ADR 0085 as amended by #1550) — compared, never adopted.
  *
  * Field names follow the API, so a reader can follow a value back to the fixture.
  */
@@ -93,6 +96,19 @@ export interface MyInvestorCashAccount {
   readonly withheldBalance: DecimalString;
   readonly holders: readonly MyInvestorHolder[];
   readonly ownership: MyInvestorOwnership;
+  /**
+   * The IBAN shortened to its country, check digits and last four (`ES69 ···0252`),
+   * the strong identifier the first start shows (#1869 P3, #1880). The whole IBAN is
+   * never kept: only what a bank statement prints in its header.
+   */
+  readonly ibanMasked: string | null;
+}
+
+/** `ES6996…0252` → `ES69 ···0252`; null when there is nothing IBAN-shaped to shorten. */
+function maskIban(iban: string | null): string | null {
+  const compact = iban?.replace(/\s+/g, "") ?? "";
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{8,}$/.test(compact)) return null;
+  return `${compact.slice(0, 4)} ···${compact.slice(-4)}`;
 }
 
 export const cashAccountsSchema: z.ZodType<MyInvestorCashAccount[], unknown> = z.array(
@@ -107,8 +123,13 @@ export const cashAccountsSchema: z.ZodType<MyInvestorCashAccount[], unknown> = z
       enabledBalance: decimal,
       withheldBalance: decimal,
       holders: z.array(holder).default([]),
+      iban: text,
     })
-    .transform((account) => ({ ...account, ownership: ownershipOf(account.holders) })),
+    .transform(({ iban, ...account }) => ({
+      ...account,
+      ibanMasked: maskIban(iban),
+      ownership: ownershipOf(account.holders),
+    })),
 );
 
 export interface MyInvestorSecuritiesAccountSummary {
@@ -183,6 +204,11 @@ export interface MyInvestorSecuritiesAccount {
   /** Robo-advisor accounts: the catalog portfolio and its risk profile. */
   readonly portfolioName: string | null;
   readonly portfolioProfileType: string | null;
+  /**
+   * Robo-advisor accounts: the market value of the FUNDS the manager declares, cash
+   * left out. Only ever a witness of the managed portfolio (#1883); null when absent.
+   */
+  readonly fundsMarketValue: DecimalString | null;
   /** Today's positions, every group flattened (funds first, as the API sends them). */
   readonly positions: readonly MyInvestorPosition[];
 }
@@ -195,6 +221,7 @@ export const securitiesAccountSchema: z.ZodType<MyInvestorSecuritiesAccount, unk
     status: text,
     portfolioName: text,
     portfolioProfileType: text,
+    fundsMarketValue: optionalDecimal,
     securitiesAccountInvestments: z
       .record(z.string(), z.object({ investmentList: z.array(position).nullish() }))
       .nullish(),

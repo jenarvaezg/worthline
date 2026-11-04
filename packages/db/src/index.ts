@@ -58,22 +58,34 @@ export type {
   CommandExecutor,
   CommandHost,
   CommandResult,
+  ConnectedCashLink,
+  ConnectedHoldingCreation,
+  ConnectedHoldingLink,
+  ConnectedPortfolioCreation,
+  ConnectedPortfolioLink,
   CreateDebtHoldingCommand,
   CreateInvestmentHoldingCommand,
   DebtRippleCounts,
   DeleteValuationAnchorCommand,
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
+  IncludeConnectedHoldingsCommand,
+  IncludeConnectedHoldingsResult,
   InvestmentHoldingEntry,
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
   PreviewAcquisitionAnchorEditCommand,
   RecordHousingValuationCommand,
+  ResolveInheritedCostCommand,
+  ResolveInheritedCostRefusal,
+  ResolveInheritedCostResult,
   RipplePlan,
   SetAnnualAppreciationRateCommand,
   SetHousingAcquisitionCostCommand,
   SetHousingValuationCadenceCommand,
   StatementImportCommand,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
   UpdateAssetOwnershipSplitCommand,
   UpdateLiabilityOwnershipSplitCommand,
   UpdateValuationAnchorCommand,
@@ -101,6 +113,15 @@ export type {
   SourcePositionInput,
   ValuationFreshness,
 } from "./connected-source-store";
+export type {
+  ClaimSyncLeaseResult,
+  PasswordRejectionInput,
+  SourceSyncState,
+  SourceSyncStatePatch,
+  SyncLease,
+  SyncLeaseTrigger,
+} from "./connected-source-sync-state";
+export type { HoldingContributionPlan } from "./contribution-plan-store";
 export {
   type AdminControlPlaneStore,
   type AiDailyTokenUsage,
@@ -208,6 +229,7 @@ export type {
   InvestmentHoldingCreationPlan,
   StoredHoldingCreationPlan,
 } from "./holding-creation-plan";
+export type { HoldingLedger } from "./holding-ledger-reads";
 export { type HousingCurveRows, housingCurveInput } from "./housing-curve-input";
 export type { InvestmentOperationPlan } from "./investment-operation-plan";
 export type { InvestmentTransferPlan } from "./investment-transfer-plan";

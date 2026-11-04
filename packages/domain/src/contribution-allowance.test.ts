@@ -4,6 +4,7 @@ import {
   assertContributionAllowanceInput,
   type ContributionAllowance,
   computeContributionAllowanceUsage,
+  forecastContributionAllowance,
 } from "./contribution-allowance";
 import type { InvestmentOperation } from "./investment-types";
 
@@ -332,5 +333,90 @@ describe("assertContributionAllowanceInput", () => {
         label: "Planes de pensiones",
       }),
     ).toThrow(/plan de pensiones/i);
+  });
+});
+
+describe("forecastContributionAllowance (#1886)", () => {
+  const usage = computeContributionAllowanceUsage({
+    allowance,
+    currency: "EUR",
+    operations: [
+      buy({ executedAt: "2026-03-03", id: "op-1", pricePerUnit: "10", units: "93.7" }),
+    ],
+    todayISO: "2026-11-04",
+  });
+
+  test("adds what is still scheduled this year to what the ledger already spent", () => {
+    const forecast = forecastContributionAllowance({
+      allowance,
+      scheduled: [
+        // Today's is the ledger's to count once it arrives, never the forecast's.
+        {
+          amountMinor: 14_923,
+          dateISO: "2026-11-04",
+          holdingId: "pp-myinvestor",
+          origin: "source",
+        },
+        {
+          amountMinor: 14_923,
+          dateISO: "2026-12-01",
+          holdingId: "pp-myinvestor",
+          origin: "source",
+        },
+        // Next year is next year's cupo.
+        {
+          amountMinor: 14_923,
+          dateISO: "2027-01-01",
+          holdingId: "pp-myinvestor",
+          origin: "source",
+        },
+        // Another destination does not consume this cupo.
+        { amountMinor: 4_611, dateISO: "2026-12-03", holdingId: "fondo", origin: "plan" },
+        {
+          amountMinor: 2_317,
+          dateISO: "2026-12-15",
+          holdingId: "pp-myinvestor",
+          origin: "plan",
+        },
+      ],
+      todayISO: "2026-11-04",
+      usage,
+    });
+
+    expect(forecast).toEqual({
+      projectedMinor: 93_700 + 14_923 + 2_317,
+      projectedRemainingMinor: 150_000 - (93_700 + 14_923 + 2_317),
+      scheduledMinor: 14_923 + 2_317,
+      sourceMinor: 14_923,
+    });
+  });
+
+  test("counts one already due whose order is still on its way: it is in neither figure yet", () => {
+    const forecast = forecastContributionAllowance({
+      allowance,
+      scheduled: [
+        {
+          amountMinor: 14_923,
+          dateISO: "2026-11-02",
+          holdingId: "pp-myinvestor",
+          origin: "source",
+          pendingArrival: true,
+        },
+      ],
+      todayISO: "2026-11-04",
+      usage,
+    });
+    expect(forecast?.scheduledMinor).toBe(14_923);
+  });
+
+  test("says nothing when nothing more is scheduled this year", () => {
+    expect(
+      forecastContributionAllowance({
+        allowance,
+        scheduled: [],
+        todayISO: "2026-11-04",
+        usage,
+      }),
+    ).toBeNull();
   });
 });

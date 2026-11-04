@@ -96,6 +96,7 @@ export function createInvestmentOperation(
 
   assertTransferColumns(input);
   assertCostBasisGrade(input);
+  assertTransferLegState(input);
 
   return {
     assetId: input.assetId,
@@ -120,6 +121,9 @@ export function createInvestmentOperation(
     ...(input.transferSeniorityAt === undefined
       ? {}
       : { transferSeniorityAt: input.transferSeniorityAt }),
+    ...(input.transferLegState === undefined
+      ? {}
+      : { transferLegState: input.transferLegState }),
     units: input.units,
   };
 }
@@ -205,6 +209,21 @@ function assertTransferColumns(input: CreateInvestmentOperationInput): void {
 function assertCostBasisGrade(input: CreateInvestmentOperationInput): void {
   if (input.costBasisGrade !== undefined && input.source !== "opening") {
     throw new Error("Only an opening operation may carry a costBasisGrade.");
+  }
+}
+
+/**
+ * Who may carry a {@link TransferLegState} (#1882): the cost states only a
+ * `transfer_in`, whose inherited cost they qualify; `unpaired_out` only the `sell`
+ * an unpaired outgoing leg is written as. A programmer error otherwise — no form
+ * posts this column; the connector and the coste-heredado gate fill it.
+ */
+function assertTransferLegState(input: CreateInvestmentOperationInput): void {
+  const state = input.transferLegState;
+  if (state === undefined) return;
+  const kind = state === "unpaired_out" ? "sell" : "transfer_in";
+  if (input.kind !== kind) {
+    throw new Error(`Only a ${kind} may carry the transferLegState "${state}".`);
   }
 }
 

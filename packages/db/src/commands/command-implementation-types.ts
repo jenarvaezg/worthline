@@ -44,6 +44,16 @@ import type {
   ValuationCadence,
 } from "@worthline/domain";
 import type {
+  IncludeConnectedHoldingsCommand,
+  IncludeConnectedHoldingsResult,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
+} from "./connected-inclusion";
+import type {
+  ResolveInheritedCostCommand,
+  ResolveInheritedCostResult,
+} from "./inherited-cost";
+import type {
   RecordExternalTransferInCommand,
   RecordTransferCommand,
 } from "./investment-transfer";
@@ -299,6 +309,31 @@ export interface DatedFactCommandImplementations {
    * a deuda that lands without it has no curve anyone can draw (ADR 0031).
    */
   createDebtHoldingAndRipple: (command: CreateDebtHoldingCommand) => Promise<void>;
+  /**
+   * Include products of a source that owns its holdings (#1880, ADR 0115): create
+   * the linked holdings and apply their whole history through the ingestion port —
+   * ONE fact_batch, ONE transaction, ONE ripple (ADR 0062).
+   */
+  includeConnectedHoldingsAndRipple: (
+    command: IncludeConnectedHoldingsCommand,
+  ) => Promise<IncludeConnectedHoldingsResult>;
+  /**
+   * Answer the inherited cost of a traspaso that came into a linked holding
+   * without it (#1882): typed, or carried from the reimbursement the user confirmed
+   * as its origin. The one write a user makes on a holding its source owns — ONE
+   * fact_batch, ONE transaction, ONE ripple (ADR 0062).
+   */
+  resolveInheritedCostAndRipple: (
+    command: ResolveInheritedCostCommand,
+  ) => Promise<ResolveInheritedCostResult>;
+  /**
+   * A periodic sync of an owning source (#1884, ADR 0114 decision 5): the new
+   * operations of its linked holdings and the balances of its linked cash accounts,
+   * through the ingestion port — ONE fact_batch, ONE transaction, ONE ripple.
+   */
+  syncConnectedHoldingsAndRipple: (
+    command: SyncConnectedHoldingsCommand,
+  ) => Promise<SyncConnectedHoldingsResult>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts: { today: string },

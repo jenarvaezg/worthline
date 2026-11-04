@@ -1,0 +1,20 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "externalCodAccount": "15449100000000000707",
+        "accountType": "SECURITIES_PORTFOLIO",
+        "accountId": "9100007",
+        "codAccount": "9100000707",
+        "cashAccountId": "9100006",
+        "status": "ACTIVE",
+        "hasFundsOperations": true,
+        "hasBrokerOperations": false
+      }
+    ]
+  }
+}

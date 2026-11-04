@@ -17,10 +17,22 @@ const WORKSPACE_TABLES = [
   "contribution_allowance_holdings",
   "contribution_allowances",
   "asset_operations",
+  // The manual operations a link replaced (#1881): beneath the holding.
+  "fact_batch_replaced_operations",
   "asset_price_cache",
   // Connected sources project into an asset, with positions beneath the source —
   // children before parents so the FK cascade order holds (ADR 0016).
   "positions",
+  // The half-done SMS login of a MyInvestor connection (#1879): sealed, maybe with
+  // the password — a full replace must never leave one behind.
+  "connected_source_pending_logins",
+  // What an owning source found, which product each linked holding is, and the
+  // ingestion port's dedup ledger (#1880): all beneath the source.
+  "connected_source_discoveries",
+  "connected_source_links",
+  "connector_applied_facts",
+  // How its periodic sync stands (#1884): operational, never exported.
+  "connected_source_sync_state",
   "connected_sources",
   "investment_assets",
   "asset_valuations",

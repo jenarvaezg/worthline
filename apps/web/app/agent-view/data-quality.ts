@@ -1,4 +1,5 @@
 import { readAmortizableStartByLiabilityId } from "@web/data-quality-amortizable-start";
+import { readOwningSourceStandings } from "@web/data-quality-owning-sources";
 import {
   readDebtModelByLiabilityId,
   readMonthlyDebtServiceByLiabilityId,
@@ -226,6 +227,11 @@ async function collectScopeSignals(
       ),
     ),
   );
+  // The standing of a connection that owns its holdings (#1885), by the same port
+  // the home reads: the two read one rule for MyInvestor's health.
+  const owningSourceStandingBySourceId = new Map(
+    await readOwningSourceStandings(store, connectedSources),
+  );
 
   // Un modelo por deuda, leído UNA vez y repartido en dos lecturas (#1520): la señal
   // de histórico mira solo las hipotecas, que es su regla, y el testigo del gasto mira
@@ -328,6 +334,7 @@ async function collectScopeSignals(
     incomes,
     investmentOperationsByAssetId: operationsByAssetId,
     liabilities,
+    owningSourceStandingBySourceId,
     managedPortfolios,
     manualValueHistoryByAssetId,
     netUnitsByAssetId,

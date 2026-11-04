@@ -2,11 +2,16 @@ import {
   type AssetType,
   type ContributionAllowance,
   type ContributionAllowanceEntry,
+  type ContributionAllowanceForecast,
   type ContributionAllowanceUsage,
+  type ContributionPlan,
   consumesContributionAllowance,
+  contributionOccurrenceMoneyMinor,
+  expandContributionPlan,
   type Instrument,
   type InvestmentOperation,
   type ManualAsset,
+  type ScheduledAllowanceEntry,
 } from "@worthline/domain";
 
 /**
@@ -147,8 +152,10 @@ export function contributionAllowanceOperations(input: {
  */
 export function contributionAllowanceDestinationOptions(
   assets: readonly ManualAsset[],
+  /** The sources that own their holdings' ledgers (MyInvestor, ADR 0115, #1886). */
+  owningSourceIds?: ReadonlySet<string>,
 ): ManualAsset[] {
-  return assets.filter(consumesContributionAllowance);
+  return assets.filter((asset) => consumesContributionAllowance(asset, owningSourceIds));
 }
 
 /**
@@ -192,11 +199,77 @@ export function trashAssetToHolding(row: {
 export function withDerivedAllowanceDestinations(
   allowance: ContributionAllowance,
   holdings: readonly ManualAsset[],
+  owningSourceIds?: ReadonlySet<string>,
 ): ContributionAllowance {
   return {
     ...allowance,
-    holdingIds: contributionAllowanceDestinationOptions(holdings).map(
+    holdingIds: contributionAllowanceDestinationOptions(holdings, owningSourceIds).map(
       (holding) => holding.id,
     ),
   };
+}
+
+/**
+ * What is scheduled from today to 31 December, for the cupo's forecast (#1886):
+ * the occurrences of the worthline plan, and the source's scheduled contributions
+ * (`myInvestorScheduledEntries`), handed in already expanded.
+ *
+ * One schedule speaks for each holding. A holding a source owns has no worthline
+ * plan (ADR 0115, decision 5): its lines were closed on linking, and any line still
+ * pointing at it is dropped here rather than added to MyInvestor's — the same
+ * contribution counted twice would be the flattering error. A units line with no
+ * price to convert is left out, never guessed.
+ */
+export function allowanceScheduledEntries(input: {
+  plan: ContributionPlan | null;
+  sourceEntries: readonly ScheduledAllowanceEntry[];
+  /** The holdings whose ledger a source owns: their plan lines do not speak. */
+  ownedHoldingIds: ReadonlySet<string>;
+  todayISO: string;
+  unitPriceMajorByHoldingId: Record<string, string>;
+}): ScheduledAllowanceEntry[] {
+  const { ownedHoldingIds, plan, todayISO, unitPriceMajorByHoldingId } = input;
+  const yearEnd = `${todayISO.slice(0, 4)}-12-31`;
+  const fromPlan = plan
+    ? expandContributionPlan(plan, todayISO, yearEnd).flatMap(
+        (occurrence): ScheduledAllowanceEntry[] => {
+          if (ownedHoldingIds.has(occurrence.destinationHoldingId)) return [];
+          const amountMinor = contributionOccurrenceMoneyMinor(
+            occurrence,
+            unitPriceMajorByHoldingId,
+          );
+          return amountMinor === null
+            ? []
+            : [
+                {
+                  amountMinor,
+                  dateISO: occurrence.plannedDate,
+                  holdingId: occurrence.destinationHoldingId,
+                  origin: "plan",
+                },
+              ];
+        },
+      )
+    : [];
+  return [...input.sourceEntries, ...fromPlan];
+}
+
+/**
+ * The forecast in one sentence, under the bar (#1886): what is scheduled, how much
+ * of it MyInvestor schedules, and where the year ends. Said apart from the counter
+ * and conditionally («acabarías»): it is what is scheduled, not what happened.
+ */
+export function allowanceForecastLine(
+  forecast: ContributionAllowanceForecast,
+  fmt: (amountMinor: number) => string,
+): string {
+  const source =
+    forecast.sourceMinor > 0
+      ? `, ${fmt(forecast.sourceMinor)} de ellos en MyInvestor`
+      : "";
+  const remainder =
+    forecast.projectedRemainingMinor < 0
+      ? `te pasarías ${fmt(-forecast.projectedRemainingMinor)}`
+      : `quedarían ${fmt(forecast.projectedRemainingMinor)}`;
+  return `Con lo programado hasta el 31 de diciembre (${fmt(forecast.scheduledMinor)}${source}), acabarías el año en ${fmt(forecast.projectedMinor)}: ${remainder}.`;
 }

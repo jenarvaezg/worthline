@@ -200,7 +200,7 @@ export async function buildSharedSnapshotInputs(
       const coins = (await store.connectedSources.readPositions(source.id)).filter(
         (position): position is CoinPosition => position.kind === "coin",
       );
-      if (coins.length > 0) {
+      if (coins.length > 0 && source.assetId !== null) {
         positionDetails.set(source.assetId, coins.map(coinPositionSnapshotInput));
       }
     } else if (source.adapter === "binance") {

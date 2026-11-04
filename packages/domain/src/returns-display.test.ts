@@ -5,6 +5,7 @@ import type { AssetClassResolution } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./index";
 import type { Instrument } from "./instrument-catalog";
 import { money } from "./money";
+import { derivePosition } from "./positions";
 import type { IrrResult, SimpleGain, TwrResult } from "./returns";
 import {
   APPRECIATING_CAVEAT,
@@ -346,6 +347,68 @@ describe("holdingReturns", () => {
     expect(view?.totalGain).toEqual(money(1_000_00, "EUR"));
     expect(view?.caveats).toContain(MARKET_PAYOUTS_CAVEAT);
     expect(view).toEqual(board);
+  });
+
+  test("a traspaso whose cost is pending measures nothing, on the ficha or the board (#1882)", () => {
+    const entry: InvestmentOperation = {
+      assetId: "a1",
+      currency: "EUR",
+      executedAt: "2026-01-14",
+      feesMinor: 0,
+      id: "in-1",
+      kind: "transfer_in",
+      pricePerUnit: "17.43",
+      source: "connected",
+      // Provisional: the value that arrived, never a cost anybody gave.
+      transferCostMinor: 70_133,
+      transferId: "myinvestor-external:in-1",
+      transferLegState: "cost_pending",
+      units: "40.237",
+    };
+    const reads = {
+      assetId: "a1",
+      cachedPrice: "19.37",
+      currency,
+      instrument: "pension_plan" as const,
+      manualPrice: undefined,
+      operations: [entry],
+      valuationDate,
+    };
+
+    const pending = holdingReturns(reads);
+    expect(pending.view).toBeNull();
+    expect(pending.inheritedCostPending).toBe(true);
+    // The value still stands: units × price, which no cost touches.
+    expect(pending.valuation.valueMinor).toBe(77_939);
+    expect(
+      investmentReturnsById({
+        cachedPriceByAsset: new Map([["a1", "19.37"]]),
+        currency,
+        instrumentByAsset: new Map([["a1", "pension_plan"]]),
+        manualPriceByAsset: new Map(),
+        operationsByAsset: new Map([["a1", [entry]]]),
+        valuationDate,
+      }).has("a1"),
+    ).toBe(false);
+
+    // Answered, the measures are back. The holding's own gain and IRR read the
+    // traspaso as a flow at the day's value (ADR 0082, decision 4); what reads the
+    // answered cost is the plusvalía latente, through the position's cost basis.
+    const answeredEntry: InvestmentOperation = {
+      ...entry,
+      transferCostMinor: 61_177,
+      transferLegState: "cost_declared",
+    };
+    const answered = holdingReturns({ ...reads, operations: [answeredEntry] });
+    expect(answered.inheritedCostPending).toBe(false);
+    expect(answered.view?.totalGain).toEqual(money(77_939 - 70_133, "EUR"));
+    const position = derivePosition([answeredEntry], {
+      assetId: "a1",
+      currency,
+      currentPricePerUnit: "19.37",
+    });
+    expect(position.costBasis.amountMinor).toBe(61_177);
+    expect(position.unrealizedPnl?.amountMinor).toBe(77_939 - 61_177);
   });
 
   test("hands back the valuation the figure was measured against", () => {

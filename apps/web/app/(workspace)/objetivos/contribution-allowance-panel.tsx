@@ -1,6 +1,7 @@
 import { PendingSubmit } from "@web/pending-submit";
 import type {
   ContributionAllowance,
+  ContributionAllowanceForecast,
   ContributionAllowanceUsage,
   ManualAsset,
 } from "@worthline/domain";
@@ -12,6 +13,7 @@ import {
   updateContributionAllowanceAction,
 } from "./contribution-allowance-actions";
 import {
+  allowanceForecastLine,
   type ContributionAllowanceTone,
   contributionAllowanceRowView,
 } from "./contribution-allowance-view";
@@ -42,6 +44,7 @@ export function ContributionAllowancePanel({
   currency,
   currentUrl,
   destinationOptions,
+  forecastById,
   formError,
   holdingNameById,
   privacyMode,
@@ -49,6 +52,8 @@ export function ContributionAllowancePanel({
   trashedHoldingIds,
   usageById,
 }: {
+  /** Where each cupo ends the year if what is scheduled arrives (#1886). */
+  forecastById?: ReadonlyMap<string, ContributionAllowanceForecast>;
   allowances: ContributionAllowance[];
   currency: string;
   currentUrl: string;
@@ -108,6 +113,7 @@ export function ContributionAllowancePanel({
 
       {rows.map((row) => {
         const { allowance } = row;
+        const forecast = forecastById?.get(allowance.id) ?? null;
 
         return (
           <article
@@ -142,6 +148,11 @@ export function ContributionAllowancePanel({
                 style={{ width: `${row.barPercent}%` }}
               />
             </div>
+
+            {/* The forecast (#1886): beside the counter, never inside it (ADR 0080). */}
+            {forecast ? (
+              <p className="objetivosCupoNote">{allowanceForecastLine(forecast, fmt)}</p>
+            ) : null}
 
             <p className="objetivosCupoNote">
               Consume{row.destinationNames.length === 1 ? "" : "n"} este cupo:{" "}

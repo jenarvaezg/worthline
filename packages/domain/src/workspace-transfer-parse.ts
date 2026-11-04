@@ -853,7 +853,7 @@ function collectConnectedSourceErrors(
   );
 
   for (const source of doc.connectedSources) {
-    if (!assetById.has(source.assetId)) {
+    if (source.assetId !== null && !assetById.has(source.assetId)) {
       errors.push(
         `La fuente conectada "${source.label}" (${source.id}) referencia un activo inexistente: ${source.assetId}.`,
       );
@@ -864,6 +864,20 @@ function collectConnectedSourceErrors(
       `posición de la fuente ${source.id}`,
       source.positions.map((position) => position.id),
     );
+  }
+
+  // What a link replaced (#1881) hangs on its holding, which must travel too.
+  collectDuplicateIdErrors(
+    errors,
+    "operación sustituida",
+    doc.replacedOperations.map((row) => row.operationId),
+  );
+  for (const row of doc.replacedOperations) {
+    if (!assetById.has(row.assetId)) {
+      errors.push(
+        `La operación sustituida ${row.operationId} referencia un activo inexistente: ${row.assetId}.`,
+      );
+    }
   }
 }
 

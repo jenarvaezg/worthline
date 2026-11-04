@@ -23,6 +23,7 @@ import {
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
+import { INHERITED_COST_FORM_ID } from "@web/inversiones/inherited-cost-form-id";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { holdingWarnings } from "@web/patrimonio/[id]/editar/_chrome/holding-warnings";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
@@ -31,8 +32,21 @@ import {
   fichaTabUrl,
 } from "@web/patrimonio/[id]/editar/_ficha/ficha-view";
 import ExternalEntrySection from "@web/patrimonio/[id]/editar/_surfaces/external-entry-section";
+import InheritedCostSection from "@web/patrimonio/[id]/editar/_surfaces/inherited-cost-section";
+import {
+  type InheritedCostView,
+  inheritedCostView,
+  pendingEntry,
+  proposedOrigin,
+  withUnknownOrigins,
+} from "@web/patrimonio/[id]/editar/_surfaces/inherited-cost-view";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
+import { ScheduledContributionSection } from "@web/patrimonio/[id]/editar/_surfaces/scheduled-contribution-section";
+import {
+  scheduledContributionMissingText,
+  scheduledContributionView,
+} from "@web/patrimonio/[id]/editar/_surfaces/scheduled-contribution-view";
 import { SnapshotPriceCorrectionSection } from "@web/patrimonio/[id]/editar/_surfaces/snapshot-price-correction-section";
 import { StatementUploadSection } from "@web/patrimonio/[id]/editar/_surfaces/statement-upload-section";
 import { transferDestinationOptions } from "@web/patrimonio/[id]/editar/_surfaces/transfer-form";
@@ -43,13 +57,14 @@ import { PendingSubmit } from "@web/pending-submit";
 import { priceOriginCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { HoldingWarningCode } from "@worthline/domain";
+import type { HoldingWarningCode, InvestmentOperation } from "@worthline/domain";
 import {
   costBasisGradeMark,
   declaredSecurityId,
   detectSingleAssetBackfillCandidate,
   detectValueOnlyOpening,
   exposureLookthroughKey,
+  formatMoneyMinorExact,
   formatMoneyMinorPrivacy,
   formatUnits,
   holdingReturns,
@@ -57,6 +72,7 @@ import {
   INSTRUMENT_LABELS_ES,
   instrumentOfAsset,
   lastCapturedCurrency,
+  maskMoneyString,
   monthlyCloseValuesByHolding,
   usableCachedPrice,
   VALUE_ONLY_PNL_NOTICE,
@@ -70,6 +86,13 @@ import type {
 import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { bindInvestmentActions } from "./investment-actions";
+import {
+  loadOwningSourceFicha,
+  loadOwningSourceSchedules,
+  owningSourceCaption,
+  owningSourceNotices,
+  ponerAlDiaAction,
+} from "./owning-source-ficha";
 import { fichaUnitPrice } from "./unit-price";
 
 /** The investment's own tabs; the page appends «Datos del activo». */
@@ -82,6 +105,19 @@ const TABS = ["operaciones", "rentabilidad", COBROS_TAB] as const;
 const FICHA_TABS = [...TABS, FICHA_DATOS_TAB] as const;
 
 /**
+ * «Aportación» (#1886, design B): only on a holding MyInvestor owns with scheduled
+ * contributions there, right after the ledger it is checked against.
+ */
+const APORTACION_TAB = "aportacion";
+const FICHA_TABS_WITH_APORTACION = [
+  "operaciones",
+  APORTACION_TAB,
+  "rentabilidad",
+  COBROS_TAB,
+  FICHA_DATOS_TAB,
+] as const;
+
+/**
  * The warning about the price itself: printed beside the price, not in the band
  * (#1828), because what it says — nothing quotes this automatically — is about the
  * figure right there.
@@ -90,6 +126,38 @@ const SYMBOL_WARNING = "MISSING_PROVIDER_SYMBOL" satisfies HoldingWarningCode;
 
 /** The ledger is where a sale or a traspaso past the units held gets fixed. */
 const LEDGER_FIX = { label: "Ver operaciones", tab: "operaciones" } as const;
+
+/** The warning about a traspaso's missing cost, fixed in its own panel (#1882). */
+const COST_PENDING_WARNING = "TRANSFER_COST_PENDING" satisfies HoldingWarningCode;
+
+/** The «Coste del traspaso» panel's action key: the band's fix opens it. */
+const INHERITED_COST_ACTION = "coste";
+
+/**
+ * What the «Coste del traspaso» panel asks, or null when nothing is pending. The
+ * source's unpaired reimbursements are read only then, and the proposed origin's
+ * ledger only when there is one: the ordinary ficha pays nothing for this.
+ */
+async function readInheritedCost(
+  ctx: AssetFamilyContext,
+  operations: readonly InvestmentOperation[],
+): Promise<InheritedCostView | null> {
+  if (pendingEntry(operations) === null) return null;
+  const sourceId = ctx.asset.connectedSourceId;
+  const candidates = sourceId
+    ? await ctx.store.operations.readUnpairedOutLegs(sourceId)
+    : [];
+  const origin = proposedOrigin(operations, candidates);
+  const originLedger = origin
+    ? await ctx.store.operations.readOperations(origin.assetId)
+    : null;
+  return inheritedCostView({
+    candidates,
+    holdingNames: new Map(ctx.allAssets.map((holding) => [holding.id, holding.name])),
+    operations,
+    originLedger,
+  });
+}
 
 export async function loadInvestmentSurface(
   ctx: AssetFamilyContext,
@@ -104,6 +172,7 @@ export async function loadInvestmentSurface(
     id,
     isDemo,
     overrides,
+    owningSource,
     payoutsPanel,
     privacyMode,
     store,
@@ -133,6 +202,28 @@ export async function loadInvestmentSurface(
     ]);
 
   const position = positions.find((p) => p.assetId === id) ?? null;
+  // A traspaso that came into this linked holding without its cost (#1882): what
+  // the «Coste del traspaso» panel asks, read only when an entry is pending.
+  const inheritedCost = await readInheritedCost(ctx, operations);
+  // A holding MyInvestor owns (ADR 0115, #1884): read-only, with «Poner al día»,
+  // and the contributions MyInvestor has scheduled for it (#1886).
+  const [owned, ownedSchedules] = await Promise.all([
+    loadOwningSourceFicha(store, owningSource ?? null, id, ctx.checkedAt),
+    loadOwningSourceSchedules(store, owningSource ?? null, id, today),
+  ]);
+  const scheduleView =
+    owned && ownedSchedules && ownedSchedules.schedules.length > 0
+      ? scheduledContributionView(ownedSchedules.schedules, {
+          ledger: operations,
+          privacyMode,
+          readOn: ownedSchedules.readOn,
+          savedPassword: owned.savedPassword,
+          today,
+        })
+      : null;
+  const fichaTabs: readonly string[] = scheduleView
+    ? FICHA_TABS_WITH_APORTACION
+    : FICHA_TABS;
   const twrMonthlyCloses = monthlyCloseValuesByHolding(twrSnapshotRows).get(id) ?? [];
   const instrument = instrumentOfAsset(asset);
 
@@ -165,7 +256,11 @@ export async function loadInvestmentSurface(
   // Where the price comes from and of when rides the same call (#1828): the cache
   // row's provenance and the day the hand-set price was set go IN with the prices,
   // and the origin comes OUT with the valuation that picked one.
-  const { valuation, view: returnsView } = holdingReturns({
+  const {
+    inheritedCostPending,
+    valuation,
+    view: returnsView,
+  } = holdingReturns({
     assetId: id,
     cachedPrice: priceCache?.price,
     currency: baseCurrency,
@@ -220,12 +315,13 @@ export async function loadInvestmentSurface(
   // and the next sync would undo. Offered whenever the holding HAS a ledger, not
   // whenever it has units today: a traspaso is routinely recorded weeks later,
   // and the one that emptied the holding is exactly the row still missing.
-  const hasManualLedger = operations.length > 0;
+  // A source-owned ledger has none: its rows are the source's (invariant 5).
+  const hasManualLedger = operations.length > 0 && owned === null;
 
   const action = bindInvestmentActions(id);
   // Where each form returns: the tab its result shows on (#1826).
   const tabUrl = (tab: (typeof FICHA_TABS)[number]) =>
-    fichaTabUrl(currentUrl, FICHA_TABS, tab);
+    fichaTabUrl(currentUrl, fichaTabs, tab);
 
   // ── The state header ────────────────────────────────────────────────────────
   const money = (amountMinor: number) =>
@@ -242,6 +338,10 @@ export async function loadInvestmentSurface(
     {
       detail: (
         <>
+          {/* Who puts the units, and as of when (#1884): the source, never a form. */}
+          {owned ? (
+            <small className="priceRefreshCaption">{owningSourceCaption(owned)}</small>
+          ) : null}
           {/* Where the price comes from and of when (#1828) — worded from the
               origin the valuation handed back with the price, never inferred. */}
           <small className="priceRefreshCaption">
@@ -299,7 +399,18 @@ export async function loadInvestmentSurface(
     },
     {
       // The board row's figure, by its same rules: no ratio, no claim (#551), and a
-      // gain of zero reads as the board's ▲, not as a loss.
+      // gain of zero reads as the board's ▲, not as a loss. A traspaso that came in
+      // without its cost measures nothing (#1882): «—» with why, never the
+      // provisional figure — the gramática of #1505.
+      ...(inheritedCostPending
+        ? {
+            detail: (
+              <small className="priceRefreshCaption">
+                sin coste real: falta el de un traspaso
+              </small>
+            ),
+          }
+        : {}),
       ...(returnsView && gainRatio !== null
         ? {
             tone: gainRatio >= 0 ? ("pos" as const) : ("neg" as const),
@@ -335,30 +446,33 @@ export async function loadInvestmentSurface(
   ];
 
   // ── The actions, each a form in the side panel ─────────────────────────────
-  const actions: FichaAction[] = [
-    {
-      // The one door through which units change (ADR 0006).
-      content: (
-        <OperationRecordForm
-          assetId={id}
-          currentUrl={tabUrl("operaciones")}
-          // The currency this ledger last captured an apunte in (#1401), so a
-          // dollar fund does not ask for it again on every purchase.
-          defaultCurrency={lastCapturedCurrency(operations)}
-          formError={formError}
-          heldUnits={position?.currentUnits ?? "0"}
-          readOnly={isDemo}
-          recordAction={action.recordOperation}
-          today={today}
-        />
-      ),
-      // A run of buys typed off one statement shares its day and its currency.
-      again: "Añadir otra",
-      key: "operacion",
-      label: "Registrar operación",
-      tier: "primary",
-    },
-  ];
+  const actions: FichaAction[] = owned
+    ? // The source puts the units: its pass is the one habitual action (#1884).
+      [ponerAlDiaAction(owned, { currentUrl, readOnly: isDemo })]
+    : [
+        {
+          // The one door through which units change (ADR 0006).
+          content: (
+            <OperationRecordForm
+              assetId={id}
+              currentUrl={tabUrl("operaciones")}
+              // The currency this ledger last captured an apunte in (#1401), so a
+              // dollar fund does not ask for it again on every purchase.
+              defaultCurrency={lastCapturedCurrency(operations)}
+              formError={formError}
+              heldUnits={position?.currentUnits ?? "0"}
+              readOnly={isDemo}
+              recordAction={action.recordOperation}
+              today={today}
+            />
+          ),
+          // A run of buys typed off one statement shares its day and its currency.
+          again: "Añadir otra",
+          key: "operacion",
+          label: "Registrar operación",
+          tier: "primary",
+        },
+      ];
   if (hasManualLedger) {
     // «Traspasar» — one screen, one submit for a fund-to-fund traspaso (#1480,
     // PRD #1393). The ledger travels so the preview can fold it at the date the
@@ -401,8 +515,44 @@ export async function loadInvestmentSurface(
   }
   // Cobros: its tab, its action and where its refusals land, as every asset ficha
   // places them (#1846).
-  const cobros = fichaCobros({ currentUrl, payoutsPanel, tabs: FICHA_TABS });
+  const cobros = fichaCobros({ currentUrl, payoutsPanel, tabs: fichaTabs });
   actions.push(cobros.action);
+  if (inheritedCost !== null) {
+    // «Coste del traspaso» (#1882, variant A): the one write on a holding its
+    // source owns. In «Más», opened by the band's «Indicar el coste»; gone once
+    // nothing is pending.
+    const roundTripped = formError?.formId === INHERITED_COST_FORM_ID ? formError : null;
+    // Cents-exact (#1315's rule): these are the figures checked against the old
+    // provider's papers and MyInvestor's statement. Privacy masks, never drops.
+    const exact = (amountMinor: number) => {
+      const figure = formatMoneyMinorExact({ amountMinor, currency: baseCurrency });
+      return privacyMode ? maskMoneyString(figure) : figure;
+    };
+    actions.push({
+      content: (
+        <InheritedCostSection
+          currentUrl={tabUrl("operaciones")}
+          figures={{
+            arrived: exact(inheritedCost.arrivedMinor),
+            proposalAmount: inheritedCost.proposal
+              ? exact(inheritedCost.proposal.amountMinor)
+              : null,
+            proposalCost: inheritedCost.proposal
+              ? exact(inheritedCost.proposal.costMinor)
+              : null,
+          }}
+          initialCost={roundTripped?.values["inheritedCost"] ?? ""}
+          initialError={roundTripped?.message ?? null}
+          readOnly={isDemo}
+          resolveAction={action.resolveInheritedCost}
+          view={inheritedCost}
+        />
+      ),
+      key: INHERITED_COST_ACTION,
+      label: "Coste del traspaso",
+      tier: "more",
+    });
+  }
   if (hasManualLedger) {
     // «Traer de otra entidad» (#1518): the movilización that arrives at a holding
     // this book ALREADY keeps. Gated on the same manual ledger as «Traspasar» — a
@@ -424,19 +574,21 @@ export async function loadInvestmentSurface(
       tier: "more",
     });
   }
-  // Load operations from a broker statement (ADR 0018, #174/#176). Free here.
-  actions.push({
-    content: (
-      <StatementUploadSection
-        confirmAction={action.confirmStatement}
-        currentUrl={tabUrl("operaciones")}
-        previewAction={action.previewStatement}
-      />
-    ),
-    key: "extracto",
-    label: "Cargar movimientos",
-    tier: "more",
-  });
+  // Load operations from a broker statement (ADR 0018, #174/#176). Free here —
+  // but not into a ledger a source owns: the source brings those rows.
+  if (owned === null)
+    actions.push({
+      content: (
+        <StatementUploadSection
+          confirmAction={action.confirmStatement}
+          currentUrl={tabUrl("operaciones")}
+          previewAction={action.previewStatement}
+        />
+      ),
+      key: "extracto",
+      label: "Cargar movimientos",
+      tier: "more",
+    });
   if (isBackfillCandidate) {
     // The explicit historical-price backfill (#380, ADR 0033).
     actions.push({
@@ -485,6 +637,7 @@ export async function loadInvestmentSurface(
       actions,
       errorTargets: {
         externalEntry: { action: "entrada" },
+        [INHERITED_COST_FORM_ID]: { action: INHERITED_COST_ACTION },
         // The no-JS terminal of the record form; with JS its refusal comes back
         // as state and the panel never closed (#1311).
         operation: { action: "operacion" },
@@ -497,7 +650,7 @@ export async function loadInvestmentSurface(
       instrument: INSTRUMENT_LABELS_ES[instrument],
       // The forms that print their own refusal, in their panel: the page band would
       // say it a second time — «Traer de otra entidad» used to (#1518).
-      ownErrorForms: ["operation", "transfer", "externalEntry"],
+      ownErrorForms: ["operation", "transfer", "externalEntry", INHERITED_COST_FORM_ID],
       // What each tab lists, so the row a terminal adds is pointed at (#1829).
       rows: {
         ...payoutsPanel.rows,
@@ -526,15 +679,19 @@ export async function loadInvestmentSurface(
                 deleteAction={action.deleteOperation}
                 privacyMode={privacyMode}
                 readOnly={isDemo}
+                sourceOwned={owned !== null}
                 // The traspaso rows' counterpart names (#1481): this ledger's halves
                 // joined with the store's counterpart map and the live holdings'
                 // names. A counterpart whose holding is not in `allAssets`
                 // (Papelera) resolves as `unresolved` — the row claims nothing
                 // rather than mislabelling it as external.
-                transferCounterparts={transferCounterpartByOperationId(
+                transferCounterparts={withUnknownOrigins(
                   operations,
-                  counterparts,
-                  new Map(allAssets.map((a) => [a.id, a.name])),
+                  transferCounterpartByOperationId(
+                    operations,
+                    counterparts,
+                    new Map(allAssets.map((a) => [a.id, a.name])),
+                  ),
                 )}
               />
             </>
@@ -543,6 +700,15 @@ export async function loadInvestmentSurface(
           key: "operaciones",
           label: "Operaciones",
         },
+        ...(scheduleView
+          ? [
+              {
+                content: <ScheduledContributionSection view={scheduleView} />,
+                key: APORTACION_TAB,
+                label: "Aportación",
+              },
+            ]
+          : []),
         {
           // «Tu dinero (TIR)» faced with «El fondo (TWR)», the index comparison on
           // the fund's side — the TWR is what it compares (#551, ADR 0040, #1830).
@@ -554,7 +720,11 @@ export async function loadInvestmentSurface(
             />
           ) : (
             <>
-              <p className="emptyLine">Sin rentabilidad que medir todavía.</p>
+              <p className="emptyLine">
+                {inheritedCostPending
+                  ? "Sin rentabilidad que medir hasta que se sepa el coste del traspaso."
+                  : "Sin rentabilidad que medir todavía."}
+              </p>
               {benchmarkCard}
             </>
           ),
@@ -565,7 +735,39 @@ export async function loadInvestmentSurface(
       ],
       value: money(valuation.valueMinor),
       warnings,
-      warningFixes: { OVERSELL: LEDGER_FIX, OVER_TRANSFER: LEDGER_FIX },
+      warningFixes: {
+        OVERSELL: LEDGER_FIX,
+        OVER_TRANSFER: LEDGER_FIX,
+        // «Indicar el coste» opens the panel over the ledger, where the entry shows
+        // «falta» (#1882). Only while the panel is offered.
+        ...(inheritedCost !== null
+          ? {
+              [COST_PENDING_WARNING]: {
+                action: INHERITED_COST_ACTION,
+                label: "Indicar el coste",
+                tab: "operaciones",
+              },
+            }
+          : {}),
+      },
+      ...(owned
+        ? {
+            sourceNotices: [
+              ...owningSourceNotices(owned, { currentUrl, tabs: fichaTabs }),
+              // «La aportación del día X no ha llegado» (#1886, ADR 0114 decision 9),
+              // with the tab where it is checked as its remedy.
+              ...(scheduleView?.missing ?? []).map((missing) => ({
+                key: `contribution-${missing.date}`,
+                remedy: {
+                  href: fichaTabUrl(currentUrl, fichaTabs, APORTACION_TAB),
+                  label: "Ver la aportación",
+                  tab: APORTACION_TAB,
+                },
+                text: scheduledContributionMissingText(missing),
+              })),
+            ],
+          }
+        : {}),
       // The record form and the ledger are in different places now and still one
       // list: the row being recorded shows in the tab before its action resolves.
       wrap: (ficha) => (

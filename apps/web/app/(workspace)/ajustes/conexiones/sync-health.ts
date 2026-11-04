@@ -210,6 +210,25 @@ const RUN_OUTCOME_LABEL: Record<SyncRunStatus, string> = {
   running: "En curso",
 };
 
+/**
+ * Dónde falló un intento de una fuente que apunta su paso (MyInvestor, #1885), en
+ * palabras. Un paso que no conocemos no se imprime: llega de una columna JSON.
+ */
+const RUN_STEP_LABEL: Record<string, string> = {
+  cash: "Al leer el saldo",
+  contributions: "Al leer las aportaciones",
+  login: "Al entrar",
+  orders: "Al leer las órdenes",
+  plans: "Al leer los planes",
+  positions: "Al leer las posiciones",
+  refresh: "Al renovar la sesión",
+  sms: "Al verificar el móvil",
+};
+
+export function describeRunStep(step: string | null | undefined): string | null {
+  return step && Object.hasOwn(RUN_STEP_LABEL, step) ? RUN_STEP_LABEL[step]! : null;
+}
+
 /** Cómo acabó una corrida, para la columna «Resultado» del historial. */
 export function describeRunOutcome(status: SyncRunStatus): string {
   return RUN_OUTCOME_LABEL[status];

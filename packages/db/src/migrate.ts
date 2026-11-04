@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 73;
+export const SCHEMA_VERSION = 78;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2387,6 +2387,265 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 73);
+  }
+
+  if (version < 74) {
+    // #1879 (ADR 0114/0115): the MyInvestor connection.
+    //
+    // 1. `connected_sources.asset_id` stops being required. MyInvestor owns its
+    //    holdings through operations and connects before it has any, so it has no
+    //    mirror asset to point at. SQLite cannot drop a NOT NULL in place: the
+    //    table is rebuilt, as v25 did with `positions`. FKs go OFF outside the
+    //    transaction (SQLite docs), and the steps run in ONE transaction so a crash
+    //    between DROP and RENAME cannot leave the database without the table. The
+    //    tables that reference it (`positions`, `sync_run`) name it by name, so they
+    //    resolve to the new one after the rename. Guarded by the column's NOT NULL
+    //    flag, so a fresh database (born at this shape) and a re-run skip it.
+    // 2. The pending login of the two-step SMS gets its own table (decision 6),
+    //    with its count of wrong codes in clear (it is not a secret).
+    // 3. At most one MyInvestor connection per workspace: a partial unique index,
+    //    so the mirroring adapters keep whatever they had.
+    const sourceColumns = (
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows as unknown as {
+        name: string;
+        notnull: number;
+      }[]
+    ).map((column) => ({ name: String(column.name), notnull: Number(column.notnull) }));
+    const assetIdRequired = sourceColumns.some(
+      (column) => column.name === "asset_id" && column.notnull === 1,
+    );
+
+    if (assetIdRequired) {
+      const carry = [
+        "id",
+        "adapter",
+        "label",
+        "asset_id",
+        "credentials_json",
+        "token_json",
+        "last_sync_at",
+        "created_at",
+        "updated_at",
+      ].filter((column) => sourceColumns.some((existing) => existing.name === column));
+      const carryList = carry.join(", ");
+
+      await client.execute("PRAGMA foreign_keys = OFF");
+      try {
+        await client.executeMultiple(`BEGIN;
+          CREATE TABLE connected_sources_new (
+            id TEXT PRIMARY KEY NOT NULL,
+            adapter TEXT NOT NULL,
+            label TEXT NOT NULL,
+            asset_id TEXT,
+            credentials_json TEXT NOT NULL,
+            token_json TEXT,
+            last_sync_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+          );
+          INSERT INTO connected_sources_new (${carryList})
+            SELECT ${carryList} FROM connected_sources;
+          DROP TABLE connected_sources;
+          ALTER TABLE connected_sources_new RENAME TO connected_sources;
+          COMMIT;`);
+      } catch (error) {
+        await client.execute("ROLLBACK");
+        throw error;
+      } finally {
+        await client.execute("PRAGMA foreign_keys = ON");
+      }
+    }
+
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS connected_source_pending_logins (
+        id TEXT PRIMARY KEY NOT NULL,
+        adapter TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        attempts INTEGER DEFAULT 0 NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS connected_source_pending_logins_adapter_unique
+        ON connected_source_pending_logins (adapter);
+    `);
+    // A partial historical fixture may have no sources table at all (as v70/v71
+    // tolerate); there is nothing to index then.
+    if (sourceColumns.length > 0) {
+      await client.execute(
+        `CREATE UNIQUE INDEX IF NOT EXISTS connected_sources_myinvestor_unique
+           ON connected_sources (adapter) WHERE adapter = 'myinvestor'`,
+      );
+    }
+    await writeSchemaVersion(client, 74);
+  }
+
+  if (version < 75) {
+    // #1880 (ADR 0066/0115): the first start of MyInvestor, and the ingestion port's
+    // persistence for a live source.
+    //
+    // 1. `connected_sources.ingest_cursor`: where the port resumes. Additive,
+    //    nullable, guarded by the column's presence so a fresh database (born with
+    //    it) and a re-run skip it.
+    // 2. `connected_source_discoveries`: what the last read found, one row per
+    //    source.
+    // 3. `connected_source_links`: which product each linked holding is.
+    // 4. `connector_applied_facts`: the dedup ledger.
+    // A partial historical fixture with no sources table has nothing to extend:
+    // the three tables reference it, so they wait for a schema that has it.
+    const sourceColumns = (
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows as unknown as {
+        name: string;
+      }[]
+    ).map((column) => String(column.name));
+    if (sourceColumns.length > 0) {
+      if (!sourceColumns.includes("ingest_cursor")) {
+        await client.execute(
+          "ALTER TABLE connected_sources ADD COLUMN ingest_cursor TEXT",
+        );
+      }
+      await client.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS connected_source_discoveries (
+          source_id TEXT PRIMARY KEY NOT NULL,
+          read_on TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE TABLE IF NOT EXISTS connected_source_links (
+          source_id TEXT NOT NULL,
+          product_key TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_id, product_key),
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade,
+          FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS connected_source_links_asset_unique
+          ON connected_source_links (asset_id);
+        CREATE TABLE IF NOT EXISTS connector_applied_facts (
+          source_id TEXT NOT NULL,
+          fact_key TEXT NOT NULL,
+          batch_id TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_id, fact_key),
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        );
+      `);
+    }
+    await writeSchemaVersion(client, 75);
+  }
+
+  if (version < 76) {
+    // #1881 (ADR 0115 decision 6, ADR 0062): the manual operations a source's
+    // operations replace when it is linked to a holding that already existed by
+    // hand, kept as the linking batch's provenance. Additive; the holding is its
+    // only parent (the batch and the source are not, so the provenance outlives a
+    // disconnect and travels in a workspace document that carries no batches).
+    // A partial historical fixture with no assets table has nothing to hang it on.
+    const assetColumns = (await client.execute("PRAGMA table_info(assets)")).rows;
+    if (assetColumns.length > 0) {
+      await client.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS fact_batch_replaced_operations (
+          operation_id TEXT PRIMARY KEY NOT NULL,
+          batch_id TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          operation_json TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE INDEX IF NOT EXISTS fact_batch_replaced_operations_asset_idx
+          ON fact_batch_replaced_operations (asset_id, batch_id);
+      `);
+    }
+    await writeSchemaVersion(client, 76);
+  }
+
+  if (version < 77) {
+    // #1882 (ADR 0115, amended 2026-11-04): `asset_operations.transfer_leg_state` —
+    // what a connector-written traspaso leg still owes. Nullable: every manual,
+    // imported or paired row owes nothing.
+    //
+    // The backfill is NOT a heuristic: it reads only the ids the MyInvestor adapter
+    // mints for a leg with no pair in the book (#1878), so it marks exactly the rows
+    // the first start of #1880 wrote before this column existed.
+    // - An entry with no origin (`myinvestor-external:`/`myinvestor-unpaired:`)
+    //   carries a provisional cost: `cost_pending`.
+    // - An unpaired OUTGOING leg was a lone `transfer_out`, which the traspaso audit
+    //   reads as broken. It becomes what it is until someone pairs it: a sale, marked
+    //   `unpaired_out`. The cost basis it removes is the same either way (the average
+    //   cost does not care), so no snapshot moves. What moves is what a sale means
+    //   and a traspaso does not: the realized P/L, and the measured savings, which
+    //   count a sale as money taken out (ADR 0075). That is the design's reading of
+    //   an outgoing leg nobody has paired yet (#1882), undone by confirming it.
+    //
+    // The column is read BEFORE it is added (ADR 0002, amendment #1625): a step
+    // tolerates only «already applied», never a blind «duplicate column». A partial
+    // historical fixture with no operations table has nothing to extend.
+    const columnsOf = async () =>
+      (
+        (await client.execute("PRAGMA table_info(asset_operations)")).rows as unknown as {
+          name: string;
+        }[]
+      ).map((column) => String(column.name));
+    const existingColumns = await columnsOf();
+    if (existingColumns.length > 0 && !existingColumns.includes("transfer_leg_state")) {
+      await client.execute(
+        "ALTER TABLE asset_operations ADD COLUMN transfer_leg_state TEXT",
+      );
+    }
+    const operationColumns = await columnsOf();
+    // A partial historical fixture may lack the columns the backfill reads; it holds
+    // no connector rows to mark either.
+    const backfillColumns = ["kind", "source", "transfer_id", "transfer_leg_state"];
+    if (backfillColumns.every((column) => operationColumns.includes(column))) {
+      await client.execute(
+        `UPDATE asset_operations SET transfer_leg_state = 'cost_pending'
+          WHERE kind = 'transfer_in' AND source = 'connected'
+            AND transfer_leg_state IS NULL
+            AND (transfer_id LIKE 'myinvestor-external:%'
+              OR transfer_id LIKE 'myinvestor-unpaired:%')`,
+      );
+      await client.execute(
+        `UPDATE asset_operations
+            SET kind = 'sell', transfer_id = NULL, transfer_leg_state = 'unpaired_out'
+          WHERE kind = 'transfer_out' AND source = 'connected'
+            AND transfer_id LIKE 'myinvestor-unpaired:%'`,
+      );
+    }
+    await writeSchemaVersion(client, 77);
+  }
+
+  if (version < 78) {
+    // #1884 (ADR 0114 decisions 4 and 7): the sync state of a source that owns its
+    // holdings — the lease that keeps one pass per connection, the logins and
+    // password rejections of the day, the pause, the stop of the periodic sync and
+    // what the last pass found. One row per source, beneath it. Additive and
+    // idempotent; a partial historical fixture with no sources table has nothing to
+    // hang it from, as in v75.
+    const hasSources =
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows.length > 0;
+    if (hasSources) {
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS connected_source_sync_state (
+          source_id TEXT PRIMARY KEY NOT NULL,
+          lease_until TEXT,
+          lease_started_at TEXT,
+          lease_trigger TEXT,
+          lease_step TEXT,
+          login_day TEXT,
+          logins_today INTEGER DEFAULT 0 NOT NULL,
+          rejections_today INTEGER DEFAULT 0 NOT NULL,
+          paused_until TEXT,
+          stopped_reason TEXT,
+          last_outcome_json TEXT,
+          units_check_json TEXT,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        )
+      `);
+    }
+    await writeSchemaVersion(client, 78);
   }
 
   return { ranV18Backfill, ranV33Backfill };

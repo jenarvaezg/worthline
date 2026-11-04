@@ -2,6 +2,7 @@ import type { CostBasisGrade } from "./cost-basis-grade";
 import { VALUE_ONLY_PNL_NOTICE } from "./cost-basis-grade";
 import type { DecimalString } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
+import { hasPendingInheritedCost } from "./inherited-cost";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
 import type { CachedQuoteProvenance, InvestmentValuation } from "./investment-valuation";
@@ -337,7 +338,14 @@ export interface HoldingReturnsReads {
 export function holdingReturns(input: HoldingReturnsReads): {
   valuation: InvestmentValuation;
   view: HoldingReturnsView | null;
+  /**
+   * A traspaso came in without its cost (#1882): the cost basis holds a provisional
+   * figure nobody gave, so there is no view — the gain and the IRR would be
+   * arithmetic over it. The value stands: units × price touches no cost.
+   */
+  inheritedCostPending: boolean;
 } {
+  const inheritedCostPending = hasPendingInheritedCost(input.operations);
   const valuation = deriveInvestmentValuation({
     assetId: input.assetId,
     cachedPrice: input.cachedPrice,
@@ -347,6 +355,7 @@ export function holdingReturns(input: HoldingReturnsReads): {
     ...(input.cachedQuote ? { cachedQuote: input.cachedQuote } : {}),
     ...(input.manualPricedAt ? { manualPricedAt: input.manualPricedAt } : {}),
   });
+  if (inheritedCostPending) return { inheritedCostPending, valuation, view: null };
   const payouts = input.payouts ?? [];
   const returnsInput = {
     currency: input.currency,
@@ -372,7 +381,7 @@ export function holdingReturns(input: HoldingReturnsReads): {
     ...(input.split?.unrealizedPnl ? { unrealizedPnl: input.split.unrealizedPnl } : {}),
   });
 
-  return { valuation, view };
+  return { inheritedCostPending, valuation, view };
 }
 
 /**

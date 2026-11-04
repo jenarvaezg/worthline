@@ -149,6 +149,7 @@ export type {
   ConnectedSource,
   DistributiveOmit,
   MetalGroup,
+  MirroredSourceAdapter,
   PositionValuation,
   ProjectedHolding,
   SourceAdapter,
@@ -167,6 +168,7 @@ export {
   groupPositionsByMetal,
   groupPositionsByToken,
   instrumentForAdapter,
+  isMirroredSourceAdapter,
   isTokenDustValue,
   mergeCoinPositionSnapshotInputs,
   positionValue,
@@ -243,11 +245,14 @@ export type {
   ComputeContributionAllowanceUsageInput,
   ContributionAllowance,
   ContributionAllowanceEntry,
+  ContributionAllowanceForecast,
   ContributionAllowanceUsage,
+  ScheduledAllowanceEntry,
 } from "./contribution-allowance";
 export {
   assertContributionAllowanceInput,
   computeContributionAllowanceUsage,
+  forecastContributionAllowance,
 } from "./contribution-allowance";
 export type { ContributionLot, HoldingAvailability } from "./contribution-lots";
 export { resolveHoldingLots } from "./contribution-lots";
@@ -275,6 +280,8 @@ export {
   plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
 } from "./contribution-plan";
+export type { ContributionPlanLinkClosing } from "./contribution-plan-link";
+export { closeContributionPlanOnLink } from "./contribution-plan-link";
 export type {
   LedgerSeniority,
   LedgerSeniorityReport,
@@ -310,6 +317,7 @@ export type {
   DataQualityAffectedRef,
   DataQualityCategory,
   DataQualityConnectedSource,
+  DataQualityOwningSourceStanding,
   DataQualityPriceFreshness,
   DataQualityScopeContext,
   DataQualitySeverity,
@@ -332,6 +340,10 @@ export {
   MISSING_INVESTMENT_ISIN_CODE,
   manualValueFreshness,
   OVERRIDEABLE_SIGNAL_CODES,
+  OWNING_SOURCE_FAILING_CODES,
+  OWNING_SOURCE_FAILING_WORDS,
+  OWNING_SOURCE_STOPPED_CODE,
+  OWNING_SOURCE_UNSYNCED_CODE,
   overriddenSignalKeys,
   PERSISTENT_SYNC_FAILURE_CODE,
   PERSISTENT_SYNC_FAILURE_THRESHOLD,
@@ -812,6 +824,17 @@ export type {
 export { valueHousingAtDate } from "./housing-valuation";
 export type { IncomeDoubleCount } from "./income-double-count";
 export { describeIncomeDoubleCount, incomeDoubleCount } from "./income-double-count";
+export type { InheritedCostRefusal, InheritedCostResult } from "./inherited-cost";
+export {
+  answerInheritedCost,
+  confirmTransferOrigin,
+  hasPendingInheritedCost,
+  isTransferOriginFor,
+  pendingInheritedCostEntries,
+  proposeTransferOrigin,
+  TRANSFER_ORIGIN_TOLERANCE_BPS,
+  TRANSFER_ORIGIN_WINDOW_DAYS,
+} from "./inherited-cost";
 export type {
   Instrument,
   InstrumentDefaults,
@@ -857,6 +880,7 @@ export type {
   PositionSummary,
   PositionWarning,
   PositionWarningCode,
+  TransferLegState,
 } from "./investment-types";
 export type {
   CachedQuoteProvenance,
@@ -992,6 +1016,21 @@ export {
 } from "./operation-flow";
 export type { OversellExcessKind } from "./oversell";
 export { classifyOversellExcess, oversellConfirmMessage } from "./oversell";
+export type {
+  OwningSourceAttempt,
+  OwningSourceDataKind,
+  OwningSourceHealthFacts,
+  OwningSourceHealthNotice,
+  OwningSourceStop,
+} from "./owning-source-health";
+export {
+  OWNING_SOURCE_DATA_KINDS,
+  OWNING_SOURCE_FAILING_DAYS,
+  OWNING_SOURCE_UNSYNCED_REMINDER_DAYS,
+  owningSourceDataKind,
+  owningSourceHealth,
+  owningSourceStop,
+} from "./owning-source-health";
 export type {
   DatedAmount,
   DerivedPayout,
@@ -1333,6 +1372,7 @@ export type {
 } from "./transfer-pair-integrity";
 export {
   auditTransferPairs,
+  costLeavingOrigin,
   describeBrokenTransferPairs,
 } from "./transfer-pair-integrity";
 export type {

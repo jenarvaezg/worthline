@@ -1,4 +1,15 @@
-import { guardViewerPage } from "@web/demo/write-guard";
+import {
+  hasSavedPassword,
+  readMyInvestorCredentials,
+} from "@web/ajustes/myinvestor-credentials";
+import { loadMyInvestorFirstStart } from "@web/ajustes/myinvestor-first-start-flow";
+import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
+import {
+  myInvestorConnectionNotices,
+  myInvestorHealthEntries,
+  myInvestorStanding,
+} from "@web/ajustes/myinvestor-sync-view";
+import { guardViewerPage, isWriteBlocked } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_CONNECT_SOURCE_MESSAGE,
@@ -14,11 +25,17 @@ import {
 } from "@web/holding-route";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
-import { readStoreTarget } from "@web/read-store-target";
+import { readSessionEmail, readStoreTarget } from "@web/read-store-target";
+import { systemClock } from "@worthline/domain";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { CONNECTION_REGISTRY } from "./connection-registry";
 import { loadConnectionRows } from "./connection-rows";
-import ConnectionsTable, { type ConnectionEntry } from "./connections-table";
+import ConnectionsTable, {
+  type ConnectionEntry,
+  type MyInvestorTableContext,
+} from "./connections-table";
+import { myInvestorAvailability } from "./myinvestor-view";
 
 /**
  * «Conexiones» (#1223, PRD #1222) — las fuentes vivas, fuera del monolito de
@@ -101,6 +118,70 @@ export async function ConexionesContent({
     await readEffectivePlan(await readStoreTarget()),
   );
 
+  // MyInvestor (#1879). Whether its relay is configured is read from the env of
+  // the SERVER, never of the build: `connection()` keeps it out of any prerender
+  // (a build-time value here would break hydration once the runtime differs).
+  await connection();
+  const myInvestorSource = sources.find((source) => source.adapter === "myinvestor");
+  const myInvestorCredentials = myInvestorSource
+    ? readMyInvestorCredentials(myInvestorSource.credentialsJson)
+    : undefined;
+  // What the last read found (#1880): the fold to choose what to include, and later
+  // what was left out. Read from the store only; MyInvestor is never asked here.
+  const today = systemClock().today();
+  const myInvestorFirstStart = myInvestorSource
+    ? await loadMyInvestorFirstStart(store, myInvestorSource.id, today)
+    : null;
+  const writeBlocked = await isWriteBlocked();
+  // How its «Poner al día» stands (#1884): the pause, the stop, the pass running.
+  const myInvestorSyncState = myInvestorSource
+    ? await store.connectedSources.readSyncState(myInvestorSource.id)
+    : null;
+  const myInvestorSaved =
+    myInvestorCredentials !== undefined &&
+    myInvestorCredentials !== null &&
+    hasSavedPassword(myInvestorCredentials);
+  // Its attempt log (#1885), by the port data health counts the days on: the row
+  // and the health block cannot disagree about whether the connector fails.
+  const myInvestorAttempts = myInvestorSource
+    ? await store.agentView.readSyncAttempts(myInvestorSource.id)
+    : [];
+  const myInvestorNow = systemClock().now();
+  const myInvestorStandingNow = myInvestorStanding({
+    now: myInvestorNow,
+    savedPassword: myInvestorSaved,
+    state: myInvestorSyncState,
+  });
+  const myInvestor: MyInvestorTableContext = {
+    availability: myInvestorAvailability({
+      premium: !sourcesGated,
+      readOnly: writeBlocked,
+      relayConfigured: isMyInvestorRelayConfigured(),
+    }),
+    sync: {
+      notices: myInvestorConnectionNotices(
+        myInvestorStandingNow,
+        myInvestorHealthEntries({
+          attempts: myInvestorAttempts,
+          lastSyncAt: myInvestorSource?.lastSyncAt ?? null,
+          now: myInvestorNow,
+          savedPassword: myInvestorSaved,
+          state: myInvestorSyncState,
+        }),
+      ),
+      stopped: myInvestorStandingNow.stop !== null,
+      readOnly: writeBlocked || sourcesGated,
+      standing: myInvestorStandingNow,
+    },
+    savedPassword:
+      myInvestorCredentials && hasSavedPassword(myInvestorCredentials)
+        ? myInvestorCredentials.acceptance
+        : null,
+    viewerEmail: await readSessionEmail(),
+    firstStart: myInvestorFirstStart?.view ?? null,
+    today,
+  };
+
   return (
     <section className="section" aria-label="Conexiones">
       <div className="panelHeader">
@@ -138,6 +219,7 @@ export async function ConexionesContent({
         connections={connections}
         currentUrl={currentUrl}
         errorFormId={formError?.formId ?? null}
+        myInvestor={myInvestor}
         privacyMode={privacyMode}
       />
     </section>

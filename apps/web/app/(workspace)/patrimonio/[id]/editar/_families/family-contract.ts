@@ -42,6 +42,7 @@ import type {
   WarningOverride,
 } from "@worthline/domain";
 import type { ReactNode } from "react";
+import type { ConnectedSource } from "./connected-source";
 import type { HoldingFamily } from "./holding-family";
 
 /** What the ficha knows before it knows which family the holding belongs to. */
@@ -106,6 +107,12 @@ export interface AssetFamilyContext extends FichaContext {
    * the family knows where that is.
    */
   payoutsPanel: PayoutsPanel;
+  /**
+   * The connected source that OWNS this holding (ADR 0115, #1884) — MyInvestor —
+   * or null for a hand-kept one. A mirror's source routes to its own family and
+   * never arrives here.
+   */
+  owningSource?: ConnectedSource | null;
 }
 
 /** The debt family's context. A liability pays nobody, so it takes no panel. */
@@ -188,8 +195,27 @@ export interface FichaFix {
   tab: string;
   /** The `name` of the field to focus once the tab is on show. */
   field?: string;
+  /**
+   * The action whose panel opens over that tab, when the fix is a form there
+   * rather than a field in the tab — «Indicar el coste» (#1882).
+   */
+  action?: string;
   /** The link's words: «Ver operaciones». */
   label: string;
+}
+
+/**
+ * A line of the band that is not a holding warning: what the source that owns the
+ * holding left (#1884) — a stopped daily sync, a pause, units that do not square —
+ * with its remedy. Never acknowledged away: it goes when the state that raised it
+ * does.
+ */
+export interface FichaSourceNotice {
+  /** Stable within the band. */
+  key: string;
+  text: string;
+  /** The remedy: a panel (`action`) or a tab (`tab`, #1886) of this ficha, or a page elsewhere. */
+  remedy: { label: string; href: string; action?: string; tab?: string } | null;
 }
 
 /** What a ficha carries — the common pieces render the rest (#1826). */
@@ -231,6 +257,8 @@ export interface FichaLayout {
   inlineWarnings?: readonly HoldingWarningCode[];
   /** By warning code: where the band links for that warning to be fixed (#1828). */
   warningFixes?: Readonly<Partial<Record<HoldingWarningCode, FichaFix>>>;
+  /** The band's lines from the source that owns the holding (#1884). */
+  sourceNotices?: readonly FichaSourceNotice[];
   /** Client state its tabs and panels share, wrapped around the whole ficha. */
   wrap?: (ficha: ReactNode) => ReactNode;
 }

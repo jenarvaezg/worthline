@@ -278,6 +278,60 @@ that day; the defect it describes has no code left to live in. The per-holding
 measures are unchanged and still honest: one holding is a subset of one slice, so
 the pairing rule has nothing to pair.
 
+## Amendment (2026-11-04, #1883): a connected robo-advisor brings the whole block
+
+The decision above said «sync-owned holdings (connected sources) cannot be
+members for now», and pointed at the connector that would populate this
+silhouette. The MyInvestor connector (PRD #1876, ADR 0115) is that connector, and
+its robo-advisor account is exactly a managed portfolio: a securities account
+(`SECURITIES_PORTFOLIO`) whose funds a manager picks, with a cash account of its
+own and a balance the manager declares. So:
+
+- **A source may bring the whole block, in the batch that writes its history.**
+  Including the robo-advisor creates its funds as the source's holdings, its cash
+  account as the cash sibling — the source's balance, not the 0 € box of the
+  alta — and the portfolio grouping them, in ONE `fact_batch`, one transaction and
+  one ripple (ADR 0062). The manager's rebalance arrives as orders, so the split
+  #1399 left for «a connector that knows the target weights» needs no operation of
+  its own.
+- **A fund the manager sold whole stays a member**, at 0 units with its history:
+  the portfolio's return (#1552) needs its flows. The ficha folds those members
+  away under «Vendidos por el gestor», out of the composition's weights.
+- **The witness is the manager's own figure.** The account's `fundsMarketValue` —
+  the funds' market value, cash left out — is stored as the declared balance with
+  the read's date. It is the one valuation of MyInvestor's the connector reads, and
+  only as a witness, careed exactly as #1550 says; worthline still prices every
+  fund itself (PRD #1876, invariant 2). Each daily sync (#1884) declares the
+  day's figure again, so the witness keeps the date of the last good read.
+- **A fund the manager buys later joins the same portfolio.** Its orders have no
+  holding until it is included: the block then offers only what is new, with
+  «Incluir con su histórico», and it enters the portfolio its siblings live in.
+- **The manual door still refuses sync-owned members.** The alta and the ficha's
+  member chips only ever take live manual investments; a connected portfolio's
+  members are written by the source, so a save of the ficha that does not mention
+  them keeps them, as it keeps the cash sibling and the «(sin detallar)» aggregate.
+- **A portfolio kept by hand is linked as a unit, or not at all** (#1883).
+  Its members pair with the robo-advisor's funds by ISIN and are linked with the
+  careo of #1881, its cash sibling takes the source's balance, the funds it lacked
+  enter as new members and the declared balance becomes its witness. A manual
+  member the source does not have in that account — a fund of another ISIN, or the
+  «(sin detallar)» aggregate — BLOCKS the link: leaving it would keep a hand-made
+  row inside a group the source now writes, and «Crear aparte» would count the
+  money twice. The fold says which member and sends the owner to the ficha to take
+  it out; the store refuses the same thing at the door, and refuses linking a
+  member of such a portfolio on its own. The cash box is the one exception: when
+  the source brings no cash account for the block, the box stays the owner's, a
+  manual row inside the group — there is nothing to replace it with, and refusing
+  would leave the funds unlinkable. A member in the Papelera leaves the group when
+  it is taken over.
+- **A portfolio the source writes takes no hand-made member.** The ficha offers
+  no chips for it and the store refuses one: a manual fund there would sit in the
+  witness's sum and block every fund the manager buys later.
+
+Which portfolio is the source's is read off its members, never off a stored
+pointer — the same discipline as the cash sibling: the portfolio whose members the
+source links is the robo-advisor's. No column was added for it.
+
 ## Consequences
 
 - The entity travels in workspace export/import and is exposed through

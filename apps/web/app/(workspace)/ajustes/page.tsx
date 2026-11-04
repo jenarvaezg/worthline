@@ -374,7 +374,7 @@ export async function AjustesContent({
             </span>
           </div>
           <p className="muted">
-            Numista y Binance se conectan, sincronizan y desconectan en su propia página.
+            Numista, Binance y MyInvestor se conectan y desconectan en su propia página.
           </p>
           <Link className="panelAction" href="/ajustes/conexiones">
             Gestionar conexiones →

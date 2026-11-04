@@ -275,7 +275,11 @@ const snapshotHoldingKindSchema = vocabularyOf<SnapshotHoldingKind>()([
   "asset",
   "liability",
 ]);
-const sourceAdapterSchema = vocabularyOf<SourceAdapter>()(["numista", "binance"]);
+const sourceAdapterSchema = vocabularyOf<SourceAdapter>()([
+  "numista",
+  "binance",
+  "myinvestor",
+]);
 const fireRetirementPlanSchema = vocabularyOf<FireRetirementPlan>()([
   "ordinary",
   "early",
@@ -615,6 +619,14 @@ const operationSchema = reproduces<InvestmentOperation>()(
      * no default: an absent mark reads as «nadie lo ha dicho», which is what it is.
      */
     costBasisGrade: costBasisGradeSchema.optional(),
+    /**
+     * What a connector-written traspaso leg still owes (#1882). Absent in every
+     * pre-#1882 file and on every row that owes nothing; without it a round trip
+     * would forget that a cost is provisional and show it as a real one.
+     */
+    transferLegState: z
+      .enum(["cost_pending", "cost_declared", "cost_from_origin", "unpaired_out"])
+      .optional(),
   }),
 );
 
@@ -827,11 +839,26 @@ const connectedSourceSchema = z.object({
   id: nonEmptyString,
   adapter: sourceAdapterSchema,
   label: nonEmptyString,
-  /** The materialized rolled-up holding this source projects into. */
-  assetId: nonEmptyString,
+  /** The materialized rolled-up holding this source projects into; null for a source
+   *  that owns its holdings through operations instead (MyInvestor, ADR 0115). */
+  assetId: nonEmptyString.nullable(),
   /** ISO timestamp of the last sync; absent when the source never synced. */
   lastSyncAt: nonEmptyString.optional(),
   positions: z.array(positionSchema).default([]),
+  /**
+   * A source that owns its holdings (MyInvestor, #1880): where its ingestion resumes,
+   * which product each linked holding is, the fact keys it already applied and what
+   * its last read found. Absent on a mirroring source and on a file written before
+   * them, which restores the source with none: a re-read starts from scratch.
+   */
+  ingestCursor: nonEmptyString.optional(),
+  links: z
+    .array(z.object({ productKey: nonEmptyString, assetId: nonEmptyString }))
+    .optional(),
+  appliedFacts: z
+    .array(z.object({ factKey: nonEmptyString, batchId: nonEmptyString }))
+    .optional(),
+  discovery: z.object({ readOn: nonEmptyString, payloadJson: nonEmptyString }).optional(),
 });
 
 /**
@@ -984,6 +1011,21 @@ const managedPortfolioSchema = reproduces<ManagedPortfolio>()(
   }),
 );
 
+/**
+ * The manual operations a source's operations replaced when it was linked to a
+ * holding that existed by hand (#1881, ADR 0115 decision 6): the linking batch's
+ * provenance (ADR 0062), each row as the domain read it. Not operations any more —
+ * nothing folds them — so they travel apart from `operations`.
+ */
+const replacedOperationSchema = z.object({
+  operationId: nonEmptyString,
+  batchId: nonEmptyString,
+  assetId: nonEmptyString,
+  operationJson: nonEmptyString,
+});
+
+export type ExportedReplacedOperation = z.output<typeof replacedOperationSchema>;
+
 // ── The document ────────────────────────────────────────────────────────────
 
 /**
@@ -1031,6 +1073,8 @@ export const workspaceExportSchema = z.object({
    * extra data here.
    */
   managedPortfolios: z.array(managedPortfolioSchema).default([]),
+  /** What a link to an owning source replaced (#1881); absent before it existed. */
+  replacedOperations: z.array(replacedOperationSchema).default([]),
 });
 
 /** The versioned export document — the on-disk JSON shape. */
@@ -1054,7 +1098,8 @@ type OmittableSection =
   | "contributionPlans"
   | "contributionReconciliations"
   | "contributionAllowances"
-  | "managedPortfolios";
+  | "managedPortfolios"
+  | "replacedOperations";
 
 /** Every section of the document, without the version stamp. */
 export type WorkspaceExportData = Omit<WorkspaceExport, "version" | OmittableSection> &
@@ -1132,5 +1177,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     contributionReconciliations: data.contributionReconciliations ?? [],
     contributionAllowances: data.contributionAllowances ?? [],
     managedPortfolios: data.managedPortfolios ?? [],
+    replacedOperations: data.replacedOperations ?? [],
   };
 }

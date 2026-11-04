@@ -17,6 +17,30 @@ export type OperationKind = "buy" | "sell" | "transfer_out" | "transfer_in";
 export type OperationSource = "manual" | "opening" | "statement" | "connected" | "agent";
 
 /**
+ * What a traspaso leg written by a connector still owes the book (#1882, ADR 0115
+ * as amended 2026-11-04). Absent on every other row, and on a leg that owes nothing.
+ *
+ * - `cost_pending`: a `transfer_in` whose inherited cost nobody has given yet. Its
+ *   `transferCostMinor` is PROVISIONAL — the value that arrived, so no gain is
+ *   invented — and no figure measured against it may be shown as one.
+ * - `cost_declared`: that cost, typed by the user from the old provider's papers.
+ * - `cost_from_origin`: that cost, carried from the reimbursement the user
+ *   confirmed as its origin (ADR 0082).
+ * - `unpaired_out`: the outgoing half of a traspaso nothing tied to its entry. It
+ *   is written as a `sell` — capital that left with no known destination is a
+ *   sale — until the user confirms which entry it funded; then it becomes the
+ *   `transfer_out` of that pair.
+ *
+ * It rides the row, like the cost it qualifies, and it survives every later sync:
+ * re-reading the same order has the same dedup key, so the port never rewrites it.
+ */
+export type TransferLegState =
+  | "cost_pending"
+  | "cost_declared"
+  | "cost_from_origin"
+  | "unpaired_out";
+
+/**
  * The pre-conversion apunte: what the user actually saw on the statement. Present
  * ONLY on an operation captured outside EUR, so its absence is the honest reading
  * "this was always euros" rather than "the original was lost".
@@ -99,6 +123,8 @@ export interface InvestmentOperation {
    * aperturas included; see {@link CostBasisGrade} and the v65 migration.
    */
   costBasisGrade?: CostBasisGrade;
+  /** What a connector-written traspaso leg still owes (#1882): {@link TransferLegState}. */
+  transferLegState?: TransferLegState;
 }
 
 export interface CreateInvestmentOperationInput {
@@ -126,6 +152,8 @@ export interface CreateInvestmentOperationInput {
    * knows the answer, which today is the alta stamping `source: "opening"`.
    */
   costBasisGrade?: CostBasisGrade;
+  /** What a connector-written traspaso leg still owes (#1882). */
+  transferLegState?: TransferLegState;
 }
 
 /** Machine code for a clamp in {@link derivePosition}: a sell or traspaso past what is held. */

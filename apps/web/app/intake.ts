@@ -448,6 +448,25 @@ export function resolveOkMessage(
     return `${funds} fondo${funds === 1 ? "" : "s"} importado${funds === 1 ? "" : "s"}${createdPart}.`;
   }
 
+  if (key === "myinvestor_included") {
+    // The first start of MyInvestor (#1880): what one batch created.
+    const created =
+      Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
+    const operations =
+      Number.parseInt(normalizeParam(searchParams?.["operaciones"]) ?? "", 10) || 0;
+    // And what it linked (#1881): read-only from now on, but for the inherited cost.
+    const linked = (normalizeParam(searchParams?.["enlazados"]) ?? "")
+      .split("\n")
+      .filter(Boolean);
+    const createdPart =
+      created > 0 || linked.length === 0
+        ? `${created} ${created === 1 ? "holding creado" : "holdings creados"} con ${operations} ${operations === 1 ? "operación" : "operaciones"}, en un solo lote.`
+        : `Hecho en un solo lote, con ${operations} ${operations === 1 ? "operación" : "operaciones"}.`;
+    if (linked.length === 0) return createdPart;
+    const names = linked.map((name) => `«${name}»`).join(", ");
+    return `${createdPart} ${names} ya ${linked.length === 1 ? "está enlazado" : "están enlazados"} con MyInvestor: de solo lectura, salvo el coste heredado.`;
+  }
+
   if (key === "schedule_import_loaded") {
     const revisions =
       Number.parseInt(normalizeParam(searchParams?.["revisiones"]) ?? "", 10) || 0;
@@ -569,6 +588,16 @@ export function okMessage(key: string | undefined): string | null {
     binance_disconnected: "Cuenta de Binance desconectada.",
     binance_frozen: "Cuenta de Binance convertida en activo manual.",
     binance_synced: "Cuenta de Binance sincronizada.",
+    myinvestor_connected:
+      "MyInvestor conectado. Ahora elige qué cuentas y productos incluir.",
+    myinvestor_disconnected: "MyInvestor desconectado. Sus credenciales se han borrado.",
+    myinvestor_products_read: "Productos de MyInvestor leídos. Elige qué incluir.",
+    myinvestor_reentered:
+      "Has vuelto a entrar en MyInvestor. La puesta al día vuelve a funcionar.",
+    myinvestor_password_forgotten:
+      "Contraseña de MyInvestor borrada. worthline guarda solo la marca del dispositivo.",
+    myinvestor_password_saved:
+      "Contraseña de MyInvestor guardada. Se pondrá al día sola cada día.",
     current_state_debt_saved: "Deuda dada de alta por estado actual.",
     debt_model_saved: "Modelo de deuda guardado.",
     debt_recalibrated: "Deuda recalibrada con el saldo real.",
@@ -655,6 +684,11 @@ export function okMessage(key: string | undefined): string | null {
     // confirmed is the same thing the alta's message confirms: that this did not go
     // in as a compra.
     external_entry_recorded: "Entrada por traspaso desde otra entidad registrada.",
+    // The answer to a traspaso that came into a linked holding without its cost
+    // (#1882): the band is gone and the figures measure, so it only says which way.
+    inherited_cost_declared: "Coste del traspaso guardado.",
+    inherited_cost_from_origin:
+      "Hecho: el coste viene del reembolso y ese reembolso ya no cuenta como venta.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
     valuation_cadence_saved: "Cadencia de valoración guardada.",

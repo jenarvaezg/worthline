@@ -1,0 +1,43 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": [
+      {
+        "active": true,
+        "creationDate": "2025-02-03T10:00:00",
+        "hasCoOwner": false,
+        "message": null,
+        "accountId": "9100006",
+        "accountUuid": "7a6b5c4d-3e2f-4a1b-9c8d-000009100006",
+        "accountCode": "9100000606",
+        "accountExternalCode": "15440000009100000606",
+        "accountType": "CASH_ACCOUNT",
+        "alias": "Cuenta Cartera",
+        "enabledBalance": 5.83,
+        "withheldBalance": 0,
+        "iban": "ES0015449100000000000606",
+        "onBoardingAccount": "ES0099990000000000000001",
+        "holders": [
+          {
+            "id": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "userId": "0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e",
+            "name": "MARTA",
+            "documentNumber": "40000001A",
+            "surname1": "VIDAL",
+            "surname2": "PASCUAL",
+            "me": true,
+            "participantType": "OWNER"
+          }
+        ],
+        "openingType": "ONE_HOLDER",
+        "status": "ACTIVE",
+        "signStatus": "COMPLETED",
+        "currency": "EUR",
+        "cancellationStatus": "NOT_REQUESTED"
+      }
+    ]
+  }
+}

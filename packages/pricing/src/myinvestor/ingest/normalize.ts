@@ -44,6 +44,10 @@ import type {
   MyInvestorTransferLeg,
   MyInvestorUnpairedReason,
 } from "./facts";
+import {
+  MYINVESTOR_EXTERNAL_TRANSFER_PREFIX,
+  MYINVESTOR_UNPAIRED_TRANSFER_PREFIX,
+} from "./facts";
 
 /** The orders of one securities or pension account, as one read returned them. */
 export interface MyInvestorAccountOrders {
@@ -302,7 +306,7 @@ function unpairedLeg(
   return {
     pairing: "unpaired",
     reason,
-    transferId: `myinvestor-unpaired:${fact.reference}`,
+    transferId: `${MYINVESTOR_UNPAIRED_TRANSFER_PREFIX}${fact.reference}`,
     inheritedCost: fact.operation === "transfer_in" ? "pending" : null,
   };
 }
@@ -389,7 +393,7 @@ function classifyAccount(
       transfer: external
         ? {
             pairing: "external_in",
-            transferId: `myinvestor-external:${order.reference}`,
+            transferId: `${MYINVESTOR_EXTERNAL_TRANSFER_PREFIX}${order.reference}`,
             inheritedCost: "pending",
           }
         : rule.transfer === "internal_transfer"

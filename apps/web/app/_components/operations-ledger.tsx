@@ -43,6 +43,7 @@ export function OperationsLedger({
   deleteAction,
   privacyMode = false,
   readOnly = false,
+  sourceOwned = false,
   transferCounterparts,
 }: {
   /** Where the delete's terminal returns: the ficha, on this tab. */
@@ -51,6 +52,13 @@ export function OperationsLedger({
   privacyMode?: boolean;
   /** Demo: skip optimistic state — the write-guard rejects, so optimism would flicker (§10). */
   readOnly?: boolean;
+  /**
+   * The ledger belongs to a connected source (ADR 0115, #1884): its rows are the
+   * source's to write and to remove, so no row offers «Eliminar». Hiding the button
+   * is not the guard: `deleteOperation` and `deleteTransferPair` refuse the row in the
+   * store, which is what stops a hand-made POST or the assistant (PRD #1876, inv. 5).
+   */
+  sourceOwned?: boolean;
   /**
    * Where each traspaso half's OTHER half lives (#1481), keyed by operation id —
    * server-resolved via `transferCounterpartByOperationId`. Absent entries (or an
@@ -170,28 +178,32 @@ export function OperationsLedger({
                         say it in columns. */}
                     <td className="opsCalc">{row.calc}</td>
                     <td className="opsMenu">
-                      <details suppressHydrationWarning className="balanceActions">
-                        <summary aria-label={`Acciones de la operación del ${row.date}`}>
-                          ⋯
-                        </summary>
-                        <div className="balanceMenu">
-                          <form action={deleteAction} onSubmit={onDelete(op.id)}>
-                            <input name="currentUrl" type="hidden" value={returnUrl} />
-                            <input name="operationId" type="hidden" value={op.id} />
-                            <details suppressHydrationWarning className="confirmDelete">
-                              <summary>Eliminar</summary>
-                              {row.isTransfer ? (
-                                // The pair leaves the book by one door (ADR 0083):
-                                // deleting half deletes the whole traspaso.
-                                <small className="opCaptureNote">
-                                  Se elimina el traspaso entero: las dos mitades.
-                                </small>
-                              ) : null}
-                              <button type="submit">Confirmar</button>
-                            </details>
-                          </form>
-                        </div>
-                      </details>
+                      {sourceOwned ? null : (
+                        <details suppressHydrationWarning className="balanceActions">
+                          <summary
+                            aria-label={`Acciones de la operación del ${row.date}`}
+                          >
+                            ⋯
+                          </summary>
+                          <div className="balanceMenu">
+                            <form action={deleteAction} onSubmit={onDelete(op.id)}>
+                              <input name="currentUrl" type="hidden" value={returnUrl} />
+                              <input name="operationId" type="hidden" value={op.id} />
+                              <details suppressHydrationWarning className="confirmDelete">
+                                <summary>Eliminar</summary>
+                                {row.isTransfer ? (
+                                  // The pair leaves the book by one door (ADR 0083):
+                                  // deleting half deletes the whole traspaso.
+                                  <small className="opCaptureNote">
+                                    Se elimina el traspaso entero: las dos mitades.
+                                  </small>
+                                ) : null}
+                                <button type="submit">Confirmar</button>
+                              </details>
+                            </form>
+                          </div>
+                        </details>
+                      )}
                     </td>
                   </tr>
                 );

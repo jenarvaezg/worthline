@@ -72,12 +72,27 @@ export function keepsAnOperationLedger(asset: ManualAsset): boolean {
  * ledger. A fund can keep operations and still not be a destination — marking one
  * by hand was the selector #1483 had to reword, and the palanca that let an
  * apertura eat the year's ceiling (#1504). Instrument `pension_plan` is the native
- * type; the ledger predicate stays as the inner gate so a connected-source plan
- * (no operations) cannot print "0 € de 1.500 €".
+ * type; the ledger predicate stays as the inner gate so a mirrored plan (no
+ * operations) cannot print "0 € de 1.500 €".
+ *
+ * A plan a source OWNS (MyInvestor, ADR 0115) does keep a ledger — the source's,
+ * dated operation by operation — so it consumes the cupo like a hand-kept one
+ * (#1886). `owningSourceIds` names those sources; the caller reads them, since a
+ * `ManualAsset` only knows the id of its source, not what kind it is. Without it,
+ * every connected-source holding stays out, as before.
  */
-export function consumesContributionAllowance(asset: ManualAsset): boolean {
-  return keepsAnOperationLedger(asset) && instrumentOfAsset(asset) === "pension_plan";
+export function consumesContributionAllowance(
+  asset: ManualAsset,
+  owningSourceIds: ReadonlySet<string> = NO_OWNING_SOURCES,
+): boolean {
+  if (instrumentOfAsset(asset) !== "pension_plan") return false;
+  if (asset.connectedSourceId != null) {
+    return owningSourceIds.has(asset.connectedSourceId);
+  }
+  return keepsAnOperationLedger(asset);
 }
+
+const NO_OWNING_SOURCES: ReadonlySet<string> = new Set();
 
 /**
  * The valuation method a liability is configured by — its debt model decides:

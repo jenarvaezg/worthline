@@ -25,6 +25,7 @@ import type {
   SecurityIdKind,
   SnapshotHoldingKind,
   SourceAdapter,
+  TransferLegState,
   TrashExit,
   ValuationCadence,
   ValuationMethod,
@@ -416,6 +417,12 @@ export const assetOperations = sqliteTable(
      * and only on the synthetic opening BUY it invents.
      */
     costBasisGrade: text("cost_basis_grade").$type<CostBasisGrade>(),
+    /**
+     * What a connector-written traspaso leg still owes (#1882, v77): its inherited
+     * cost pending, declared or carried from a confirmed origin, or an unpaired
+     * outgoing leg written as a sale. NULL on every other row.
+     */
+    transferLegState: text("transfer_leg_state").$type<TransferLegState>(),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },
@@ -640,26 +647,47 @@ export const liabilityBalanceAnchors = sqliteTable(
  * A connected source: an external account worthline mirrors read-only (PRD #160,
  * ADR 0016/0017). It projects its positions into ONE rolled-up holding (the
  * `asset_id` row), whose value is derived from the positions — never hand-set.
- * `adapter` ∈ {numista} is enforced in TS, like the other text enums (no CHECK).
- * `credentials_json` (API key + OAuth client) and `token_json` (cached access
- * token + expiry) are LOCAL ONLY and never exported (ADR 0016).
+ * `adapter` ∈ {numista, binance, myinvestor} is enforced in TS, like the other
+ * text enums (no CHECK). `credentials_json` (API key + OAuth client, or
+ * MyInvestor's device id and, on opt-in, its password) and `token_json` (cached
+ * access token + expiry) are LOCAL ONLY, sealed, and never exported (ADR 0016,
+ * ADR 0114).
  */
-export const connectedSources = sqliteTable("connected_sources", {
-  id: text("id").primaryKey(),
-  adapter: text("adapter").$type<SourceAdapter>().notNull(),
-  label: text("label").notNull(),
-  // The materialized rolled-up holding this source projects into (ADR 0016).
-  assetId: text("asset_id")
-    .notNull()
-    .references(() => assets.id, { onDelete: "cascade" }),
-  // Local-only secrets — NEVER exported (ADR 0016). JSON blob of API key + OAuth client.
-  credentialsJson: text("credentials_json").notNull(),
-  // Cached OAuth token JSON (access_token + expiry); null until first mint.
-  tokenJson: text("token_json"),
-  lastSyncAt: text("last_sync_at"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
+export const connectedSources = sqliteTable(
+  "connected_sources",
+  {
+    id: text("id").primaryKey(),
+    adapter: text("adapter").$type<SourceAdapter>().notNull(),
+    label: text("label").notNull(),
+    // The materialized rolled-up holding a MIRRORING source projects into (ADR
+    // 0016). Null for a source that owns its holdings through operations instead
+    // (MyInvestor, ADR 0115): it connects before it has any holding, and its
+    // holdings point back through `assets.connected_source_id` (schema v74).
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    // Local-only secrets — NEVER exported (ADR 0016). JSON blob of API key + OAuth client.
+    credentialsJson: text("credentials_json").notNull(),
+    // Cached OAuth token JSON (access_token + expiry); null until first mint.
+    tokenJson: text("token_json"),
+    lastSyncAt: text("last_sync_at"),
+    /**
+     * Where the ingestion port resumes (ADR 0066, `ConnectorCursor`): for MyInvestor
+     * the day of the last good application (#1880, schema v75). Null until a source
+     * that ingests dated facts first commits, and always for a mirroring one. It is
+     * advanced in the SAME transaction as the facts and the dedup ledger.
+     */
+    ingestCursor: text("ingest_cursor"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [
+    // One MyInvestor connection per workspace (#1879): the web checks it before
+    // asking MyInvestor, and this index refuses the second row two concurrent
+    // logins could otherwise both write — leaving a password nobody disconnects.
+    uniqueIndex("connected_sources_myinvestor_unique")
+      .on(table.adapter)
+      .where(sql`adapter = 'myinvestor'`),
+  ],
+);
 
 /**
  * One line a connected source mirrors — a Numista coin or a Binance token balance
@@ -779,6 +807,174 @@ export const syncRuns = sqliteTable(
     index("sync_run_source_created_idx").on(table.sourceId, table.createdAt),
   ],
 );
+
+/**
+ * The half-done login of a two-step SMS (#1879, ADR 0114 decision 6). Between
+ * «MyInvestor sent a code» and «the user typed it» the web app needs the signature
+ * request, the device it was asked for and — only when the user ticked «Guardar la
+ * contraseña» — the credentials it will keep. They live HERE, sealed
+ * (`sealSecret`, ADR 0030) and for five minutes, never in a cookie.
+ *
+ * It is tied to the workspace's MyInvestor connection by its adapter: a workspace
+ * has at most one connection per adapter, so the unique index keeps at most one
+ * pending login for it, and starting again replaces the old one. The row is
+ * deleted when the login ends, fails for good or expires.
+ */
+export const connectedSourcePendingLogins = sqliteTable(
+  "connected_source_pending_logins",
+  {
+    id: text("id").primaryKey(),
+    adapter: text("adapter").$type<SourceAdapter>().notNull(),
+    // Sealed JSON of the pending step; its shape belongs to the adapter's module.
+    payloadJson: text("payload_json").notNull(),
+    // ISO instant after which the step is refused and deleted.
+    expiresAt: text("expires_at").notNull(),
+    // Wrong codes tried so far, reserved atomically BEFORE MyInvestor is asked so
+    // two codes sent at once cannot slip past the cap. A count, not a secret.
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("connected_source_pending_logins_adapter_unique").on(table.adapter),
+  ],
+);
+
+/**
+ * What a source that OWNS its holdings found at the source the last time it was
+ * read (#1880, ADR 0115): its accounts, its products and every finished operation,
+ * as one JSON document whose shape belongs to the adapter's module. The first start
+ * shows it to choose what to include, and «Incluir con su histórico» applies a
+ * product excluded then from the same read, without asking the source again. One
+ * row per source, replaced on every read. Not a secret (no credentials, no token),
+ * but personal financial data like the rest of the workspace.
+ */
+export const connectedSourceDiscoveries = sqliteTable("connected_source_discoveries", {
+  sourceId: text("source_id")
+    .primaryKey()
+    .references(() => connectedSources.id, { onDelete: "cascade" }),
+  // The calendar day the read was made, `YYYY-MM-DD`.
+  readOn: text("read_on").$type<DateKey>().notNull(),
+  payloadJson: text("payload_json").notNull(),
+  createdAt: timestamp("created_at"),
+});
+
+/**
+ * Which product of an owning source each linked holding IS (#1880, ADR 0115): the
+ * strong identifier at the source (account + ISIN, DGS code, cash account) to the
+ * holding it was created as. The holding still carries `assets.connected_source_id`;
+ * this is what tells two linked holdings of the same ISIN in two accounts apart
+ * (#1869 P3). A product with no row was left out.
+ */
+export const connectedSourceLinks = sqliteTable(
+  "connected_source_links",
+  {
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => connectedSources.id, { onDelete: "cascade" }),
+    productKey: text("product_key").notNull(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceId, table.productKey] }),
+    uniqueIndex("connected_source_links_asset_unique").on(table.assetId),
+  ],
+);
+
+/**
+ * The dedup ledger of the ingestion port (ADR 0066, decision #888): every fact key a
+ * source already applied, with the batch that applied it. Reconciliation reads it so
+ * an overlapping re-read applies each fact once; the commit appends to it in the same
+ * transaction as the facts (#1880).
+ */
+export const connectorAppliedFacts = sqliteTable(
+  "connector_applied_facts",
+  {
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => connectedSources.id, { onDelete: "cascade" }),
+    factKey: text("fact_key").notNull(),
+    batchId: text("batch_id").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [primaryKey({ columns: [table.sourceId, table.factKey] })],
+);
+
+/**
+ * The manual operations a source's operations REPLACED when it was linked to a
+ * holding that already existed by hand (#1881, ADR 0115 decision 6): the provenance
+ * of the batch that replaced them (ADR 0062). They are no longer facts — no fold,
+ * snapshot or ripple reads them — and disconnecting does not bring them back.
+ *
+ * - `batch_id` is the linking `fact_batch`, unconstrained like the dedup ledger's: a
+ *   workspace document carries no batches, and the provenance must outlive the
+ *   source, so neither the batch nor the source is a parent here.
+ * - `operation_json` is the replaced row as the domain read it, whole.
+ * - The holding is the parent: hard-deleting it takes its provenance with it.
+ */
+export const factBatchReplacedOperations = sqliteTable(
+  "fact_batch_replaced_operations",
+  {
+    operationId: text("operation_id").primaryKey(),
+    batchId: text("batch_id").notNull(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    operationJson: text("operation_json").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    index("fact_batch_replaced_operations_asset_idx").on(table.assetId, table.batchId),
+  ],
+);
+
+/**
+ * How the periodic sync of an owning source stands (#1884, ADR 0114 decisions 4
+ * and 7, schema v78): one row per connection, written by the passes and read by
+ * the button, the cron and the ficha's band. Operational state, not a fact: it is
+ * not exported, and a full replace wipes it.
+ *
+ * - The lease (`lease_*`): one pass per connection at a time. It is claimed in ONE
+ *   update and expires, so a pass killed halfway (a serverless timeout) cannot hold
+ *   it forever. `lease_step` is the step the pass is on,
+for the panel's live steps.
+ * - The logins
+of;
+the;
+day(`login_day`, `logins_today`, `rejections_today`);
+: at most
+ *   10 logins a day, and three password rejections lock the connection until the
+ *   next day. The day is the app's calendar day (UTC), the one `today` is.
+ * - `paused_until`: no login before this instant (a rejection
+with no reason, the
+ *   lock
+of;
+three;
+rejections;
+). `stopped_reason`: why the cron does not sync
+ *   (`sms_required`) until a pass works again.
+ * - `last_outcome_json` / `units_check_json`: what the last pass ended in, and the
+ *   last units check (P8) — the mismatches stay until a pass finds them squared.
+ */
+export const connectedSourceSyncState = sqliteTable("connected_source_sync_state", {
+  sourceId: text("source_id")
+    .primaryKey()
+    .references(() => connectedSources.id, { onDelete: "cascade" }),
+  leaseUntil: text("lease_until"),
+  leaseStartedAt: text("lease_started_at"),
+  leaseTrigger: text("lease_trigger").$type<"manual" | "cron">(),
+  leaseStep: text("lease_step"),
+  loginDay: text("login_day").$type<DateKey>(),
+  loginsToday: integer("logins_today").notNull().default(0),
+  rejectionsToday: integer("rejections_today").notNull().default(0),
+  pausedUntil: text("paused_until"),
+  stoppedReason: text("stopped_reason"),
+  lastOutcomeJson: text("last_outcome_json"),
+  unitsCheckJson: text("units_check_json"),
+  updatedAt: timestamp("updated_at"),
+});
 
 export const auditLog = sqliteTable(
   "audit_log",

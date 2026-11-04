@@ -6,6 +6,7 @@ import type {
   InterestRateRevision,
 } from "./amortization";
 import {
+  addMonths,
   amortizableBalanceAtDate,
   amortizationPaymentDatesUpTo,
   amortizationScheduleTrace,
@@ -942,6 +943,16 @@ describe("early repayment dating: the drop lands on the repayment date (#1291)",
 });
 
 describe("addMonths day-clamping — end-of-month first-payment dates", () => {
+  test.each([
+    ["2026-01-15", -1, "2025-12-15"],
+    ["2026-03-31", -1, "2026-02-28"],
+    ["2024-03-31", -1, "2024-02-29"],
+    ["2026-02-07", -14, "2024-12-07"],
+    ["2026-05-19", -12, "2025-05-19"],
+  ] as const)("walks backwards too: %s %i months → %s", (from, count, expected) => {
+    expect(addMonths(from, count)).toBe(expected);
+  });
+
   test("intra-month interpolation uses the real calendar span, not a rolled date", () => {
     // Two-date model (ADR 0019): the payment cadence runs from a day-31 first
     // payment (2020-01-31), so a February payment boundary clamps to 2020-02-29

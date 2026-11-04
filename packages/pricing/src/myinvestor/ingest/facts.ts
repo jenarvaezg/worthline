@@ -74,6 +74,25 @@ export type MyInvestorTransferLeg =
       readonly inheritedCost: "pending" | null;
     };
 
+/**
+ * The `transferId` a leg with no pair in MyInvestor carries, by why it has none:
+ * the capital came from another institution, or the adapter could not tie it to its
+ * other half. The application reads them back to word what it asks (#1882): an
+ * external entry is never offered an origin inside MyInvestor.
+ */
+export const MYINVESTOR_EXTERNAL_TRANSFER_PREFIX = "myinvestor-external:";
+export const MYINVESTOR_UNPAIRED_TRANSFER_PREFIX = "myinvestor-unpaired:";
+
+/** Whether a `transferId` is an entry from another institution's (#1882). */
+export function isMyInvestorExternalEntry(transferId: string | undefined): boolean {
+  return transferId?.startsWith(MYINVESTOR_EXTERNAL_TRANSFER_PREFIX) ?? false;
+}
+
+/** Whether a `transferId` is a leg the adapter could not pair (#1882). */
+export function isMyInvestorUnpairedLeg(transferId: string | undefined): boolean {
+  return transferId?.startsWith(MYINVESTOR_UNPAIRED_TRANSFER_PREFIX) ?? false;
+}
+
 /** One finished order, in the vocabulary of the investment and traspaso commands. */
 export interface MyInvestorOperationFact {
   readonly kind: "operation";

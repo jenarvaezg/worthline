@@ -20,7 +20,7 @@ import type { SourceFreshnessRow } from "./sync-health";
  * sin JSX ni Server Actions, porque `/ajustes` solo necesita la lista para contar
  * («2 de 2 conectadas») y no tiene por qué arrastrar la capa de render.
  */
-export const CONNECTION_ADAPTERS = ["numista", "binance"] as const;
+export const CONNECTION_ADAPTERS = ["numista", "binance", "myinvestor"] as const;
 
 export type ConnectionAdapter = (typeof CONNECTION_ADAPTERS)[number];
 
@@ -33,8 +33,9 @@ export interface ConnectionValueAsset {
 /** El contexto con el que un adapter calcula el valor de su fuente. */
 export interface ConnectionValueContext {
   assets: readonly ConnectionValueAsset[];
-  /** El activo espejo de la fuente (`connected_sources.asset_id`). */
-  primaryAssetId: string;
+  /** El activo espejo de la fuente (`connected_sources.asset_id`); null en una
+   *  fuente dueña de sus holdings, que no tiene espejo (MyInvestor, ADR 0115). */
+  primaryAssetId: string | null;
   /** TODOS los activos de la fuente — una fuente puede ocupar varios peldaños. */
   sourceAssetIds: readonly string[];
 }
@@ -42,15 +43,18 @@ export interface ConnectionValueContext {
 /** La parte de datos de una entrada del registry. */
 export interface ConnectionDataDefinition {
   adapter: string;
-  /** Cuántos elementos materializa la fuente (monedas, tokens…). */
-  countUnits: (positions: readonly SourcePosition[]) => number;
+  /** Cuántos elementos materializa la fuente (monedas, tokens, productos…). */
+  countUnits: (
+    positions: readonly SourcePosition[],
+    sourceAssetIds: readonly string[],
+  ) => number;
   valueMinor: (context: ConnectionValueContext) => number;
 }
 
 /** La fila de `connected_sources` que esta página necesita. */
 export interface ConnectionSourceRow {
   adapter: string;
-  assetId: string;
+  assetId: string | null;
   id: string;
   lastSyncAt: string | null;
 }
@@ -80,7 +84,7 @@ export interface ConnectionRow {
    */
   runs: readonly SyncRun[];
   /** null = adapter disponible pero sin conectar. */
-  source: { assetId: string; id: string; lastSyncAt: string | null } | null;
+  source: { assetId: string | null; id: string; lastSyncAt: string | null } | null;
   unitCount: number;
   valueMinor: number;
 }
@@ -132,7 +136,8 @@ export async function loadConnectionRows({
 
       return {
         adapter: definition.adapter,
-        fichaHref: hrefOf(source.assetId),
+        // Sin activo espejo (MyInvestor) no hay una ficha única a la que llevar.
+        fichaHref: source.assetId === null ? null : hrefOf(source.assetId),
         freshness,
         // El techo de retención se aplica también al LEER: la poda solo corre al
         // finalizar una corrida, así que una colgada en `running` que nunca
@@ -144,7 +149,7 @@ export async function loadConnectionRows({
           id: source.id,
           lastSyncAt: source.lastSyncAt,
         },
-        unitCount: definition.countUnits(positions),
+        unitCount: definition.countUnits(positions, sourceAssetIds),
         valueMinor: definition.valueMinor({
           assets,
           primaryAssetId: source.assetId,

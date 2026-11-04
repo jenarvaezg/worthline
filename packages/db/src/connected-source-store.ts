@@ -1,6 +1,8 @@
 import type {
   ConnectedSource,
+  DateKey,
   DistributiveOmit,
+  MirroredSourceAdapter,
   OwnershipShare,
   PriceFreshnessState,
   SourceAdapter,
@@ -10,6 +12,7 @@ import {
   defaultsFor,
   frozenInstrumentForAdapter,
   instrumentForAdapter,
+  isMirroredSourceAdapter,
   projectConnectedSource,
 } from "@worthline/domain";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
@@ -19,6 +22,46 @@ import {
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
 import { hardDeleteAssetTx } from "./asset-reads";
+import {
+  type ConnectOwningSourceInput,
+  connectOwningSource,
+  deletePendingLogin,
+  disconnectOwningSource,
+  type PendingLoginRow,
+  purgeExpiredPendingLogins,
+  type ReplacedOperationRow,
+  readAppliedFactKeys,
+  readPendingLogin,
+  readReplacedOperations,
+  readSourceDiscovery,
+  readSourceLinks,
+  reservePendingCodeAttempt,
+  type SourceDiscoveryRow,
+  type SourceLinkRow,
+  type StartPendingLoginInput,
+  saveSourceDiscovery,
+  startPendingLogin,
+} from "./connected-source-owning-store";
+import {
+  type ClaimSyncLeaseResult,
+  claimSyncLease,
+  type PasswordRejectionInput,
+  purgeSyncAttempts,
+  type ReentryInput,
+  readSyncState,
+  recordPasswordRejection,
+  recordReentry,
+  recordSyncAttempt,
+  releaseSyncLease,
+  reserveSyncLogin,
+  type SourceSyncState,
+  type SourceSyncStatePatch,
+  type SyncAttemptInput,
+  type SyncAttemptRow,
+  type SyncLeaseTrigger,
+  setSyncStep,
+  updateSyncState,
+} from "./connected-source-sync-state";
 import { openSecret, sealSecret } from "./crypto";
 import { readAssetOwnerships } from "./ownership-reads";
 import {
@@ -31,9 +74,11 @@ import {
 import type { StoreContext } from "./store-context";
 
 /** Connect a new source: the caller resolves ownership (default 100% the
- *  connecting member) before handing it here. */
+ *  connecting member) before handing it here. Only a mirroring source
+ *  materializes a holding on connect (ADR 0016); MyInvestor connects through
+ *  {@link ConnectedSourceStore.connectOwningSource}. */
 export interface ConnectSourceInput {
-  adapter: SourceAdapter;
+  adapter: MirroredSourceAdapter;
   label: string;
   credentialsJson: string;
   ownership: OwnershipShare[];
@@ -44,7 +89,8 @@ export interface ConnectedSourceRow {
   id: string;
   adapter: SourceAdapter;
   label: string;
-  assetId: string;
+  /** The mirror asset of a mirroring source; null for MyInvestor (ADR 0115, v74). */
+  assetId: string | null;
   credentialsJson: string;
   tokenJson: string | null;
   lastSyncAt: string | null;
@@ -153,6 +199,93 @@ export interface ConnectedSourceStore {
    * asset id, or null when the source is unknown (nothing changes then).
    */
   freezeIntoStoredHolding(sourceId: string): Promise<{ assetId: string } | null>;
+  /**
+   * Connect a source that OWNS its holdings through operations (MyInvestor, ADR
+   * 0115): no mirror asset is created, and the credentials are sealed at rest.
+   */
+  connectOwningSource(
+    input: ConnectOwningSourceInput,
+  ): Promise<{ sourceId: string } | null>;
+  /**
+   * Disconnect an owning source: its credentials go at once and each linked holding
+   * is frozen as manual with its own instrument (ADR 0115 decision 6). Null for an
+   * unknown id or a mirroring source.
+   */
+  disconnectOwningSource(sourceId: string): Promise<{ frozen: number } | null>;
+  /** Keep the half-done login of a two-step SMS, sealed (ADR 0114 decision 6). */
+  startPendingLogin(input: StartPendingLoginInput): Promise<{ id: string }>;
+  readPendingLogin(id: string): Promise<PendingLoginRow | null>;
+  /** Reserve one code attempt atomically; the attempt's number, or null past `cap`. */
+  reservePendingCodeAttempt(id: string, cap: number): Promise<number | null>;
+  deletePendingLogin(id: string): Promise<void>;
+  /** Delete the pending steps already expired at `now`; returns how many. */
+  purgeExpiredPendingLogins(now: string): Promise<number>;
+  /**
+   * Keep what an owning source found on its last read (#1880), replacing the
+   * previous one, and stamp its last good sync. Null for an unknown or mirroring id.
+   */
+  saveDiscovery(input: {
+    sourceId: string;
+    readOn: string;
+    payloadJson: string;
+    readAt: string;
+  }): Promise<{ saved: true } | null>;
+  readDiscovery(sourceId: string): Promise<SourceDiscoveryRow | null>;
+  /** Which product each linked holding of an owning source is (#1880). */
+  readLinks(sourceId: string): Promise<SourceLinkRow[]>;
+  /** The manual operations a link to an owning source replaced (#1881). */
+  readReplacedOperations(assetId: string): Promise<ReplacedOperationRow[]>;
+  /** The ingestion port's dedup ledger of a source (ADR 0066), or only `keys` of it. */
+  readAppliedFactKeys(sourceId: string, keys?: readonly string[]): Promise<Set<string>>;
+  /**
+   * Take the connection for one sync pass (#1884, ADR 0114 decision 4), or say which
+   * pass holds it. One statement: two passes started at once never both get it.
+   */
+  claimSyncLease(input: {
+    sourceId: string;
+    now: string;
+    until: string;
+    trigger: SyncLeaseTrigger;
+  }): Promise<ClaimSyncLeaseResult>;
+  /** The step the pass holding the lease is on, for the panel's live steps. */
+  setSyncStep(sourceId: string, step: string): Promise<void>;
+  releaseSyncLease(sourceId: string): Promise<void>;
+  /** Reserve one login of the day (decision 7): its number, or null past `cap`. */
+  reserveSyncLogin(input: {
+    sourceId: string;
+    day: DateKey;
+    cap: number;
+  }): Promise<number | null>;
+  /**
+   * A rejected password, all of it or none (decision 7): the saved password deleted,
+   * the rejection counted, the lock of the day's third and the outcome written.
+   */
+  recordPasswordRejection(
+    input: PasswordRejectionInput,
+  ): Promise<{ rejections: number; locked: boolean }>;
+  /**
+   * «Volver a entrar» (#1876), all of it or none: the new credentials and the stop
+   * lifted. Throws for a connection that is not there.
+   */
+  recordReentry(input: ReentryInput): Promise<void>;
+  /**
+   * Patch the sync state; with `attempt`, the pass's row of the attempt log goes in
+   * the same transaction (#1885).
+   */
+  updateSyncState(
+    sourceId: string,
+    patch: SourceSyncStatePatch,
+    attempt?: SyncAttemptRow,
+  ): Promise<void>;
+  readSyncState(sourceId: string): Promise<SourceSyncState | null>;
+  /**
+   * One finished attempt of a pass, on `sync_run` (#1885), and the purge of the
+   * source's attempts older than 90 days. Here, beside the rest of the sync state,
+   * because the pass is its own executor: the public run store stays read-only.
+   */
+  recordSyncAttempt(input: SyncAttemptInput): Promise<void>;
+  /** The purge alone, for a connection the cron did not pass over (#1885). */
+  purgeSyncAttempts(input: { sourceId: string; now: string }): Promise<void>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -292,6 +425,33 @@ function termLockedSuffixForAdapter(adapter: SourceAdapter): string | null {
   return adapter === "binance" ? "(bloqueado)" : null;
 }
 
+/** A source that mirrors a value into its own rolled-up holding (ADR 0016/0021). */
+type MirroredSourceRow = ConnectedSourceRow & {
+  adapter: MirroredSourceAdapter;
+  assetId: string;
+};
+
+/**
+ * The source a projection path (sync, revalue, freeze) works on, which must be a
+ * mirroring one: MyInvestor has no positions to project and no mirror asset (ADR
+ * 0115), so reaching here with it is a wiring bug and fails loudly instead of
+ * re-rolling a holding that does not exist.
+ */
+function requireMirroredSource(
+  source: ConnectedSourceRow | null,
+  sourceId: string,
+): MirroredSourceRow {
+  if (!source) {
+    throw new Error(`Connected source "${sourceId}" not found.`);
+  }
+  if (!isMirroredSourceAdapter(source.adapter) || source.assetId === null) {
+    throw new Error(
+      `Connected source "${sourceId}" (${source.adapter}) does not mirror positions.`,
+    );
+  }
+  return { ...source, adapter: source.adapter, assetId: source.assetId };
+}
+
 // Secrets live encrypted at rest (ADR 0030, #387): seal on write, open on read,
 // so the database holds only ciphertext while callers see plaintext.
 function openConnectedSourceRow(row: ConnectedSourceRow): ConnectedSourceRow {
@@ -386,7 +546,7 @@ async function readSourceIdForAsset(
  */
 async function rerollSourceHoldings(
   ctx: StoreContext,
-  source: ConnectedSourceRow,
+  source: MirroredSourceRow,
 ): Promise<number> {
   const { db } = ctx;
   const ownership = (await readAssetOwnerships(db)).get(source.assetId) ?? [];
@@ -629,6 +789,13 @@ async function removeSourceHoldings(
   sourceId: string,
 ): Promise<{ removed: number }> {
   const { db } = ctx;
+  // Only a mirroring source is removed this way. An owning one (MyInvestor) keeps
+  // its holdings on disconnect, frozen as manual (ADR 0115 decision 6): a
+  // `sourceId` of it reaching a mirror's disconnect deletes nothing.
+  const source = await readSource(ctx, sourceId);
+  if (source && !isMirroredSourceAdapter(source.adapter)) {
+    return { removed: 0 };
+  }
   const removed = await ctx.transaction(async () => {
     // ONE transaction: soft-delete then hard-delete every rung asset (market +
     // term-locked, including any trashed one). Deleting the market (primary)
@@ -659,10 +826,7 @@ async function syncSourcePositions(
 ): Promise<void> {
   const { db } = ctx;
   await ctx.transaction(async () => {
-    const source = await readSource(ctx, sourceId);
-    if (!source) {
-      throw new Error(`Connected source "${sourceId}" not found.`);
-    }
+    const source = requireMirroredSource(await readSource(ctx, sourceId), sourceId);
 
     // Incremental mirror (ADR 0017): match on the stable `externalId`, update
     // existing lines in place (preserving internal ids), insert genuinely new
@@ -750,7 +914,7 @@ async function syncSourcePositions(
  */
 async function stampSourceFreshness(
   ctx: StoreContext,
-  source: ConnectedSourceRow,
+  source: MirroredSourceRow,
   valueMinor: number,
   freshness: ValuationFreshness,
 ): Promise<void> {
@@ -782,10 +946,7 @@ async function revalueSourcePositions(
 ): Promise<void> {
   const { db } = ctx;
   await ctx.transaction(async () => {
-    const source = await readSource(ctx, sourceId);
-    if (!source) {
-      throw new Error(`Connected source "${sourceId}" not found.`);
-    }
+    const source = requireMirroredSource(await readSource(ctx, sourceId), sourceId);
 
     // Update each coin's candidate values in place — never adding or removing
     // lines (that is `syncPositions`' job). A position not in `updates` keeps
@@ -823,10 +984,11 @@ async function freezeSourceIntoStoredHolding(
   sourceId: string,
 ): Promise<{ assetId: string } | null> {
   const { db } = ctx;
-  const source = await readSource(ctx, sourceId);
-  if (!source) {
+  const read = await readSource(ctx, sourceId);
+  if (!read) {
     return null;
   }
+  const source = requireMirroredSource(read, sourceId);
 
   // Every rung asset the source materialized — market + term-locked for
   // Binance, the single coin collection for Numista (#248). Captured BEFORE the
@@ -891,5 +1053,28 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     revaluePositions: (sourceId, updates, freshness) =>
       revalueSourcePositions(ctx, sourceId, updates, freshness),
     freezeIntoStoredHolding: (sourceId) => freezeSourceIntoStoredHolding(ctx, sourceId),
+    connectOwningSource: (input) => connectOwningSource(ctx, input),
+    disconnectOwningSource: (sourceId) => disconnectOwningSource(ctx, sourceId),
+    startPendingLogin: (input) => startPendingLogin(ctx, input),
+    readPendingLogin: (id) => readPendingLogin(ctx, id),
+    reservePendingCodeAttempt: (id, cap) => reservePendingCodeAttempt(ctx, id, cap),
+    deletePendingLogin: (id) => deletePendingLogin(ctx, id),
+    purgeExpiredPendingLogins: (now) => purgeExpiredPendingLogins(ctx, now),
+    saveDiscovery: (input) => saveSourceDiscovery(ctx, input),
+    readDiscovery: (sourceId) => readSourceDiscovery(ctx, sourceId),
+    readLinks: (sourceId) => readSourceLinks(ctx, sourceId),
+    readReplacedOperations: (assetId) => readReplacedOperations(ctx, assetId),
+    readAppliedFactKeys: (sourceId, keys) => readAppliedFactKeys(ctx, sourceId, keys),
+    claimSyncLease: (input) => claimSyncLease(ctx, input),
+    setSyncStep: (sourceId, step) => setSyncStep(ctx, sourceId, step),
+    releaseSyncLease: (sourceId) => releaseSyncLease(ctx, sourceId),
+    reserveSyncLogin: (input) => reserveSyncLogin(ctx, input),
+    recordPasswordRejection: (input) => recordPasswordRejection(ctx, input),
+    recordReentry: (input) => recordReentry(ctx, input),
+    updateSyncState: (sourceId, patch, attempt) =>
+      updateSyncState(ctx, sourceId, patch, attempt),
+    readSyncState: (sourceId) => readSyncState(ctx, sourceId),
+    recordSyncAttempt: (input) => recordSyncAttempt(ctx, input),
+    purgeSyncAttempts: (input) => purgeSyncAttempts(ctx, input),
   };
 }

@@ -138,6 +138,77 @@ export function computeContributionAllowanceUsage(
   };
 }
 
+/**
+ * One contribution still to come, as somebody scheduled it (#1886): a line of the
+ * worthline plan (ADR 0041), or a scheduled contribution a connected source reads
+ * (MyInvestor, ADR 0115 decision 5). Already in money: a units line the caller
+ * could not price is left out, never guessed.
+ */
+export interface ScheduledAllowanceEntry {
+  holdingId: string;
+  dateISO: string;
+  amountMinor: number;
+  origin: "plan" | "source";
+  /**
+   * Already due, and its order still on its way (inside its arrival window): the
+   * ledger does not count it yet, so the forecast must, or it would fall between
+   * the two figures.
+   */
+  pendingArrival?: boolean;
+}
+
+/** Where the year ends if what is scheduled arrives. */
+export interface ContributionAllowanceForecast {
+  /** What is still scheduled after today and within the year, to the cupo's plans. */
+  scheduledMinor: number;
+  /** Of that, what a connected source schedules. */
+  sourceMinor: number;
+  /** `consumed + scheduled`. */
+  projectedMinor: number;
+  /** `cap − projected`, signed: negative when the schedule would pass the ceiling. */
+  projectedRemainingMinor: number;
+}
+
+/**
+ * The forecast of the rest of the year (#1886): what the ledger already spent
+ * plus what is scheduled from tomorrow to 31 December, to this cupo's plans.
+ *
+ * A forecast, beside the consumed figure and never inside it (ADR 0080, decision
+ * 3): consumed stays the ledger's. An occurrence due today or earlier is left out
+ * — the ledger counts it once it arrives — unless it is `pendingArrival`: due, its
+ * order still on its way, in neither figure yet. Which schedule speaks for a holding — the
+ * source's, never a worthline plan of a linked holding — is the caller's to
+ * decide: this only adds up what it is handed. Null when nothing more is
+ * scheduled this year: there is no forecast to print.
+ */
+export function forecastContributionAllowance(input: {
+  allowance: ContributionAllowance;
+  usage: ContributionAllowanceUsage;
+  scheduled: readonly ScheduledAllowanceEntry[];
+  todayISO: string;
+}): ContributionAllowanceForecast | null {
+  const { allowance, scheduled, todayISO, usage } = input;
+  const destinations = new Set(allowance.holdingIds);
+  const yearEnd = `${todayISO.slice(0, 4)}-12-31`;
+  let scheduledMinor = 0;
+  let sourceMinor = 0;
+  for (const entry of scheduled) {
+    if (!destinations.has(entry.holdingId)) continue;
+    if (entry.dateISO > yearEnd) continue;
+    if (entry.dateISO <= todayISO && entry.pendingArrival !== true) continue;
+    scheduledMinor += entry.amountMinor;
+    if (entry.origin === "source") sourceMinor += entry.amountMinor;
+  }
+  if (scheduledMinor === 0) return null;
+  const projectedMinor = usage.consumedMinor + scheduledMinor;
+  return {
+    projectedMinor,
+    projectedRemainingMinor: usage.capMinor - projectedMinor,
+    scheduledMinor,
+    sourceMinor,
+  };
+}
+
 export function assertContributionAllowanceInput(input: {
   label: string;
   annualCapMinor: number;

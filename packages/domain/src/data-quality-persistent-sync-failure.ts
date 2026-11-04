@@ -19,6 +19,7 @@ import {
   sourceFreshnessStatus,
   sourceIsInScope,
 } from "./data-quality-connected-source";
+import type { OwningSourceAttempt, OwningSourceStop } from "./owning-source-health";
 
 /** Machine code for a connection whose sync keeps failing attempt after attempt (#1226). */
 export const PERSISTENT_SYNC_FAILURE_CODE = "PERSISTENT_SYNC_FAILURE";
@@ -50,11 +51,23 @@ export const PERSISTENT_SYNC_FAILURE_THRESHOLD = 2;
  * servidor, así que la señal habla de cuántos intentos fallaron y remite a la
  * página, que es donde el `code` se traduce.
  */
-export interface DataQualitySyncAttempt {
+export interface DataQualitySyncAttempt extends OwningSourceAttempt {
   /** `pending`/`running` son no terminales: un intento en vuelo aún no dice nada. */
   status: "pending" | "running" | "ok" | "error";
   /** El instante que fecha el intento, o null si la fila no fechó ninguno. */
   at: string | null;
+  /**
+   * El paso del cliente en el que falló un intento de una conexión dueña de sus
+   * holdings (#1885: `orders`, `plans`…); null o ausente en las demás. Es una
+   * palabra nuestra, nunca un dato del usuario.
+   */
+  failedStep?: string | null;
+}
+
+/** Lo que el estado de sync de una conexión dueña de sus holdings dice, aparte del log (#1885). */
+export interface DataQualityOwningSourceStanding {
+  savedPassword: boolean;
+  stop: OwningSourceStop | null;
 }
 
 export interface DataQualityPersistentSyncFailureInput
@@ -68,6 +81,15 @@ export interface DataQualityPersistentSyncFailureInput
    * fuente no ha intentado nada todavía».
    */
   syncAttemptsBySourceId: ReadonlyMap<string, readonly DataQualitySyncAttempt[]>;
+  /**
+   * Las conexiones dueña de sus holdings (MyInvestor, #1885), por id de fuente.
+   * Requerido por lo mismo que los intentos. Una fuente de este mapa se lee con su
+   * propia regla (tres DÍAS seguidos, por tipo de dato:
+   * `data-quality-owning-source-health.ts`) y nunca con la cuenta genérica de aquí:
+   * su log guarda cada pulsación del botón, y dos contraseñas mal tecleadas en un
+   * minuto no son un conector que falla.
+   */
+  owningSourceStandingBySourceId: ReadonlyMap<string, DataQualityOwningSourceStanding>;
 }
 
 /**
@@ -112,6 +134,9 @@ export const collectPersistentSyncFailureSignals: DataQualityCollector<
 
   for (const source of input.connectedSources) {
     if (!sourceIsInScope(source, input.ownedAssetIds)) {
+      continue;
+    }
+    if (input.owningSourceStandingBySourceId.has(source.id)) {
       continue;
     }
 

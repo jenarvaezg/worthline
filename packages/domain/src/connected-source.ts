@@ -25,16 +25,33 @@ import type { SnapshotPositionInput, SnapshotPositionRow } from "./snapshot-hold
 import type { OwnershipShare } from "./workspace-types";
 
 /** Which external account an adapter speaks to. Numista was the first; Binance is
- *  the first live-valued, rung-spanning source (ADR 0021). */
-export type SourceAdapter = "numista" | "binance";
+ *  the first live-valued, rung-spanning source (ADR 0021); MyInvestor is the first
+ *  that owns its holdings through dated operations (ADR 0115). */
+export type SourceAdapter = "numista" | "binance" | "myinvestor";
+
+/**
+ * The sources that MIRROR a value (ADR 0016/0021): their positions roll up into one
+ * holding per rung, of a single instrument the adapter decides. MyInvestor is not
+ * one (ADR 0115): it owns several holdings, each with the instrument of what it is,
+ * and no positions to project.
+ */
+export type MirroredSourceAdapter = Exclude<SourceAdapter, "myinvestor">;
+
+export function isMirroredSourceAdapter(
+  adapter: SourceAdapter,
+): adapter is MirroredSourceAdapter {
+  return adapter === "numista" || adapter === "binance";
+}
 
 /**
  * The holding instrument a source projects into (ADR 0016/0021). Numista mirrors a
  * frozen, illiquid coin collection; Binance mirrors live-valued crypto. The single
  * adapter→instrument mapping the projection and `connect` both read so the
- * materialized holding and the projected one never disagree.
+ * materialized holding and the projected one never disagree. Only a mirroring
+ * source has one (ADR 0115): the type keeps MyInvestor out instead of answering
+ * for it with a wrong instrument.
  */
-export function instrumentForAdapter(adapter: SourceAdapter): Instrument {
+export function instrumentForAdapter(adapter: MirroredSourceAdapter): Instrument {
   return adapter === "numista" ? "coin_collection" : "crypto";
 }
 
@@ -49,14 +66,14 @@ export function instrumentForAdapter(adapter: SourceAdapter): Instrument {
  * (`defaultsFor(instrumentOfAsset(asset))`), so flipping the instrument is what
  * makes the holding hand-valued — setting the column alone would not.
  */
-export function frozenInstrumentForAdapter(adapter: SourceAdapter): Instrument {
+export function frozenInstrumentForAdapter(adapter: MirroredSourceAdapter): Instrument {
   return adapter === "numista" ? "precious_metal" : "other";
 }
 
 /** A connected source: an external account worthline mirrors read-only (ADR 0016). */
 export interface ConnectedSource {
   id: string;
-  adapter: SourceAdapter;
+  adapter: MirroredSourceAdapter;
   /** Display label for the projected holding(s), e.g. "Colección Numista". */
   label: string;
   /**

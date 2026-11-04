@@ -66,7 +66,7 @@ describe("schema migration v73 (hand-set price stamps cleared)", () => {
     expect(row?.manual_priced_at).toBeNull();
     expect(row?.manual_price_per_unit).toBe("118.75");
     expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(73);
+    expect(SCHEMA_VERSION).toBe(78);
   });
 
   test("runs on a database that already took #1812's v72", async () => {
@@ -75,7 +75,7 @@ describe("schema migration v73 (hand-set price stamps cleared)", () => {
     await migrate(client);
 
     expect((await investmentRow(client))?.manual_priced_at).toBeNull();
-    expect(await storedVersion(client)).toBe(73);
+    expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
   });
 
   test("moves no other column of the row", async () => {

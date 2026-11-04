@@ -81,6 +81,8 @@ the invocation has one provenance row even when it has no ripple plan. If fact
 persistence or ripple fails, the transaction rolls back both facts and batch,
 so a failed invocation persists neither.
 
+**Amended by ADR 0115 (#1881).** When a source that owns its holdings is linked to a holding kept by hand, the manual operations its operations replace are kept, whole, in `fact_batch_replaced_operations` under the linking batch's id: they are no longer facts, and that table is the batch's record of what it replaced. It is the one exception to "no serialized diff", and it is scoped to that replacement.
+
 ### Source instants refine asset-operation order
 
 An asset operation may additionally carry `occurredAt`, a nullable UTC instant
