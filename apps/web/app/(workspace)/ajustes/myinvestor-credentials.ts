@@ -10,7 +10,9 @@
  *   code's signature id. With the box ticked, also the credentials it will keep,
  *   because the user is not asked for them again after the code.
  */
+import type { MyInvestorCredentials } from "@worthline/pricing";
 import { z } from "zod";
+import { readStoredJson } from "./stored-json";
 
 export interface MyInvestorAcceptance {
   /** ISO instant the box was ticked and the statement accepted. */
@@ -21,16 +23,12 @@ export interface MyInvestorAcceptance {
 
 export type MyInvestorStoredCredentials =
   | { readonly deviceId: string }
-  | {
+  | (MyInvestorCredentials & {
       readonly deviceId: string;
-      readonly customerId: string;
-      readonly password: string;
       readonly acceptance: MyInvestorAcceptance;
-    };
+    });
 
-export interface MyInvestorPendingSave {
-  readonly customerId: string;
-  readonly password: string;
+export interface MyInvestorPendingSave extends MyInvestorCredentials {
   readonly acceptedBy: string | null;
 }
 
@@ -65,14 +63,6 @@ const pendingSchema = z.object({
     .nullable(),
 });
 
-function parseJson(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 /** Whether these credentials carry a remembered password (the opt-in). */
 export function hasSavedPassword(
   credentials: MyInvestorStoredCredentials,
@@ -103,9 +93,9 @@ export function serializeMyInvestorCredentials(
 export function readMyInvestorCredentials(
   json: string,
 ): MyInvestorStoredCredentials | null {
-  const parsed = credentialsSchema.safeParse(parseJson(json));
-  if (!parsed.success) return null;
-  const { acceptance, customerId, deviceId, password } = parsed.data;
+  const parsed = readStoredJson(credentialsSchema, json, "myinvestor credentials");
+  if (parsed === null) return null;
+  const { acceptance, customerId, deviceId, password } = parsed;
   return acceptance && customerId && password
     ? { acceptance, customerId, deviceId, password }
     : { deviceId };
@@ -116,13 +106,10 @@ export function serializeMyInvestorPending(payload: MyInvestorPendingPayload): s
 }
 
 export function readMyInvestorPending(json: string): MyInvestorPendingPayload | null {
-  const parsed = pendingSchema.safeParse(parseJson(json));
-  return parsed.success ? parsed.data : null;
+  return readStoredJson(pendingSchema, json, "myinvestor pending step");
 }
 
-export interface MyInvestorLoginInput {
-  readonly customerId: string;
-  readonly password: string;
+export interface MyInvestorLoginInput extends MyInvestorCredentials {
   readonly save: boolean;
 }
 

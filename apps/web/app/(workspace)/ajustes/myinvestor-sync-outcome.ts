@@ -9,6 +9,7 @@
  */
 import type { DecimalString } from "@worthline/domain";
 import { z } from "zod";
+import { readStoredJson } from "./stored-json";
 
 /** The steps of a pass, in order, as the panel shows them live. */
 export const MYINVESTOR_SYNC_STEPS = [
@@ -79,15 +80,6 @@ const outcomeSchema = z.discriminatedUnion("kind", [
   z.object({ at, kind: z.literal("limit") }),
 ]);
 
-function parseJson(json: string | null): unknown {
-  if (json === null) return null;
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 export function serializeMyInvestorSyncOutcome(outcome: MyInvestorSyncOutcome): string {
   return JSON.stringify(outcome);
 }
@@ -96,8 +88,7 @@ export function serializeMyInvestorSyncOutcome(outcome: MyInvestorSyncOutcome): 
 export function parseMyInvestorSyncOutcome(
   json: string | null,
 ): MyInvestorSyncOutcome | null {
-  const parsed = outcomeSchema.safeParse(parseJson(json));
-  return parsed.success ? parsed.data : null;
+  return readStoredJson(outcomeSchema, json, "myinvestor sync outcome");
 }
 
 /** A linked holding whose units do not square, as the check keeps it (P8). */
@@ -129,6 +120,5 @@ export function serializeMyInvestorUnitsCheck(
 export function parseMyInvestorUnitsCheck(
   json: string | null,
 ): MyInvestorUnitsCheckEntry[] {
-  const parsed = unitsCheckSchema.safeParse(parseJson(json));
-  return parsed.success ? parsed.data : [];
+  return readStoredJson(unitsCheckSchema, json, "myinvestor units check") ?? [];
 }

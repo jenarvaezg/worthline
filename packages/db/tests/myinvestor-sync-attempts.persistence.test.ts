@@ -13,7 +13,7 @@ import { openLibsqlClient } from "@db/index";
 import { migrate } from "@db/migrate";
 import { createStoreFromSqlite } from "@db/testing";
 import type { Client } from "@libsql/client";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 async function openStore(credentials: Record<string, unknown>) {
   const client: Client = openLibsqlClient(":memory:");
@@ -264,6 +264,27 @@ describe("what data health reads of it", () => {
     expect(
       await forgotten.store.agentView.readOwningSourceStanding(forgotten.sourceId),
     ).toEqual({ savedPassword: false, stop: "password_forgotten" });
+  });
+
+  test("a stored outcome that does not parse reads as none, and says so in the log without its content", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { sourceId, store } = await openStore(DEVICE_ONLY);
+      await store.connectedSources.updateSyncState(sourceId, {
+        lastOutcomeJson: '{"kind":"password_rejected","forgotten":tru',
+      });
+
+      expect(await store.agentView.readOwningSourceStanding(sourceId)).toEqual({
+        savedPassword: false,
+        stop: null,
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain("outcome");
+      expect(logged).not.toContain("password_rejected");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test("a mirroring source has no standing of this kind", async () => {

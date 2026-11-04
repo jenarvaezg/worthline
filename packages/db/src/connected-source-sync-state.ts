@@ -429,21 +429,42 @@ export async function readOwningSourceStanding(
   };
 }
 
-function parseObject(json: string | null): Record<string, unknown> | null {
+/**
+ * A blob this store wrote, as an object. Nothing stored is null; a blob that is not
+ * a JSON object is also null, because the standing reads it as absent, but it is
+ * logged, naming the blob and never its content (it may hold the password). The
+ * full shapes are the web's (`myinvestor-credentials.ts`, `myinvestor-sync-outcome.ts`,
+ * with zod); this store guards by hand, as the rest of it does, only the fields it reads.
+ */
+function readStoredObject(
+  json: string | null,
+  what: string,
+): Record<string, unknown> | null {
   if (json === null) return null;
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(json);
-    return parsed !== null && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : null;
+    parsed = JSON.parse(json);
   } catch {
+    // The parser's message quotes the text it choked on: it is not logged.
+    console.warn("[connected-source-sync-state] unreadable blob, treated as absent", {
+      reason: "not_json",
+      what,
+    });
     return null;
   }
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  console.warn("[connected-source-sync-state] unreadable blob, treated as absent", {
+    reason: "not_object",
+    what,
+  });
+  return null;
 }
 
 /** Whether stored credentials remember a password (the opt-in of ADR 0114 decision 1). */
 function carriesPassword(credentialsJson: string): boolean {
-  const parsed = parseObject(credentialsJson);
+  const parsed = readStoredObject(credentialsJson, "myinvestor credentials");
   return typeof parsed?.password === "string" && parsed.password.length > 0;
 }
 
@@ -451,7 +472,7 @@ function carriesPassword(credentialsJson: string): boolean {
 function outcomeHeadOf(
   json: string | null,
 ): { kind: string; forgotten: boolean | null } | null {
-  const parsed = parseObject(json);
+  const parsed = readStoredObject(json, "myinvestor sync outcome");
   if (typeof parsed?.kind !== "string") return null;
   return {
     forgotten: typeof parsed.forgotten === "boolean" ? parsed.forgotten : null,
