@@ -16,6 +16,8 @@ import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intak
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { Suspense } from "react";
+import ConnectPrototype from "./_prototype-1879/connect-prototype";
+import { prototypeVariantFor } from "./_prototype-1879/prototype-model";
 import { CONNECTION_REGISTRY } from "./connection-registry";
 import { loadConnectionRows } from "./connection-rows";
 import ConnectionsTable, { type ConnectionEntry } from "./connections-table";
@@ -140,6 +142,13 @@ export async function ConexionesContent({
         errorFormId={formError?.formId ?? null}
         privacyMode={privacyMode}
       />
+
+      {/* PROTOTIPO #1879 — desechable: solo en desarrollo, solo con `?variante=`. */}
+      {prototypeVariantFor(resolvedSearchParams) ? (
+        <ConnectPrototype
+          initialVariant={prototypeVariantFor(resolvedSearchParams) ?? "A"}
+        />
+      ) : null}
     </section>
   );
 }
