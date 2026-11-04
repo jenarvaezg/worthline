@@ -66,7 +66,7 @@ describe("schema migration v77 (lo que debe una pata de traspaso, #1882)", () =>
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(77);
+    expect(SCHEMA_VERSION).toBe(78);
   });
 
   test("the entries the connector wrote without an origin are marked pending", async () => {

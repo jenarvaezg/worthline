@@ -20,6 +20,7 @@ import type { DecimalString, NormalizedFact } from "@worthline/domain";
 import { addUnits, isPositiveDecimal } from "@worthline/domain";
 import type {
   MyInvestorCashAccount,
+  MyInvestorContribution,
   MyInvestorFact,
   MyInvestorInstrument,
   MyInvestorOperationFact,
@@ -93,6 +94,11 @@ export interface MyInvestorDiscovery {
   readonly products: readonly MyInvestorDiscoveredProduct[];
   /** Every finished operation of every securities and pension account, oldest first. */
   readonly operations: readonly NormalizedFact<MyInvestorOperationFact>[];
+  /**
+   * The scheduled contributions as of the read (#1884, ADR 0114 decision 5). Absent
+   * on a document a first start kept before the periodic sync existed.
+   */
+  readonly contributions?: readonly MyInvestorContribution[];
 }
 
 /** The reads the discovery is made of. */
@@ -108,6 +114,7 @@ export interface MyInvestorDiscoveryReads {
     readonly plans: readonly MyInvestorPensionPlan[];
   }[];
   readonly operations: readonly MyInvestorFact[];
+  readonly contributions?: readonly MyInvestorContribution[];
 }
 
 const PORTFOLIO = "SECURITIES_PORTFOLIO";
@@ -340,6 +347,7 @@ export function buildMyInvestorDiscovery(
 
   return {
     accounts,
+    ...(reads.contributions ? { contributions: reads.contributions } : {}),
     operations,
     products,
     readOn: reads.readOn,
@@ -352,20 +360,33 @@ function unwrap<T>(result: MyInvestorResult<T>): T {
   return result.value;
 }
 
+/** The stretches of a read, as the «Poner al día» panel names them (#1884). */
+export type MyInvestorReadStep = "positions" | "orders" | "plans";
+
+export interface MyInvestorAccountReadOptions {
+  /**
+   * The day of the last good application, or null for the whole history: the
+   * orders are read from 30 days before it (ADR 0114 decision 5, the port's
+   * `overlappingDateWindow`), or from 2000-01-01 (#1872).
+   */
+  readonly cursor: string | null;
+  /** Hears each stretch as it starts, so the panel can show it live. */
+  readonly onStep?: (step: MyInvestorReadStep) => Promise<void> | void;
+}
+
 /**
- * Read the whole account with a session's reader. Throws {@link MyInvestorSyncError}
- * with the client's typed error when a read fails; nothing is kept then.
+ * Read the account with a session's reader: positions and cash, the orders of the
+ * window, and the plans with the scheduled contributions. Throws
+ * {@link MyInvestorSyncError} with the client's typed error when a read fails.
  */
-export async function readMyInvestorDiscovery(
+export async function readMyInvestorAccount(
   reader: MyInvestorReader,
   today: string,
-): Promise<MyInvestorDiscovery> {
-  const adapter = createMyInvestorAdapter({ reader, today });
-  const transactions = await adapter.fetch({
-    capability: "fetch_transactions",
-    cursor: null,
-  });
+  options: MyInvestorAccountReadOptions,
+): Promise<{ reads: MyInvestorDiscoveryReads; cursor: string }> {
+  const step = options.onStep ?? (() => {});
 
+  await step("positions");
   const cashAccounts = unwrap(await reader.cashAccounts());
   const securities = [];
   for (const summary of unwrap(await reader.securitiesAccounts())) {
@@ -374,6 +395,15 @@ export async function readMyInvestorDiscovery(
       summary,
     });
   }
+
+  await step("orders");
+  const adapter = createMyInvestorAdapter({ reader, today });
+  const transactions = await adapter.fetch({
+    capability: "fetch_transactions",
+    cursor: options.cursor,
+  });
+
+  await step("plans");
   const pensions = [];
   for (const account of unwrap(await reader.pensionAccounts())) {
     pensions.push({
@@ -381,14 +411,32 @@ export async function readMyInvestorDiscovery(
       plans: unwrap(await reader.pensionPlans(account.accountId)),
     });
   }
+  const contributions = unwrap(await reader.automaticContributions());
 
-  return buildMyInvestorDiscovery({
-    cashAccounts,
-    operations: transactions.facts,
-    pensions,
-    readOn: today,
-    securities,
-  });
+  return {
+    cursor: transactions.cursor ?? today,
+    reads: {
+      cashAccounts,
+      contributions,
+      operations: transactions.facts,
+      pensions,
+      readOn: today,
+      securities,
+    },
+  };
+}
+
+/**
+ * Read the whole account, its whole history, with a session's reader. Throws
+ * {@link MyInvestorSyncError} with the client's typed error when a read fails;
+ * nothing is kept then.
+ */
+export async function readMyInvestorDiscovery(
+  reader: MyInvestorReader,
+  today: string,
+): Promise<MyInvestorDiscovery> {
+  const { reads } = await readMyInvestorAccount(reader, today, { cursor: null });
+  return buildMyInvestorDiscovery(reads);
 }
 
 export function serializeMyInvestorDiscovery(discovery: MyInvestorDiscovery): string {

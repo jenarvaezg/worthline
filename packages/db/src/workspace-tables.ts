@@ -31,6 +31,8 @@ const WORKSPACE_TABLES = [
   "connected_source_discoveries",
   "connected_source_links",
   "connector_applied_facts",
+  // How its periodic sync stands (#1884): operational, never exported.
+  "connected_source_sync_state",
   "connected_sources",
   "investment_assets",
   "asset_valuations",

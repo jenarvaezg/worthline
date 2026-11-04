@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 77;
+export const SCHEMA_VERSION = 78;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2614,6 +2614,38 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     }
     await writeSchemaVersion(client, 77);
+  }
+
+  if (version < 78) {
+    // #1884 (ADR 0114 decisions 4 and 7): the sync state of a source that owns its
+    // holdings — the lease that keeps one pass per connection, the logins and
+    // password rejections of the day, the pause, the stop of the periodic sync and
+    // what the last pass found. One row per source, beneath it. Additive and
+    // idempotent; a partial historical fixture with no sources table has nothing to
+    // hang it from, as in v75.
+    const hasSources =
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows.length > 0;
+    if (hasSources) {
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS connected_source_sync_state (
+          source_id TEXT PRIMARY KEY NOT NULL,
+          lease_until TEXT,
+          lease_started_at TEXT,
+          lease_trigger TEXT,
+          lease_step TEXT,
+          login_day TEXT,
+          logins_today INTEGER DEFAULT 0 NOT NULL,
+          rejections_today INTEGER DEFAULT 0 NOT NULL,
+          paused_until TEXT,
+          stopped_reason TEXT,
+          last_outcome_json TEXT,
+          units_check_json TEXT,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        )
+      `);
+    }
+    await writeSchemaVersion(client, 78);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -46,7 +46,7 @@ describe("schema migration v76 (the provenance of a link's replaced operations)"
 
     await migrate(client);
 
-    expect(SCHEMA_VERSION).toBe(77);
+    expect(SCHEMA_VERSION).toBe(78);
     expect(await tables(client)).toContain(TABLE);
     // The batch is not a parent: a document restores provenance without batches.
     await client.execute(

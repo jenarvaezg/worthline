@@ -18,7 +18,7 @@ import {
   isMirroredSourceAdapter,
   isRealCalendarDay,
 } from "@worthline/domain";
-import { and, asc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { openSecret, sealSecret } from "./crypto";
 import {
@@ -279,17 +279,45 @@ export async function readSourceLinks(
     .all();
 }
 
-/** The dedup ledger of the source: every fact key it already applied. */
+/** Keys per `IN (…)` read of the ledger: well under SQLite's bound-variable limit. */
+const LEDGER_KEYS_PER_READ = 500;
+
+/**
+ * The dedup ledger of the source: the fact keys it already applied. With `keys`,
+ * only those of them that it applied (#1884): a sync reconciles a 30-day window,
+ * and reading the whole ledger — every order since the account was opened — to
+ * answer for a few dozen would grow with the account forever.
+ */
 export async function readAppliedFactKeys(
   ctx: StoreContext,
   sourceId: string,
+  keys?: readonly string[],
 ): Promise<Set<string>> {
-  const rows = await ctx.db
-    .select({ factKey: connectorAppliedFacts.factKey })
-    .from(connectorAppliedFacts)
-    .where(eq(connectorAppliedFacts.sourceId, sourceId))
-    .all();
-  return new Set(rows.map((row) => row.factKey));
+  const table = connectorAppliedFacts;
+  if (keys === undefined) {
+    const rows = await ctx.db
+      .select({ factKey: table.factKey })
+      .from(table)
+      .where(eq(table.sourceId, sourceId))
+      .all();
+    return new Set(rows.map((row) => row.factKey));
+  }
+  const applied = new Set<string>();
+  const unique = [...new Set(keys)];
+  for (let start = 0; start < unique.length; start += LEDGER_KEYS_PER_READ) {
+    const rows = await ctx.db
+      .select({ factKey: table.factKey })
+      .from(table)
+      .where(
+        and(
+          eq(table.sourceId, sourceId),
+          inArray(table.factKey, unique.slice(start, start + LEDGER_KEYS_PER_READ)),
+        ),
+      )
+      .all();
+    for (const row of rows) applied.add(row.factKey);
+  }
+  return applied;
 }
 
 /** One manual operation a link replaced, with the batch that replaced it (#1881). */

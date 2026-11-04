@@ -606,4 +606,21 @@ CREATE TABLE \`fact_batch_replaced_operations\` (
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX \`fact_batch_replaced_operations_asset_idx\` ON \`fact_batch_replaced_operations\` (\`asset_id\`,\`batch_id\`);`;
+CREATE INDEX \`fact_batch_replaced_operations_asset_idx\` ON \`fact_batch_replaced_operations\` (\`asset_id\`,\`batch_id\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_sync_state\` (
+	\`source_id\` text PRIMARY KEY NOT NULL,
+	\`lease_until\` text,
+	\`lease_started_at\` text,
+	\`lease_trigger\` text,
+	\`lease_step\` text,
+	\`login_day\` text,
+	\`logins_today\` integer DEFAULT 0 NOT NULL,
+	\`rejections_today\` integer DEFAULT 0 NOT NULL,
+	\`paused_until\` text,
+	\`stopped_reason\` text,
+	\`last_outcome_json\` text,
+	\`units_check_json\` text,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+`;

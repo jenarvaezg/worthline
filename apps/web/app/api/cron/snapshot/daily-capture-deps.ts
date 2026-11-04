@@ -1,6 +1,8 @@
 import { buildMissedCaptureAlerts } from "@web/admin/missed-capture-alert";
 import { buildSourceSyncAlerts } from "@web/admin/source-sync-alert";
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
+import { myInvestorClientFactory } from "@web/ajustes/myinvestor-relay";
+import { runMyInvestorRefresh } from "@web/ajustes/myinvestor-sync";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import { withControlPlaneStore } from "@web/control-plane-store";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
@@ -165,12 +167,17 @@ export function buildDailyCaptureDeps(
     // to run, now on the cron. Each isolates per source and degrades to
     // last-known (never 0) on a Binance/Numista outage — the errors are
     // collected for observability, never thrown.
+    //
+    // MyInvestor (#1884, ADR 0114 decision 4) joins them: one pass per connection
+    // with a saved password, never an SMS. Its client goes through the relay, so
+    // with the relay unconfigured there is no client and the phase does nothing.
     syncConnectedSources: async (store, now) => {
-      const [binance, numista] = await Promise.all([
+      const [binance, numista, myInvestor] = await Promise.all([
         runBinanceRefresh(store, now),
         runNumistaCoinRefresh(store, now),
+        runMyInvestorRefresh(store, now, { clientFor: myInvestorClientFactory(env) }),
       ]);
-      return { errors: [...binance.errors, ...numista.errors] };
+      return { errors: [...binance.errors, ...numista.errors, ...myInvestor.errors] };
     },
     fetchPrices: async (pairs, now): Promise<DailyCaptureFetchedPrice[]> => {
       if (pairs.length === 0) return [];

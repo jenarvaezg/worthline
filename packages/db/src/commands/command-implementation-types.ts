@@ -46,6 +46,8 @@ import type {
 import type {
   IncludeConnectedHoldingsCommand,
   IncludeConnectedHoldingsResult,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
 } from "./connected-inclusion";
 import type {
   ResolveInheritedCostCommand,
@@ -324,6 +326,14 @@ export interface DatedFactCommandImplementations {
   resolveInheritedCostAndRipple: (
     command: ResolveInheritedCostCommand,
   ) => Promise<ResolveInheritedCostResult>;
+  /**
+   * A periodic sync of an owning source (#1884, ADR 0114 decision 5): the new
+   * operations of its linked holdings and the balances of its linked cash accounts,
+   * through the ingestion port — ONE fact_batch, ONE transaction, ONE ripple.
+   */
+  syncConnectedHoldingsAndRipple: (
+    command: SyncConnectedHoldingsCommand,
+  ) => Promise<SyncConnectedHoldingsResult>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts: { today: string },

@@ -14,6 +14,8 @@ export type {
   ConnectedHoldingLink,
   IncludeConnectedHoldingsCommand,
   IncludeConnectedHoldingsResult,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
 } from "./connected-inclusion";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";

@@ -261,3 +261,100 @@ describe("including connected holdings", () => {
     ).rejects.toThrow(/calendar day/);
   });
 });
+
+/** A cash account linked to the source, as the first start creates it (#1869 P4). */
+function cashHolding(productKey: string, id: string, currentValueMinor: number) {
+  return {
+    holding: {
+      asset: {
+        currency: "EUR",
+        currentValueMinor,
+        id,
+        instrument: "current_account" as const,
+        liquidityTier: "cash" as const,
+        name: id,
+        ownership: OWNER,
+        type: "cash" as const,
+      },
+      kind: "cash" as const,
+    },
+    productKey,
+  };
+}
+
+describe("a periodic sync of the linked holdings (#1884)", () => {
+  test("the new operations and the cash balances land in ONE sync batch", async () => {
+    await store.command.includeConnectedHoldings({
+      facts: facts([buy("o1", "f1", "2025-01-10")], "2026-10-01"),
+      holdings: [fundHolding("p1", "f1"), cashHolding("c1", "cash1", 10_001)],
+      sourceId,
+      today: TODAY,
+    });
+    ripples.calls = 0;
+
+    const result = await store.command.syncConnectedHoldings({
+      cashBalances: [{ assetId: "cash1", valueMinor: 23_457 }],
+      // The window overlaps the last good sync: o1 comes again and is not applied twice.
+      facts: facts([buy("o1", "f1", "2025-01-10"), buy("o2", "f1", "2026-10-20")]),
+      sourceId,
+      today: TODAY,
+    });
+
+    expect(result).toEqual({ applied: 1 });
+    expect(ripples.calls).toBe(1);
+    expect((await store.operations.readOperations("f1")).map((row) => row.id)).toEqual([
+      "o1",
+      "o2",
+    ]);
+    const batches = await client.execute("SELECT trigger FROM fact_batch ORDER BY rowid");
+    expect(batches.rows.map((row) => row.trigger)).toEqual(["connect", "sync"]);
+    const cash = await client.execute(
+      "SELECT current_value_minor FROM assets WHERE id = 'cash1'",
+    );
+    expect(cash.rows[0]!.current_value_minor).toBe(23_457);
+    const source = await client.execute(
+      "SELECT ingest_cursor FROM connected_sources WHERE id = ?",
+      [sourceId],
+    );
+    expect(source.rows[0]!.ingest_cursor).toBe(TODAY);
+  });
+
+  test("a sync never writes a balance into a holding it does not own", async () => {
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 5_003,
+      id: "own-cash",
+      instrument: "current_account",
+      liquidityTier: "cash",
+      name: "A mano",
+      ownership: OWNER,
+      type: "cash",
+    });
+
+    await expect(
+      store.command.syncConnectedHoldings({
+        cashBalances: [{ assetId: "own-cash", valueMinor: 1 }],
+        facts: facts([]),
+        sourceId,
+        today: TODAY,
+      }),
+    ).rejects.toThrow(/not linked/);
+    const cash = await client.execute(
+      "SELECT current_value_minor FROM assets WHERE id = 'own-cash'",
+    );
+    expect(cash.rows[0]!.current_value_minor).toBe(5_003);
+  });
+
+  test("the dedup ledger is read only for the keys of the batch", async () => {
+    await store.command.includeConnectedHoldings({
+      facts: facts([buy("o1", "f1", "2025-01-10"), buy("o2", "f1", "2025-02-10")]),
+      holdings: [fundHolding("p1", "f1")],
+      sourceId,
+      today: TODAY,
+    });
+
+    expect(
+      await store.connectedSources.readAppliedFactKeys(sourceId, ["fact:o2", "fact:o7"]),
+    ).toEqual(new Set(["fact:o2"]));
+  });
+});

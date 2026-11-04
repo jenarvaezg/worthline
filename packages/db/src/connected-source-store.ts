@@ -41,6 +41,19 @@ import {
   saveSourceDiscovery,
   startPendingLogin,
 } from "./connected-source-owning-store";
+import {
+  type ClaimSyncLeaseResult,
+  claimSyncLease,
+  readSyncState,
+  recordSyncRejection,
+  releaseSyncLease,
+  reserveSyncLogin,
+  type SourceSyncState,
+  type SourceSyncStatePatch,
+  type SyncLeaseTrigger,
+  setSyncStep,
+  updateSyncState,
+} from "./connected-source-sync-state";
 import { openSecret, sealSecret } from "./crypto";
 import { readAssetOwnerships } from "./ownership-reads";
 import {
@@ -212,10 +225,33 @@ export interface ConnectedSourceStore {
   readDiscovery(sourceId: string): Promise<SourceDiscoveryRow | null>;
   /** Which product each linked holding of an owning source is (#1880). */
   readLinks(sourceId: string): Promise<SourceLinkRow[]>;
-  /** The ingestion port's dedup ledger of a source (ADR 0066). */
-  readAppliedFactKeys(sourceId: string): Promise<Set<string>>;
   /** The manual operations a link to an owning source replaced (#1881). */
   readReplacedOperations(assetId: string): Promise<ReplacedOperationRow[]>;
+  /** The ingestion port's dedup ledger of a source (ADR 0066), or only `keys` of it. */
+  readAppliedFactKeys(sourceId: string, keys?: readonly string[]): Promise<Set<string>>;
+  /**
+   * Take the connection for one sync pass (#1884, ADR 0114 decision 4), or say which
+   * pass holds it. One statement: two passes started at once never both get it.
+   */
+  claimSyncLease(input: {
+    sourceId: string;
+    now: string;
+    until: string;
+    trigger: SyncLeaseTrigger;
+  }): Promise<ClaimSyncLeaseResult>;
+  /** The step the pass holding the lease is on, for the panel's live steps. */
+  setSyncStep(sourceId: string, step: string): Promise<void>;
+  releaseSyncLease(sourceId: string): Promise<void>;
+  /** Reserve one login of the day (decision 7): its number, or null past `cap`. */
+  reserveSyncLogin(input: {
+    sourceId: string;
+    day: string;
+    cap: number;
+  }): Promise<number | null>;
+  /** Count one password rejection of the day; returns the day's count. */
+  recordSyncRejection(input: { sourceId: string; day: string }): Promise<number>;
+  updateSyncState(sourceId: string, patch: SourceSyncStatePatch): Promise<void>;
+  readSyncState(sourceId: string): Promise<SourceSyncState | null>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -993,7 +1029,14 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     saveDiscovery: (input) => saveSourceDiscovery(ctx, input),
     readDiscovery: (sourceId) => readSourceDiscovery(ctx, sourceId),
     readLinks: (sourceId) => readSourceLinks(ctx, sourceId),
-    readAppliedFactKeys: (sourceId) => readAppliedFactKeys(ctx, sourceId),
     readReplacedOperations: (assetId) => readReplacedOperations(ctx, assetId),
+    readAppliedFactKeys: (sourceId, keys) => readAppliedFactKeys(ctx, sourceId, keys),
+    claimSyncLease: (input) => claimSyncLease(ctx, input),
+    setSyncStep: (sourceId, step) => setSyncStep(ctx, sourceId, step),
+    releaseSyncLease: (sourceId) => releaseSyncLease(ctx, sourceId),
+    reserveSyncLogin: (input) => reserveSyncLogin(ctx, input),
+    recordSyncRejection: (input) => recordSyncRejection(ctx, input),
+    updateSyncState: (sourceId, patch) => updateSyncState(ctx, sourceId, patch),
+    readSyncState: (sourceId) => readSyncState(ctx, sourceId),
   };
 }

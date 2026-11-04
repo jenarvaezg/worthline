@@ -700,8 +700,11 @@ export function planMyInvestorInclusion(
   };
 }
 
-/** A folded row back as the input that writes it, into the holding it belongs to. */
-function operationInput(
+/**
+ * A folded row back as the input that writes it, into the holding it belongs to.
+ * The periodic sync (#1884) writes through the same mapping.
+ */
+export function operationInput(
   row: InvestmentOperation,
   assetId: string,
 ): CreateInvestmentOperationInput {

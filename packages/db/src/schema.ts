@@ -930,6 +930,52 @@ export const factBatchReplacedOperations = sqliteTable(
   ],
 );
 
+/**
+ * How the periodic sync of an owning source stands (#1884, ADR 0114 decisions 4
+ * and 7, schema v78): one row per connection, written by the passes and read by
+ * the button, the cron and the ficha's band. Operational state, not a fact: it is
+ * not exported, and a full replace wipes it.
+ *
+ * - The lease (`lease_*`): one pass per connection at a time. It is claimed in ONE
+ *   update and expires, so a pass killed halfway (a serverless timeout) cannot hold
+ *   it forever. `lease_step` is the step the pass is on,
+for the panel's live steps.
+ * - The logins
+of;
+the;
+day(`login_day`, `logins_today`, `rejections_today`);
+: at most
+ *   10 logins a day, and three password rejections lock the connection until the
+ *   next day. The day is the app's calendar day (UTC), the one `today` is.
+ * - `paused_until`: no login before this instant (a rejection
+with no reason, the
+ *   lock
+of;
+three;
+rejections;
+). `stopped_reason`: why the cron does not sync
+ *   (`sms_required`) until a pass works again.
+ * - `last_outcome_json` / `units_check_json`: what the last pass ended in, and the
+ *   last units check (P8) — the mismatches stay until a pass finds them squared.
+ */
+export const connectedSourceSyncState = sqliteTable("connected_source_sync_state", {
+  sourceId: text("source_id")
+    .primaryKey()
+    .references(() => connectedSources.id, { onDelete: "cascade" }),
+  leaseUntil: text("lease_until"),
+  leaseStartedAt: text("lease_started_at"),
+  leaseTrigger: text("lease_trigger").$type<"manual" | "cron">(),
+  leaseStep: text("lease_step"),
+  loginDay: text("login_day"),
+  loginsToday: integer("logins_today").notNull().default(0),
+  rejectionsToday: integer("rejections_today").notNull().default(0),
+  pausedUntil: text("paused_until"),
+  stoppedReason: text("stopped_reason"),
+  lastOutcomeJson: text("last_outcome_json"),
+  unitsCheckJson: text("units_check_json"),
+  updatedAt: timestamp("updated_at"),
+});
+
 export const auditLog = sqliteTable(
   "audit_log",
   {

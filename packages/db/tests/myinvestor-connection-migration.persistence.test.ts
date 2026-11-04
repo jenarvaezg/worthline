@@ -105,7 +105,7 @@ describe("schema migration v74 (the MyInvestor connection)", () => {
         .rows[0]!.asset_id,
     ).toBeNull();
     expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(77);
+    expect(SCHEMA_VERSION).toBe(78);
   });
 
   test("the tables that point at a source still resolve to it after the rebuild", async () => {

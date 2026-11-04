@@ -81,6 +81,8 @@ export type {
   SetHousingAcquisitionCostCommand,
   SetHousingValuationCadenceCommand,
   StatementImportCommand,
+  SyncConnectedHoldingsCommand,
+  SyncConnectedHoldingsResult,
   UpdateAssetOwnershipSplitCommand,
   UpdateLiabilityOwnershipSplitCommand,
   UpdateValuationAnchorCommand,
@@ -108,6 +110,13 @@ export type {
   SourcePositionInput,
   ValuationFreshness,
 } from "./connected-source-store";
+export type {
+  ClaimSyncLeaseResult,
+  SourceSyncState,
+  SourceSyncStatePatch,
+  SyncLease,
+  SyncLeaseTrigger,
+} from "./connected-source-sync-state";
 export type { HoldingContributionPlan } from "./contribution-plan-store";
 export {
   type AdminControlPlaneStore,

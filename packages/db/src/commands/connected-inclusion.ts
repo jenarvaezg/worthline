@@ -81,6 +81,23 @@ export interface IncludeConnectedHoldingsResult {
   applied: number;
 }
 
+/**
+ * A periodic sync of a source that owns its holdings (#1884, ADR 0114 decision 5):
+ * the operations of the window the port read — the ledger drops the ones already
+ * applied — and today's balance of each linked cash account.
+ */
+export interface SyncConnectedHoldingsCommand {
+  sourceId: string;
+  today: string;
+  facts: NormalizedBatch<CreateInvestmentOperationInput>;
+  /** A linked cash account's balance today (#1869 P4): stored, with no movements. */
+  cashBalances: readonly { assetId: string; valueMinor: number }[];
+}
+
+export interface SyncConnectedHoldingsResult {
+  applied: number;
+}
+
 const LEDGER_ROWS_PER_INSERT = 100;
 
 /**
@@ -96,124 +113,221 @@ const LEDGER_ROWS_PER_INSERT = 100;
  * 5), and the ripple's floor reaches the earliest of the replaced and the incoming
  * dates, so every snapshot either side touched is re-derived once.
  *
+ * The periodic sync (#1884) is the same commit with nothing to create or link: the
+ * new operations of the linked holdings and the balances of the linked cash
+ * accounts, under the `sync` trigger.
+ *
  * What it refuses, by throwing inside the transaction so nothing lands:
  * - a source that does not exist or mirrors instead of owning;
  * - a product that is already linked, or named twice (a second include of the same
  *   product would create its twin);
  * - a holding to link that is not a live manual investment, or named twice;
  * - a holding with half a traspaso whose other half is not replaced with it;
- * - an operation for a holding this source does not own (the store's source writer).
+ * - an operation or a balance for a holding this source does not own.
  */
 export function createConnectedInclusionCommands(
   ctx: StoreContext,
   stores: DatedFactStores,
   uow: UnitOfWork,
-): Pick<DatedFactCommandImplementations, "includeConnectedHoldingsAndRipple"> {
+): Pick<
+  DatedFactCommandImplementations,
+  "includeConnectedHoldingsAndRipple" | "syncConnectedHoldingsAndRipple"
+> {
   return {
     includeConnectedHoldingsAndRipple: async (command) => {
-      const { sourceId, today } = command;
-      const workspace = await ctx.getWorkspace();
-      if (!workspace) throw new Error("Workspace must be initialized before including.");
-
-      const source = await ctx.db
-        .select({ adapter: connectedSources.adapter })
-        .from(connectedSources)
-        .where(eq(connectedSources.id, sourceId))
-        .get();
-      if (!source || isMirroredSourceAdapter(source.adapter)) {
-        throw new Error(`Connected source "${sourceId}" does not own holdings.`);
-      }
-
-      const plan = reconcileFacts(
-        command.facts,
-        await readAppliedFactKeys(ctx, sourceId),
-      );
-      const dateKeysByAsset = new Map<string, string[]>();
-
-      const result = await commitReconciled<CreateInvestmentOperationInput>({
-        connectedSourceId: sourceId,
-        plan,
-        today,
-        trigger: "connect",
-        uow,
-        persistFacts: async (facts, batchId) => {
-          const links = command.links ?? [];
-          await assertProductsUnlinked(ctx, sourceId, [
+      const links = command.links ?? [];
+      const applied = await commitOwnedFacts(ctx, stores, uow, {
+        beforeFacts: async (batchId) => {
+          await assertProductsUnlinked(ctx, command.sourceId, [
             ...command.holdings.map((entry) => entry.productKey),
             ...links.map((link) => link.productKey),
           ]);
-          await createLinkedHoldings(ctx, stores, sourceId, command.holdings);
-          const replaced = await linkManualHoldings(ctx, {
+          await createLinkedHoldings(ctx, stores, command.sourceId, command.holdings);
+          return linkManualHoldings(ctx, {
             batchId,
             links,
-            sourceId,
-            today,
+            sourceId: command.sourceId,
+            today: command.today,
           });
-          for (const [assetId, keys] of replaced) dateKeysByAsset.set(assetId, keys);
-          const operations = facts.map((fact) => fact.payload);
-          await stores.operations.recordSourceOperations(sourceId, operations, {
-            batchId,
-          });
-          for (const fact of facts) {
-            const keys = dateKeysByAsset.get(fact.payload.assetId) ?? [];
-            keys.push(fact.dateKey);
-            dateKeysByAsset.set(fact.payload.assetId, keys);
-          }
-          return [...facts.map((fact) => fact.dateKey), ...[...replaced.values()].flat()];
         },
-        recordCommit: async ({ appliedKeys, batchId, cursor }) => {
-          for (const keys of chunk(appliedKeys, LEDGER_ROWS_PER_INSERT)) {
-            await ctx.db
-              .insert(connectorAppliedFacts)
-              .values(keys.map((factKey) => ({ batchId, factKey, sourceId })))
-              .run();
-          }
-          // The cursor only moves forward: including a product later, from an older
-          // read, must not send the next sync back over days it already covered.
-          // The comparison is the UPDATE's own condition, inside the transaction:
-          // a cursor read before it opened could be overtaken by another include.
-          if (cursor !== null) {
-            await ctx.db
-              .update(connectedSources)
-              .set({ ingestCursor: cursor, updatedAt: sql`CURRENT_TIMESTAMP` })
-              .where(
-                and(
-                  eq(connectedSources.id, sourceId),
-                  or(
-                    isNull(connectedSources.ingestCursor),
-                    lt(connectedSources.ingestCursor, cursor),
-                  ),
-                ),
-              )
-              .run();
-          }
-        },
-        // ONE ripple over every holding the batch touched (#1435): the floor the
-        // batch computed is the earliest of these dates.
-        ripple: async () => {
-          await rippleHistoricalSnapshotsForOperations(
-            ctx,
-            workspace,
-            stores.snapshots.saveSnapshot,
-            {
-              assets: [...dateKeysByAsset].map(([assetId, operationDateKeys]) => ({
-                assetId,
-                operationDateKeys,
-              })),
-              today,
-            },
-          );
-        },
+        facts: command.facts,
+        sourceId: command.sourceId,
+        today: command.today,
+        trigger: "connect",
       });
-
-      if (!result.ok) throwCommandResultError(result);
-      return {
-        applied: result.value.applied,
-        created: command.holdings.length,
-        linked: command.links?.length ?? 0,
-      };
+      return { applied, created: command.holdings.length, linked: links.length };
+    },
+    syncConnectedHoldingsAndRipple: async (command) => {
+      const applied = await commitOwnedFacts(ctx, stores, uow, {
+        beforeFacts: async () => {
+          await writeLinkedCashBalances(ctx, command.sourceId, command.cashBalances);
+          return new Map();
+        },
+        facts: command.facts,
+        sourceId: command.sourceId,
+        today: command.today,
+        trigger: "sync",
+      });
+      return { applied };
     },
   };
+}
+
+/**
+ * The commit the include and the sync share: reconcile against the ledger — read
+ * only for the keys of the batch (#1884), never the whole history of the account —
+ * run `beforeFacts` and write the facts inside the batch's ONE transaction, advance
+ * the ledger and the cursor with them, and ripple once. `beforeFacts` returns, per
+ * holding, the days of the operations it removed (a link's replaced rows): they
+ * belong in the ripple's floor as much as the new ones.
+ */
+async function commitOwnedFacts(
+  ctx: StoreContext,
+  stores: DatedFactStores,
+  uow: UnitOfWork,
+  input: {
+    sourceId: string;
+    today: string;
+    trigger: "connect" | "sync";
+    facts: NormalizedBatch<CreateInvestmentOperationInput>;
+    beforeFacts: (batchId: string) => Promise<Map<string, string[]>>;
+  },
+): Promise<number> {
+  const { sourceId, today } = input;
+  const workspace = await ctx.getWorkspace();
+  if (!workspace) throw new Error("Workspace must be initialized before including.");
+
+  const source = await ctx.db
+    .select({ adapter: connectedSources.adapter })
+    .from(connectedSources)
+    .where(eq(connectedSources.id, sourceId))
+    .get();
+  if (!source || isMirroredSourceAdapter(source.adapter)) {
+    throw new Error(`Connected source "${sourceId}" does not own holdings.`);
+  }
+
+  const plan = reconcileFacts(
+    input.facts,
+    await readAppliedFactKeys(
+      ctx,
+      sourceId,
+      input.facts.facts.map((fact) => fact.key),
+    ),
+  );
+  const dateKeysByAsset = new Map<string, string[]>();
+
+  const result = await commitReconciled<CreateInvestmentOperationInput>({
+    connectedSourceId: sourceId,
+    plan,
+    today,
+    trigger: input.trigger,
+    uow,
+    persistFacts: async (facts, batchId) => {
+      const replaced = await input.beforeFacts(batchId);
+      for (const [assetId, keys] of replaced) dateKeysByAsset.set(assetId, keys);
+      const operations = facts.map((fact) => fact.payload);
+      await stores.operations.recordSourceOperations(sourceId, operations, {
+        batchId,
+      });
+      for (const fact of facts) {
+        const keys = dateKeysByAsset.get(fact.payload.assetId) ?? [];
+        keys.push(fact.dateKey);
+        dateKeysByAsset.set(fact.payload.assetId, keys);
+      }
+      return [...facts.map((fact) => fact.dateKey), ...[...replaced.values()].flat()];
+    },
+    recordCommit: async ({ appliedKeys, batchId, cursor }) => {
+      for (const keys of chunk(appliedKeys, LEDGER_ROWS_PER_INSERT)) {
+        await ctx.db
+          .insert(connectorAppliedFacts)
+          .values(keys.map((factKey) => ({ batchId, factKey, sourceId })))
+          .run();
+      }
+      // The cursor only moves forward: including a product later, from an older
+      // read, must not send the next sync back over days it already covered.
+      // The comparison is the UPDATE's own condition, inside the transaction:
+      // a cursor read before it opened could be overtaken by another include.
+      if (cursor !== null) {
+        await ctx.db
+          .update(connectedSources)
+          .set({ ingestCursor: cursor, updatedAt: sql`CURRENT_TIMESTAMP` })
+          .where(
+            and(
+              eq(connectedSources.id, sourceId),
+              or(
+                isNull(connectedSources.ingestCursor),
+                lt(connectedSources.ingestCursor, cursor),
+              ),
+            ),
+          )
+          .run();
+      }
+    },
+    // ONE ripple over every holding the batch touched (#1435): the floor the
+    // batch computed is the earliest of these dates.
+    ripple: async () => {
+      await rippleHistoricalSnapshotsForOperations(
+        ctx,
+        workspace,
+        stores.snapshots.saveSnapshot,
+        {
+          assets: [...dateKeysByAsset].map(([assetId, operationDateKeys]) => ({
+            assetId,
+            operationDateKeys,
+          })),
+          today,
+        },
+      );
+    },
+  });
+
+  if (!result.ok) throwCommandResultError(result);
+  return result.value.applied;
+}
+
+/**
+ * Today's balance of each linked cash account (#1884, #1869 P4). Only into a
+ * holding linked to THIS source: the store refuses a hand-set value on a linked
+ * holding, and the source must not reach one it does not own either.
+ */
+async function writeLinkedCashBalances(
+  ctx: StoreContext,
+  sourceId: string,
+  balances: readonly { assetId: string; valueMinor: number }[],
+): Promise<void> {
+  if (balances.length === 0) return;
+  for (const { valueMinor } of balances) {
+    if (!Number.isInteger(valueMinor)) {
+      throw new Error("Money must be stored as integer minor units.");
+    }
+  }
+  const assetIds = [...new Set(balances.map((balance) => balance.assetId))];
+  const linked = new Set(
+    (
+      await ctx.db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(and(inArray(assets.id, assetIds), eq(assets.connectedSourceId, sourceId)))
+        .all()
+    ).map((row) => row.id),
+  );
+  const stranger = assetIds.find((assetId) => !linked.has(assetId));
+  if (stranger !== undefined) {
+    throw new Error(
+      `Connected source "${sourceId}" cannot write the balance of holding "${stranger}": ` +
+        "it is not linked to that source.",
+    );
+  }
+  for (const { assetId, valueMinor } of balances) {
+    await ctx.db
+      .update(assets)
+      .set({ currentValueMinor: valueMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(assets.id, assetId))
+      .run();
+    await ctx.writeAuditEntry("update_valuation", "asset", assetId, {
+      currentValueMinor: valueMinor,
+    });
+  }
 }
 
 /**
