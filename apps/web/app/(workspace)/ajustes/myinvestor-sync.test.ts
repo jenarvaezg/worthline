@@ -473,6 +473,132 @@ describe("each error and its action (ADR 0114, decision 7)", () => {
   });
 });
 
+describe("the attempt log (#1885)", () => {
+  test("a failed attempt leaves one row: kind, step, HTTP status and duration, no personal data", async () => {
+    const sourceId = await connectIncludeAll(true);
+    const fake = fakeClient();
+    const run = deps(fake);
+    fake.bend = (reader) => ({
+      ...reader,
+      securitiesOrders: async () => {
+        // The orders take 37 s to fail, so the row's two instants say how long.
+        run.clock.advanceHours(37 / 3600);
+        return {
+          error: {
+            attempts: 3,
+            code: null,
+            httpStatus: 503,
+            kind: "network_or_waf",
+            step: "orders",
+          },
+          ok: false,
+        };
+      },
+    });
+
+    const outcome = outcomeOf(
+      await runMyInvestorSync(run, { sourceId, trigger: "cron", typed: null }),
+    );
+    expect(outcome.kind).toBe("network");
+
+    const runs = await store.syncRuns.readRuns(sourceId);
+    expect(runs).toEqual([
+      {
+        createdAt: NOW,
+        error: {
+          code: "network_or_waf",
+          httpStatus: 503,
+          message: "network",
+          retriable: true,
+          step: "orders",
+        },
+        finishedAt: "2026-11-04T09:00:37.000Z",
+        id: expect.any(String),
+        sourceId,
+        startedAt: NOW,
+        status: "error",
+        trigger: "cron",
+      },
+    ]);
+    // Nothing of the user's crosses into the row: no username, password, device,
+    // ISIN nor amount of what the connection holds.
+    const isins = (await loadMyInvestorFirstStart(
+      store,
+      sourceId,
+      TODAY,
+    ))!.discovery.products
+      .map((product) => product.instrument?.code)
+      .filter((code): code is string => Boolean(code));
+    const raw = JSON.stringify(runs);
+    for (const secret of [
+      TYPED.customerId,
+      TYPED.password,
+      "device-sintetico",
+      ...isins,
+    ]) {
+      expect(raw).not.toContain(secret);
+    }
+  });
+
+  test("a good pass is an `ok` row of the button; a login refused is a row of its step", async () => {
+    const sourceId = await connectIncludeAll(true);
+    const fake = fakeClient();
+
+    const run = deps(fake);
+    await runMyInvestorSync(run, { sourceId, trigger: "manual", typed: null });
+    run.clock.advanceHours(1);
+    fake.refuse = "rejected_no_reason";
+    await runMyInvestorSync(run, { sourceId, trigger: "cron", typed: null });
+
+    const runs = await store.syncRuns.readRuns(sourceId);
+    expect(runs.map((row) => [row.trigger, row.status, row.error])).toEqual([
+      [
+        "cron",
+        "error",
+        {
+          code: "rejected_no_reason",
+          httpStatus: 403,
+          message: "rejected_no_reason",
+          retriable: false,
+          step: "login",
+        },
+      ],
+      ["manual", "ok", null],
+    ]);
+  });
+
+  test("a press refused before MyInvestor is asked (the day's limit, a pause) is no attempt", async () => {
+    const sourceId = await connectIncludeAll(true);
+    const fake = fakeClient();
+    fake.refuse = "rejected_no_reason";
+    const run = deps(fake);
+
+    await runMyInvestorSync(run, { sourceId, trigger: "cron", typed: null });
+    await runMyInvestorSync(run, { sourceId, trigger: "manual", typed: null });
+
+    expect(await store.syncRuns.readRuns(sourceId)).toHaveLength(1);
+  });
+
+  test("the cron purges the attempts older than 90 days of a connection it skips", async () => {
+    const sourceId = await connectIncludeAll(false);
+    await store.connectedSources.recordSyncAttempt({
+      error: null,
+      finishedAt: "2026-07-30T09:00:00.000Z",
+      sourceId,
+      startedAt: "2026-07-30T09:00:00.000Z",
+      trigger: "manual",
+    });
+
+    await runMyInvestorRefresh(store, NOW, {
+      clientFor: fakeClient().clientFor,
+      now: () => NOW,
+      sleep: async () => {},
+    });
+
+    expect(await store.syncRuns.readRuns(sourceId)).toEqual([]);
+  });
+});
+
 describe("one pass per connection", () => {
   test("two triggers at once make ONE pass; the second waits and shares its result", async () => {
     const sourceId = await connectIncludeAll(true);
@@ -563,6 +689,7 @@ describe("the cron (the daily capture's source-sync phase)", () => {
       sleep: async () => {},
     });
 
-    expect(result).toEqual({ errors: ["MyInvestor: network"] });
+    // The kind, the step and the HTTP status: what the maintainer alert needs, no data.
+    expect(result).toEqual({ errors: ["MyInvestor: network (login, HTTP 403)"] });
   });
 });

@@ -27,12 +27,20 @@
  * (`SECURITY_001`) pauses 24 h and keeps the password; the network or the WAF only
  * fail the pass (the client already retried); an SMS stops the cron, which never
  * sends one (invariant 7).
+ *
+ * Every pass that asked MyInvestor leaves ONE row in the attempt log (#1885,
+ * decision 8): when, button or cron, how it ended, the error's kind, the step that
+ * failed, the HTTP status and, from its two instants, how long it took. Never an
+ * amount, an ISIN nor an identifier. A press refused before MyInvestor is asked (a
+ * pause, the day's limit) is no attempt and leaves none.
  */
 import type { WorthlineStore } from "@web/store";
+import type { SyncRunError } from "@worthline/db";
 import type { DateKey, DecimalString } from "@worthline/domain";
 import { asDateKey, netUnitsFromOperations } from "@worthline/domain";
 import type {
   MyInvestorClient,
+  MyInvestorError,
   MyInvestorErrorKind,
   MyInvestorReader,
 } from "@worthline/pricing";
@@ -103,6 +111,8 @@ export type MyInvestorSyncStore = {
     | "recordPasswordRejection"
     | "updateSyncState"
     | "readSyncState"
+    | "recordSyncAttempt"
+    | "purgeSyncAttempts"
   >;
   command: Pick<WorthlineStore["command"], "syncConnectedHoldings">;
   operations: Pick<WorthlineStore["operations"], "readHoldingLedgers">;
@@ -127,9 +137,18 @@ export interface MyInvestorSyncInput {
   fullHistory?: boolean;
 }
 
+/** What a failed attempt names of its failure, for the log and the maintainer alert. */
+export type MyInvestorSyncFailure = Pick<MyInvestorError, "kind" | "step" | "httpStatus">;
+
 export type MyInvestorSyncResult =
   /** A pass ran — this one, or the one the button waited for. */
-  | { status: "done"; outcome: MyInvestorSyncOutcome; waited: boolean }
+  | {
+      status: "done";
+      outcome: MyInvestorSyncOutcome;
+      waited: boolean;
+      /** The failure MyInvestor answered, when this pass met one. Words, never data. */
+      failure?: MyInvestorSyncFailure | null;
+    }
   /** The button, while the connection is paused or locked. */
   | { status: "blocked"; reason: "rejected_no_reason" | "locked"; until: string }
   /** The button with no saved password and none typed. */
@@ -204,12 +223,13 @@ export async function runMyInvestorSync(
   }
 
   try {
-    const outcome = await pass(deps, input, {
+    const { outcome, failure } = await pass(deps, input, {
       deviceId: credentials.deviceId,
       login,
       savedPassword: saved,
+      startedAt,
     });
-    return { outcome, status: "done", waited: false };
+    return { failure, outcome, status: "done", waited: false };
   } finally {
     await sources.releaseSyncLease(input.sourceId);
   }
@@ -239,7 +259,26 @@ async function waitForPass(
   return { outcome: { at: deps.now(), kind: "failed" }, status: "done", waited: true };
 }
 
-/** The pass itself, with the lease held. Records its outcome before it returns. */
+/**
+ * The row of the attempt log for a pass that ended in `outcome`: null error for a
+ * good one; for a failed one, the error's kind (or `internal`, when it was not
+ * MyInvestor's), the outcome, the step and the HTTP status.
+ */
+function attemptError(
+  outcome: MyInvestorSyncOutcome,
+  failure: MyInvestorSyncFailure | null,
+): SyncRunError | null {
+  if (outcome.kind === "ok") return null;
+  return {
+    code: failure?.kind ?? "internal",
+    httpStatus: failure?.httpStatus ?? null,
+    message: outcome.kind,
+    retriable: failure?.kind === "network_or_waf",
+    step: failure?.step ?? null,
+  };
+}
+
+/** The pass itself, with the lease held. Records its outcome and its attempt before it returns. */
 async function pass(
   deps: MyInvestorSyncDeps,
   input: MyInvestorSyncInput,
@@ -247,8 +286,9 @@ async function pass(
     deviceId: string;
     login: { customerId: string; password: string };
     savedPassword: boolean;
+    startedAt: string;
   },
-): Promise<MyInvestorSyncOutcome> {
+): Promise<{ outcome: MyInvestorSyncOutcome; failure: MyInvestorSyncFailure | null }> {
   const sources = deps.store.connectedSources;
   const { sourceId } = input;
   const day = asDateKey(deps.today());
@@ -269,26 +309,60 @@ async function pass(
     day,
     sourceId,
   });
-  if (reserved === null) return finish({ at: deps.now(), kind: "limit" });
+  // The day's limit: MyInvestor is not asked, so it is no attempt.
+  if (reserved === null) {
+    return { failure: null, outcome: await finish({ at: deps.now(), kind: "limit" }) };
+  }
+
+  const attempt = async (
+    outcome: MyInvestorSyncOutcome,
+    failure: MyInvestorSyncFailure | null,
+  ) => {
+    await sources.recordSyncAttempt({
+      error: attemptError(outcome, failure),
+      finishedAt: deps.now(),
+      sourceId,
+      startedAt: connection.startedAt,
+      trigger: input.trigger,
+    });
+    return { failure, outcome };
+  };
+  const failure = (error: MyInvestorError): MyInvestorSyncFailure => ({
+    httpStatus: error.httpStatus,
+    kind: error.kind,
+    step: error.step,
+  });
 
   await step("login");
   const client = deps.clientFor(connection.deviceId);
   const tokens = await client.loginWithKnownDevice(connection.login);
   if (!tokens.ok) {
-    return failed(deps, { ...connection, day, finish, sourceId }, tokens.error.kind);
+    const outcome = await failed(
+      deps,
+      { ...connection, day, finish, sourceId },
+      tokens.error.kind,
+    );
+    return attempt(outcome, failure(tokens.error));
   }
 
+  let outcome: MyInvestorSyncOutcome;
   try {
-    return await readAndApply(deps, input, client.reader(tokens.value), step, finish);
+    outcome = await readAndApply(deps, input, client.reader(tokens.value), step, finish);
   } catch (error) {
     if (error instanceof MyInvestorSyncError) {
-      return failed(deps, { ...connection, day, finish, sourceId }, error.error.kind);
+      const answered = await failed(
+        deps,
+        { ...connection, day, finish, sourceId },
+        error.error.kind,
+      );
+      return attempt(answered, failure(error.error));
     }
-    // Not MyInvestor's: a bug or the database. Kept as a failed pass so the band says
-    // so, and thrown on so it is never swallowed.
-    await finish({ at: deps.now(), kind: "failed" });
+    // Not MyInvestor's: a bug or the database. Kept as a failed pass and a failed
+    // attempt so the band and the log say so, and thrown on so it is never swallowed.
+    await attempt(await finish({ at: deps.now(), kind: "failed" }), null);
     throw error;
   }
+  return attempt(outcome, null);
 }
 
 /** Each error's action (ADR 0114 decision 7). */
@@ -454,6 +528,20 @@ export interface MyInvestorRefreshDeps {
   now?: () => string;
 }
 
+/**
+ * A failed pass as the maintainer alert reads it (#1755, #1885): the outcome, and
+ * the step and HTTP status MyInvestor failed on when it answered one. Words, never
+ * data.
+ */
+function cronFailureLine(
+  outcome: MyInvestorSyncOutcome,
+  failure: MyInvestorSyncFailure | null | undefined,
+): string {
+  if (!failure) return `MyInvestor: ${outcome.kind}`;
+  const http = failure.httpStatus === null ? "" : `, HTTP ${failure.httpStatus}`;
+  return `MyInvestor: ${outcome.kind} (${failure.step}${http})`;
+}
+
 /** The kinds a cron pass reports as a degradation (#1755): words, never data. */
 const CRON_FAILURES: ReadonlySet<MyInvestorSyncOutcome["kind"]> = new Set([
   "password_rejected",
@@ -487,6 +575,9 @@ export async function runMyInvestorRefresh(
   const errors: string[] = [];
   for (const source of sources) {
     try {
+      // The log's 90 days hold also for a connection the cron passes over (#1885):
+      // with no saved password it may make no attempt in months.
+      await store.connectedSources.purgeSyncAttempts({ now: now(), sourceId: source.id });
       const result = await runMyInvestorSync(
         {
           clientFor,
@@ -501,7 +592,7 @@ export async function runMyInvestorRefresh(
         { sourceId: source.id, trigger: "cron", typed: null },
       );
       if (result.status === "done" && CRON_FAILURES.has(result.outcome.kind)) {
-        errors.push(`MyInvestor: ${result.outcome.kind}`);
+        errors.push(cronFailureLine(result.outcome, result.failure));
       }
     } catch (error) {
       errors.push(

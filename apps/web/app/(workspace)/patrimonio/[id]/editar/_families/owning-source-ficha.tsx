@@ -6,7 +6,9 @@
  *   habitual action is «Poner al día», which opens the panel of the pass;
  * - the figure that carries the units says who puts them and as of when;
  * - the band of avisos carries what the last pass left: the connection's lasting
- *   state with its remedy, and this holding's units when they do not square (P8).
+ *   state with its remedy, and this holding's units when they do not square (P8);
+ *   and the connection's health signals (#1885): «El conector falla» after three
+ *   days in a row and the 45-day reminder, each with «Ver la conexión →».
  *
  * The families (investment, stored) ask here and place the pieces; they keep their
  * own tabs. No booleans in the page (#1607).
@@ -21,7 +23,9 @@ import MyInvestorSyncPanel from "@web/ajustes/myinvestor-sync-panel";
 import {
   formatMyInvestorLastGood,
   MYINVESTOR_RESYNC_LABEL,
+  type MyInvestorBandEntry,
   type MyInvestorStanding,
+  myInvestorHealthEntries,
   myInvestorStanding,
   myInvestorUnitsLine,
 } from "@web/ajustes/myinvestor-sync-view";
@@ -46,6 +50,8 @@ export interface OwningSourceFicha {
   /** The last good sync, as the user reads it. */
   lastGood: string;
   standing: MyInvestorStanding;
+  /** The connection's health signals from its attempt log (#1885). */
+  health: readonly MyInvestorBandEntry[];
   /** This holding's units check, when they do not square. */
   unitsLine: string | null;
   /** Some linked holding does not square: the panel offers «Resincronizar todo». */
@@ -69,10 +75,12 @@ export async function loadOwningSourceFicha(
   now: string,
 ): Promise<OwningSourceFicha | null> {
   if (!source || source.adapter !== "myinvestor") return null;
-  const [full, state, readOnly] = await Promise.all([
+  const [full, state, readOnly, attempts] = await Promise.all([
     store.connectedSources.readSource(source.id),
     store.connectedSources.readSyncState(source.id),
     isWriteBlocked(),
+    // The same port data health counts the days on (#1885), so the two agree.
+    store.agentView.readSyncAttempts(source.id),
   ]);
   const credentials = full ? readMyInvestorCredentials(full.credentialsJson) : null;
   const savedPassword = credentials !== null && hasSavedPassword(credentials);
@@ -80,6 +88,13 @@ export async function loadOwningSourceFicha(
   const mine = check.find((entry) => entry.assetId === assetId) ?? null;
   return {
     anyMismatch: check.length > 0,
+    health: myInvestorHealthEntries({
+      attempts,
+      lastSyncAt: source.lastSyncAt,
+      now,
+      savedPassword,
+      state,
+    }),
     label: source.label,
     lastGood: formatMyInvestorLastGood(source.lastSyncAt, now),
     readOnly,
@@ -158,6 +173,18 @@ export function owningSourceNotices(
         : lasting.text,
     });
   }
+  owned.health.forEach((entry, index) => {
+    notices.push({
+      key: `health-${index}`,
+      remedy:
+        entry.remedy === null
+          ? null
+          : entry.remedy.kind === "conexiones"
+            ? { href: CONEXIONES, label: entry.remedy.label }
+            : panel(entry.remedy.label),
+      text: entry.text,
+    });
+  });
   if (owned.unitsLine) {
     notices.push({
       key: "units",

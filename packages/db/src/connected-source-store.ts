@@ -46,12 +46,15 @@ import {
   type ClaimSyncLeaseResult,
   claimSyncLease,
   type PasswordRejectionInput,
+  purgeSyncAttempts,
   readSyncState,
   recordPasswordRejection,
+  recordSyncAttempt,
   releaseSyncLease,
   reserveSyncLogin,
   type SourceSyncState,
   type SourceSyncStatePatch,
+  type SyncAttemptInput,
   type SyncLeaseTrigger,
   setSyncStep,
   updateSyncState,
@@ -259,6 +262,14 @@ export interface ConnectedSourceStore {
   ): Promise<{ rejections: number; locked: boolean }>;
   updateSyncState(sourceId: string, patch: SourceSyncStatePatch): Promise<void>;
   readSyncState(sourceId: string): Promise<SourceSyncState | null>;
+  /**
+   * One finished attempt of a pass, on `sync_run` (#1885), and the purge of the
+   * source's attempts older than 90 days. Here, beside the rest of the sync state,
+   * because the pass is its own executor: the public run store stays read-only.
+   */
+  recordSyncAttempt(input: SyncAttemptInput): Promise<void>;
+  /** The purge alone, for a connection the cron did not pass over (#1885). */
+  purgeSyncAttempts(input: { sourceId: string; now: string }): Promise<void>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -1045,5 +1056,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     recordPasswordRejection: (input) => recordPasswordRejection(ctx, input),
     updateSyncState: (sourceId, patch) => updateSyncState(ctx, sourceId, patch),
     readSyncState: (sourceId) => readSyncState(ctx, sourceId),
+    recordSyncAttempt: (input) => recordSyncAttempt(ctx, input),
+    purgeSyncAttempts: (input) => purgeSyncAttempts(ctx, input),
   };
 }

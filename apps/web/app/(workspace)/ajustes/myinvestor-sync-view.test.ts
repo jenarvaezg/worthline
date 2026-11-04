@@ -9,6 +9,7 @@ import { serializeMyInvestorSyncOutcome } from "./myinvestor-sync-outcome";
 import {
   formatMyInvestorLastGood,
   formatMyInvestorWhen,
+  myInvestorHealthEntries,
   myInvestorResultView,
   myInvestorStanding,
   myInvestorUnitsLine,
@@ -140,6 +141,75 @@ describe("the standing of the connection", () => {
     expect(
       standing({ lease: { ...lease, until: "2026-11-04T11:00:00.000Z" } }).running,
     ).toBeNull();
+  });
+});
+
+describe("the health signals of the connection (#1885)", () => {
+  const failedOn = (day: string, step: string) => ({
+    at: `${day}T07:13:00.000Z`,
+    failedStep: step,
+    status: "error" as const,
+  });
+
+  test("three days failing on the orders: the design's sentence, out to the connection", () => {
+    expect(
+      myInvestorHealthEntries({
+        attempts: [
+          failedOn("2026-11-04", "orders"),
+          failedOn("2026-11-03", "orders"),
+          failedOn("2026-11-02", "orders"),
+        ],
+        lastSyncAt: "2026-11-01T07:13:00.000Z",
+        now: NOW,
+        savedPassword: true,
+        state: null,
+      }),
+    ).toEqual([
+      {
+        remedy: { kind: "conexiones", label: "Ver la conexión →" },
+        text: "El conector falla al leer las órdenes desde hace 3 días. Las posiciones sí se leen; las operaciones nuevas pueden faltar.",
+        tone: "warn",
+      },
+    ]);
+  });
+
+  test("45 days with no password: the soft reminder", () => {
+    expect(
+      myInvestorHealthEntries({
+        attempts: [],
+        lastSyncAt: "2026-09-20T18:02:00.000Z",
+        now: NOW,
+        savedPassword: false,
+        state: null,
+      }),
+    ).toEqual([
+      {
+        remedy: { kind: "conexiones", label: "Ver la conexión →" },
+        text: "Llevas 45 días sin poner al día MyInvestor. Sin la contraseña guardada, solo se pone al día cuando pulsas.",
+        tone: "warn",
+      },
+    ]);
+  });
+
+  test("a stop is the standing's to say, once: the reminder does not repeat it", () => {
+    expect(
+      myInvestorHealthEntries({
+        attempts: [],
+        lastSyncAt: "2026-07-01T18:02:00.000Z",
+        now: NOW,
+        savedPassword: false,
+        state: {
+          lastOutcomeJson: serializeMyInvestorSyncOutcome({
+            at: NOW,
+            forgotten: true,
+            kind: "password_rejected",
+          }),
+          lease: null,
+          pausedUntil: null,
+          stoppedReason: null,
+        },
+      }),
+    ).toEqual([]);
   });
 });
 

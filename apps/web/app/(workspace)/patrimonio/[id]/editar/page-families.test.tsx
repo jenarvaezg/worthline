@@ -169,6 +169,8 @@ const calls = vi.hoisted(() => ({
   // An owning source (#1884): its row with the credentials, and its sync state.
   readSource: vi.fn(async (): Promise<unknown> => null),
   readSyncState: vi.fn(async (): Promise<unknown> => null),
+  // Its attempt log, as data health reads it (#1885); empty by default.
+  readSyncAttempts: vi.fn(async (): Promise<unknown[]> => []),
   readSourcePositions: vi.fn(async (): Promise<unknown[]> => []),
   // Liability-side reads — never touched by an asset ficha
   readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
@@ -207,6 +209,7 @@ vi.mock("@web/page-shell", () => ({
           readAssetCreatedAtById: calls.readAssetCreatedAtById,
           readManualValueHistory: calls.readManualValueHistory,
           readPublicIds: calls.readPublicIds,
+          readSyncAttempts: calls.readSyncAttempts,
         },
         assets: {
           readAcquisitionCostMinor: calls.readAcquisitionCostMinor,
@@ -956,6 +959,26 @@ describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al
 
     expect(band(html)).toContain("MyInvestor pide verificar el móvil otra vez");
     expect(band(html)).toContain("Verificar el móvil en Conexiones →");
+  });
+
+  test("three days failing on the orders: the band says so, with «Ver la conexión →» (#1885)", async () => {
+    const failedOn = (day: string) => ({
+      at: `${day}T07:13:00.000Z`,
+      failedStep: "orders",
+      status: "error",
+    });
+    calls.readSyncAttempts.mockResolvedValueOnce([
+      failedOn("2026-08-29"),
+      failedOn("2026-08-28"),
+      failedOn("2026-08-27"),
+    ]);
+    const html = await renderedHtml();
+
+    expect(band(html)).toMatch(
+      /El conector falla al leer las órdenes desde hace \d+ días\./,
+    );
+    expect(band(html)).toContain("Ver la conexión →");
+    expect(band(html)).toContain('href="/ajustes/conexiones"');
   });
 });
 

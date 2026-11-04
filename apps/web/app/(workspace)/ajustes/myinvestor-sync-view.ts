@@ -7,10 +7,19 @@
  *   the band with its remedy (the design's table), when the button comes back, and
  *   the pass in progress.
  * - {@link myInvestorResultView}: what a press of the button ended in.
+ * - {@link myInvestorHealthEntries}: the connection's health signals (#1885), the
+ *   ones that come from its attempt log rather than from its last pass.
  *
  * Instants are said in Madrid's hour, the user's, whatever the server's zone.
  */
-import { formatUnits, isPositiveDecimal } from "@worthline/domain";
+import {
+  formatUnits,
+  isPositiveDecimal,
+  type OwningSourceAttempt,
+  type OwningSourceDataKind,
+  owningSourceHealth,
+  owningSourceStop,
+} from "@worthline/domain";
 import type { MyInvestorSyncResult } from "./myinvestor-sync";
 import {
   type MyInvestorSyncOutcome,
@@ -171,9 +180,10 @@ export function myInvestorStanding(input: {
   const { now, savedPassword, state } = input;
   const outcome = parseMyInvestorSyncOutcome(state?.lastOutcomeJson ?? null);
   const paused = state?.pausedUntil && state.pausedUntil > now ? state.pausedUntil : null;
-  const stoppedBySms = state?.stoppedReason === "sms_required";
-  const forgotten =
-    !savedPassword && outcome?.kind === "password_rejected" && outcome.forgotten;
+  // The stop is read by the same rule data health reads it with (#1885).
+  const stop = myInvestorStop(state, savedPassword);
+  const stoppedBySms = stop === "sms_required";
+  const forgotten = stop === "password_forgotten";
 
   const dailyLine =
     stoppedBySms || forgotten
@@ -208,6 +218,115 @@ export function myInvestorStanding(input: {
 
   const lastLine = outcome ? outcomeView(outcome, now).text : null;
   return { blocked, dailyLine, lastLine, lasting, running };
+}
+
+/** Why the periodic sync is stopped, by the rule data health also reads (#1885). */
+function myInvestorStop(state: MyInvestorStateInput | null, savedPassword: boolean) {
+  const outcome = parseMyInvestorSyncOutcome(state?.lastOutcomeJson ?? null);
+  return owningSourceStop({
+    lastOutcome: outcome
+      ? {
+          forgotten: outcome.kind === "password_rejected" ? outcome.forgotten : null,
+          kind: outcome.kind,
+        }
+      : null,
+    savedPassword,
+    stoppedReason: state?.stoppedReason ?? null,
+  });
+}
+
+/** Where a health signal sends the user: the connection, where each is put right. */
+const SEE_CONNECTION: MyInvestorRemedy = {
+  kind: "conexiones",
+  label: "Ver la conexión →",
+};
+
+const FAILING_REST: Record<OwningSourceDataKind, { read: string; rest: string }> = {
+  orders: {
+    read: "las órdenes",
+    rest: "Las posiciones sí se leen; las operaciones nuevas pueden faltar.",
+  },
+  plans: {
+    read: "los planes",
+    rest: "Las posiciones y las órdenes sí se leen; los planes pueden no estar al día.",
+  },
+  positions: {
+    read: "las posiciones",
+    rest: "Las cifras siguen en la última puesta al día buena.",
+  },
+};
+
+/**
+ * The connection's health signals (#1885, design A of #1884/#1885): «El conector
+ * falla» per kind of data after three days in a row, and the reminder at 45 days
+ * with no saved password. The stops (the SMS, the rejected password) are the
+ * standing's `lasting`, so they are not said twice here. The rules are the domain's
+ * ({@link owningSourceHealth}), the same data health reads; the days are the app's
+ * calendar days (UTC), as the logins are counted.
+ */
+export function myInvestorHealthEntries(input: {
+  /** The attempt log, newest first. */
+  attempts: readonly OwningSourceAttempt[];
+  state: MyInvestorStateInput | null;
+  savedPassword: boolean;
+  lastSyncAt: string | null;
+  now: string;
+}): MyInvestorBandEntry[] {
+  const notices = owningSourceHealth(
+    {
+      attempts: input.attempts,
+      lastSyncAt: input.lastSyncAt,
+      savedPassword: input.savedPassword,
+      stop: myInvestorStop(input.state, input.savedPassword),
+    },
+    input.now.slice(0, 10),
+  );
+  return notices.flatMap((notice): MyInvestorBandEntry[] => {
+    switch (notice.kind) {
+      case "failing": {
+        const words = FAILING_REST[notice.data];
+        return [
+          {
+            remedy: SEE_CONNECTION,
+            text: `El conector falla al leer ${words.read} desde hace ${notice.days} días. ${words.rest}`,
+            tone: "warn",
+          },
+        ];
+      }
+      case "unsynced":
+        return [
+          {
+            remedy: SEE_CONNECTION,
+            text: `Llevas ${notice.days} días sin poner al día MyInvestor. Sin la contraseña guardada, solo se pone al día cuando pulsas.`,
+            tone: "warn",
+          },
+        ];
+      default:
+        return [];
+    }
+  });
+}
+
+/**
+ * What the MyInvestor row of Conexiones says under it (#1885): the connection's
+ * lasting state, with when the button comes back, then its health signals. The
+ * ficha's band says the same, each with its way out (`owningSourceNotices`).
+ */
+export function myInvestorConnectionNotices(
+  standing: MyInvestorStanding,
+  health: readonly MyInvestorBandEntry[],
+): MyInvestorBandEntry[] {
+  const lasting = standing.lasting
+    ? [
+        {
+          ...standing.lasting,
+          text: standing.blocked
+            ? `${standing.lasting.text} ${standing.blocked.line}`
+            : standing.lasting.text,
+        },
+      ]
+    : [];
+  return [...lasting, ...health];
 }
 
 /** The band's line for a linked holding whose units do not square (P8). */

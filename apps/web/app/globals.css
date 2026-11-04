@@ -9847,6 +9847,16 @@ td.rowActions > * {
   color: var(--red);
 }
 
+/* Un aviso que no es un fallo (#1885): el recordatorio de los 45 días, el conector
+   que lleva días fallando en un tipo de dato, una pausa. Oro, como los avisos. */
+.conexSyncError.isWarn {
+  border-left-color: var(--gold);
+}
+
+.conexSyncError.isWarn strong {
+  color: var(--gold);
+}
+
 /* El historial de corridas y el cambio de credenciales (#1224/#1225): pliegues
    bajo la fila, con la misma palabra discreta que «Desconectar». Cerrados por
    defecto — ninguno es la respuesta (esa va arriba, en .conexSyncError): uno es

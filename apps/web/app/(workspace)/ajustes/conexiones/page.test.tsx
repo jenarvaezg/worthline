@@ -16,7 +16,20 @@ const calls = vi.hoisted(() => ({
   ),
   readLinks: vi.fn(async (): Promise<{ productKey: string; assetId: string }[]> => []),
   // How «Poner al día» stands (#1884); null until a pass touched it.
-  readSyncState: vi.fn(async () => null),
+  readSyncState: vi.fn(
+    async (): Promise<{
+      lastOutcomeJson: string | null;
+      lease: null;
+      pausedUntil: string | null;
+      stoppedReason: string | null;
+    } | null> => null,
+  ),
+  // MyInvestor's attempt log as data health reads it (#1885); empty by default.
+  readSyncAttempts: vi.fn(
+    async (): Promise<
+      { at: string; status: "ok" | "error"; failedStep?: string }[]
+    > => [],
+  ),
   listSourceAssetIds: vi.fn(async () => ["asset_binance"]),
   // Annotated with the port's shape: a MyInvestor row has no mirror asset and
   // carries its credentials (#1879), which the inferred literal would refuse.
@@ -106,6 +119,7 @@ vi.mock("@web/page-shell", () => ({
       agentView: {
         readPublicIds: calls.readPublicIds,
         readSourceFreshness: calls.readSourceFreshness,
+        readSyncAttempts: calls.readSyncAttempts,
       },
       assets: { readAssets: calls.readAssets },
       // The twins of the first start (#1881): none kept by hand in these cases.
@@ -724,6 +738,69 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     expect(html).toContain("Leer mis productos");
     expect(html).toContain('name="password"');
     expect(html).not.toContain("Así queda tu patrimonio");
+  });
+
+  test("las señales de salud y lo que dura, bajo la fila; el historial dice dónde falló (#1885)", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      {
+        ...myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+        lastSyncAt: "2026-08-02T07:13:00.000Z",
+      },
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce(["asset_cash"]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-08-02",
+    });
+    calls.readLinks.mockResolvedValueOnce([
+      { assetId: "asset_cash", productKey: "cash:1" },
+    ]);
+    calls.readSyncState.mockResolvedValueOnce({
+      lastOutcomeJson: null,
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: "sms_required",
+    });
+    const failedOn = (at: string) => ({
+      at,
+      failedStep: "orders",
+      status: "error" as const,
+    });
+    calls.readSyncAttempts.mockResolvedValueOnce([
+      failedOn("2026-08-04T07:13:00.000Z"),
+      failedOn("2026-08-03T07:13:00.000Z"),
+      failedOn("2026-08-02T07:13:00.000Z"),
+    ]);
+    calls.readRuns.mockResolvedValueOnce([
+      {
+        createdAt: "2026-08-04T07:12:51.000Z",
+        error: {
+          code: "network_or_waf",
+          httpStatus: 503,
+          message: "network",
+          retriable: true,
+          step: "orders",
+        },
+        finishedAt: "2026-08-04T07:13:00.000Z",
+        id: "run_orders",
+        sourceId: "src_myinvestor",
+        startedAt: "2026-08-04T07:12:51.000Z",
+        status: "error",
+        trigger: "cron",
+      },
+    ]);
+
+    const html = await render();
+
+    // The stop of #1884 and the failing orders, with the grammar of a failed sync.
+    expect(html).toContain(
+      '<p class="conexSyncError"><strong>MyInvestor pide verificar el móvil otra vez.</strong>',
+    );
+    expect(html).toMatch(
+      /<p class="conexSyncError isWarn"><strong>El conector falla al leer las órdenes desde hace \d+ días\.<\/strong> Las posiciones sí se leen; las operaciones nuevas pueden faltar\.<\/p>/,
+    );
+    expect(html).toContain("Historial de sincronización");
+    expect(html).toContain("Al leer las órdenes");
   });
 
   test("tras incluir: al día, y lo que quedó fuera se incluye con su histórico", async () => {

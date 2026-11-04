@@ -31,6 +31,14 @@ export interface SyncRunError {
   code: string;
   message: string;
   retriable: boolean;
+  /**
+   * The step of the client the attempt failed on (`login`, `orders`, `plans`…), for
+   * a source that logs its attempts by step (#1885, ADR 0114 decision 8). A word of
+   * ours; absent on the runs of the mirroring sources.
+   */
+  step?: string | null;
+  /** The last HTTP status the failing call saw; null when nothing answered (#1885). */
+  httpStatus?: number | null;
 }
 
 /** One persisted sync attempt. */

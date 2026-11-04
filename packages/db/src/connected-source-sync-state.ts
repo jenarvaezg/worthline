@@ -17,13 +17,14 @@
  * A login day is a calendar day (`DateKey`), refused otherwise: an instant there
  * would never equal the next one, and the caps would reset on every login.
  */
-import type { DateKey } from "@worthline/domain";
-import { isRealCalendarDay } from "@worthline/domain";
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import type { DateKey, OwningSourceStop } from "@worthline/domain";
+import { isRealCalendarDay, owningSourceStop } from "@worthline/domain";
+import { and, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 
-import { sealSecret } from "./crypto";
-import { connectedSourceSyncState, connectedSources } from "./schema";
+import { openSecret, sealSecret } from "./crypto";
+import { connectedSourceSyncState, connectedSources, syncRuns } from "./schema";
 import type { StoreContext } from "./store-context";
+import type { SyncRunError } from "./sync-run-store";
 
 export type SyncLeaseTrigger = "manual" | "cron";
 
@@ -290,5 +291,141 @@ export async function readSyncState(
     sourceId: row.sourceId,
     stoppedReason: row.stoppedReason,
     unitsCheckJson: row.unitsCheckJson,
+  };
+}
+
+/**
+ * How long the attempt log of a source that owns its holdings is kept (#1885, ADR
+ * 0114 decision 8). By DAYS, not by the last N rows the mirroring sources keep: the
+ * health rule counts days in a row, and ten presses of the button a day would eat
+ * twenty rows in two.
+ */
+export const SYNC_ATTEMPT_RETENTION_DAYS = 90;
+
+/** One finished attempt of a pass, as the log keeps it. */
+export interface SyncAttemptInput {
+  sourceId: string;
+  trigger: SyncLeaseTrigger;
+  /** When the pass started: the row's `created_at` and `started_at`. */
+  startedAt: string;
+  finishedAt: string;
+  /**
+   * Null for a good pass. A failure carries only words of ours: the error's kind,
+   * the outcome, the step and the HTTP status — never an amount, an ISIN nor an
+   * identifier, which the type has no field for.
+   */
+  error: SyncRunError | null;
+}
+
+function retentionCutoff(now: string): string {
+  return new Date(
+    Date.parse(now) - SYNC_ATTEMPT_RETENTION_DAYS * 86_400_000,
+  ).toISOString();
+}
+
+/** Delete a source's attempts older than {@link SYNC_ATTEMPT_RETENTION_DAYS} at `now`. */
+export async function purgeSyncAttempts(
+  ctx: StoreContext,
+  input: { sourceId: string; now: string },
+): Promise<void> {
+  await ctx.db
+    .delete(syncRuns)
+    .where(
+      and(
+        eq(syncRuns.sourceId, input.sourceId),
+        lt(syncRuns.createdAt, retentionCutoff(input.now)),
+      ),
+    )
+    .run();
+}
+
+/**
+ * Write one finished attempt to `sync_run` (extended, not a new table, #1885) and
+ * purge what the retention leaves behind, in one transaction. The row is written
+ * whole when the pass ends, never opened `running` first: the lease already keeps
+ * one pass per connection, and a pass killed halfway would leave a row nobody ends.
+ * It does not touch `last_sync_at`: the pass stamps that with the read it saved.
+ */
+export async function recordSyncAttempt(
+  ctx: StoreContext,
+  input: SyncAttemptInput,
+): Promise<void> {
+  await ctx.transaction(async () => {
+    await ctx.db
+      .insert(syncRuns)
+      .values({
+        createdAt: input.startedAt,
+        errorJson: input.error === null ? null : JSON.stringify(input.error),
+        finishedAt: input.finishedAt,
+        id: ctx.newId(),
+        sourceId: input.sourceId,
+        startedAt: input.startedAt,
+        status: input.error === null ? "ok" : "error",
+        trigger: input.trigger,
+      })
+      .run();
+    await purgeSyncAttempts(ctx, { now: input.finishedAt, sourceId: input.sourceId });
+  });
+}
+
+/**
+ * What the sync state of a source that owns its holdings says beyond its log, for
+ * data health (#1885): whether a password is saved and why the periodic sync is
+ * stopped. Null for a mirroring source (it has a mirror asset). Only the two facts
+ * cross: the credentials are opened here to ask whether they hold a password, and
+ * nothing of them leaves.
+ */
+export async function readOwningSourceStanding(
+  ctx: StoreContext,
+  sourceId: string,
+): Promise<{ savedPassword: boolean; stop: OwningSourceStop | null } | null> {
+  const source = await ctx.db
+    .select({
+      assetId: connectedSources.assetId,
+      credentialsJson: connectedSources.credentialsJson,
+    })
+    .from(connectedSources)
+    .where(eq(connectedSources.id, sourceId))
+    .get();
+  if (!source || source.assetId !== null) return null;
+  const state = await readSyncState(ctx, sourceId);
+  const savedPassword = carriesPassword(openSecret(source.credentialsJson));
+  return {
+    savedPassword,
+    stop: owningSourceStop({
+      lastOutcome: outcomeHeadOf(state?.lastOutcomeJson ?? null),
+      savedPassword,
+      stoppedReason: state?.stoppedReason ?? null,
+    }),
+  };
+}
+
+function parseObject(json: string | null): Record<string, unknown> | null {
+  if (json === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return parsed !== null && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether stored credentials remember a password (the opt-in of ADR 0114 decision 1). */
+function carriesPassword(credentialsJson: string): boolean {
+  const parsed = parseObject(credentialsJson);
+  return typeof parsed?.password === "string" && parsed.password.length > 0;
+}
+
+/** The kind of the last outcome and whether it forgot the saved password; nothing else. */
+function outcomeHeadOf(
+  json: string | null,
+): { kind: string; forgotten: boolean | null } | null {
+  const parsed = parseObject(json);
+  if (typeof parsed?.kind !== "string") return null;
+  return {
+    forgotten: typeof parsed.forgotten === "boolean" ? parsed.forgotten : null,
+    kind: parsed.kind,
   };
 }

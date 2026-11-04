@@ -1,10 +1,13 @@
 import type { MyInvestorAcceptance } from "@web/ajustes/myinvestor-credentials";
 import type { MyInvestorFirstStartView } from "@web/ajustes/myinvestor-selection";
 import MyInvestorSyncPanel from "@web/ajustes/myinvestor-sync-panel";
-import type { MyInvestorStanding } from "@web/ajustes/myinvestor-sync-view";
+import type {
+  MyInvestorBandEntry,
+  MyInvestorStanding,
+} from "@web/ajustes/myinvestor-sync-view";
 import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PendingSubmit } from "@web/pending-submit";
-import { syncRunInstant } from "@worthline/db";
+import { type SyncRun, syncRunInstant } from "@worthline/db";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { Fragment } from "react";
@@ -21,6 +24,7 @@ import { MyInvestorAvailable, MyInvestorConnectedDetail } from "./myinvestor-row
 import type { MyInvestorAvailability } from "./myinvestor-view";
 import {
   describeRunOutcome,
+  describeRunStep,
   describeSyncState,
   describeTrigger,
   type SyncHealthTone,
@@ -71,8 +75,67 @@ export interface MyInvestorTableContext {
   firstStart: MyInvestorFirstStartView | null;
   /** Today, `YYYY-MM-DD`, to tell whether the last read is today's. */
   today: string;
-  /** How «Poner al día» stands (#1884), and whether this session may press it. */
-  sync: { standing: MyInvestorStanding; readOnly: boolean };
+  /**
+   * How «Poner al día» stands (#1884), whether this session may press it, and what
+   * the row says under it: the lasting state and the health signals (#1885).
+   */
+  sync: {
+    standing: MyInvestorStanding;
+    readOnly: boolean;
+    notices: readonly MyInvestorBandEntry[];
+  };
+}
+
+/**
+ * The lead of a notice and the rest, as `.conexSyncError` says it: the first
+ * sentence in bold, the reason after it (#1224).
+ */
+function noticeParts(text: string): { lead: string; rest: string } {
+  const end = text.indexOf(". ");
+  return end === -1
+    ? { lead: text, rest: "" }
+    : { lead: text.slice(0, end + 1), rest: text.slice(end + 2) };
+}
+
+/**
+ * The retained runs of a source, under its row (#1224): when, who and how it
+ * ended — and, for a source that logs its attempts by step (MyInvestor, #1885),
+ * where it failed.
+ */
+function SyncRunHistory({ runs }: { runs: readonly SyncRun[] }) {
+  if (runs.length === 0) return null;
+  return (
+    <details suppressHydrationWarning className="conexHistory">
+      <summary>Historial de sincronización</summary>
+      <table className="conexRunTable">
+        <thead>
+          <tr>
+            <th>Cuándo</th>
+            <th>Origen</th>
+            <th>Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => {
+            // Una corrida sin ningún sello de tiempo no pasó «Nunca» —que es lo
+            // que diría `formatLastSync`—: pasó sin dejar hora, y eso es una raya.
+            const at = syncRunInstant(run);
+            const step = run.status === "error" ? describeRunStep(run.error?.step) : null;
+            return (
+              <tr key={run.id}>
+                <td>{at ? formatLastSync(at) : "—"}</td>
+                <td>{describeTrigger(run.trigger)}</td>
+                <td>
+                  {describeRunOutcome(run.status)}
+                  {step ? <span className="conexSub">{step}</span> : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </details>
+  );
 }
 
 /**
@@ -215,6 +278,21 @@ export default function ConnectionsTable({
                       </tr>
                       <tr className="conexDetailRow">
                         <td colSpan={6}>
+                          {/* What lasts and the health signals (#1885), outside
+                              every fold, with the grammar of a failed sync
+                              (#1224): the way out is in this same row. */}
+                          {myInvestor.sync.notices.map((notice) => {
+                            const { lead, rest } = noticeParts(notice.text);
+                            return (
+                              <p
+                                className={`conexSyncError${notice.tone === "warn" ? " isWarn" : ""}`}
+                                key={notice.text}
+                              >
+                                <strong>{lead}</strong>
+                                {rest ? ` ${rest}` : null}
+                              </p>
+                            );
+                          })}
                           {myInvestor.firstStart === null ? (
                             <details
                               suppressHydrationWarning
@@ -236,6 +314,7 @@ export default function ConnectionsTable({
                               sourceId={source.id}
                             />
                           ) : null}
+                          <SyncRunHistory runs={row.runs} />
                           <MyInvestorConnectedDetail
                             currentUrl={currentUrl}
                             disconnectFormId={definition.disconnectFormId}
@@ -349,35 +428,7 @@ export default function ConnectionsTable({
                           </form>
                         </details>
 
-                        {row.runs.length > 0 ? (
-                          <details suppressHydrationWarning className="conexHistory">
-                            <summary>Historial de sincronización</summary>
-                            <table className="conexRunTable">
-                              <thead>
-                                <tr>
-                                  <th>Cuándo</th>
-                                  <th>Origen</th>
-                                  <th>Resultado</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {row.runs.map((run) => {
-                                  // Una corrida sin ningún sello de tiempo no pasó
-                                  // «Nunca» —que es lo que diría `formatLastSync`—:
-                                  // pasó sin dejar hora, y eso es una raya.
-                                  const at = syncRunInstant(run);
-                                  return (
-                                    <tr key={run.id}>
-                                      <td>{at ? formatLastSync(at) : "—"}</td>
-                                      <td>{describeTrigger(run.trigger)}</td>
-                                      <td>{describeRunOutcome(run.status)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </details>
-                        ) : null}
+                        <SyncRunHistory runs={row.runs} />
 
                         {/* El pliegue lo escribe cada adapter (sus opciones
                             eliminar/congelar difieren), pero la palabra con la

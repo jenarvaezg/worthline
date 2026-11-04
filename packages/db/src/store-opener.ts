@@ -17,6 +17,7 @@ import {
 import { createCommandHost } from "./commands/host";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
+import { readOwningSourceStanding } from "./connected-source-sync-state";
 import { createContributionAllowanceStore } from "./contribution-allowance-store";
 import { createContributionPlanStore } from "./contribution-plan-store";
 import {
@@ -290,6 +291,7 @@ async function buildStore(
       };
     },
     readSyncRuns: syncRunStore.readRuns,
+    readOwningSourceStanding: (sourceId) => readOwningSourceStanding(ctx, sourceId),
     readValuationAnchors: assetStore.readValuationAnchors,
     readWarningOverrides: () => store.readWarningOverrides(),
   });

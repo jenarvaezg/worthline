@@ -4,7 +4,11 @@ import {
 } from "@web/ajustes/myinvestor-credentials";
 import { loadMyInvestorFirstStart } from "@web/ajustes/myinvestor-first-start-flow";
 import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
-import { myInvestorStanding } from "@web/ajustes/myinvestor-sync-view";
+import {
+  myInvestorConnectionNotices,
+  myInvestorHealthEntries,
+  myInvestorStanding,
+} from "@web/ajustes/myinvestor-sync-view";
 import { guardViewerPage, isWriteBlocked } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
@@ -137,6 +141,17 @@ export async function ConexionesContent({
     myInvestorCredentials !== undefined &&
     myInvestorCredentials !== null &&
     hasSavedPassword(myInvestorCredentials);
+  // Its attempt log (#1885), by the port data health counts the days on: the row
+  // and the health block cannot disagree about whether the connector fails.
+  const myInvestorAttempts = myInvestorSource
+    ? await store.agentView.readSyncAttempts(myInvestorSource.id)
+    : [];
+  const myInvestorNow = systemClock().now();
+  const myInvestorStandingNow = myInvestorStanding({
+    now: myInvestorNow,
+    savedPassword: myInvestorSaved,
+    state: myInvestorSyncState,
+  });
   const myInvestor: MyInvestorTableContext = {
     availability: myInvestorAvailability({
       premium: !sourcesGated,
@@ -144,12 +159,18 @@ export async function ConexionesContent({
       relayConfigured: isMyInvestorRelayConfigured(),
     }),
     sync: {
+      notices: myInvestorConnectionNotices(
+        myInvestorStandingNow,
+        myInvestorHealthEntries({
+          attempts: myInvestorAttempts,
+          lastSyncAt: myInvestorSource?.lastSyncAt ?? null,
+          now: myInvestorNow,
+          savedPassword: myInvestorSaved,
+          state: myInvestorSyncState,
+        }),
+      ),
       readOnly: writeBlocked || sourcesGated,
-      standing: myInvestorStanding({
-        now: systemClock().now(),
-        savedPassword: myInvestorSaved,
-        state: myInvestorSyncState,
-      }),
+      standing: myInvestorStandingNow,
     },
     savedPassword:
       myInvestorCredentials && hasSavedPassword(myInvestorCredentials)

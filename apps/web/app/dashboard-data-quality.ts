@@ -32,6 +32,7 @@ import {
 } from "@worthline/domain";
 
 import { readAmortizableStartByLiabilityId } from "./data-quality-amortizable-start";
+import { readOwningSourceStandings } from "./data-quality-owning-sources";
 import {
   readDebtModelByLiabilityId,
   readMonthlyDebtServiceByLiabilityId,
@@ -100,6 +101,7 @@ export async function collectDashboardDataQualitySignals(
   const [
     sourceFreshnessEntries,
     syncAttemptEntries,
+    owningStandingEntries,
     positionEntries,
     debtModelByLiability,
     manualValueHistoryByAssetId,
@@ -123,6 +125,10 @@ export async function collectDashboardDataQualitySignals(
           [source.id, await agentView.readSyncAttempts(source.id)] as const,
       ),
     ),
+    // What the sync state of a connection that owns its holdings (MyInvestor) says
+    // beyond its attempts (#1885): two indexed reads per such source, in the same
+    // batch, and none for a mirroring one past the first.
+    readOwningSourceStandings(agentView, connectedSources),
     Promise.all(
       connectedSources.map(
         async (source) =>
@@ -198,6 +204,7 @@ export async function collectDashboardDataQualitySignals(
     investmentOperationsByAssetId: input.operationsByAsset,
     liabilities: input.liabilities,
     managedPortfolios,
+    owningSourceStandingBySourceId: new Map(owningStandingEntries),
     manualValueHistoryByAssetId,
     netUnitsByAssetId: netUnitsByAsset(input.operationsByAsset),
     positionsBySourceId,

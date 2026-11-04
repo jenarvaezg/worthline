@@ -314,6 +314,7 @@ export type {
   DataQualityAffectedRef,
   DataQualityCategory,
   DataQualityConnectedSource,
+  DataQualityOwningSourceStanding,
   DataQualityPriceFreshness,
   DataQualityScopeContext,
   DataQualitySeverity,
@@ -336,6 +337,9 @@ export {
   MISSING_INVESTMENT_ISIN_CODE,
   manualValueFreshness,
   OVERRIDEABLE_SIGNAL_CODES,
+  OWNING_SOURCE_FAILING_CODES,
+  OWNING_SOURCE_STOPPED_CODE,
+  OWNING_SOURCE_UNSYNCED_CODE,
   overriddenSignalKeys,
   PERSISTENT_SYNC_FAILURE_CODE,
   PERSISTENT_SYNC_FAILURE_THRESHOLD,
@@ -1008,6 +1012,21 @@ export {
 } from "./operation-flow";
 export type { OversellExcessKind } from "./oversell";
 export { classifyOversellExcess, oversellConfirmMessage } from "./oversell";
+export type {
+  OwningSourceAttempt,
+  OwningSourceDataKind,
+  OwningSourceHealthFacts,
+  OwningSourceHealthNotice,
+  OwningSourceStop,
+} from "./owning-source-health";
+export {
+  OWNING_SOURCE_DATA_KINDS,
+  OWNING_SOURCE_FAILING_DAYS,
+  OWNING_SOURCE_UNSYNCED_REMINDER_DAYS,
+  owningSourceDataKind,
+  owningSourceHealth,
+  owningSourceStop,
+} from "./owning-source-health";
 export type {
   DatedAmount,
   DerivedPayout,

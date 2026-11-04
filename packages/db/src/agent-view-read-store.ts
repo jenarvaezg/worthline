@@ -2,6 +2,7 @@ import type {
   AssetPrice,
   ContributionOccurrenceReconciliation,
   ContributionPlan,
+  DataQualityOwningSourceStanding,
   DataQualitySyncAttempt,
   DebtModel,
   ExportedPublicId,
@@ -183,6 +184,14 @@ export interface AgentViewReadStore {
    * agent can call.
    */
   readSyncAttempts: (sourceId: string) => Promise<DataQualitySyncAttempt[]>;
+  /**
+   * What the sync state of a connection that owns its holdings (MyInvestor) says
+   * beyond its attempts (#1885): whether a password is saved and why the periodic
+   * sync is stopped. Null for a mirroring source. Two facts, never the credentials.
+   */
+  readOwningSourceStanding: (
+    sourceId: string,
+  ) => Promise<DataQualityOwningSourceStanding | null>;
   /** Frozen snapshots for a scope, chronological (snapshot-store ordering). */
   readSnapshots: (scopeId: string) => Promise<NetWorthSnapshot[]>;
   /** Frozen holding rows, optionally filtered by scope and date-key window. */
@@ -281,6 +290,10 @@ export interface AgentViewReadStoreDeps {
   readSourcePositions: (sourceId: string) => Promise<SourcePosition[]>;
   /** A source's retained sync runs, newest first (`SyncRunStore.readRuns`). */
   readSyncRuns: (sourceId: string) => Promise<SyncRun[]>;
+  /** See {@link AgentViewReadStore.readOwningSourceStanding}. */
+  readOwningSourceStanding: (
+    sourceId: string,
+  ) => Promise<DataQualityOwningSourceStanding | null>;
   /** The price-cache row of a source's primary asset (its valuation freshness). */
   readSourcePriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;
@@ -366,8 +379,14 @@ export function createAgentViewReadStore(
     },
     readSyncAttempts: async (sourceId) => {
       const runs = await deps.readSyncRuns(sourceId);
-      return runs.map((run) => ({ at: syncRunInstant(run), status: run.status }));
+      // The failing step crosses (a word of ours, #1885); the message never does.
+      return runs.map((run) => ({
+        at: syncRunInstant(run),
+        status: run.status,
+        ...(run.error?.step ? { failedStep: run.error.step } : {}),
+      }));
     },
+    readOwningSourceStanding: (sourceId) => deps.readOwningSourceStanding(sourceId),
     readSnapshots: (scopeId) => deps.readSnapshots(scopeId),
     readSnapshotHoldings: (query) => deps.readSnapshotHoldings(query),
     readValuationAnchors: (assetId) => deps.readValuationAnchors(assetId),
