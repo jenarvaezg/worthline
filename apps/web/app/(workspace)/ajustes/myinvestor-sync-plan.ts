@@ -43,7 +43,7 @@ import {
   foldMyInvestorOperations,
   myInvestorOperationId,
   operationInput,
-} from "./myinvestor-first-start";
+} from "./myinvestor-operations-fold";
 
 type OperationFact = NormalizedFact<MyInvestorOperationFact>;
 

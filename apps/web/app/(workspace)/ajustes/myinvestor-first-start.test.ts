@@ -12,18 +12,18 @@ import type {
   MyInvestorDiscoveredProduct,
   MyInvestorDiscovery,
 } from "./myinvestor-discovery";
-import {
-  findMyInvestorTwins,
-  foldMyInvestorOperations,
-  type MyInvestorManualHolding,
-  type MyInvestorTwinLedger,
-  myInvestorFirstStartView,
-  planMyInvestorInclusion,
-} from "./myinvestor-first-start";
+import { myInvestorFirstStartView } from "./myinvestor-first-start";
+import { planMyInvestorInclusion } from "./myinvestor-inclusion-plan";
+import { foldMyInvestorOperations } from "./myinvestor-operations-fold";
 import {
   defaultMyInvestorTwinChoices,
   summarizeMyInvestorSelection,
 } from "./myinvestor-selection";
+import {
+  findMyInvestorTwins,
+  type MyInvestorManualHolding,
+  type MyInvestorTwinLedger,
+} from "./myinvestor-twins";
 
 const SOURCE = "src";
 const ACCOUNT = "securities:1";

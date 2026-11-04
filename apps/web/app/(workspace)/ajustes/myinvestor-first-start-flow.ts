@@ -40,21 +40,23 @@ import {
   readMyInvestorDiscovery,
   serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
+import { myInvestorFirstStartView } from "./myinvestor-first-start";
 import {
-  findMyInvestorTwins,
   type MyInvestorLinkChoice,
-  type MyInvestorManualCash,
-  type MyInvestorManualHolding,
   type MyInvestorPriceSymbol,
-  type MyInvestorTwinLedger,
-  myInvestorFirstStartView,
   planMyInvestorInclusion,
-} from "./myinvestor-first-start";
+} from "./myinvestor-inclusion-plan";
 import {
   findMyInvestorPortfolioTwins,
   type MyInvestorManualPortfolio,
 } from "./myinvestor-portfolio";
 import type { MyInvestorFirstStartView } from "./myinvestor-selection";
+import {
+  findMyInvestorTwins,
+  type MyInvestorManualCash,
+  type MyInvestorManualHolding,
+  type MyInvestorTwinLedger,
+} from "./myinvestor-twins";
 
 const MYINVESTOR_ADAPTER = "myinvestor";
 

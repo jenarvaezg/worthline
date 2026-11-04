@@ -12,12 +12,8 @@ import type {
   MyInvestorDiscoveredProduct,
   MyInvestorDiscovery,
 } from "./myinvestor-discovery";
-import {
-  findMyInvestorTwins,
-  type MyInvestorTwinLedger,
-  myInvestorFirstStartView,
-  planMyInvestorInclusion,
-} from "./myinvestor-first-start";
+import { myInvestorFirstStartView } from "./myinvestor-first-start";
+import { planMyInvestorInclusion } from "./myinvestor-inclusion-plan";
 import {
   findMyInvestorPortfolioTwins,
   type MyInvestorManualPortfolio,
@@ -26,6 +22,7 @@ import {
   defaultMyInvestorTwinChoices,
   summarizeMyInvestorSelection,
 } from "./myinvestor-selection";
+import { findMyInvestorTwins, type MyInvestorTwinLedger } from "./myinvestor-twins";
 
 const SOURCE = "src";
 const ROBO = "securities:9";

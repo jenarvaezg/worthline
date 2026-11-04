@@ -20,7 +20,6 @@ import type {
   MyInvestorDiscoveredProduct,
   MyInvestorDiscovery,
 } from "./myinvestor-discovery";
-import type { MyInvestorTwinLedger } from "./myinvestor-first-start";
 import {
   isPortfolioLinkable,
   type MyInvestorPortfolioCandidate,
@@ -29,6 +28,7 @@ import {
   type MyInvestorTwinChoice,
   myInvestorLinkChoice,
 } from "./myinvestor-selection";
+import type { MyInvestorTwinLedger } from "./myinvestor-twins";
 
 /** A live member of a managed portfolio kept by hand, as the block's careo needs it. */
 export interface MyInvestorManualPortfolioMember {

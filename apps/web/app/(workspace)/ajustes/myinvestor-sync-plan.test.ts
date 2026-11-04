@@ -22,7 +22,7 @@ import type {
   MyInvestorDiscovery,
   MyInvestorDiscoveryReads,
 } from "./myinvestor-discovery";
-import { myInvestorOperationId } from "./myinvestor-first-start";
+import { myInvestorOperationId } from "./myinvestor-operations-fold";
 import {
   carryTransferCostsFromBook,
   checkMyInvestorUnits,
