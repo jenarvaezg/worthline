@@ -24,6 +24,11 @@ const WORKSPACE_TABLES = [
   // The half-done SMS login of a MyInvestor connection (#1879): sealed, maybe with
   // the password — a full replace must never leave one behind.
   "connected_source_pending_logins",
+  // What an owning source found, which product each linked holding is, and the
+  // ingestion port's dedup ledger (#1880): all beneath the source.
+  "connected_source_discoveries",
+  "connected_source_links",
+  "connector_applied_facts",
   "connected_sources",
   "investment_assets",
   "asset_valuations",

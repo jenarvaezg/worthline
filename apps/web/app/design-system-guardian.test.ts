@@ -348,6 +348,7 @@ describe("Libro mayor design-system guardian (#906)", () => {
       ".fichaPriceNotice a",
       ".fichaPriceNotice button",
       ".myinvestorCodeActions .myinvestorRestart",
+      ".myinvestorLeftList .myinvestorIncludeLater",
     ];
     const recipe = {
       background: "transparent",

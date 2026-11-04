@@ -9,6 +9,11 @@ export type {
   InvestmentHoldingEntry,
   StatementImportCommand,
 } from "./command-implementation-types";
+export type {
+  ConnectedHoldingCreation,
+  IncludeConnectedHoldingsCommand,
+  IncludeConnectedHoldingsResult,
+} from "./connected-inclusion";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";

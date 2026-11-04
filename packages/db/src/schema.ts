@@ -662,6 +662,13 @@ export const connectedSources = sqliteTable(
     // Cached OAuth token JSON (access_token + expiry); null until first mint.
     tokenJson: text("token_json"),
     lastSyncAt: text("last_sync_at"),
+    /**
+     * Where the ingestion port resumes (ADR 0066, `ConnectorCursor`): for MyInvestor
+     * the day of the last good application (#1880, schema v75). Null until a source
+     * that ingests dated facts first commits, and always for a mirroring one. It is
+     * advanced in the SAME transaction as the facts and the dedup ledger.
+     */
+    ingestCursor: text("ingest_cursor"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
   },
@@ -823,6 +830,69 @@ export const connectedSourcePendingLogins = sqliteTable(
   (table) => [
     uniqueIndex("connected_source_pending_logins_adapter_unique").on(table.adapter),
   ],
+);
+
+/**
+ * What a source that OWNS its holdings found at the source the last time it was
+ * read (#1880, ADR 0115): its accounts, its products and every finished operation,
+ * as one JSON document whose shape belongs to the adapter's module. The first start
+ * shows it to choose what to include, and «Incluir con su histórico» applies a
+ * product excluded then from the same read, without asking the source again. One
+ * row per source, replaced on every read. Not a secret (no credentials, no token),
+ * but personal financial data like the rest of the workspace.
+ */
+export const connectedSourceDiscoveries = sqliteTable("connected_source_discoveries", {
+  sourceId: text("source_id")
+    .primaryKey()
+    .references(() => connectedSources.id, { onDelete: "cascade" }),
+  // The calendar day the read was made, `YYYY-MM-DD`.
+  readOn: text("read_on").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  createdAt: timestamp("created_at"),
+});
+
+/**
+ * Which product of an owning source each linked holding IS (#1880, ADR 0115): the
+ * strong identifier at the source (account + ISIN, DGS code, cash account) to the
+ * holding it was created as. The holding still carries `assets.connected_source_id`;
+ * this is what tells two linked holdings of the same ISIN in two accounts apart
+ * (#1869 P3). A product with no row was left out.
+ */
+export const connectedSourceLinks = sqliteTable(
+  "connected_source_links",
+  {
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => connectedSources.id, { onDelete: "cascade" }),
+    productKey: text("product_key").notNull(),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceId, table.productKey] }),
+    uniqueIndex("connected_source_links_asset_unique").on(table.assetId),
+  ],
+);
+
+/**
+ * The dedup ledger of the ingestion port (ADR 0066, decision #888): every fact key a
+ * source already applied, with the batch that applied it. Reconciliation reads it so
+ * an overlapping re-read applies each fact once; the commit appends to it in the same
+ * transaction as the facts (#1880).
+ */
+export const connectorAppliedFacts = sqliteTable(
+  "connector_applied_facts",
+  {
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => connectedSources.id, { onDelete: "cascade" }),
+    factKey: text("fact_key").notNull(),
+    batchId: text("batch_id").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [primaryKey({ columns: [table.sourceId, table.factKey] })],
 );
 
 export const auditLog = sqliteTable(

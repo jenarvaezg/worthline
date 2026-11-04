@@ -5,7 +5,7 @@ import type {
   ReconcilePlan,
 } from "@worthline/domain";
 
-import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
+import { applyDatedFactsBatch, type DatedFactStep } from "./apply-dated-facts-batch";
 import type { CommandResult, FactBatchTrigger, RipplePlan, UnitOfWork } from "./types";
 
 /**
@@ -34,7 +34,35 @@ export interface ConnectorCommitRecord {
   rejectedKeys: FactKey[];
 }
 
-export interface ConnectorCommitParams<TPayload> {
+/**
+ * How the application persists the `toApply` facts, one of two shapes:
+ *
+ * - `persistFact`: ONE normalized fact at a time, tagged with `batchId`. The
+ *   application owns this DB wiring (maps the opaque payload to a fact family);
+ *   the adapter never sees it. The fact's `dateKey` drives the ripple floor.
+ * - `persistFacts`: the WHOLE list in one step (#1880). A live source's first start
+ *   applies hundreds of orders, and one write per order is one round trip per order
+ *   against Turso (#1440); it also lets the application create the holdings those
+ *   facts land in inside the same batch. It returns the date keys it wrote, which
+ *   drive the ripple floor exactly as the facts' own would.
+ */
+export type ConnectorFactPersistence<TPayload> =
+  | {
+      persistFact: (fact: NormalizedFact<TPayload>, batchId: string) => Promise<void>;
+      persistFacts?: never;
+    }
+  | {
+      persistFacts: (
+        facts: readonly NormalizedFact<TPayload>[],
+        batchId: string,
+      ) => Promise<readonly string[]>;
+      persistFact?: never;
+    };
+
+export type ConnectorCommitParams<TPayload> = ConnectorCommitBase<TPayload> &
+  ConnectorFactPersistence<TPayload>;
+
+interface ConnectorCommitBase<TPayload> {
   /** The reconciled batch: only its `toApply` facts are persisted. */
   plan: ReconcilePlan<TPayload>;
   today: string;
@@ -42,12 +70,6 @@ export interface ConnectorCommitParams<TPayload> {
   connectedSourceId: string;
   /** Ingestion origin recorded on the fact batch; defaults to `sync`. */
   trigger?: Extract<FactBatchTrigger, "sync" | "connect" | "statement" | "csv">;
-  /**
-   * Persist ONE normalized fact as a dated fact, tagged with `batchId`. The
-   * application owns this DB wiring (maps the opaque payload to a fact family);
-   * the adapter never sees it. The fact's `dateKey` drives the ripple floor.
-   */
-  persistFact: (fact: NormalizedFact<TPayload>, batchId: string) => Promise<void>;
   /**
    * Keys the user chose to dismiss forever (ignore-always). Persisted with the
    * facts via `recordCommit`; defaults to none. A commit may carry rejections and
@@ -75,6 +97,24 @@ export interface ConnectorCommitResult {
   cursor: ConnectorCursor | null;
   /** The ripple window, or null when nothing datable-in-the-past was applied. */
   ripple: RipplePlan | null;
+}
+
+/** The dated-fact steps of a commit: one per fact, or ONE for the whole list. */
+function factSteps<TPayload>(
+  persistence: ConnectorFactPersistence<TPayload>,
+  facts: readonly NormalizedFact<TPayload>[],
+): DatedFactStep[] {
+  const { persistFacts, persistFact } = persistence;
+  if (persistFacts) {
+    return [{ persist: (batchId) => persistFacts(facts, batchId) }];
+  }
+  if (!persistFact) throw new Error("A connector commit needs a way to persist facts.");
+  return facts.map((fact) => ({
+    persist: async (batchId) => {
+      await persistFact(fact, batchId);
+      return fact.dateKey;
+    },
+  }));
 }
 
 /**
@@ -108,12 +148,7 @@ export async function commitReconciled<TPayload>(
       connectedSourceId: params.connectedSourceId,
     },
     today: params.today,
-    steps: plan.toApply.map((fact) => ({
-      persist: async (batchId) => {
-        await params.persistFact(fact, batchId);
-        return fact.dateKey;
-      },
-    })),
+    steps: factSteps(params, plan.toApply),
     afterPersist: async (batchId) => {
       await params.recordCommit({
         batchId,

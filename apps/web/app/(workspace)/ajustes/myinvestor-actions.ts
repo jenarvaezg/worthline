@@ -39,11 +39,14 @@ import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import { readSessionEmail } from "@web/read-store-target";
 import type { WorthlineStore } from "@web/store";
 import { systemClock } from "@worthline/domain";
+import { searchSymbols } from "@worthline/pricing";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   MYINVESTOR_DISCONNECT_FORM_ID,
+  MYINVESTOR_INCLUDE_FORM_ID,
   MYINVESTOR_PASSWORD_FORM_ID,
+  MYINVESTOR_READ_FORM_ID,
 } from "./connected-source-form-ids";
 import { currentUrlOf } from "./connected-source-helpers";
 import {
@@ -61,6 +64,13 @@ import {
   MYINVESTOR_UNAVAILABLE_LINE,
 } from "./myinvestor-copy";
 import { parseMyInvestorCode, parseMyInvestorLogin } from "./myinvestor-credentials";
+import {
+  includeMyInvestorProducts,
+  isInvestmentPriceProvider,
+  type MyInvestorSymbolResolver,
+  readMyInvestorProducts,
+  storeMyInvestorDiscovery,
+} from "./myinvestor-first-start-flow";
 import type { MyInvestorFormState } from "./myinvestor-form-state";
 import {
   isMyInvestorClientOverride,
@@ -73,6 +83,7 @@ const CODE_NOT_A_CODE = "Escribe el código del SMS: solo cifras.";
 interface FrontMatter {
   store: WorthlineStore | undefined;
   now: string;
+  today: string;
   clientFor: MyInvestorClientFactory | null;
 }
 
@@ -90,6 +101,7 @@ async function frontMatter(
     clientFor: override?.myInvestorClientFor ?? myInvestorClientFactory(),
     now: clock.now(),
     store,
+    today: clock.today(),
   };
 }
 
@@ -101,6 +113,13 @@ function flowDeps(
 ): MyInvestorFlowDeps {
   return {
     acceptedBy,
+    // With a session in hand, the first start reads the account at once (#1880). A
+    // failed read keeps the connection: the fold offers to read again.
+    afterConnect: ({ reader, sourceId }) =>
+      storeMyInvestorDiscovery(
+        { now: front.now, store, today: front.today },
+        { reader, sourceId },
+      ),
     clientFor,
     newDeviceId: randomUUID,
     now: front.now,
@@ -316,3 +335,134 @@ export const disconnectMyInvestorAction = formAction({
   onSuccess: ({ formData }) =>
     appendParam(currentUrlOf(formData), "ok", "myinvestor_disconnected"),
 });
+
+/**
+ * The price symbol of an ISIN or DGS code at worthline's providers (#1880): the
+ * first candidate the search finds, or null — a product nobody quotes is valued at
+ * cost until someone gives it a symbol.
+ */
+const searchMyInvestorSymbol: MyInvestorSymbolResolver = async (code, instrument) => {
+  try {
+    const [hit] = await searchSymbols(code, instrument);
+    return hit && isInvestmentPriceProvider(hit.provider)
+      ? { provider: hit.provider, symbol: hit.symbol }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The test seam of the symbol lookup, wrapped so no other callback is taken for it. */
+function isSymbolResolverOverride(
+  value: unknown,
+): value is { myInvestorResolveSymbol: MyInvestorSymbolResolver } {
+  return (
+    typeof value === "object" && value !== null && "myInvestorResolveSymbol" in value
+  );
+}
+
+function firstStartErrorUrl(formData: FormData, formId: string, message: string): string {
+  return errorRedirectUrl(currentUrlOf(formData), { formId, message });
+}
+
+/**
+ * «Leer mis productos» (#1880): sign in on the device MyInvestor already trusts and
+ * read the whole account. Without a remembered password the fold sends the one
+ * typed now, which is used for this read and never kept.
+ */
+export async function readMyInvestorProductsAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  const override = testArgFromActionArgs(_testArgs, isMyInvestorClientOverride);
+  return formAction<{ customerId: string; password: string } | null>({
+    datedFact: false,
+    extraIds: ["sourceId"],
+    guardUrl: currentUrlOf,
+    missingId: MYINVESTOR_NOT_FOUND,
+    missingIdUrl: currentUrlOf,
+    parse: ({ formData: data }) => {
+      const customerId = String(data.get("customerId") ?? "").trim();
+      const password = String(data.get("password") ?? "");
+      return {
+        ok: true,
+        value: customerId && password ? { customerId, password } : null,
+      };
+    },
+    requireId: false,
+    run: async (store, { extra, now, parsed, today }) => {
+      // It talks to MyInvestor, so a lapsed plan refuses it like any sync (#1162).
+      const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
+      if (paywall) return { error: paywall, ok: false };
+      const clientFor = override?.myInvestorClientFor ?? myInvestorClientFactory();
+      if (!clientFor) return { error: MYINVESTOR_UNAVAILABLE_LINE, ok: false };
+      return readMyInvestorProducts(
+        { clientFor, now, store, today },
+        { sourceId: extra.sourceId!, typed: parsed },
+      );
+    },
+    onError: ({ formData: data, error }) =>
+      firstStartErrorUrl(data, MYINVESTOR_READ_FORM_ID, error),
+    onSuccess: ({ formData: data }) =>
+      appendParam(currentUrlOf(data), "ok", "myinvestor_products_read"),
+  })(formData, ..._testArgs);
+}
+
+/**
+ * «Incluir N y traer su histórico» and «Incluir con su histórico» (#1880): the
+ * ticked products become linked holdings with their whole history, in ONE batch.
+ * It applies what the last read found, so it never talks to MyInvestor; only the
+ * price symbols are looked up, before the batch.
+ */
+export async function includeMyInvestorProductsAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  const resolver =
+    testArgFromActionArgs(_testArgs, isSymbolResolverOverride)?.myInvestorResolveSymbol ??
+    searchMyInvestorSymbol;
+  return formAction<string[], { created: number; applied: number }>({
+    datedFact: false,
+    extraIds: ["sourceId"],
+    guardUrl: currentUrlOf,
+    missingId: MYINVESTOR_NOT_FOUND,
+    missingIdUrl: currentUrlOf,
+    parse: ({ formData: data }) => ({
+      ok: true,
+      value: data.getAll("productKey").map(String).filter(Boolean),
+    }),
+    requireId: false,
+    run: async (store, { extra, parsed, today }) => {
+      // Creating holdings from a connector is premium ingestion (#1162).
+      const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
+      if (paywall) return { error: paywall, ok: false };
+      const result = await includeMyInvestorProducts(
+        {
+          newAssetId: () => `asset_${randomUUID()}`,
+          resolveSymbol: resolver,
+          store,
+          today,
+        },
+        { productKeys: parsed, sourceId: extra.sourceId! },
+      );
+      return result.ok
+        ? {
+            ok: true,
+            value: { applied: result.applied ?? 0, created: result.created ?? 0 },
+          }
+        : result;
+    },
+    onError: ({ formData: data, error }) =>
+      firstStartErrorUrl(data, MYINVESTOR_INCLUDE_FORM_ID, error),
+    onSuccess: ({ formData: data, value }) =>
+      appendParam(
+        appendParam(
+          appendParam(currentUrlOf(data), "ok", "myinvestor_included"),
+          "created",
+          String(value?.created ?? 0),
+        ),
+        "operaciones",
+        String(value?.applied ?? 0),
+      ),
+  })(formData, ..._testArgs);
+}

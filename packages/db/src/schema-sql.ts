@@ -373,6 +373,7 @@ CREATE TABLE \`connected_sources\` (
 	\`credentials_json\` text NOT NULL,
 	\`token_json\` text,
 	\`last_sync_at\` text,
+	\`ingest_cursor\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
@@ -566,5 +567,32 @@ CREATE TABLE \`connected_source_pending_logins\` (
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX \`connected_source_pending_logins_adapter_unique\` ON \`connected_source_pending_logins\` (\`adapter\`);
+CREATE UNIQUE INDEX \`connected_source_pending_logins_adapter_unique\` ON \`connected_source_pending_logins\` (\`adapter\`);--> statement-breakpoint
+CREATE TABLE \`connected_source_discoveries\` (
+	\`source_id\` text PRIMARY KEY NOT NULL,
+	\`read_on\` text NOT NULL,
+	\`payload_json\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE \`connected_source_links\` (
+	\`source_id\` text NOT NULL,
+	\`product_key\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`source_id\`, \`product_key\`),
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`connected_source_links_asset_unique\` ON \`connected_source_links\` (\`asset_id\`);--> statement-breakpoint
+CREATE TABLE \`connector_applied_facts\` (
+	\`source_id\` text NOT NULL,
+	\`fact_key\` text NOT NULL,
+	\`batch_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`source_id\`, \`fact_key\`),
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;

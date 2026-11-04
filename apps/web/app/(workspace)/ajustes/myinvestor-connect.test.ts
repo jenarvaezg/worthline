@@ -30,6 +30,7 @@ import {
   MYINVESTOR_TOO_MANY_CODES,
 } from "./myinvestor-copy";
 import { readMyInvestorPending } from "./myinvestor-credentials";
+import { offlineMyInvestorReader } from "./myinvestor-test-reader";
 
 const NOW = "2026-11-04T12:00:00.000Z";
 const TOKENS = { accessToken: "access", refreshToken: "refresh" };
@@ -60,6 +61,7 @@ function smsClient(): MyInvestorConnectClient {
       ok({ destination: "+34 6** *** *00", method: "OTP_SMS", signatureId: "sig-1" }),
     ),
     submitCode: vi.fn(async () => ok(null)),
+    reader: vi.fn(() => offlineMyInvestorReader()),
   };
 }
 

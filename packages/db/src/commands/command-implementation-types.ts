@@ -44,6 +44,10 @@ import type {
   ValuationCadence,
 } from "@worthline/domain";
 import type {
+  IncludeConnectedHoldingsCommand,
+  IncludeConnectedHoldingsResult,
+} from "./connected-inclusion";
+import type {
   RecordExternalTransferInCommand,
   RecordTransferCommand,
 } from "./investment-transfer";
@@ -299,6 +303,14 @@ export interface DatedFactCommandImplementations {
    * a deuda that lands without it has no curve anyone can draw (ADR 0031).
    */
   createDebtHoldingAndRipple: (command: CreateDebtHoldingCommand) => Promise<void>;
+  /**
+   * Include products of a source that owns its holdings (#1880, ADR 0115): create
+   * the linked holdings and apply their whole history through the ingestion port —
+   * ONE fact_batch, ONE transaction, ONE ripple (ADR 0062).
+   */
+  includeConnectedHoldingsAndRipple: (
+    command: IncludeConnectedHoldingsCommand,
+  ) => Promise<IncludeConnectedHoldingsResult>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts: { today: string },

@@ -105,7 +105,7 @@ describe("schema migration v74 (the MyInvestor connection)", () => {
         .rows[0]!.asset_id,
     ).toBeNull();
     expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(74);
+    expect(SCHEMA_VERSION).toBe(75);
   });
 
   test("the tables that point at a source still resolve to it after the rebuild", async () => {
@@ -187,7 +187,7 @@ describe("schema migration v74 (the MyInvestor connection)", () => {
       `INSERT INTO connected_source_pending_logins (id, adapter, payload_json, expires_at)
        VALUES ('p1', 'myinvestor', 'sealed', '2026-11-04T12:05:00.000Z')`,
     );
-    expect(await storedVersion(client)).toBe(74);
+    expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
   });
 
   test("re-running the rung on a migrated database changes nothing", async () => {
@@ -201,6 +201,6 @@ describe("schema migration v74 (the MyInvestor connection)", () => {
       1,
     );
     expect((await client.execute("SELECT * FROM positions")).rows).toHaveLength(1);
-    expect(await storedVersion(client)).toBe(74);
+    expect(await storedVersion(client)).toBe(SCHEMA_VERSION);
   });
 });

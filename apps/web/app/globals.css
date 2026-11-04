@@ -7376,7 +7376,8 @@ td.rowActions > * {
 .assistantProposal .assistantRowAside button,
 .fichaPriceNotice a,
 .fichaPriceNotice button,
-.myinvestorCodeActions .myinvestorRestart {
+.myinvestorCodeActions .myinvestorRestart,
+.myinvestorLeftList .myinvestorIncludeLater {
   background: transparent;
   border: 0;
   min-height: 0;
@@ -9976,6 +9977,205 @@ td.rowActions > * {
 /* Por qué la fila sin conectar no ofrece pliegue: una línea, donde iría «Conectar». */
 .myinvestorGate {
   margin: 0.35rem 0 0;
+}
+
+/* El primer arranque de MyInvestor (#1880, variante D): el pliegue por cuenta con
+   «Así queda tu patrimonio» al lado. Vive FUERA de .tableScroll (un sticky dentro
+   de un contenedor con scroll se pega al contenedor, no a la página). */
+.myinvestorChoose {
+  margin-top: 1rem;
+}
+
+.myinvestorInclude {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+}
+
+.myinvestorIncludeGrid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .myinvestorIncludeGrid {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  .myinvestorBasket {
+    align-self: start;
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.myinvestorGroup {
+  border-top: 1px solid var(--line-soft);
+  padding: 0.4rem 0 0.6rem;
+}
+
+/* Casilla nativa · texto · cifra: la casilla conserva su tamaño (canon §7). */
+.myinvestorGroupHead,
+.myinvestorProduct {
+  align-items: start;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.35rem 0;
+}
+
+.myinvestorGroupHead input,
+.myinvestorProduct input {
+  margin-top: 3px;
+}
+
+.myinvestorGroupLabel {
+  display: block;
+  font-weight: 700;
+}
+
+.myinvestorProduct {
+  border-top: 1px solid var(--hairline);
+  padding-left: 1.6rem;
+}
+
+.myinvestorProduct[data-off] .myinvestorProductName,
+.myinvestorProduct[data-off] .myinvestorProductNum {
+  color: var(--muted);
+}
+
+.myinvestorProductMain {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.myinvestorProductName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.myinvestorProductNum {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* El identificador fuerte (ISIN, DGS o IBAN acortado) se lee en cifra. */
+.myinvestorCodeId {
+  font-family: var(--font-numeric);
+}
+
+/* Las notas: una línea cada una, con la regla de oro del aviso. */
+.myinvestorNotes {
+  display: grid;
+  gap: 1px;
+  margin-top: 2px;
+}
+
+.myinvestorNotes > span {
+  border-left: 2px solid var(--gold);
+  color: var(--ink);
+  font-size: 0.78rem;
+  padding-left: 6px;
+}
+
+.myinvestorOthersHead {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 1rem 0 0;
+}
+
+/* La cesta: abierta por la regla gruesa, como la del libro (canon §4). */
+.myinvestorBasket {
+  border-top: var(--rule-heavy);
+  display: grid;
+  gap: 10px;
+  padding-top: 0.6rem;
+}
+
+.myinvestorBasket button {
+  justify-self: start;
+}
+
+.myinvestorBasketHead {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.myinvestorBasketNote {
+  border-left: 2px solid var(--gold);
+  font-size: 0.82rem;
+  margin: 0;
+  padding-left: 8px;
+}
+
+.myinvestorLedger {
+  display: grid;
+  margin: 0;
+}
+
+.myinvestorLedger > div {
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+}
+
+.myinvestorLedger dd {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* El total lleva la doble regla del catálogo (.totalRule), debajo. */
+.myinvestorLedger .myinvestorLedgerTotal {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink);
+  flex-wrap: wrap;
+  font-weight: 700;
+  margin-top: 3px;
+  padding-top: 6px;
+}
+
+.myinvestorLedgerTotal.totalRule::after {
+  flex-basis: 100%;
+}
+
+/* Lo que quedó fuera, tras incluir: cada producto con «Incluir con su histórico». */
+.myinvestorLeftList {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.4rem 0 0;
+  max-width: 40rem;
+  padding: 0;
+}
+
+.myinvestorLeftList li {
+  align-items: start;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding-bottom: 0.4rem;
+}
+
+.myinvestorLeftList li > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.myinvestorLeftList .myinvestorIncludeLater {
+  color: var(--blue);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Composition strip — the 100 %-stacked metal split, the signature. */

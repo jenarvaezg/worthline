@@ -10,6 +10,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
+  // What the last read of MyInvestor found (#1880); null until something was read.
+  readDiscovery: vi.fn(
+    async (): Promise<{ readOn: string; payloadJson: string } | null> => null,
+  ),
+  readLinks: vi.fn(async (): Promise<{ productKey: string; assetId: string }[]> => []),
   listSourceAssetIds: vi.fn(async () => ["asset_binance"]),
   // Annotated with the port's shape: a MyInvestor row has no mirror asset and
   // carries its credentials (#1879), which the inferred literal would refuse.
@@ -104,6 +109,8 @@ vi.mock("@web/page-shell", () => ({
       connectedSources: {
         listSourceAssetIds: calls.listSourceAssetIds,
         listSources: calls.listSources,
+        readDiscovery: calls.readDiscovery,
+        readLinks: calls.readLinks,
         readPositions: calls.readPositions,
       },
       syncRuns: { readRuns: calls.readRuns },
@@ -153,6 +160,80 @@ function myInvestorAvailableRow(html: string): string {
   const end = html.indexOf('<div class="conexAvailableRow"', start);
   return html.slice(start, end === -1 ? undefined : end);
 }
+
+/**
+ * A read of MyInvestor with one cash account of one's own and one fund of a minor's
+ * account (#1880): figures and identifiers invented.
+ */
+const DISCOVERY = JSON.stringify({
+  accounts: [
+    {
+      key: "cash:1",
+      kind: "cash",
+      label: "Cuenta Proyectos",
+      otherHolder: false,
+      sub: "Cuenta de efectivo",
+    },
+    {
+      key: "securities:2",
+      kind: "securities",
+      label: "Cuenta de valores ···0002",
+      otherHolder: true,
+      sub: "De otro titular: la representas (menor de edad)",
+    },
+  ],
+  operations: [
+    {
+      dateKey: "2024-03-18",
+      key: "ref-1",
+      payload: {
+        accountId: "securities:2",
+        amount: "100",
+        currency: "EUR",
+        executedAt: "2024-03-18",
+        fees: "0",
+        instrument: { code: "IE00B03HD191", scheme: "isin" },
+        instrumentName: "Fondo indexado",
+        kind: "operation",
+        operation: "buy",
+        pricePerUnit: "50",
+        product: "fund",
+        reference: "ref-1",
+        sourceType: "INVESTMENT_FUNDS_SUBSCRIPTION",
+        transfer: null,
+        units: "2",
+      },
+    },
+  ],
+  products: [
+    {
+      accountKey: "cash:1",
+      cash: { balance: "150.45", currency: "EUR", withheld: "150.23" },
+      identifier: "ES00 ···0001",
+      instrument: null,
+      key: "cash:1",
+      kind: "cash",
+      members: [],
+      name: "Cuenta Proyectos",
+      otherHolder: false,
+      units: null,
+    },
+    {
+      accountKey: "securities:2",
+      cash: null,
+      identifier: "IE00B03HD191",
+      instrument: { code: "IE00B03HD191", scheme: "isin" },
+      key: "securities:2|isin:IE00B03HD191",
+      kind: "fund",
+      members: [],
+      name: "Fondo indexado",
+      otherHolder: true,
+      units: "2",
+    },
+  ],
+  readOn: "2026-11-04",
+  version: 1,
+});
 
 const myInvestorSource = (credentialsJson: string) => ({
   adapter: "myinvestor",
@@ -507,6 +588,10 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
       myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
     ]);
     calls.listSourceAssetIds.mockResolvedValueOnce([]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-11-04",
+    });
 
     const html = await render();
 
@@ -540,5 +625,70 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     // La contraseña nunca se pinta, ni siquiera dentro de su pliegue.
     expect(html).not.toContain("pw-que-no-se-pinta");
     expect(html).not.toContain("12345678A");
+  });
+
+  test("leído y sin incluir: el pliegue por cuenta, lo del menor sin marcar y la cesta al lado (#1880)", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce([]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-11-04",
+    });
+
+    const html = await render();
+    // The fold lives AFTER the table, out of `.tableScroll` (the panel is sticky).
+    const tableEnd = html.indexOf("</table>");
+    const fold = html.indexOf("MyInvestor · Elegir qué incluir");
+    expect(fold).toBeGreaterThan(tableEnd);
+
+    expect(html).toContain("Así queda tu patrimonio");
+    expect(html).toContain("De otro titular · llega sin marcar");
+    expect(html).toContain("Saldo de hoy, sin movimientos");
+    expect(html).toContain("1 operación desde mar 2024");
+    expect(html).toContain("ya dentro del saldo");
+    expect(html).toContain("Incluir 1 y traer su histórico");
+    // Lo del menor llega sin marcar; el efectivo propio, marcado.
+    expect(html).toContain('name="productKey" checked="" value="cash:1"');
+    expect(html).toContain('name="productKey" value="securities:2|isin:IE00B03HD191"');
+  });
+
+  test("sin leer y sin contraseña guardada: pide la contraseña una vez para leer", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce([]);
+
+    const html = await render();
+
+    expect(html).toContain("Falta leer tus productos");
+    expect(html).toContain("Leer mis productos");
+    expect(html).toContain('name="password"');
+    expect(html).not.toContain("Así queda tu patrimonio");
+  });
+
+  test("tras incluir: al día, y lo que quedó fuera se incluye con su histórico", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      {
+        ...myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+        lastSyncAt: new Date().toISOString(),
+      },
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce(["asset_cash"]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-11-04",
+    });
+    calls.readLinks.mockResolvedValueOnce([
+      { assetId: "asset_cash", productKey: "cash:1" },
+    ]);
+
+    const html = await render();
+
+    expect(html).toContain("Productos de MyInvestor");
+    expect(html).toContain("1 incluido.");
+    expect(html).toContain("Incluir con su histórico");
+    expect(html).not.toContain("Así queda tu patrimonio");
   });
 });

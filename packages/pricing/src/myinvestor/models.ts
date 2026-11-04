@@ -93,6 +93,19 @@ export interface MyInvestorCashAccount {
   readonly withheldBalance: DecimalString;
   readonly holders: readonly MyInvestorHolder[];
   readonly ownership: MyInvestorOwnership;
+  /**
+   * The IBAN shortened to its country, check digits and last four (`ES69 ···0252`),
+   * the strong identifier the first start shows (#1869 P3, #1880). The whole IBAN is
+   * never kept: only what a bank statement prints in its header.
+   */
+  readonly ibanMasked: string | null;
+}
+
+/** `ES6996…0252` → `ES69 ···0252`; null when there is nothing IBAN-shaped to shorten. */
+function maskIban(iban: string | null): string | null {
+  const compact = iban?.replace(/\s+/g, "") ?? "";
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{8,}$/.test(compact)) return null;
+  return `${compact.slice(0, 4)} ···${compact.slice(-4)}`;
 }
 
 export const cashAccountsSchema: z.ZodType<MyInvestorCashAccount[], unknown> = z.array(
@@ -107,8 +120,13 @@ export const cashAccountsSchema: z.ZodType<MyInvestorCashAccount[], unknown> = z
       enabledBalance: decimal,
       withheldBalance: decimal,
       holders: z.array(holder).default([]),
+      iban: text,
     })
-    .transform((account) => ({ ...account, ownership: ownershipOf(account.holders) })),
+    .transform(({ iban, ...account }) => ({
+      ...account,
+      ibanMasked: maskIban(iban),
+      ownership: ownershipOf(account.holders),
+    })),
 );
 
 export interface MyInvestorSecuritiesAccountSummary {

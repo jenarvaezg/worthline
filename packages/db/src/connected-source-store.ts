@@ -28,9 +28,15 @@ import {
   disconnectOwningSource,
   type PendingLoginRow,
   purgeExpiredPendingLogins,
+  readAppliedFactKeys,
   readPendingLogin,
+  readSourceDiscovery,
+  readSourceLinks,
   reservePendingCodeAttempt,
+  type SourceDiscoveryRow,
+  type SourceLinkRow,
   type StartPendingLoginInput,
+  saveSourceDiscovery,
   startPendingLogin,
 } from "./connected-source-owning-store";
 import { openSecret, sealSecret } from "./crypto";
@@ -191,6 +197,21 @@ export interface ConnectedSourceStore {
   deletePendingLogin(id: string): Promise<void>;
   /** Delete the pending steps already expired at `now`; returns how many. */
   purgeExpiredPendingLogins(now: string): Promise<number>;
+  /**
+   * Keep what an owning source found on its last read (#1880), replacing the
+   * previous one, and stamp its last good sync. Null for an unknown or mirroring id.
+   */
+  saveDiscovery(input: {
+    sourceId: string;
+    readOn: string;
+    payloadJson: string;
+    readAt: string;
+  }): Promise<{ saved: true } | null>;
+  readDiscovery(sourceId: string): Promise<SourceDiscoveryRow | null>;
+  /** Which product each linked holding of an owning source is (#1880). */
+  readLinks(sourceId: string): Promise<SourceLinkRow[]>;
+  /** The ingestion port's dedup ledger of a source (ADR 0066). */
+  readAppliedFactKeys(sourceId: string): Promise<Set<string>>;
 }
 
 /** The columns that make up a {@link ConnectedSourceRow}. */
@@ -965,5 +986,9 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     reservePendingCodeAttempt: (id, cap) => reservePendingCodeAttempt(ctx, id, cap),
     deletePendingLogin: (id) => deletePendingLogin(ctx, id),
     purgeExpiredPendingLogins: (now) => purgeExpiredPendingLogins(ctx, now),
+    saveDiscovery: (input) => saveSourceDiscovery(ctx, input),
+    readDiscovery: (sourceId) => readSourceDiscovery(ctx, sourceId),
+    readLinks: (sourceId) => readSourceLinks(ctx, sourceId),
+    readAppliedFactKeys: (sourceId) => readAppliedFactKeys(ctx, sourceId),
   };
 }

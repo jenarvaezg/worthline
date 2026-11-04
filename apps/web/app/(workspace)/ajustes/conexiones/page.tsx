@@ -2,6 +2,7 @@ import {
   hasSavedPassword,
   readMyInvestorCredentials,
 } from "@web/ajustes/myinvestor-credentials";
+import { loadMyInvestorFirstStart } from "@web/ajustes/myinvestor-first-start-flow";
 import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
 import { guardViewerPage, isWriteBlocked } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
@@ -20,6 +21,7 @@ import {
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readSessionEmail, readStoreTarget } from "@web/read-store-target";
+import { systemClock } from "@worthline/domain";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CONNECTION_REGISTRY } from "./connection-registry";
@@ -115,9 +117,15 @@ export async function ConexionesContent({
   // the SERVER, never of the build: `connection()` keeps it out of any prerender
   // (a build-time value here would break hydration once the runtime differs).
   await connection();
-  const myInvestorCredentials = sources
-    .filter((source) => source.adapter === "myinvestor")
-    .map((source) => readMyInvestorCredentials(source.credentialsJson))[0];
+  const myInvestorSource = sources.find((source) => source.adapter === "myinvestor");
+  const myInvestorCredentials = myInvestorSource
+    ? readMyInvestorCredentials(myInvestorSource.credentialsJson)
+    : undefined;
+  // What the last read found (#1880): the fold to choose what to include, and later
+  // what was left out. Read from the store only; MyInvestor is never asked here.
+  const myInvestorFirstStart = myInvestorSource
+    ? await loadMyInvestorFirstStart(store, myInvestorSource.id)
+    : null;
   const myInvestor: MyInvestorTableContext = {
     availability: myInvestorAvailability({
       premium: !sourcesGated,
@@ -129,6 +137,8 @@ export async function ConexionesContent({
         ? myInvestorCredentials.acceptance
         : null,
     viewerEmail: await readSessionEmail(),
+    firstStart: myInvestorFirstStart?.view ?? null,
+    today: systemClock().today(),
   };
 
   return (

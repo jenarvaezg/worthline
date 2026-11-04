@@ -17,11 +17,16 @@
  * pending step holds the credentials only when the box was ticked: without it
  * there is nothing to keep, so nothing is kept.
  *
- * This slice only makes the connection. Discovering the products and creating the
- * holdings is #1880.
+ * This slice only makes the connection. When it ends with a session in hand, the
+ * first start's read (#1880) runs through {@link MyInvestorFlowDeps.afterConnect}.
  */
 import type { WorthlineStore } from "@web/store";
-import type { MyInvestorClient, MyInvestorErrorKind } from "@worthline/pricing";
+import type {
+  MyInvestorClient,
+  MyInvestorErrorKind,
+  MyInvestorReader,
+  MyInvestorTokens,
+} from "@worthline/pricing";
 import {
   MYINVESTOR_ALREADY_CONNECTED,
   MYINVESTOR_CODE_REJECTED,
@@ -48,10 +53,10 @@ import {
 export const MYINVESTOR_ADAPTER = "myinvestor";
 export const MYINVESTOR_LABEL = "MyInvestor";
 
-/** What connecting needs of the client; the reads are #1880's. */
+/** What connecting needs of the client, and the reads of the first start (#1880). */
 export type MyInvestorConnectClient = Pick<
   MyInvestorClient,
-  "login" | "loginWithKnownDevice" | "signedLogin" | "startCode" | "submitCode"
+  "login" | "loginWithKnownDevice" | "signedLogin" | "startCode" | "submitCode" | "reader"
 >;
 
 export type MyInvestorFlowStore = Pick<
@@ -76,6 +81,15 @@ export interface MyInvestorFlowDeps {
   readonly now: string;
   /** Who would accept the risk statement: the session's email, null when local. */
   readonly acceptedBy: string | null;
+  /**
+   * The first start's read (#1880), when the connection ends with a session in hand:
+   * a known device, or the code with the password remembered. Its failure never
+   * undoes the connection; the fold then offers to read again.
+   */
+  readonly afterConnect?: (input: {
+    sourceId: string;
+    reader: MyInvestorReader;
+  }) => Promise<unknown>;
 }
 
 /** Where the form is after a step. `connected` ends it; the action redirects. */
@@ -127,6 +141,7 @@ function pendingExpiry(now: string): string {
 async function connect(
   deps: MyInvestorFlowDeps,
   credentials: MyInvestorStoredCredentials,
+  session: { client: MyInvestorConnectClient; tokens: MyInvestorTokens } | null,
 ): Promise<MyInvestorStep> {
   const connected = await deps.store.connectOwningSource({
     adapter: MYINVESTOR_ADAPTER,
@@ -135,6 +150,12 @@ async function connect(
   });
   // Another login of this workspace finished first: this one keeps nothing.
   if (!connected) return credentialsStep(MYINVESTOR_ALREADY_CONNECTED);
+  if (session && deps.afterConnect) {
+    await deps.afterConnect({
+      reader: session.client.reader(session.tokens),
+      sourceId: connected.sourceId,
+    });
+  }
   return { savedPassword: hasSavedPassword(credentials), step: "connected" };
 }
 
@@ -174,7 +195,10 @@ export async function startMyInvestorConnect(
   if (!login.ok) return credentialsStep(loginErrorMessage(login.error.kind));
 
   if (login.value.kind === "tokens") {
-    return connect(deps, credentialsToKeep(deviceId, save, deps.now));
+    return connect(deps, credentialsToKeep(deviceId, save, deps.now), {
+      client,
+      tokens: login.value.tokens,
+    });
   }
 
   const sent = await client.startCode(login.value.challenge);
@@ -257,6 +281,8 @@ export async function submitMyInvestorCode(
 
   // With the credentials in hand (the opt-in), the login is finished with the
   // signature, which proves both the device and the password before they are kept.
+  let session: { client: MyInvestorConnectClient; tokens: MyInvestorTokens } | null =
+    null;
   if (pending.save) {
     const signed = await client.signedLogin(
       { customerId: pending.save.customerId, password: pending.save.password },
@@ -266,10 +292,15 @@ export async function submitMyInvestorCode(
       await deps.store.deletePendingLogin(row.id);
       return credentialsStep(loginErrorMessage(signed.error.kind));
     }
+    session = { client, tokens: signed.value };
   }
 
   await deps.store.deletePendingLogin(row.id);
-  return connect(deps, credentialsToKeep(pending.deviceId, pending.save, deps.now));
+  return connect(
+    deps,
+    credentialsToKeep(pending.deviceId, pending.save, deps.now),
+    session,
+  );
 }
 
 async function readConnection(store: MyInvestorFlowStore, sourceId: string) {

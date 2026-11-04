@@ -94,6 +94,18 @@ export interface OperationsStore {
     inputs: readonly CreateInvestmentOperationInput[],
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
+  /**
+   * The ONE writer of a linked holding's operations: its owning source (ADR 0115,
+   * decision 2). A linked holding is read-only to every hand-written path —
+   * {@link OperationsStore.recordOperations} refuses it — so the source writes
+   * through here instead, and only into holdings linked to IT: an operation for a
+   * manual holding or another source's throws, and nothing is written.
+   */
+  recordSourceOperations: (
+    sourceId: string,
+    inputs: readonly CreateInvestmentOperationInput[],
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /**
    * Delete ONE operation. Returns its asset id and date, or null if not found.
@@ -162,6 +174,8 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
   return {
     recordOperation: (input, opts) => recordOperations(ctx, [input], opts),
     recordOperations: (inputs, opts) => recordOperations(ctx, inputs, opts),
+    recordSourceOperations: (sourceId, inputs, opts) =>
+      recordSourceOperations(ctx, sourceId, inputs, opts),
     readOperations: (assetId) => readAssetOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
@@ -226,6 +240,43 @@ async function recordOperations(
 
   for (const assetId of new Set(inputs.map((input) => input.assetId))) {
     await assertAssetAllowsOperationWrite(ctx, assetId);
+  }
+
+  const rows = inputs.map((input) => operationRow(input, provenance));
+  for (const group of chunk(rows, OPERATIONS_PER_INSERT)) {
+    await ctx.db.insert(assetOperations).values(group).run();
+  }
+}
+
+/**
+ * {@link OperationsStore.recordSourceOperations}: one read of the target holdings'
+ * links, then the same batched insert. Like `recordOperations`, the caller owns the
+ * transaction a long batch spans.
+ */
+async function recordSourceOperations(
+  ctx: StoreContext,
+  sourceId: string,
+  inputs: readonly CreateInvestmentOperationInput[],
+  provenance?: FactPersistenceProvenance,
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  const assetIds = [...new Set(inputs.map((input) => input.assetId))];
+  const linked = new Set<string>();
+  for (const ids of chunk(assetIds, OPERATIONS_PER_INSERT)) {
+    const rows = await ctx.db
+      .select({ id: assets.id, sourceId: assets.connectedSourceId })
+      .from(assets)
+      .where(inArray(assets.id, ids))
+      .all();
+    for (const row of rows) if (row.sourceId === sourceId) linked.add(row.id);
+  }
+  const stranger = assetIds.find((assetId) => !linked.has(assetId));
+  if (stranger !== undefined) {
+    throw new Error(
+      `Connected source "${sourceId}" cannot write operations to holding "${stranger}": ` +
+        "it is not linked to that source.",
+    );
   }
 
   const rows = inputs.map((input) => operationRow(input, provenance));

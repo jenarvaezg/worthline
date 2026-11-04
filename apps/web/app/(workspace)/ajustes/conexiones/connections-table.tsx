@@ -1,4 +1,5 @@
 import type { MyInvestorAcceptance } from "@web/ajustes/myinvestor-credentials";
+import type { MyInvestorFirstStartView } from "@web/ajustes/myinvestor-selection";
 import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PendingSubmit } from "@web/pending-submit";
 import { syncRunInstant } from "@worthline/db";
@@ -8,10 +9,13 @@ import { Fragment } from "react";
 import type { ConnectionDefinition, CredentialField } from "./connection-registry";
 import type { ConnectionRow } from "./connection-rows";
 import {
-  MyInvestorAvailable,
-  MyInvestorConnectedDetail,
-  MyInvestorPendingChoice,
-} from "./myinvestor-row";
+  MyInvestorIncludedProducts,
+  MyInvestorReadProducts,
+  MyInvestorStateCell,
+} from "./myinvestor-first-start";
+import { myInvestorRowState } from "./myinvestor-first-start-view";
+import MyInvestorIncludeFold from "./myinvestor-include-fold";
+import { MyInvestorAvailable, MyInvestorConnectedDetail } from "./myinvestor-row";
 import type { MyInvestorAvailability } from "./myinvestor-view";
 import {
   describeRunOutcome,
@@ -61,6 +65,10 @@ export interface MyInvestorTableContext {
   savedPassword: MyInvestorAcceptance | null;
   /** The session's email, to say «tú» to whoever accepted it. */
   viewerEmail: string | null;
+  /** What the last read of MyInvestor found (#1880), or null when nothing was read. */
+  firstStart: MyInvestorFirstStartView | null;
+  /** Today, `YYYY-MM-DD`, to tell whether the last read is today's. */
+  today: string;
 }
 
 /**
@@ -100,6 +108,15 @@ export default function ConnectionsTable({
 }) {
   const connected = connections.filter((entry) => entry.row.source !== null);
   const available = connections.filter((entry) => entry.row.source === null);
+  // MyInvestor's «Elegir qué incluir» (#1880, design D) is drawn AFTER the table,
+  // out of `.tableScroll`: its panel is sticky, and a sticky box inside a scroll
+  // container sticks to that container, not to the page.
+  const myInvestorSource =
+    connected.find((entry) => entry.definition.kind === "myinvestor")?.row ?? null;
+  const choosing =
+    myInvestorSource?.source && myInvestorSource.unitCount === 0 && myInvestor.firstStart
+      ? { sourceId: myInvestorSource.source.id, view: myInvestor.firstStart }
+      : null;
 
   return (
     <>
@@ -146,17 +163,15 @@ export default function ConnectionsTable({
                         <td>
                           {/* Until something is included (#1880) there is no
                               sync health to speak of: the next step is the state. */}
-                          {row.unitCount === 0 ? (
-                            <MyInvestorPendingChoice
-                              savedPassword={myInvestor.savedPassword !== null}
-                            />
-                          ) : (
-                            <span
-                              className={`coinStatusPill ${TONE_CLASS[state.tone]}`.trim()}
-                            >
-                              {state.label}
-                            </span>
-                          )}
+                          <MyInvestorStateCell
+                            savedPassword={myInvestor.savedPassword !== null}
+                            state={myInvestorRowState({
+                              hasDiscovery: myInvestor.firstStart !== null,
+                              lastSyncAt: source.lastSyncAt,
+                              linkedCount: row.unitCount,
+                              today: myInvestor.today,
+                            })}
+                          />
                         </td>
                         <td>{formatLastSync(source.lastSyncAt)}</td>
                         <td className="conexNum">
@@ -175,6 +190,27 @@ export default function ConnectionsTable({
                       </tr>
                       <tr className="conexDetailRow">
                         <td colSpan={6}>
+                          {myInvestor.firstStart === null ? (
+                            <details
+                              suppressHydrationWarning
+                              className="conexCredentials"
+                              open
+                            >
+                              <summary>Elegir qué incluir</summary>
+                              <MyInvestorReadProducts
+                                currentUrl={currentUrl}
+                                savedPassword={myInvestor.savedPassword !== null}
+                                sourceId={source.id}
+                              />
+                            </details>
+                          ) : row.unitCount > 0 ? (
+                            <MyInvestorIncludedProducts
+                              currentUrl={currentUrl}
+                              privacyMode={privacyMode}
+                              rows={myInvestor.firstStart.rows}
+                              sourceId={source.id}
+                            />
+                          ) : null}
                           <MyInvestorConnectedDetail
                             currentUrl={currentUrl}
                             disconnectFormId={definition.disconnectFormId}
@@ -335,6 +371,23 @@ export default function ConnectionsTable({
           </table>
         </div>
       )}
+
+      {choosing ? (
+        <details
+          suppressHydrationWarning
+          className="conexCredentials myinvestorChoose"
+          open
+        >
+          <summary>MyInvestor · Elegir qué incluir</summary>
+          <MyInvestorIncludeFold
+            currentUrl={currentUrl}
+            others={choosing.view.others}
+            own={choosing.view.own}
+            privacyMode={privacyMode}
+            sourceId={choosing.sourceId}
+          />
+        </details>
+      ) : null}
 
       {available.length === 0 ? null : (
         <div className="conexAvailable">

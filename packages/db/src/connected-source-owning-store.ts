@@ -13,10 +13,17 @@
  */
 import type { SourceAdapter } from "@worthline/domain";
 import { isMirroredSourceAdapter } from "@worthline/domain";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, asc, eq, lt, sql } from "drizzle-orm";
 
 import { openSecret, sealSecret } from "./crypto";
-import { assets, connectedSourcePendingLogins, connectedSources } from "./schema";
+import {
+  assets,
+  connectedSourceDiscoveries,
+  connectedSourceLinks,
+  connectedSourcePendingLogins,
+  connectedSources,
+  connectorAppliedFacts,
+} from "./schema";
 import type { StoreContext } from "./store-context";
 
 /** A source that owns its holdings: today, only MyInvestor. */
@@ -175,6 +182,102 @@ export async function deletePendingLogin(ctx: StoreContext, id: string): Promise
     .delete(connectedSourcePendingLogins)
     .where(eq(connectedSourcePendingLogins.id, id))
     .run();
+}
+
+/** What an owning source found the last time it was read (#1880). */
+export interface SourceDiscoveryRow {
+  /** The day of the read, `YYYY-MM-DD`. */
+  readOn: string;
+  /** The adapter's own document; its shape belongs to the adapter's module. */
+  payloadJson: string;
+}
+
+/** One linked holding of an owning source: which product it is (#1880). */
+export interface SourceLinkRow {
+  productKey: string;
+  assetId: string;
+}
+
+/**
+ * Keep what the read found, replacing the previous read, and stamp the source's
+ * last good sync with the instant of the read: a read that got this far is one.
+ * Null when the id names no owning source.
+ */
+export async function saveSourceDiscovery(
+  ctx: StoreContext,
+  input: { sourceId: string; readOn: string; payloadJson: string; readAt: string },
+): Promise<{ saved: true } | null> {
+  const source = await ctx.db
+    .select({ adapter: connectedSources.adapter })
+    .from(connectedSources)
+    .where(eq(connectedSources.id, input.sourceId))
+    .get();
+  if (!source || isMirroredSourceAdapter(source.adapter)) return null;
+
+  await ctx.transaction(async () => {
+    await ctx.db
+      .insert(connectedSourceDiscoveries)
+      .values({
+        payloadJson: input.payloadJson,
+        readOn: input.readOn,
+        sourceId: input.sourceId,
+      })
+      .onConflictDoUpdate({
+        set: { payloadJson: input.payloadJson, readOn: input.readOn },
+        target: connectedSourceDiscoveries.sourceId,
+      })
+      .run();
+    await ctx.db
+      .update(connectedSources)
+      .set({ lastSyncAt: input.readAt, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(connectedSources.id, input.sourceId))
+      .run();
+  });
+  return { saved: true };
+}
+
+export async function readSourceDiscovery(
+  ctx: StoreContext,
+  sourceId: string,
+): Promise<SourceDiscoveryRow | null> {
+  const row = await ctx.db
+    .select({
+      payloadJson: connectedSourceDiscoveries.payloadJson,
+      readOn: connectedSourceDiscoveries.readOn,
+    })
+    .from(connectedSourceDiscoveries)
+    .where(eq(connectedSourceDiscoveries.sourceId, sourceId))
+    .get();
+  return row ?? null;
+}
+
+/** The source's linked holdings, by product, oldest link first. */
+export async function readSourceLinks(
+  ctx: StoreContext,
+  sourceId: string,
+): Promise<SourceLinkRow[]> {
+  return ctx.db
+    .select({
+      assetId: connectedSourceLinks.assetId,
+      productKey: connectedSourceLinks.productKey,
+    })
+    .from(connectedSourceLinks)
+    .where(eq(connectedSourceLinks.sourceId, sourceId))
+    .orderBy(asc(connectedSourceLinks.createdAt), asc(connectedSourceLinks.productKey))
+    .all();
+}
+
+/** The dedup ledger of the source: every fact key it already applied. */
+export async function readAppliedFactKeys(
+  ctx: StoreContext,
+  sourceId: string,
+): Promise<Set<string>> {
+  const rows = await ctx.db
+    .select({ factKey: connectorAppliedFacts.factKey })
+    .from(connectorAppliedFacts)
+    .where(eq(connectorAppliedFacts.sourceId, sourceId))
+    .all();
+  return new Set(rows.map((row) => row.factKey));
 }
 
 /**

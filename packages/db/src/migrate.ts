@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 74;
+export const SCHEMA_VERSION = 75;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -2478,6 +2478,62 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     }
     await writeSchemaVersion(client, 74);
+  }
+
+  if (version < 75) {
+    // #1880 (ADR 0066/0115): the first start of MyInvestor, and the ingestion port's
+    // persistence for a live source.
+    //
+    // 1. `connected_sources.ingest_cursor`: where the port resumes. Additive,
+    //    nullable, guarded by the column's presence so a fresh database (born with
+    //    it) and a re-run skip it.
+    // 2. `connected_source_discoveries`: what the last read found, one row per
+    //    source.
+    // 3. `connected_source_links`: which product each linked holding is.
+    // 4. `connector_applied_facts`: the dedup ledger.
+    // A partial historical fixture with no sources table has nothing to extend:
+    // the three tables reference it, so they wait for a schema that has it.
+    const sourceColumns = (
+      (await client.execute("PRAGMA table_info(connected_sources)")).rows as unknown as {
+        name: string;
+      }[]
+    ).map((column) => String(column.name));
+    if (sourceColumns.length > 0) {
+      if (!sourceColumns.includes("ingest_cursor")) {
+        await client.execute(
+          "ALTER TABLE connected_sources ADD COLUMN ingest_cursor TEXT",
+        );
+      }
+      await client.executeMultiple(`
+        CREATE TABLE IF NOT EXISTS connected_source_discoveries (
+          source_id TEXT PRIMARY KEY NOT NULL,
+          read_on TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE TABLE IF NOT EXISTS connected_source_links (
+          source_id TEXT NOT NULL,
+          product_key TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_id, product_key),
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade,
+          FOREIGN KEY (asset_id) REFERENCES assets(id) ON UPDATE no action ON DELETE cascade
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS connected_source_links_asset_unique
+          ON connected_source_links (asset_id);
+        CREATE TABLE IF NOT EXISTS connector_applied_facts (
+          source_id TEXT NOT NULL,
+          fact_key TEXT NOT NULL,
+          batch_id TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          PRIMARY KEY (source_id, fact_key),
+          FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+        );
+      `);
+    }
+    await writeSchemaVersion(client, 75);
   }
 
   return { ranV18Backfill, ranV33Backfill };

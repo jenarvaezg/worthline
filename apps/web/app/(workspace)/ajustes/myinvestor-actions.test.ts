@@ -16,6 +16,8 @@ import { fixedClock } from "@worthline/domain";
 import type { MyInvestorResult } from "@worthline/pricing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { offlineMyInvestorReader } from "./myinvestor-test-reader";
+
 let mockTarget: StoreTarget = { kind: "local" };
 
 vi.mock("@web/read-store-target", () => ({
@@ -75,6 +77,7 @@ function fakeClient(device: "known" | "sms"): MyInvestorConnectClient {
       ok({ destination: null, method: "OTP_SMS", signatureId: "sig-1" }),
     ),
     submitCode: vi.fn(async () => ok(null)),
+    reader: vi.fn(() => offlineMyInvestorReader()),
   };
 }
 

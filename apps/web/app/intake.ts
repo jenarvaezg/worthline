@@ -448,6 +448,15 @@ export function resolveOkMessage(
     return `${funds} fondo${funds === 1 ? "" : "s"} importado${funds === 1 ? "" : "s"}${createdPart}.`;
   }
 
+  if (key === "myinvestor_included") {
+    // The first start of MyInvestor (#1880): what one batch created.
+    const created =
+      Number.parseInt(normalizeParam(searchParams?.["created"]) ?? "", 10) || 0;
+    const operations =
+      Number.parseInt(normalizeParam(searchParams?.["operaciones"]) ?? "", 10) || 0;
+    return `${created} ${created === 1 ? "holding creado" : "holdings creados"} con ${operations} ${operations === 1 ? "operación" : "operaciones"}, en un solo lote.`;
+  }
+
   if (key === "schedule_import_loaded") {
     const revisions =
       Number.parseInt(normalizeParam(searchParams?.["revisiones"]) ?? "", 10) || 0;
@@ -572,6 +581,7 @@ export function okMessage(key: string | undefined): string | null {
     myinvestor_connected:
       "MyInvestor conectado. Ahora elige qué cuentas y productos incluir.",
     myinvestor_disconnected: "MyInvestor desconectado. Sus credenciales se han borrado.",
+    myinvestor_products_read: "Productos de MyInvestor leídos. Elige qué incluir.",
     myinvestor_password_forgotten:
       "Contraseña de MyInvestor borrada. worthline guarda solo la marca del dispositivo.",
     myinvestor_password_saved:

@@ -51,18 +51,6 @@ export function MyInvestorAvailable({
   }
 }
 
-/** The status cell of a connection that has not chosen what to include yet (#1880). */
-export function MyInvestorPendingChoice({ savedPassword }: { savedPassword: boolean }) {
-  return (
-    <>
-      <span className="coinStatusPill isPending">Falta elegir qué incluir</span>
-      <span className="conexSub">
-        {savedPassword ? "Se pone al día sola cada día" : "Se pone al día cuando pulses"}
-      </span>
-    </>
-  );
-}
-
 /** The folds under the connected MyInvestor row. */
 export function MyInvestorConnectedDetail({
   currentUrl,

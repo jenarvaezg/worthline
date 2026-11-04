@@ -31,6 +31,9 @@ export const BINANCE_DISCONNECT_FORM_ID = "binance-disconnect";
  */
 export const MYINVESTOR_PASSWORD_FORM_ID = "myinvestor-password";
 export const MYINVESTOR_DISCONNECT_FORM_ID = "myinvestor-disconnect";
+/** The first start (#1880): reading the products, and including them. */
+export const MYINVESTOR_READ_FORM_ID = "myinvestor-read";
+export const MYINVESTOR_INCLUDE_FORM_ID = "myinvestor-include";
 
 /**
  * Adónde vuelve «Eliminar y conservar histórico» cuando no puede volver a la página
