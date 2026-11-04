@@ -110,3 +110,12 @@ needed only when there is a new operation, and a daily sync is enough.
   the value.
 - **A local CLI that pushes to worthline.** Rejected in #1863: the connector runs on
   the server.
+
+## Amendment (#1876, 2026-11-04) — the button's origin is `manual`
+
+Decision 8 logs the origin of every attempt, and #1885 named the two values `button`
+and `cron`. The log is `sync_run` (#885, #1061), whose `trigger` was already
+`cron | manual | connect` for every source, and the pass's lease says the same
+(`manual | cron`). A press of «Poner al día» is therefore logged as `manual`, the word
+Binance and Numista already write for their own button, and not as `button`: one
+vocabulary for the attempt log of every connected source.

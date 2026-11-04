@@ -165,3 +165,26 @@ What it does not settle:
   changes the cost basis — the plusvalía latente, the realized P/L of later sales,
   and the snapshots' cost. Hiding them while pending is the design's choice (#1882,
   variant A), not an arithmetic dependency.
+
+## Amendment (#1876, 2026-11-04) — the strong twin, and what the scheduled contributions feed
+
+Two points where what landed differs from what this record and its tickets said:
+
+1. **A strong twin is recognized by its ISIN or its DGS code alone** (#1881).
+   #1881 asked for securities account + ISIN for funds and ETFs. A manual holding
+   keeps no securities account, so there is nothing to compare the account with:
+   `findMyInvestorTwins` offers to link a live manual investment that carries the
+   product's ISIN or DGS code, whatever account the product sits in. When several
+   manual holdings carry the same code (legitimate, #1399), all of them are offered,
+   and the careo goes holding by holding. A holding alike only by name is still a
+   suggestion, never ticked. A managed portfolio's funds are careed with their
+   portfolio, as a block (#1883), never on their own.
+2. **The scheduled contributions also feed the monthly split on /objetivos** (#1886).
+   Decision 5 said they feed only the «contribution has not arrived» signal and the
+   pension ceiling forecast. They also appear in the monthly contribution split, read
+   only and marked «de MyInvestor», because a linked holding has no worthline plan
+   and the split would otherwise leave out money that does go in every month. The
+   ceiling forecast and the split add up the same expanded entries
+   (`myInvestorScheduledEntries`). Nothing is counted twice: linking closes the
+   holding's worthline lines, the plan's gate refuses a new one towards a linked
+   holding, and the ceiling forecast drops any line still pointing at one.
