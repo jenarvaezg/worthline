@@ -83,6 +83,8 @@ export interface MyInvestorTableContext {
     standing: MyInvestorStanding;
     readOnly: boolean;
     notices: readonly MyInvestorBandEntry[];
+    /** MyInvestor rejected the saved password and it was deleted: offer another. */
+    passwordForgotten: boolean;
   };
 }
 
@@ -280,7 +282,10 @@ export default function ConnectionsTable({
                         <td colSpan={6}>
                           {/* What lasts and the health signals (#1885), outside
                               every fold, with the grammar of a failed sync
-                              (#1224): the way out is in this same row. */}
+                              (#1224). Their way out is this row: «Poner al día»
+                              (which asks for a password when none is saved) and,
+                              for a rejected saved password, the fold that saves
+                              another, opened below. */}
                           {myInvestor.sync.notices.map((notice) => {
                             const { lead, rest } = noticeParts(notice.text);
                             return (
@@ -320,6 +325,7 @@ export default function ConnectionsTable({
                             disconnectFormId={definition.disconnectFormId}
                             errorFormId={errorFormId}
                             passwordFormId={definition.passwordFormId}
+                            passwordOpen={myInvestor.sync.passwordForgotten}
                             savedPassword={myInvestor.savedPassword}
                             sourceId={source.id}
                             viewerEmail={myInvestor.viewerEmail}

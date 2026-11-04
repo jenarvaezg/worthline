@@ -48,6 +48,7 @@ describe("the standing of the connection", () => {
       lastLine: null,
       lasting: null,
       running: null,
+      stop: null,
     });
     expect(standing({ savedPassword: false }).dailyLine).toBe(
       "Se pone al día cuando pulsas",

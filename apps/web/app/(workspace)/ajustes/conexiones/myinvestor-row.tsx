@@ -56,6 +56,7 @@ export function MyInvestorConnectedDetail({
   currentUrl,
   errorFormId,
   passwordFormId,
+  passwordOpen = false,
   disconnectFormId,
   savedPassword,
   sourceId,
@@ -65,6 +66,11 @@ export function MyInvestorConnectedDetail({
   /** The `formId` of the error in the URL, to reopen the fold that sent it. */
   errorFormId: string | null;
   passwordFormId: string;
+  /**
+   * Open the password fold without an error (#1885): the saved password was
+   * rejected and deleted, and saving another is the way out the notice names.
+   */
+  passwordOpen?: boolean;
   disconnectFormId: string;
   savedPassword: MyInvestorAcceptance | null;
   sourceId: string;
@@ -75,7 +81,7 @@ export function MyInvestorConnectedDetail({
       <details
         suppressHydrationWarning
         className="conexCredentials"
-        open={errorFormId === passwordFormId}
+        open={passwordOpen || errorFormId === passwordFormId}
       >
         <summary>
           {savedPassword ? "Contraseña guardada" : "Ponerse al día sola cada día"}

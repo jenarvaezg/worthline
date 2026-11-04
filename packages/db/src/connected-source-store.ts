@@ -55,6 +55,7 @@ import {
   type SourceSyncState,
   type SourceSyncStatePatch,
   type SyncAttemptInput,
+  type SyncAttemptRow,
   type SyncLeaseTrigger,
   setSyncStep,
   updateSyncState,
@@ -260,7 +261,15 @@ export interface ConnectedSourceStore {
   recordPasswordRejection(
     input: PasswordRejectionInput,
   ): Promise<{ rejections: number; locked: boolean }>;
-  updateSyncState(sourceId: string, patch: SourceSyncStatePatch): Promise<void>;
+  /**
+   * Patch the sync state; with `attempt`, the pass's row of the attempt log goes in
+   * the same transaction (#1885).
+   */
+  updateSyncState(
+    sourceId: string,
+    patch: SourceSyncStatePatch,
+    attempt?: SyncAttemptRow,
+  ): Promise<void>;
   readSyncState(sourceId: string): Promise<SourceSyncState | null>;
   /**
    * One finished attempt of a pass, on `sync_run` (#1885), and the purge of the
@@ -1054,7 +1063,8 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     releaseSyncLease: (sourceId) => releaseSyncLease(ctx, sourceId),
     reserveSyncLogin: (input) => reserveSyncLogin(ctx, input),
     recordPasswordRejection: (input) => recordPasswordRejection(ctx, input),
-    updateSyncState: (sourceId, patch) => updateSyncState(ctx, sourceId, patch),
+    updateSyncState: (sourceId, patch, attempt) =>
+      updateSyncState(ctx, sourceId, patch, attempt),
     readSyncState: (sourceId) => readSyncState(ctx, sourceId),
     recordSyncAttempt: (input) => recordSyncAttempt(ctx, input),
     purgeSyncAttempts: (input) => purgeSyncAttempts(ctx, input),

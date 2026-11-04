@@ -111,7 +111,6 @@ export type MyInvestorSyncStore = {
     | "recordPasswordRejection"
     | "updateSyncState"
     | "readSyncState"
-    | "recordSyncAttempt"
     | "purgeSyncAttempts"
   >;
   command: Pick<WorthlineStore["command"], "syncConnectedHoldings">;
@@ -293,16 +292,31 @@ async function pass(
   const { sourceId } = input;
   const day = asDateKey(deps.today());
   const step = (key: MyInvestorSyncStep) => sources.setSyncStep(sourceId, key);
-  const finish = async (
+  /** The pass's row of the attempt log, for an outcome reached now. */
+  const attemptRow = (
     outcome: MyInvestorSyncOutcome,
-    patch: Parameters<typeof sources.updateSyncState>[1] = {},
-  ) => {
-    await sources.updateSyncState(sourceId, {
-      ...patch,
-      lastOutcomeJson: serializeMyInvestorSyncOutcome(outcome),
-    });
-    return outcome;
-  };
+    failure: MyInvestorSyncFailure | null,
+  ) => ({
+    error: attemptError(outcome, failure),
+    finishedAt: deps.now(),
+    startedAt: connection.startedAt,
+    trigger: input.trigger,
+  });
+  /**
+   * How a pass ends: its outcome on the state and, for a pass that asked
+   * MyInvestor, its row of the attempt log, in ONE write (#1885) — the band and the
+   * health rule read the two, and a half-written pass would set them apart.
+   */
+  const finishing =
+    (failure: MyInvestorSyncFailure | null, attempted = true): Finish =>
+    async (outcome, patch = {}) => {
+      await sources.updateSyncState(
+        sourceId,
+        { ...patch, lastOutcomeJson: serializeMyInvestorSyncOutcome(outcome) },
+        attempted ? attemptRow(outcome, failure) : undefined,
+      );
+      return outcome;
+    };
 
   const reserved = await sources.reserveSyncLogin({
     cap: MYINVESTOR_DAILY_LOGINS,
@@ -311,59 +325,58 @@ async function pass(
   });
   // The day's limit: MyInvestor is not asked, so it is no attempt.
   if (reserved === null) {
-    return { failure: null, outcome: await finish({ at: deps.now(), kind: "limit" }) };
+    const outcome = await finishing(null, false)({ at: deps.now(), kind: "limit" });
+    return { failure: null, outcome };
   }
 
-  const attempt = async (
-    outcome: MyInvestorSyncOutcome,
-    failure: MyInvestorSyncFailure | null,
-  ) => {
-    await sources.recordSyncAttempt({
-      error: attemptError(outcome, failure),
-      finishedAt: deps.now(),
-      sourceId,
-      startedAt: connection.startedAt,
-      trigger: input.trigger,
-    });
+  const answeredFailure = async (error: MyInvestorError) => {
+    const failure: MyInvestorSyncFailure = {
+      httpStatus: error.httpStatus,
+      kind: error.kind,
+      step: error.step,
+    };
+    const outcome = await failed(
+      deps,
+      {
+        ...connection,
+        attempt: (rejected) => attemptRow(rejected, failure),
+        day,
+        finish: finishing(failure),
+        sourceId,
+      },
+      error.kind,
+    );
     return { failure, outcome };
   };
-  const failure = (error: MyInvestorError): MyInvestorSyncFailure => ({
-    httpStatus: error.httpStatus,
-    kind: error.kind,
-    step: error.step,
-  });
 
   await step("login");
   const client = deps.clientFor(connection.deviceId);
   const tokens = await client.loginWithKnownDevice(connection.login);
-  if (!tokens.ok) {
-    const outcome = await failed(
-      deps,
-      { ...connection, day, finish, sourceId },
-      tokens.error.kind,
-    );
-    return attempt(outcome, failure(tokens.error));
-  }
+  if (!tokens.ok) return answeredFailure(tokens.error);
 
-  let outcome: MyInvestorSyncOutcome;
   try {
-    outcome = await readAndApply(deps, input, client.reader(tokens.value), step, finish);
+    const outcome = await readAndApply(
+      deps,
+      input,
+      client.reader(tokens.value),
+      step,
+      finishing(null),
+    );
+    return { failure: null, outcome };
   } catch (error) {
-    if (error instanceof MyInvestorSyncError) {
-      const answered = await failed(
-        deps,
-        { ...connection, day, finish, sourceId },
-        error.error.kind,
-      );
-      return attempt(answered, failure(error.error));
-    }
+    if (error instanceof MyInvestorSyncError) return answeredFailure(error.error);
     // Not MyInvestor's: a bug or the database. Kept as a failed pass and a failed
     // attempt so the band and the log say so, and thrown on so it is never swallowed.
-    await attempt(await finish({ at: deps.now(), kind: "failed" }), null);
+    await finishing(null)({ at: deps.now(), kind: "failed" });
     throw error;
   }
-  return attempt(outcome, null);
 }
+
+/** Ends a pass with its outcome (and the patch of state that goes with it). */
+type Finish = (
+  outcome: MyInvestorSyncOutcome,
+  patch?: Parameters<MyInvestorSyncStore["connectedSources"]["updateSyncState"]>[1],
+) => Promise<MyInvestorSyncOutcome>;
 
 /** Each error's action (ADR 0114 decision 7). */
 async function failed(
@@ -373,10 +386,15 @@ async function failed(
     day: DateKey;
     deviceId: string;
     savedPassword: boolean;
-    finish: (
+    finish: Finish;
+    /** The attempt's row, written with the rejection in its one transaction. */
+    attempt: (
       outcome: MyInvestorSyncOutcome,
-      patch?: Parameters<MyInvestorSyncStore["connectedSources"]["updateSyncState"]>[1],
-    ) => Promise<MyInvestorSyncOutcome>;
+    ) => NonNullable<
+      Parameters<
+        MyInvestorSyncStore["connectedSources"]["recordPasswordRejection"]
+      >[0]["attempt"]
+    >;
   },
   kind: MyInvestorErrorKind,
 ): Promise<MyInvestorSyncOutcome> {
@@ -395,6 +413,7 @@ async function failed(
       };
       const locked: MyInvestorSyncOutcome = { at, kind: "locked", until };
       const result = await sources.recordPasswordRejection({
+        attempt: context.attempt(rejected),
         credentialsJson: context.savedPassword
           ? serializeMyInvestorCredentials({ deviceId: context.deviceId })
           : null,

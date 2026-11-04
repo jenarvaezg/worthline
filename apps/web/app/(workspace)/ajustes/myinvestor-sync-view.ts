@@ -17,6 +17,7 @@ import {
   isPositiveDecimal,
   type OwningSourceAttempt,
   type OwningSourceDataKind,
+  type OwningSourceStop,
   owningSourceHealth,
   owningSourceStop,
 } from "@worthline/domain";
@@ -121,6 +122,8 @@ export interface MyInvestorStanding {
   running: { since: string } | null;
   /** What the last pass ended in, for a panel that did not see it happen. */
   lastLine: string | null;
+  /** Why the periodic sync is stopped until the user acts, or null (#1885). */
+  stop: OwningSourceStop | null;
 }
 
 const PASSWORD_FORGOTTEN: MyInvestorBandEntry = {
@@ -217,7 +220,7 @@ export function myInvestorStanding(input: {
     lease && lease.until > now ? { since: formatMyInvestorHour(lease.startedAt) } : null;
 
   const lastLine = outcome ? outcomeView(outcome, now).text : null;
-  return { blocked, dailyLine, lastLine, lasting, running };
+  return { blocked, dailyLine, lastLine, lasting, running, stop };
 }
 
 /** Why the periodic sync is stopped, by the rule data health also reads (#1885). */
@@ -309,24 +312,15 @@ export function myInvestorHealthEntries(input: {
 
 /**
  * What the MyInvestor row of Conexiones says under it (#1885): the connection's
- * lasting state, with when the button comes back, then its health signals. The
+ * lasting state, then its health signals. When the button comes back is not
+ * repeated here: the row's «Poner al día» already says it under the button. The
  * ficha's band says the same, each with its way out (`owningSourceNotices`).
  */
 export function myInvestorConnectionNotices(
   standing: MyInvestorStanding,
   health: readonly MyInvestorBandEntry[],
 ): MyInvestorBandEntry[] {
-  const lasting = standing.lasting
-    ? [
-        {
-          ...standing.lasting,
-          text: standing.blocked
-            ? `${standing.lasting.text} ${standing.blocked.line}`
-            : standing.lasting.text,
-        },
-      ]
-    : [];
-  return [...lasting, ...health];
+  return standing.lasting ? [standing.lasting, ...health] : [...health];
 }
 
 /** The band's line for a linked holding whose units do not square (P8). */

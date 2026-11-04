@@ -207,6 +207,8 @@ export interface PasswordRejectionInput {
   lockedUntil: string;
   /** The outcome to keep for a plain rejection, and for the one that locks. */
   outcomeJson: { rejected: string; locked: string };
+  /** The pass's row of the attempt log (#1885), written in the same transaction. */
+  attempt?: SyncAttemptRow;
 }
 
 /**
@@ -221,6 +223,7 @@ export async function recordPasswordRejection(
   assertLoginDay(input.day);
   return ctx.transaction(async () => {
     await ensureRow(ctx, input.sourceId);
+    if (input.attempt) await insertSyncAttempt(ctx, input.sourceId, input.attempt);
     if (input.credentialsJson !== null) {
       await ctx.db
         .update(connectedSources)
@@ -257,17 +260,26 @@ export async function recordPasswordRejection(
   });
 }
 
+/**
+ * Patch the state and, when a pass ends with it, write its row of the attempt log
+ * (#1885) in the SAME transaction: what the band reads (the outcome) and what the
+ * health rule counts (the log) cannot drift apart on a half-written pass.
+ */
 export async function updateSyncState(
   ctx: StoreContext,
   sourceId: string,
   patch: SourceSyncStatePatch,
+  attempt?: SyncAttemptRow,
 ): Promise<void> {
-  await ensureRow(ctx, sourceId);
-  await ctx.db
-    .update(connectedSourceSyncState)
-    .set({ ...patch, updatedAt: sql`CURRENT_TIMESTAMP` })
-    .where(eq(connectedSourceSyncState.sourceId, sourceId))
-    .run();
+  await ctx.transaction(async () => {
+    await ensureRow(ctx, sourceId);
+    await ctx.db
+      .update(connectedSourceSyncState)
+      .set({ ...patch, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(connectedSourceSyncState.sourceId, sourceId))
+      .run();
+    if (attempt) await insertSyncAttempt(ctx, sourceId, attempt);
+  });
 }
 
 /** The state of a source, or null when no pass ever touched it. */
@@ -303,8 +315,12 @@ export async function readSyncState(
 export const SYNC_ATTEMPT_RETENTION_DAYS = 90;
 
 /** One finished attempt of a pass, as the log keeps it. */
-export interface SyncAttemptInput {
+export interface SyncAttemptInput extends SyncAttemptRow {
   sourceId: string;
+}
+
+/** The row of one attempt, written with the pass's outcome (`updateSyncState`). */
+export interface SyncAttemptRow {
   trigger: SyncLeaseTrigger;
   /** When the pass started: the row's `created_at` and `started_at`. */
   startedAt: string;
@@ -350,22 +366,29 @@ export async function recordSyncAttempt(
   ctx: StoreContext,
   input: SyncAttemptInput,
 ): Promise<void> {
-  await ctx.transaction(async () => {
-    await ctx.db
-      .insert(syncRuns)
-      .values({
-        createdAt: input.startedAt,
-        errorJson: input.error === null ? null : JSON.stringify(input.error),
-        finishedAt: input.finishedAt,
-        id: ctx.newId(),
-        sourceId: input.sourceId,
-        startedAt: input.startedAt,
-        status: input.error === null ? "ok" : "error",
-        trigger: input.trigger,
-      })
-      .run();
-    await purgeSyncAttempts(ctx, { now: input.finishedAt, sourceId: input.sourceId });
-  });
+  await ctx.transaction(() => insertSyncAttempt(ctx, input.sourceId, input));
+}
+
+/** The insert and the purge, inside the caller's transaction. */
+async function insertSyncAttempt(
+  ctx: StoreContext,
+  sourceId: string,
+  row: SyncAttemptRow,
+): Promise<void> {
+  await ctx.db
+    .insert(syncRuns)
+    .values({
+      createdAt: row.startedAt,
+      errorJson: row.error === null ? null : JSON.stringify(row.error),
+      finishedAt: row.finishedAt,
+      id: ctx.newId(),
+      sourceId,
+      startedAt: row.startedAt,
+      status: row.error === null ? "ok" : "error",
+      trigger: row.trigger,
+    })
+    .run();
+  await purgeSyncAttempts(ctx, { now: row.finishedAt, sourceId });
 }
 
 /**
@@ -379,23 +402,29 @@ export async function readOwningSourceStanding(
   ctx: StoreContext,
   sourceId: string,
 ): Promise<{ savedPassword: boolean; stop: OwningSourceStop | null } | null> {
-  const source = await ctx.db
+  // One round trip: the source and its state, joined.
+  const row = await ctx.db
     .select({
       assetId: connectedSources.assetId,
       credentialsJson: connectedSources.credentialsJson,
+      lastOutcomeJson: connectedSourceSyncState.lastOutcomeJson,
+      stoppedReason: connectedSourceSyncState.stoppedReason,
     })
     .from(connectedSources)
+    .leftJoin(
+      connectedSourceSyncState,
+      eq(connectedSourceSyncState.sourceId, connectedSources.id),
+    )
     .where(eq(connectedSources.id, sourceId))
     .get();
-  if (!source || source.assetId !== null) return null;
-  const state = await readSyncState(ctx, sourceId);
-  const savedPassword = carriesPassword(openSecret(source.credentialsJson));
+  if (!row || row.assetId !== null) return null;
+  const savedPassword = carriesPassword(openSecret(row.credentialsJson));
   return {
     savedPassword,
     stop: owningSourceStop({
-      lastOutcome: outcomeHeadOf(state?.lastOutcomeJson ?? null),
+      lastOutcome: outcomeHeadOf(row.lastOutcomeJson),
       savedPassword,
-      stoppedReason: state?.stoppedReason ?? null,
+      stoppedReason: row.stoppedReason,
     }),
   };
 }

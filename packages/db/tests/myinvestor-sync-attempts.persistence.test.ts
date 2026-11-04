@@ -143,6 +143,74 @@ describe("the attempt log", () => {
   });
 });
 
+describe("the outcome and its row, one write", () => {
+  test("a pass's outcome and its attempt land together in the state and the log", async () => {
+    const { sourceId, store } = await openStore(DEVICE_ONLY);
+
+    await store.connectedSources.updateSyncState(
+      sourceId,
+      { lastOutcomeJson: '{"kind":"network"}' },
+      {
+        error: {
+          code: "network_or_waf",
+          httpStatus: null,
+          message: "network",
+          retriable: true,
+          step: "positions",
+        },
+        finishedAt: "2026-11-04T07:13:41.250Z",
+        startedAt: "2026-11-04T07:13:02.000Z",
+        trigger: "cron",
+      },
+    );
+
+    expect((await store.connectedSources.readSyncState(sourceId))!.lastOutcomeJson).toBe(
+      '{"kind":"network"}',
+    );
+    expect(await store.syncRuns.readRuns(sourceId)).toEqual([
+      expect.objectContaining({ status: "error", trigger: "cron" }),
+    ]);
+  });
+
+  test("a rejected password writes its attempt in the rejection's own transaction", async () => {
+    const { sourceId, store } = await openStore(DEVICE_ONLY);
+
+    await store.connectedSources.recordPasswordRejection({
+      attempt: {
+        error: {
+          code: "password_rejected",
+          httpStatus: 401,
+          message: "password_rejected",
+          retriable: false,
+          step: "login",
+        },
+        finishedAt: "2026-11-04T07:13:03.500Z",
+        startedAt: "2026-11-04T07:13:02.000Z",
+        trigger: "manual",
+      },
+      credentialsJson: null,
+      day: "2026-11-04" as Parameters<
+        typeof store.connectedSources.recordPasswordRejection
+      >[0]["day"],
+      lockAfter: 3,
+      lockedUntil: "2026-11-05T00:00:00.000Z",
+      outcomeJson: {
+        locked: '{"kind":"locked"}',
+        rejected: '{"kind":"password_rejected"}',
+      },
+      sourceId,
+    });
+
+    expect(await store.syncRuns.readRuns(sourceId)).toEqual([
+      expect.objectContaining({
+        error: expect.objectContaining({ code: "password_rejected", step: "login" }),
+        status: "error",
+        trigger: "manual",
+      }),
+    ]);
+  });
+});
+
 describe("what data health reads of it", () => {
   test("each attempt with the step it failed on", async () => {
     const { sourceId, store } = await openStore(DEVICE_ONLY);

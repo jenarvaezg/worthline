@@ -126,9 +126,9 @@ export async function collectDashboardDataQualitySignals(
       ),
     ),
     // What the sync state of a connection that owns its holdings (MyInvestor) says
-    // beyond its attempts (#1885): two indexed reads per such source, in the same
-    // batch, and none for a mirroring one past the first.
-    readOwningSourceStandings(agentView, connectedSources),
+    // beyond its attempts (#1885): one joined read per such source, in the same
+    // batch; a mirroring source is told apart by its row and costs none.
+    readOwningSourceStandings(agentView, rawSources),
     Promise.all(
       connectedSources.map(
         async (source) =>
