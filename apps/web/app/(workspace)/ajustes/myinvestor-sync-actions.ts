@@ -15,20 +15,19 @@
  * - The password typed when none is saved is used for this pass and never kept;
  *   it is never put in a URL nor returned in a state.
  */
-import { testArgFromActionArgs } from "@web/action-store";
-import { ingestionBlockedMessage } from "@web/entitlements/ingestion-guard";
 import { PAYWALL_SOURCES_PAUSED_MESSAGE } from "@web/entitlements/paywall-copy";
 import { type FormActionState, formActionState } from "@web/form-action";
+import type { MyInvestorCredentials } from "@worthline/pricing";
 import { currentUrlOf } from "./connected-source-helpers";
-import { MYINVESTOR_NOT_FOUND, MYINVESTOR_UNAVAILABLE_LINE } from "./myinvestor-copy";
-import { isMyInvestorClientOverride, myInvestorClientFactory } from "./myinvestor-relay";
+import { myInvestorClientOrRefusal } from "./myinvestor-action-preamble";
+import { MYINVESTOR_NOT_FOUND } from "./myinvestor-copy";
 import { elapsedClock, runMyInvestorSync } from "./myinvestor-sync";
 import { type MyInvestorResultView, myInvestorResultView } from "./myinvestor-sync-view";
 
 export type MyInvestorSyncFormState = FormActionState<MyInvestorResultView>;
 
 interface SyncRequest {
-  typed: { customerId: string; password: string } | null;
+  typed: MyInvestorCredentials | null;
   fullHistory: boolean;
 }
 
@@ -41,7 +40,6 @@ export async function ponerAlDiaMyInvestorAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<MyInvestorSyncFormState> {
-  const override = testArgFromActionArgs(_testArgs, isMyInvestorClientOverride);
   const action = formActionState<SyncRequest, MyInvestorResultView>({
     datedFact: false,
     extraIds: ["sourceId"],
@@ -60,14 +58,20 @@ export async function ponerAlDiaMyInvestorAction(
     },
     requireId: false,
     run: async (store, { extra, now, parsed, today }) => {
-      // It talks to MyInvestor, so a lapsed plan refuses it like any sync (#1162).
-      const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
-      if (paywall) return { error: paywall, ok: false };
-      const clientFor = override?.myInvestorClientFor ?? myInvestorClientFactory();
-      if (!clientFor) return { error: MYINVESTOR_UNAVAILABLE_LINE, ok: false };
+      const client = await myInvestorClientOrRefusal(
+        PAYWALL_SOURCES_PAUSED_MESSAGE,
+        _testArgs,
+      );
+      if (!client.ok) return client;
 
       const result = await runMyInvestorSync(
-        { clientFor, now: elapsedClock(now), sleep: wait, store, today: () => today },
+        {
+          clientFor: client.clientFor,
+          now: elapsedClock(now),
+          sleep: wait,
+          store,
+          today: () => today,
+        },
         {
           fullHistory: parsed.fullHistory,
           sourceId: extra.sourceId!,
