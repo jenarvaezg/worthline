@@ -802,17 +802,19 @@ async function importWorkspace(
 
       // An owning source's links, ledger and last read (#1880): without them its
       // linked holdings would come back not knowing which product they are.
-      if (source.links.length > 0) {
+      const links = source.links ?? [];
+      if (links.length > 0) {
         await db
           .insert(connectedSourceLinks)
-          .values(source.links.map((link) => ({ ...link, sourceId: source.id })))
+          .values(links.map((link) => ({ ...link, sourceId: source.id })))
           .run();
       }
-      for (let start = 0; start < source.appliedFacts.length; start += 100) {
+      const appliedFacts = source.appliedFacts ?? [];
+      for (let start = 0; start < appliedFacts.length; start += 100) {
         await db
           .insert(connectorAppliedFacts)
           .values(
-            source.appliedFacts
+            appliedFacts
               .slice(start, start + 100)
               .map((fact) => ({ ...fact, sourceId: source.id })),
           )

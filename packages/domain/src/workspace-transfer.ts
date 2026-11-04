@@ -846,10 +846,10 @@ const connectedSourceSchema = z.object({
   ingestCursor: nonEmptyString.optional(),
   links: z
     .array(z.object({ productKey: nonEmptyString, assetId: nonEmptyString }))
-    .default([]),
+    .optional(),
   appliedFacts: z
     .array(z.object({ factKey: nonEmptyString, batchId: nonEmptyString }))
-    .default([]),
+    .optional(),
   discovery: z.object({ readOn: nonEmptyString, payloadJson: nonEmptyString }).optional(),
 });
 
