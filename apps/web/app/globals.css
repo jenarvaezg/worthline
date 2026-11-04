@@ -10340,6 +10340,8 @@ td.rowActions > * {
 
 .myinvestorTwinLater button {
   justify-self: start;
+}
+
 /* «Poner al día» (#1884, variante A): el panel de la pasada. Una columna de lectura:
    cuándo fue la última, los pasos en vivo, el resultado y el botón. */
 .myinvestorSync {
