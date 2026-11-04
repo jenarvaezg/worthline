@@ -8,7 +8,8 @@
  * so the three cannot disagree about whether the connector is failing.
  *
  * - **«El conector falla»**, per kind of data (positions, orders, plans), only after
- *   {@link OWNING_SOURCE_FAILING_DAYS} days in a row failing on it. A pass reads the
+ *   {@link OWNING_SOURCE_FAILING_DAYS} calendar days in a row failing on it; a day
+ *   with no attempt breaks the row. A pass reads the
  *   positions, then the orders, then the plans: a pass that failed on the plans did
  *   read the other two, so it is a good day for them. A pass that never reached a
  *   kind (the login failed, the database did) says nothing about it — neither a
@@ -147,28 +148,43 @@ export function owningSourceHealth(
 const ORDER: Record<OwningSourceDataKind, number> = { orders: 1, plans: 2, positions: 0 };
 
 /**
- * The days of the newest unbroken run of attempts failing on `data`, or null. The
- * first attempt that read it (a good pass, or one that failed on a later kind)
- * ends the run; an attempt that never reached it is skipped.
+ * The first and last day of the newest unbroken run of calendar days failing on
+ * `data`, or null. The first attempt that read it (a good pass, or one that failed
+ * on a later kind) ends the run. A day with no attempt at all breaks it too (#1885:
+ * day 1 and day 3 failing are not three days in a row). A day whose only attempts
+ * never reached `data` (the login failed) keeps the days around it in a row, but is
+ * not a failing day of its own.
  */
 function failingStreak(
   attempts: readonly OwningSourceAttempt[],
   data: OwningSourceDataKind,
 ): { first: string; last: string } | null {
-  let first: string | null = null;
-  let last: string | null = null;
+  const attemptedDays = new Set<string>();
+  const failingDays = new Set<string>();
   for (const attempt of attempts) {
     if (attempt.status === "pending" || attempt.status === "running") continue;
     if (attempt.status === "ok") break;
+    if (attempt.at === null) continue;
     const failedOn = owningSourceDataKind(attempt.failedStep);
-    if (failedOn === null || attempt.at === null) continue;
-    if (ORDER[failedOn] > ORDER[data]) break;
-    if (failedOn !== data) continue;
+    if (failedOn !== null && ORDER[failedOn] > ORDER[data]) break;
     const day = attempt.at.slice(0, 10);
-    last ??= day;
-    first = day;
+    attemptedDays.add(day);
+    if (failedOn === data) failingDays.add(day);
   }
-  return first !== null && last !== null ? { first, last } : null;
+
+  // Newest first; the run walks back one calendar day at a time from the newest
+  // failing day and stops at the first day nobody tried.
+  const days = [...attemptedDays].sort().reverse();
+  const start = days.findIndex((day) => failingDays.has(day));
+  if (start === -1) return null;
+  const last = days[start]!;
+  let first = last;
+  for (let index = start + 1; index < days.length; index += 1) {
+    const day = days[index]!;
+    if (daysBetween(day, days[index - 1]!) !== 1) break;
+    if (failingDays.has(day)) first = day;
+  }
+  return { first, last };
 }
 
 function unsyncedDays(

@@ -63,6 +63,24 @@ describe("«El conector falla», by kind of data, after three days in a row", ()
     expect(owningSourceHealth(facts({ attempts }), "2026-11-04")).toEqual([]);
   });
 
+  test("a day with no attempt breaks the run: day 1 and day 3 failing are not three days", () => {
+    const attempts = [failedAt("2026-11-03", "orders"), failedAt("2026-11-01", "orders")];
+
+    expect(owningSourceHealth(facts({ attempts }), "2026-11-03")).toEqual([]);
+  });
+
+  test("the run counted is the newest unbroken one, not the span back to an older failure", () => {
+    const attempts = [
+      failedAt("2026-11-06", "orders"),
+      failedAt("2026-11-05", "orders"),
+      failedAt("2026-11-02", "orders"),
+      failedAt("2026-11-01", "orders"),
+      failedAt("2026-10-31", "orders"),
+    ];
+
+    expect(owningSourceHealth(facts({ attempts }), "2026-11-06")).toEqual([]);
+  });
+
   test("a pass that failed AFTER the orders read them: the plans fail, the orders do not", () => {
     const attempts = [
       failedAt("2026-11-03", "contributions"),
