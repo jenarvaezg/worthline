@@ -69,7 +69,14 @@ export async function loadHoldingSurface(
         ? await loadBinanceSurface(ctx, connectedSource)
         : family === "coin-collection"
           ? await loadCoinCollectionSurface(ctx, connectedSource)
-          : await loadAssetFamilySurface(family, ctx);
+          : await loadAssetFamilySurface(family, {
+              ...ctx,
+              // A source that OWNS its holdings (MyInvestor, ADR 0115) keeps the
+              // holding in its own family — a fund is a fund — and makes its ficha
+              // read-only, with «Poner al día» (#1884).
+              owningSource:
+                connectedSource?.adapter === "myinvestor" ? connectedSource : null,
+            });
 
     // The method was derived here to route; «Lo básico» reads the same value
     // rather than deriving it a second time in the page (#152, ADR 0014).

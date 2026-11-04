@@ -37,8 +37,15 @@ export type MyInvestorSyncOutcome =
       /** «Resincronizar todo»: the whole history was read again. */
       readonly resynced: boolean;
     }
-  /** The password was rejected: a saved one is deleted; the cron stops. */
-  | { readonly kind: "password_rejected"; readonly at: string }
+  /**
+   * The password was rejected. `forgotten`: it was the saved one, now deleted, so
+   * the cron stops; a typed one is only refused.
+   */
+  | {
+      readonly kind: "password_rejected";
+      readonly at: string;
+      readonly forgotten: boolean;
+    }
   /** The third rejection of the day: locked until the next day. */
   | { readonly kind: "locked"; readonly at: string; readonly until: string }
   /** Rejected with no reason (`SECURITY_001`): a 24-hour pause. */
@@ -63,7 +70,7 @@ const outcomeSchema = z.discriminatedUnion("kind", [
     mismatches: z.number().int().nonnegative(),
     resynced: z.boolean(),
   }),
-  z.object({ at, kind: z.literal("password_rejected") }),
+  z.object({ at, forgotten: z.boolean(), kind: z.literal("password_rejected") }),
   z.object({ at, kind: z.literal("locked"), until: at }),
   z.object({ at, kind: z.literal("rejected_no_reason"), until: at }),
   z.object({ at, kind: z.literal("sms_required") }),

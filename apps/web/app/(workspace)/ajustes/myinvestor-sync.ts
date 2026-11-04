@@ -325,7 +325,11 @@ async function failed(
         const until = nextDayStart(context.day);
         return context.finish({ at, kind: "locked", until }, { pausedUntil: until });
       }
-      return context.finish({ at, kind: "password_rejected" });
+      return context.finish({
+        at,
+        forgotten: context.savedPassword,
+        kind: "password_rejected",
+      });
     }
     case "rejected_no_reason": {
       const until = addMinutes(at, MYINVESTOR_PAUSE_HOURS * 60);

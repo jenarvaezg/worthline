@@ -41,6 +41,12 @@ import type {
 } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
+import {
+  loadOwningSourceFicha,
+  type OwningSourceFicha,
+  owningSourceNotices,
+  ponerAlDiaAction,
+} from "./owning-source-ficha";
 import { availabilityReading, freshnessCaption } from "./stored-header-view";
 
 /** Every tab the ficha ends up with, in order. Cobros opens by default. */
@@ -59,9 +65,19 @@ export async function loadStoredSurface(
     id,
     isDemo,
     overrides,
+    owningSource,
     payoutsPanel,
     privacyMode,
   } = ctx;
+
+  // A cash account MyInvestor owns (#1869 P4, #1884): its balance is the source's,
+  // put up to date by «Poner al día», never typed.
+  const owned = await loadOwningSourceFicha(
+    ctx.store,
+    owningSource ?? null,
+    id,
+    ctx.checkedAt,
+  );
 
   // What «Puesto al día» reads, and only for this holding: the same two reads the
   // aviso is built from (`dashboard-data-quality`), one wave.
@@ -85,27 +101,33 @@ export async function loadStoredSurface(
 
   // ── The state header ────────────────────────────────────────────────────────
   const figures: FichaFigure[] = [
-    {
-      ...(freshness
-        ? {
-            detail: freshness.stale ? (
-              <div className="fichaPriceNotice">
-                <span>⚠ {freshnessCaption(freshness)}</span>
-              </div>
-            ) : (
-              <small className="priceRefreshCaption">{freshnessCaption(freshness)}</small>
-            ),
-            value: formatDateKeyEs(freshness.lastUpdateDateKey),
-          }
-        : {
-            // Nothing to date it by — no declared value and no creation day — said,
-            // not left as a bare dash (canon: a measure that is missing says why).
-            detail: <small className="priceRefreshCaption">sin fecha registrada</small>,
-            value: "—",
-          }),
-      key: "freshness",
-      label: "Puesto al día",
-    },
+    owned
+      ? ownedFreshness(owned)
+      : {
+          ...(freshness
+            ? {
+                detail: freshness.stale ? (
+                  <div className="fichaPriceNotice">
+                    <span>⚠ {freshnessCaption(freshness)}</span>
+                  </div>
+                ) : (
+                  <small className="priceRefreshCaption">
+                    {freshnessCaption(freshness)}
+                  </small>
+                ),
+                value: formatDateKeyEs(freshness.lastUpdateDateKey),
+              }
+            : {
+                // Nothing to date it by — no declared value and no creation day — said,
+                // not left as a bare dash (canon: a measure that is missing says why).
+                detail: (
+                  <small className="priceRefreshCaption">sin fecha registrada</small>
+                ),
+                value: "—",
+              }),
+          key: "freshness",
+          label: "Puesto al día",
+        },
     {
       detail: availabilityDetail(availability, tabUrl(FICHA_DATOS_TAB)),
       key: "availability",
@@ -116,23 +138,25 @@ export async function loadStoredSurface(
   ];
 
   // ── The actions, each a form in the side panel ─────────────────────────────
-  const actions: FichaAction[] = [
-    {
-      content: (
-        <AssetValueForm
-          asset={asset}
-          currentUrl={valueUrl}
-          formError={formError}
-          readOnly={isDemo}
-          returnTo={valueUrl}
-        />
-      ),
-      key: VALUE_ACTION,
-      label: "Actualizar valor",
-      tier: "primary",
-    },
-    cobros.action,
-  ];
+  const actions: FichaAction[] = owned
+    ? [ponerAlDiaAction(owned, { currentUrl, readOnly: isDemo }), cobros.action]
+    : [
+        {
+          content: (
+            <AssetValueForm
+              asset={asset}
+              currentUrl={valueUrl}
+              formError={formError}
+              readOnly={isDemo}
+              returnTo={valueUrl}
+            />
+          ),
+          key: VALUE_ACTION,
+          label: "Actualizar valor",
+          tier: "primary",
+        },
+        cobros.action,
+      ];
 
   return holdingSurface("stored", {
     ficha: {
@@ -152,8 +176,22 @@ export async function loadStoredSurface(
       value: formatMoneyMinorPrivacy(asset.currentValue, privacyMode),
       // No ledger: the band's warnings are about the holding's own row.
       warnings: ledgerlessHoldingWarnings({ asset, id, overrides }),
+      ...(owned
+        ? { sourceNotices: owningSourceNotices(owned, { currentUrl, tabs: FICHA_TABS }) }
+        : {}),
     },
   });
+}
+
+/** «Puesto al día» of an owned balance: the source's last good sync, and who puts it. */
+function ownedFreshness(owned: OwningSourceFicha): FichaFigure {
+  return {
+    detail: <small className="priceRefreshCaption">Lo pone {owned.label}</small>,
+    key: "freshness",
+    ...(owned.lastGood === "Nunca" ? { kind: "text" as const } : {}),
+    label: "Puesto al día",
+    value: owned.lastGood,
+  };
 }
 
 /** What qualifies «Disponibilidad»: its term, or the gap where one is missing. */

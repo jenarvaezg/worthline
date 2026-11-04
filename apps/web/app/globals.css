@@ -10340,6 +10340,67 @@ td.rowActions > * {
 
 .myinvestorTwinLater button {
   justify-self: start;
+/* «Poner al día» (#1884, variante A): el panel de la pasada. Una columna de lectura:
+   cuándo fue la última, los pasos en vivo, el resultado y el botón. */
+.myinvestorSync {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 36rem;
+}
+
+.myinvestorSync .stackForm {
+  margin-top: 0;
+}
+
+/* Los pasos de la pasada: lo hecho en tinta, el que corre en negrita, lo que queda
+   en gris. Una lista, no una barra: cada paso es una lectura distinta. */
+.myinvestorSyncSteps {
+  display: grid;
+  font-size: 0.85rem;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.myinvestorSyncSteps li[data-state="todo"] {
+  color: var(--muted);
+}
+
+.myinvestorSyncSteps li[data-state="now"] {
+  font-weight: 700;
+}
+
+.myinvestorSyncButtons {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.myinvestorSyncResult {
+  margin: 0;
+}
+
+/* En la fila de Conexiones, donde las demás fuentes dicen «Sincronizar»: el botón,
+   y debajo una línea de paso o de resultado. */
+.myinvestorSyncRow {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  max-width: 18rem;
+}
+
+.myinvestorSyncInline {
+  display: grid;
+  gap: 6px;
+}
+
+.myinvestorSyncInline label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 4px;
 }
 
 /* Composition strip — the 100 %-stacked metal split, the signature. */

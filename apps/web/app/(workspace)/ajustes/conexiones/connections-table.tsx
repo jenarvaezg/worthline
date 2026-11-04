@@ -1,5 +1,7 @@
 import type { MyInvestorAcceptance } from "@web/ajustes/myinvestor-credentials";
 import type { MyInvestorFirstStartView } from "@web/ajustes/myinvestor-selection";
+import MyInvestorSyncPanel from "@web/ajustes/myinvestor-sync-panel";
+import type { MyInvestorStanding } from "@web/ajustes/myinvestor-sync-view";
 import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PendingSubmit } from "@web/pending-submit";
 import { syncRunInstant } from "@worthline/db";
@@ -69,6 +71,8 @@ export interface MyInvestorTableContext {
   firstStart: MyInvestorFirstStartView | null;
   /** Today, `YYYY-MM-DD`, to tell whether the last read is today's. */
   today: string;
+  /** How «Poner al día» stands (#1884), and whether this session may press it. */
+  sync: { standing: MyInvestorStanding; readOnly: boolean };
 }
 
 /**
@@ -186,7 +190,27 @@ export default function ConnectionsTable({
                                 privacyMode,
                               )}
                         </td>
-                        <td />
+                        <td>
+                          {/* «Poner al día» where the other sources say «Sincronizar»
+                              (#1884): the same pass as the ficha's, once something
+                              is included. */}
+                          {row.unitCount > 0 ? (
+                            <MyInvestorSyncPanel
+                              blockedLine={myInvestor.sync.standing.blocked?.line ?? null}
+                              currentUrl={currentUrl}
+                              dailyLine={myInvestor.sync.standing.dailyLine}
+                              lastGood={formatLastSync(source.lastSyncAt)}
+                              layout="row"
+                              readOnly={myInvestor.sync.readOnly}
+                              resync={false}
+                              runningSince={
+                                myInvestor.sync.standing.running?.since ?? null
+                              }
+                              savedPassword={myInvestor.savedPassword !== null}
+                              sourceId={source.id}
+                            />
+                          ) : null}
+                        </td>
                       </tr>
                       <tr className="conexDetailRow">
                         <td colSpan={6}>

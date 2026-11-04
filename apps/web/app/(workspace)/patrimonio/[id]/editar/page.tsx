@@ -203,6 +203,7 @@ export default async function EditarPage({
         ]),
       )}
       id={id}
+      sourceNotices={layout.sourceNotices ?? []}
       warnings={layout.warnings}
     />
   );

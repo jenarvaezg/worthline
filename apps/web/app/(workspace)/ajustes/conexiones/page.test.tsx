@@ -15,6 +15,8 @@ const calls = vi.hoisted(() => ({
     async (): Promise<{ readOn: string; payloadJson: string } | null> => null,
   ),
   readLinks: vi.fn(async (): Promise<{ productKey: string; assetId: string }[]> => []),
+  // How «Poner al día» stands (#1884); null until a pass touched it.
+  readSyncState: vi.fn(async () => null),
   listSourceAssetIds: vi.fn(async () => ["asset_binance"]),
   // Annotated with the port's shape: a MyInvestor row has no mirror asset and
   // carries its credentials (#1879), which the inferred literal would refuse.
@@ -118,6 +120,7 @@ vi.mock("@web/page-shell", () => ({
         readDiscovery: calls.readDiscovery,
         readLinks: calls.readLinks,
         readPositions: calls.readPositions,
+        readSyncState: calls.readSyncState,
       },
       syncRuns: { readRuns: calls.readRuns },
     },
@@ -741,5 +744,8 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     expect(html).toContain("1 incluido.");
     expect(html).toContain("Incluir con su histórico");
     expect(html).not.toContain("Así queda tu patrimonio");
+    // «Poner al día» where the other sources say «Sincronizar» (#1884).
+    expect(html).toContain("myinvestorSyncRow");
+    expect(html).toContain("Poner al día");
   });
 });

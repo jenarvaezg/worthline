@@ -81,6 +81,12 @@ import type {
 import { holdingSurface } from "./family-contract";
 import { COBROS_TAB, fichaCobros } from "./ficha-cobros";
 import { bindInvestmentActions } from "./investment-actions";
+import {
+  loadOwningSourceFicha,
+  owningSourceCaption,
+  owningSourceNotices,
+  ponerAlDiaAction,
+} from "./owning-source-ficha";
 import { fichaUnitPrice } from "./unit-price";
 
 /** The investment's own tabs; the page appends «Datos del activo». */
@@ -147,6 +153,7 @@ export async function loadInvestmentSurface(
     id,
     isDemo,
     overrides,
+    owningSource,
     payoutsPanel,
     privacyMode,
     store,
@@ -179,6 +186,13 @@ export async function loadInvestmentSurface(
   // A traspaso that came into this linked holding without its cost (#1882): what
   // the «Coste del traspaso» panel asks, read only when an entry is pending.
   const inheritedCost = await readInheritedCost(ctx, operations);
+  // A holding MyInvestor owns (ADR 0115, #1884): read-only, with «Poner al día».
+  const owned = await loadOwningSourceFicha(
+    store,
+    owningSource ?? null,
+    id,
+    ctx.checkedAt,
+  );
   const twrMonthlyCloses = monthlyCloseValuesByHolding(twrSnapshotRows).get(id) ?? [];
   const instrument = instrumentOfAsset(asset);
 
@@ -270,7 +284,8 @@ export async function loadInvestmentSurface(
   // and the next sync would undo. Offered whenever the holding HAS a ledger, not
   // whenever it has units today: a traspaso is routinely recorded weeks later,
   // and the one that emptied the holding is exactly the row still missing.
-  const hasManualLedger = operations.length > 0;
+  // A source-owned ledger has none: its rows are the source's (invariant 5).
+  const hasManualLedger = operations.length > 0 && owned === null;
 
   const action = bindInvestmentActions(id);
   // Where each form returns: the tab its result shows on (#1826).
@@ -292,6 +307,10 @@ export async function loadInvestmentSurface(
     {
       detail: (
         <>
+          {/* Who puts the units, and as of when (#1884): the source, never a form. */}
+          {owned ? (
+            <small className="priceRefreshCaption">{owningSourceCaption(owned)}</small>
+          ) : null}
           {/* Where the price comes from and of when (#1828) — worded from the
               origin the valuation handed back with the price, never inferred. */}
           <small className="priceRefreshCaption">
@@ -396,30 +415,33 @@ export async function loadInvestmentSurface(
   ];
 
   // ── The actions, each a form in the side panel ─────────────────────────────
-  const actions: FichaAction[] = [
-    {
-      // The one door through which units change (ADR 0006).
-      content: (
-        <OperationRecordForm
-          assetId={id}
-          currentUrl={tabUrl("operaciones")}
-          // The currency this ledger last captured an apunte in (#1401), so a
-          // dollar fund does not ask for it again on every purchase.
-          defaultCurrency={lastCapturedCurrency(operations)}
-          formError={formError}
-          heldUnits={position?.currentUnits ?? "0"}
-          readOnly={isDemo}
-          recordAction={action.recordOperation}
-          today={today}
-        />
-      ),
-      // A run of buys typed off one statement shares its day and its currency.
-      again: "Añadir otra",
-      key: "operacion",
-      label: "Registrar operación",
-      tier: "primary",
-    },
-  ];
+  const actions: FichaAction[] = owned
+    ? // The source puts the units: its pass is the one habitual action (#1884).
+      [ponerAlDiaAction(owned, { currentUrl, readOnly: isDemo })]
+    : [
+        {
+          // The one door through which units change (ADR 0006).
+          content: (
+            <OperationRecordForm
+              assetId={id}
+              currentUrl={tabUrl("operaciones")}
+              // The currency this ledger last captured an apunte in (#1401), so a
+              // dollar fund does not ask for it again on every purchase.
+              defaultCurrency={lastCapturedCurrency(operations)}
+              formError={formError}
+              heldUnits={position?.currentUnits ?? "0"}
+              readOnly={isDemo}
+              recordAction={action.recordOperation}
+              today={today}
+            />
+          ),
+          // A run of buys typed off one statement shares its day and its currency.
+          again: "Añadir otra",
+          key: "operacion",
+          label: "Registrar operación",
+          tier: "primary",
+        },
+      ];
   if (hasManualLedger) {
     // «Traspasar» — one screen, one submit for a fund-to-fund traspaso (#1480,
     // PRD #1393). The ledger travels so the preview can fold it at the date the
@@ -521,19 +543,21 @@ export async function loadInvestmentSurface(
       tier: "more",
     });
   }
-  // Load operations from a broker statement (ADR 0018, #174/#176). Free here.
-  actions.push({
-    content: (
-      <StatementUploadSection
-        confirmAction={action.confirmStatement}
-        currentUrl={tabUrl("operaciones")}
-        previewAction={action.previewStatement}
-      />
-    ),
-    key: "extracto",
-    label: "Cargar movimientos",
-    tier: "more",
-  });
+  // Load operations from a broker statement (ADR 0018, #174/#176). Free here —
+  // but not into a ledger a source owns: the source brings those rows.
+  if (owned === null)
+    actions.push({
+      content: (
+        <StatementUploadSection
+          confirmAction={action.confirmStatement}
+          currentUrl={tabUrl("operaciones")}
+          previewAction={action.previewStatement}
+        />
+      ),
+      key: "extracto",
+      label: "Cargar movimientos",
+      tier: "more",
+    });
   if (isBackfillCandidate) {
     // The explicit historical-price backfill (#380, ADR 0033).
     actions.push({
@@ -624,6 +648,7 @@ export async function loadInvestmentSurface(
                 deleteAction={action.deleteOperation}
                 privacyMode={privacyMode}
                 readOnly={isDemo}
+                sourceOwned={owned !== null}
                 // The traspaso rows' counterpart names (#1481): this ledger's halves
                 // joined with the store's counterpart map and the live holdings'
                 // names. A counterpart whose holding is not in `allAssets`
@@ -685,6 +710,9 @@ export async function loadInvestmentSurface(
             }
           : {}),
       },
+      ...(owned
+        ? { sourceNotices: owningSourceNotices(owned, { currentUrl, tabs: FICHA_TABS }) }
+        : {}),
       // The record form and the ledger are in different places now and still one
       // list: the row being recorded shows in the tab before its action resolves.
       wrap: (ficha) => (

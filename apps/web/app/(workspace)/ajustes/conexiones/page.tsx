@@ -4,6 +4,7 @@ import {
 } from "@web/ajustes/myinvestor-credentials";
 import { loadMyInvestorFirstStart } from "@web/ajustes/myinvestor-first-start-flow";
 import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
+import { myInvestorStanding } from "@web/ajustes/myinvestor-sync-view";
 import { guardViewerPage, isWriteBlocked } from "@web/demo/write-guard";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
@@ -127,12 +128,29 @@ export async function ConexionesContent({
   const myInvestorFirstStart = myInvestorSource
     ? await loadMyInvestorFirstStart(store, myInvestorSource.id, today)
     : null;
+  const writeBlocked = await isWriteBlocked();
+  // How its «Poner al día» stands (#1884): the pause, the stop, the pass running.
+  const myInvestorSyncState = myInvestorSource
+    ? await store.connectedSources.readSyncState(myInvestorSource.id)
+    : null;
+  const myInvestorSaved =
+    myInvestorCredentials !== undefined &&
+    myInvestorCredentials !== null &&
+    hasSavedPassword(myInvestorCredentials);
   const myInvestor: MyInvestorTableContext = {
     availability: myInvestorAvailability({
       premium: !sourcesGated,
-      readOnly: await isWriteBlocked(),
+      readOnly: writeBlocked,
       relayConfigured: isMyInvestorRelayConfigured(),
     }),
+    sync: {
+      readOnly: writeBlocked || sourcesGated,
+      standing: myInvestorStanding({
+        now: systemClock().now(),
+        savedPassword: myInvestorSaved,
+        state: myInvestorSyncState,
+      }),
+    },
     savedPassword:
       myInvestorCredentials && hasSavedPassword(myInvestorCredentials)
         ? myInvestorCredentials.acceptance

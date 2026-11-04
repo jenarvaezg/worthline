@@ -165,6 +165,9 @@ const calls = vi.hoisted(() => ({
   // Connected sources
   listSources: vi.fn(async (): Promise<unknown[]> => []),
   readSourceIdForAsset: vi.fn(async (): Promise<string | null> => null),
+  // An owning source (#1884): its row with the credentials, and its sync state.
+  readSource: vi.fn(async (): Promise<unknown> => null),
+  readSyncState: vi.fn(async (): Promise<unknown> => null),
   readSourcePositions: vi.fn(async (): Promise<unknown[]> => []),
   // Liability-side reads — never touched by an asset ficha
   readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
@@ -217,7 +220,9 @@ vi.mock("@web/page-shell", () => ({
         connectedSources: {
           listSources: calls.listSources,
           readPositions: calls.readSourcePositions,
+          readSource: calls.readSource,
           readSourceIdForAsset: calls.readSourceIdForAsset,
+          readSyncState: calls.readSyncState,
         },
         liabilities: {
           readAmortizationPlan: calls.readAmortizationPlan,
@@ -812,6 +817,129 @@ describe("EditarPage — the investment header says where its price comes from (
     expect(fix).toContain('href="/patrimonio/wl_hld_fondo/editar"');
     expect(fix).toContain('data-ficha-tab="operaciones"');
     expect(band(html)).toContain("Es intencional");
+  });
+});
+
+describe("EditarPage — a holding MyInvestor owns is read-only, with «Poner al día» (#1884)", () => {
+  const SOURCE = {
+    adapter: "myinvestor",
+    assetId: null,
+    credentialsJson: JSON.stringify({ deviceId: "device-sintetico" }),
+    id: "src_mi",
+    label: "MyInvestor",
+    lastSyncAt: "2026-08-28T07:12:00.000Z",
+  };
+  const SAVED = JSON.stringify({
+    acceptance: { acceptedAt: "2026-08-01T08:00:00.000Z", acceptedBy: null },
+    customerId: "00000000A",
+    deviceId: "device-sintetico",
+    password: "sintetica",
+  });
+  const bar = (html: string) =>
+    html.slice(
+      html.indexOf('aria-label="Acciones del activo"'),
+      html.indexOf('class="fichaFigures"'),
+    );
+  const band = (html: string) => {
+    const at = html.indexOf('aria-label="Avisos"');
+    return at === -1
+      ? ""
+      : html.slice(at, html.indexOf('aria-label="Estado del activo"'));
+  };
+
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([{ ...FUND, connectedSourceId: "src_mi" }]);
+    calls.readInvestmentAssetById.mockResolvedValue(INVESTMENT);
+    calls.readOperations.mockResolvedValue([OPERATION]);
+    calls.readPositions.mockResolvedValue([POSITION]);
+    calls.readPriceCache.mockResolvedValue(PRICE);
+    calls.listSources.mockResolvedValue([SOURCE]);
+    calls.readSource.mockResolvedValue(SOURCE);
+  });
+
+  test("«Poner al día» is the one habitual action; no form writes its units", async () => {
+    const html = await renderedHtml();
+
+    expect(bar(html)).toContain('class="btn" data-ficha-action="poner-al-dia"');
+    for (const action of ["operacion", "traspaso", "entrada", "extracto"]) {
+      expect(html).not.toContain(`data-ficha-action="${action}"`);
+    }
+    // The units say who puts them, and as of when.
+    expect(html).toContain("Las pone MyInvestor · al día");
+    // The ledger is the source's: no row offers «Eliminar».
+    expect(tabBody(html)).not.toContain("Eliminar");
+  });
+
+  test("its panel: when it was last up to date, and the whole connection, not only this", async () => {
+    calls.readSource.mockResolvedValue({ ...SOURCE, credentialsJson: SAVED });
+    const html = await renderedHtml({ accion: "poner-al-dia" });
+
+    expect(panel(html)).toContain("Última vez al día");
+    expect(panel(html)).toContain("Se pone al día sola cada día");
+    expect(panel(html)).toContain(
+      "Pone al día todos tus productos de MyInvestor, no solo este",
+    );
+    expect(panel(html)).toContain("Poner al día ahora");
+    expect(panel(html)).not.toContain("Contraseña de MyInvestor");
+  });
+
+  test("with no password saved, the panel asks for it once and points to Conexiones", async () => {
+    const html = await renderedHtml({ accion: "poner-al-dia" });
+
+    expect(panel(html)).toContain("Contraseña de MyInvestor");
+    expect(panel(html)).toContain("Se usa para esta vez y se olvida");
+    expect(panel(html)).toContain('href="/ajustes/conexiones"');
+  });
+
+  test("units that do not square are in the band, with «Resincronizar todo» and no adjustment", async () => {
+    calls.readSyncState.mockResolvedValue({
+      lastOutcomeJson: null,
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: null,
+      unitsCheckJson: JSON.stringify([
+        {
+          assetId: ASSET_ID,
+          bookUnits: "401.77",
+          difference: "0.33",
+          productKey: "securities:1|isin:IE00B4L5Y983",
+          sourceUnits: "402.1",
+        },
+      ]),
+    });
+    const html = await renderedHtml();
+
+    expect(band(html)).toContain("el libro dice 401,77 y MyInvestor 402,1 (+0,33)");
+    expect(band(html)).toContain("worthline no crea ningún ajuste");
+    expect(band(html)).toContain("Resincronizar todo");
+    // The remedy opens the «Poner al día» panel, where it is offered.
+    expect(band(html)).toContain("accion=poner-al-dia");
+  });
+
+  test("a cash account it owns: its balance is the source's, never typed", async () => {
+    calls.readAssets.mockResolvedValue([{ ...CASH, connectedSourceId: "src_mi" }]);
+    const html = await renderedHtml();
+
+    expect(bar(html)).toContain('class="btn" data-ficha-action="poner-al-dia"');
+    expect(html).not.toContain('data-ficha-action="valor"');
+    expect(html).toContain("Lo pone MyInvestor");
+  });
+
+  test("the SMS stops the daily sync: the band sends to Conexiones", async () => {
+    calls.readSyncState.mockResolvedValue({
+      lastOutcomeJson: JSON.stringify({
+        at: "2026-08-29T07:10:00.000Z",
+        kind: "sms_required",
+      }),
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: "sms_required",
+      unitsCheckJson: null,
+    });
+    const html = await renderedHtml();
+
+    expect(band(html)).toContain("MyInvestor pide verificar el móvil otra vez");
+    expect(band(html)).toContain("Verificar el móvil en Conexiones →");
   });
 });
 

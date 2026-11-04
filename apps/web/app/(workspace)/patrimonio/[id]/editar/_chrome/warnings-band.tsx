@@ -9,7 +9,10 @@
  * also links to the tab and field where it is fixed.
  */
 
-import type { FichaFix } from "@web/patrimonio/[id]/editar/_families/family-contract";
+import type {
+  FichaFix,
+  FichaSourceNotice,
+} from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { FichaLink } from "@web/patrimonio/[id]/editar/_ficha/ficha-link";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import type { DomainWarning, HoldingWarningCode } from "@worthline/domain";
@@ -22,6 +25,7 @@ export function WarningsBand({
   exclude = [],
   fixes = {},
   id,
+  sourceNotices = [],
   warnings,
 }: {
   currentUrl: string;
@@ -32,11 +36,13 @@ export function WarningsBand({
   id: string;
   /** The holding's active warnings (`holdingWarnings`), read once by the page. */
   warnings: readonly DomainWarning[];
+  /** What the source that owns the holding left, with its remedy (#1884). */
+  sourceNotices?: readonly FichaSourceNotice[];
 }) {
   const placed = new Set<string>(exclude);
   const shown = warnings.filter((warning) => !placed.has(warning.code));
 
-  if (shown.length === 0) {
+  if (shown.length === 0 && sourceNotices.length === 0) {
     return null;
   }
 
@@ -76,6 +82,20 @@ export function WarningsBand({
           </div>
         );
       })}
+      {sourceNotices.map((notice) => (
+        <div className="warningItem" key={`source-${notice.key}`}>
+          <span>⚠ {notice.text}</span>
+          {notice.remedy ? (
+            <FichaLink
+              className="btnSmall btnWarning"
+              href={notice.remedy.href}
+              {...(notice.remedy.action ? { action: notice.remedy.action } : {})}
+            >
+              {notice.remedy.label}
+            </FichaLink>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
