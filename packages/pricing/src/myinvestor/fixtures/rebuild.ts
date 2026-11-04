@@ -6,10 +6,15 @@
  * - Orders: an inbound order keeps its invented amount and gets its shares as amount /
  *   real price (NAV or share price, public), at the decimals the API uses for that
  *   instrument. An outbound order that closed the real position closes the invented one;
- *   a partial one sells the same fraction. The two legs of an internal transfer move the
- *   same cash. A broker order invents its shares and recalculates gross and net.
- * - Positions (P8): today's shares of every plan, fund and stock are the sum of the
- *   invented COMPLETE orders; invested is their average cost; value = shares × real price.
+ *   a partial one sells the same fraction. The two halves of a traspaso between funds or
+ *   between plans move the same cash. A broker order invents its shares and recalculates
+ *   gross and net. The sign of every order type is the adapter's own table
+ *   (`MYINVESTOR_TYPE_RULES`), so the fixture folds as the sync will.
+ * - Positions (P8): first, today's REAL shares of every plan, fund and stock must be the
+ *   sum of the REAL COMPLETE orders, and a holding the orders leave open must be among
+ *   today's positions; if not, the rebuild throws and nothing is written. Then today's
+ *   invented shares are the sum of the invented COMPLETE orders; invested is their
+ *   average cost; value = shares × real price.
  * - Balances: `withheldBalance` is the sum of `amountToBlock` of the orders in progress
  *   charged to the cash account. `enabledBalance` stays invented: no order backs it.
  * - Series (`SINCE_BEGINNING`): shares and invested at each date come from the invented
@@ -18,15 +23,15 @@
  * It works on the trees in place: they are fresh copies made by the first pass.
  */
 import {
-  addDecimals,
-  canonicalDecimal,
-  compareDecimal,
-  divideDecimal,
-  multiplyDecimal,
-  roundDecimal,
-  subtractDecimal,
-} from "./decimal";
-import { isPlainObject, type LiteralJson, NumberLiteral } from "./json-literals";
+  isPairedTransferGroup,
+  MYINVESTOR_BROKER_SIDES,
+  MYINVESTOR_TYPE_RULES,
+  type MyInvestorTypeRule,
+  takesUnitsOut,
+} from "@pricing/myinvestor/ingest/normalize";
+import { compareUnits, divideUnits, subtractUnits } from "@worthline/domain";
+import { addDecimals, canonicalDecimal, multiplyDecimal, roundDecimal } from "./decimal";
+import { isPlainObject, JsonNumber, type LiteralJson } from "./json-literals";
 
 export interface CaptureTrees {
   /** The raw file name without `.json`, as `capture.sh` writes it. */
@@ -37,27 +42,11 @@ export interface CaptureTrees {
 
 type Obj = { [key: string]: LiteralJson };
 
-const PLAN_IN = new Set([
-  "PLAN_CONTRIBUTION",
-  "REGISTRATION_BY_INTERNAL_PLAN_TRANSFER",
-  "REGISTRATION_BY_EXTERNAL_PLAN_TRANSFER",
-]);
-const PLAN_OUT = new Set(["DEREGISTRATION_BY_INTERNAL_PLAN_TRANSFER"]);
-const FUND_IN = new Set([
-  "INVESTMENT_FUNDS_SUBSCRIPTION",
-  "IIC_SWITCH_REGISTRATION",
-  "INTERNAL_TRANSFER_SUBSCRIPTION",
-]);
-const FUND_OUT = new Set([
-  "INVESTMENT_FUNDS_REIMBURSEMENT",
-  "IIC_SWITCH_DEREGISTRATION",
-  "INTERNAL_TRANSFER_REIMBURSEMENT",
-]);
-/** Inbound legs whose outbound twin, same date and same cash, is in the same file. */
-const TWIN_OF: Readonly<Record<string, string>> = {
-  REGISTRATION_BY_INTERNAL_PLAN_TRANSFER: "DEREGISTRATION_BY_INTERNAL_PLAN_TRANSFER",
-  IIC_SWITCH_REGISTRATION: "IIC_SWITCH_DEREGISTRATION",
-};
+/** The adapter's rule for an order type, only when it belongs to this kind of account. */
+function ruleOf(type: string, product: MyInvestorTypeRule["product"]) {
+  const rule = MYINVESTOR_TYPE_RULES[type];
+  return rule?.product === product ? rule : undefined;
+}
 
 // ── tree access ──────────────────────────────────────────────────────────────
 
@@ -77,7 +66,7 @@ function rowsOf(tree: LiteralJson): Obj[] {
 
 const num = (row: Obj | null | undefined, key: string): string | null => {
   const value = row?.[key];
-  return value instanceof NumberLiteral ? canonicalDecimal(value.source) : null;
+  return value instanceof JsonNumber ? canonicalDecimal(value.source) : null;
 };
 const need = (row: Obj, key: string, where: string): string => {
   const value = num(row, key);
@@ -90,18 +79,19 @@ const text = (row: Obj | null | undefined, key: string): string => {
 };
 /** Writes a figure only where the response has one: a `null` stays `null`. */
 function put(row: Obj, key: string, value: string) {
-  if (row[key] instanceof NumberLiteral) row[key] = new NumberLiteral(value);
+  if (row[key] instanceof JsonNumber) row[key] = new JsonNumber(value);
 }
 
 const day = (value: string) => value.slice(0, 10);
+/** The capture's kind without its account id: what an error may name. */
+const kindOf = (name: string) => name.replace(/-\d+$/, "");
 const decimalsOf = (literal: string) =>
   canonicalDecimal(literal).split(".")[1]?.length ?? 0;
 const unitOf = (decimals: number) =>
   decimals === 0 ? "1" : `0.${"0".repeat(decimals - 1)}1`;
-const isZero = (value: string | null) =>
-  value === null || compareDecimal(value, "0") === 0;
+const isZero = (value: string | null) => value === null || compareUnits(value, "0") === 0;
 const positive = (value: string | null): value is string =>
-  value !== null && compareDecimal(value, "0") > 0;
+  value !== null && compareUnits(value, "0") > 0;
 
 // ── the ledger of one instrument ─────────────────────────────────────────────
 
@@ -134,17 +124,17 @@ class Ledger {
 
   /** The invented shares an outbound order of `realShares` takes. */
   outbound(realShares: string): string {
-    if (compareDecimal(realShares, this.real) >= 0) return this.shares;
+    if (compareUnits(realShares, this.real) >= 0) return this.shares;
     const unit = unitOf(this.decimals);
-    const fraction = divideDecimal(
+    const fraction = divideUnits(
       multiplyDecimal(this.shares, realShares),
       this.real,
       this.decimals,
     );
-    const ceiling = subtractDecimal(this.shares, unit);
-    if (compareDecimal(ceiling, unit) < 0) return this.shares;
-    if (compareDecimal(fraction, unit) < 0) return unit;
-    return compareDecimal(fraction, ceiling) > 0 ? ceiling : fraction;
+    const ceiling = subtractUnits(this.shares, unit);
+    if (compareUnits(ceiling, unit) < 0) return this.shares;
+    if (compareUnits(fraction, unit) < 0) return unit;
+    return compareUnits(fraction, ceiling) > 0 ? ceiling : fraction;
   }
 
   /**
@@ -162,24 +152,24 @@ class Ledger {
     cost: (s: string) => string = () => "0",
   ) {
     const unit = unitOf(this.decimals);
-    const closing = side === "out" && compareDecimal(proposed, this.shares) >= 0;
+    const closing = side === "out" && compareUnits(proposed, this.shares) >= 0;
     if (closing) return proposed;
     const realAfter =
       side === "in"
         ? addDecimals([this.real, realShares])
-        : subtractDecimal(this.real, realShares);
+        : subtractUnits(this.real, realShares);
     const fine = (shares: string) => {
-      if (compareDecimal(shares, unit) < 0) return false;
-      if (side === "out" && compareDecimal(shares, this.shares) >= 0) return false;
+      if (compareUnits(shares, unit) < 0) return false;
+      if (side === "out" && compareUnits(shares, this.shares) >= 0) return false;
       const after =
         side === "in"
           ? addDecimals([this.shares, shares])
-          : subtractDecimal(this.shares, shares);
+          : subtractUnits(this.shares, shares);
       const invested =
         side === "in"
           ? addDecimals([this.invested, cost(shares)])
-          : subtractDecimal(this.invested, this.costOfSale(shares));
-      if (compareDecimal(after, realAfter) === 0 || clash(shares)) return false;
+          : subtractUnits(this.invested, this.costOfSale(shares));
+      if (compareUnits(after, realAfter) === 0 || clash(shares)) return false;
       if (this.avoid.quantity(after) || this.avoid.amount(invested)) return false;
       return !(this.price && this.avoid.amount(multiplyDecimal(after, this.price)));
     };
@@ -188,7 +178,7 @@ class Ledger {
       const candidate =
         step % 2 === 0
           ? addDecimals([proposed, offset])
-          : subtractDecimal(proposed, offset);
+          : subtractUnits(proposed, offset);
       if (fine(candidate)) return candidate;
     }
     return proposed;
@@ -196,19 +186,19 @@ class Ledger {
 
   /** The invested a sale of `shares` takes away, at average cost. */
   costOfSale(shares: string): string {
-    if (compareDecimal(shares, this.shares) >= 0) return this.invested;
+    if (compareUnits(shares, this.shares) >= 0) return this.invested;
     return roundDecimal(
-      divideDecimal(multiplyDecimal(this.invested, shares), this.shares, 6),
+      divideUnits(multiplyDecimal(this.invested, shares), this.shares, 6),
       2,
     );
   }
 
   sell(date: string, realShares: string, shares: string) {
-    const closes = compareDecimal(shares, this.shares) >= 0;
+    const closes = compareUnits(shares, this.shares) >= 0;
     const cost = this.costOfSale(shares);
-    this.real = subtractDecimal(this.real, realShares);
-    this.shares = closes ? "0" : subtractDecimal(this.shares, shares);
-    this.invested = closes ? "0" : subtractDecimal(this.invested, cost);
+    this.real = subtractUnits(this.real, realShares);
+    this.shares = closes ? "0" : subtractUnits(this.shares, shares);
+    this.invested = closes ? "0" : subtractUnits(this.invested, cost);
     this.points.push({ date, shares: this.shares, invested: this.invested });
   }
 
@@ -221,6 +211,8 @@ class Ledger {
 
 class Ledgers {
   private readonly byKey = new Map<string, Ledger>();
+  /** The ledgers a position of today was checked against. */
+  private readonly held = new Set<Ledger>();
   constructor(
     private readonly decimals: ReadonlyMap<string, number>,
     private readonly prices: ReadonlyMap<string, string>,
@@ -243,6 +235,35 @@ class Ledgers {
 
   find(account: string, instrument: string): Ledger | undefined {
     return this.byKey.get(`${account}\u0000${instrument}`);
+  }
+
+  /**
+   * P8 on the real capture: the ledger of a position held today must have folded its
+   * real orders to exactly the real shares. The error names the kind of capture and the
+   * public instrument code, never a figure nor an account id.
+   */
+  settleReal(account: string, instrument: string, realShares: string, capture: string) {
+    const where = kindOf(capture);
+    const ledger = this.find(account, instrument);
+    if (!ledger) throw new Error(`${where}: posición sin órdenes (${instrument})`);
+    if (compareUnits(ledger.real, realShares) !== 0) {
+      throw new Error(
+        `${where}: la posición real de ${instrument} no cuadra con sus órdenes reales (P8)`,
+      );
+    }
+    this.held.add(ledger);
+    return ledger;
+  }
+
+  /** Throws for a holding the real orders leave open that no position of today holds. */
+  assertNoneLeftOpen() {
+    for (const [key, ledger] of this.byKey) {
+      if (this.held.has(ledger) || isZero(ledger.real)) continue;
+      const instrument = key.split("\u0000")[1] ?? "";
+      throw new Error(
+        `La posición real de ${instrument} no cuadra con sus órdenes reales (P8): sus órdenes la dejan abierta y hoy no está`,
+      );
+    }
   }
 }
 
@@ -281,7 +302,7 @@ function index(captures: readonly CaptureTrees[]) {
 function shareDecimals(captures: readonly CaptureTrees[]): Map<string, number> {
   const decimals = new Map<string, number>();
   const note = (instrument: string, literal: LiteralJson | undefined) => {
-    if (!instrument || !(literal instanceof NumberLiteral)) return;
+    if (!instrument || !(literal instanceof JsonNumber)) return;
     const places = decimalsOf(literal.source);
     decimals.set(instrument, Math.max(decimals.get(instrument) ?? 0, places));
   };
@@ -321,22 +342,23 @@ interface Avoid {
 
 interface OrderKinds {
   readonly key: "dgsCode" | "isin";
-  readonly inbound: ReadonlySet<string>;
-  readonly outbound: ReadonlySet<string>;
+  readonly product: MyInvestorTypeRule["product"];
 }
 
-const PLAN_KINDS: OrderKinds = { key: "dgsCode", inbound: PLAN_IN, outbound: PLAN_OUT };
-const FUND_KINDS: OrderKinds = { key: "isin", inbound: FUND_IN, outbound: FUND_OUT };
+const PLAN_KINDS: OrderKinds = { key: "dgsCode", product: "pension_plan" };
+const FUND_KINDS: OrderKinds = { key: "isin", product: "fund" };
 
 /** Chronological, and on the same day the outbound legs first. */
-function chronological(pairs: readonly Pair[], outbound: ReadonlySet<string>): Pair[] {
+function chronological(pairs: readonly Pair[], kinds: OrderKinds): Pair[] {
+  const rank = (pair: Pair) => {
+    const rule = ruleOf(text(pair.raw, "operationType"), kinds.product);
+    return rule && takesUnitsOut(rule.operation) ? 0 : 1;
+  };
   return [...pairs].sort((a, b) => {
     const byDay = day(text(a.raw, "orderDate")).localeCompare(
       day(text(b.raw, "orderDate")),
     );
-    if (byDay !== 0) return byDay;
-    const rank = (pair: Pair) => (outbound.has(text(pair.raw, "operationType")) ? 0 : 1);
-    return rank(a) - rank(b);
+    return byDay !== 0 ? byDay : rank(a) - rank(b);
   });
 }
 
@@ -348,9 +370,13 @@ function rebuildOrders(
   navAt: (instrument: string, date: string) => string | null,
   avoid: Avoid,
 ) {
-  const done: { type: string; date: string; realCash: string | null; cash: string }[] =
-    [];
-  for (const { raw, fake } of chronological(pairsOf(capture), kinds.outbound)) {
+  const done: {
+    rule: MyInvestorTypeRule;
+    date: string;
+    realCash: string | null;
+    cash: string;
+  }[] = [];
+  for (const { raw, fake } of chronological(pairsOf(capture), kinds)) {
     const where = `${capture.name} ${text(raw, "reference")}`;
     const type = text(raw, "operationType");
     const date = day(text(raw, "orderDate"));
@@ -359,10 +385,11 @@ function rebuildOrders(
     const realShares = num(raw, "shares") ?? "0";
     const nav = num(raw, "amountBuyVL");
     const blocksCash = realCash !== null && num(raw, "amountToBlock") === realCash;
-    const inbound = kinds.inbound.has(type);
-    if (!inbound && !kinds.outbound.has(type)) {
+    const rule = ruleOf(type, kinds.product);
+    if (!rule) {
       throw new Error(`${where}: tipo de orden sin signo conocido: ${type}`);
     }
+    const inbound = !takesUnitsOut(rule.operation);
     if (kinds === FUND_KINDS && text(raw, "productType") !== "IIC") {
       throw new Error(`${where}: orden de fondos que no es IIC`);
     }
@@ -371,16 +398,21 @@ function rebuildOrders(
       const ledger = ledgers.get(account, instrument);
       let shares: string;
       if (inbound) {
-        const twin = TWIN_OF[type];
-        const leg = done.find(
-          (other) =>
-            other.type === twin && other.date === date && other.realCash === realCash,
-        );
+        // The outbound half of the same traspaso, same day and same cash, in this file.
+        const leg = isPairedTransferGroup(rule.transfer)
+          ? done.find(
+              (other) =>
+                other.rule.transfer === rule.transfer &&
+                takesUnitsOut(other.rule.operation) &&
+                other.date === date &&
+                other.realCash === realCash,
+            )
+          : undefined;
         if (leg) cash = leg.cash;
         shares = positive(nav)
-          ? divideDecimal(cash, nav, ledger.decimals)
+          ? divideUnits(cash, nav, ledger.decimals)
           : (num(fake, "shares") ?? "0");
-        if (compareDecimal(shares, unitOf(ledger.decimals)) < 0) {
+        if (compareUnits(shares, unitOf(ledger.decimals)) < 0) {
           shares = unitOf(ledger.decimals);
         }
         const price = positive(nav) ? null : navAt(instrument, date);
@@ -409,7 +441,7 @@ function rebuildOrders(
       put(fake, "cash", cash);
     }
     if (blocksCash) put(fake, "amountToBlock", cash);
-    done.push({ type, date, realCash, cash });
+    done.push({ rule, date, realCash, cash });
   }
 }
 
@@ -428,22 +460,30 @@ function rebuildBroker(
     if (!pair) throw new Error(`${detail.name}: detalle vacío`);
     return { row, detail: pair };
   });
+  const operationOf = (raw: Obj) =>
+    MYINVESTOR_BROKER_SIDES[text(raw, "orderOperationTypeEnum")];
   orders.sort((a, b) => {
     const byDay = text(a.detail.raw, "orderDate").localeCompare(
       text(b.detail.raw, "orderDate"),
     );
     if (byDay !== 0) return byDay;
-    const rank = (o: typeof a) =>
-      text(o.detail.raw, "orderOperationTypeEnum") === "SELL" ? 0 : 1;
+    const rank = (o: typeof a) => {
+      const operation = operationOf(o.detail.raw);
+      return operation && takesUnitsOut(operation) ? 0 : 1;
+    };
     return rank(a) - rank(b);
   });
   for (const { row, detail } of orders) {
     const { raw, fake } = detail;
     if (text(raw, "orderStatus") !== "COMPLETE") continue;
     const where = `orden de broker ${text(raw, "orderReference")}`;
-    const side = text(raw, "orderOperationTypeEnum");
-    if (side !== "BUY" && side !== "SELL")
-      throw new Error(`${where}: lado desconocido ${side}`);
+    const operation = operationOf(raw);
+    if (!operation) {
+      throw new Error(
+        `${where}: lado desconocido ${text(raw, "orderOperationTypeEnum")}`,
+      );
+    }
+    const side = takesUnitsOut(operation) ? "SELL" : "BUY";
     if (num(raw, "exchangeRate") !== "1")
       throw new Error(`${where}: divisa no soportada`);
     const realShares = need(raw, "executedShares", where);
@@ -456,9 +496,7 @@ function rebuildBroker(
     ]);
     const grossOf = (s: string) => roundDecimal(multiplyDecimal(s, price), 2);
     const netOf = (s: string) =>
-      side === "BUY"
-        ? addDecimals([grossOf(s), fees])
-        : subtractDecimal(grossOf(s), fees);
+      side === "BUY" ? addDecimals([grossOf(s), fees]) : subtractUnits(grossOf(s), fees);
     const shares = ledger.settle(
       side === "BUY" ? "in" : "out",
       realShares,
@@ -488,12 +526,12 @@ interface Totals {
 }
 
 const returnPct = (profit: string, invested: string) =>
-  positive(invested) ? divideDecimal(multiplyDecimal(profit, "100"), invested, 8) : "0";
+  positive(invested) ? divideUnits(multiplyDecimal(profit, "100"), invested, 8) : "0";
 
 /** Writes shares, invested, value, profit, average cost and return of one holding. */
 function holding(row: Obj, ledger: Ledger, price: string, totals: Totals[]) {
   const value = multiplyDecimal(ledger.shares, price);
-  const profit = subtractDecimal(value, ledger.invested);
+  const profit = subtractUnits(value, ledger.invested);
   put(row, "shares", ledger.shares);
   put(row, "availableShares", ledger.shares);
   put(row, "totalInvested", ledger.invested);
@@ -504,7 +542,7 @@ function holding(row: Obj, ledger: Ledger, price: string, totals: Totals[]) {
   put(
     row,
     "averageCost",
-    positive(ledger.shares) ? divideDecimal(ledger.invested, ledger.shares, 9) : "0",
+    positive(ledger.shares) ? divideUnits(ledger.invested, ledger.shares, 9) : "0",
   );
   put(row, "totalReturn", returnPct(profit, ledger.invested));
   for (const total of totals) {
@@ -518,7 +556,7 @@ function writeTotals(row: Obj, prefix: "" | "funds" | "stocks", totals: Totals) 
     prefix ? `${prefix}${name.charAt(0).toUpperCase()}${name.slice(1)}` : name;
   const value = addDecimals(totals.value);
   const invested = addDecimals(totals.invested);
-  const profit = subtractDecimal(value, invested);
+  const profit = subtractUnits(value, invested);
   put(row, key("marketValue"), value);
   put(row, key("totalInvested"), invested);
   put(row, key("profit"), profit);
@@ -535,8 +573,12 @@ function rebuildPlans(
 ) {
   for (const { raw, fake } of pairsOf(capture)) {
     const dgs = text(raw, "dgsCode");
-    const ledger = ledgers.find(id, dgs);
-    if (!ledger) throw new Error(`${capture.name}: plan sin órdenes (${dgs})`);
+    const ledger = ledgers.settleReal(
+      id,
+      dgs,
+      need(raw, "shares", capture.name),
+      capture.name,
+    );
     holding(fake, ledger, need(raw, "liquidationValue", capture.name), [account]);
   }
 }
@@ -561,8 +603,12 @@ function rebuildSecuritiesAccount(id: string, capture: CaptureTrees, ledgers: Le
       const fakeItem = asObj(fakeList[i]);
       if (!item || !fakeItem) return;
       const isin = text(item, "isin");
-      const ledger = ledgers.find(id, isin);
-      if (!ledger) throw new Error(`${capture.name}: posición sin órdenes (${isin})`);
+      const ledger = ledgers.settleReal(
+        id,
+        isin,
+        need(item, "shares", capture.name),
+        capture.name,
+      );
       const kind = text(item, "productTypeCode") === "IIC" ? funds : stocks;
       holding(fakeItem, ledger, need(item, "liquidationValue", capture.name), [
         group,
@@ -602,15 +648,11 @@ function rebuildSeries(id: string, capture: CaptureTrees, ledgers: Ledgers) {
       put(fakePoint, "investmentAddedValue", invested);
       put(fakePoint, "marketValue", value);
       put(fakePoint, "currencyMarketValue", value);
-      put(
-        fakePoint,
-        "returnValue",
-        returnPct(subtractDecimal(value, invested), invested),
-      );
+      put(fakePoint, "returnValue", returnPct(subtractUnits(value, invested), invested));
       put(
         fakePoint,
         "avgPositionCost",
-        positive(shares) ? divideDecimal(invested, shares, 9) : "0",
+        positive(shares) ? divideUnits(invested, shares, 9) : "0",
       );
     });
   }
@@ -620,7 +662,7 @@ function rebuildSeries(id: string, capture: CaptureTrees, ledgers: Ledgers) {
 function priceOfPoint(point: Obj | null): string | null {
   const shares = num(point, "totalShares");
   const value = num(point, "marketValue");
-  return positive(shares) && value !== null ? divideDecimal(value, shares, 6) : null;
+  return positive(shares) && value !== null ? divideUnits(value, shares, 6) : null;
 }
 
 function nearest(prices: readonly (string | null)[], i: number): string | null {
@@ -633,7 +675,7 @@ function nearest(prices: readonly (string | null)[], i: number): string | null {
   return null;
 }
 
-/** The real price of an instrument on a date, from its series: for a transfer with no cash. */
+/** The real price of an instrument on a date, from its series: for a traspaso with no cash. */
 function seriesPrices(captures: Iterable<CaptureTrees>) {
   const byInstrument = new Map<string, { date: string; price: string }[]>();
   for (const capture of captures) {
@@ -678,7 +720,7 @@ function rebuildWithheld(
     const sum = sums.get(text(raw, "accountId")) ?? { real: [], fake: [] };
     const withheld = num(raw, "withheldBalance");
     if (withheld === null) continue;
-    if (compareDecimal(withheld, addDecimals(sum.real)) !== 0) {
+    if (compareUnits(withheld, addDecimals(sum.real)) !== 0) {
       throw new Error("cash-accounts: lo retenido no es la suma de las órdenes en curso");
     }
     put(fake, "withheldBalance", addDecimals(sum.fake));
@@ -766,6 +808,7 @@ export function rebuildCaptures(
   for (const [id, capture] of of("securities-account")) {
     rebuildSecuritiesAccount(id, capture, ledgers);
   }
+  ledgers.assertNoneLeftOpen();
   for (const [id, capture] of of("pension-positions"))
     rebuildSeries(id, capture, ledgers);
   for (const [id, capture] of of("securities-positions"))

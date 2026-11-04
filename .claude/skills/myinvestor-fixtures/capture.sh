@@ -33,7 +33,7 @@ raw() { # raw <file> <path> [param=value...]
 
 ids() { jq -r '.payload.data[].accountId' "$OUT/$1.json" 2>/dev/null; }
 
-# Captured for the careo only (the plan leaves them out of git): the customer profile and
+# Captured for the leak check only (the plan leaves them out of git): the customer profile and
 # the day-by-day cash balance.
 raw customer "$C/v3/customers/self"
 raw cash-historical-balance "$C/v2/cash-accounts/historical-balance" accountTypes=CASH_ACCOUNT
@@ -47,7 +47,7 @@ raw portfolios "$C/v2/portfolios"
 for id in $(ids securities-accounts); do
   raw "securities-account-$id" "$C/v2/securities-accounts/$id"
   raw "securities-orders-$id" "$C/v3/securities-accounts/$id/orders" dateFrom=2000-01-01 dateTo="$TODAY_DASH"
-  # Captured for the careo and for the prices of the rebuild; never committed.
+  # Captured for the leak check and for the prices of the rebuild; never committed.
   raw "securities-positions-$id" "$C/v2/securities-accounts/$id/positions" groupType=SINCE_BEGINNING
   raw "securities-transfers-pending-$id" "$C/v2/securities-accounts/$id/transfers/pending"
   # Stocks, ETF and ETC are not in the orders above: the broker lists them, and each

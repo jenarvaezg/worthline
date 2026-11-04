@@ -1,6 +1,6 @@
 /**
  * The guards on the COMMITTED MyInvestor fixtures (#1887). They run in CI, where the raw
- * captures are not: the careo against the raw side runs locally (see the skill
+ * captures are not: the leak check against the raw side runs locally (see the skill
  * `.claude/skills/myinvestor-fixtures/`). Here:
  * - no file holds an IBAN or a DNI/NIE whose control digits verify (the fakes always
  *   break them, so a valid one can only be real);
@@ -22,8 +22,8 @@ import { addDecimals, canonicalDecimal } from "./decimal";
 import { findValidIdentities } from "./identity-checks";
 import {
   isPlainObject,
+  JsonNumber,
   type LiteralJson,
-  NumberLiteral,
   parseWithLiterals,
 } from "./json-literals";
 
@@ -47,7 +47,7 @@ function rows(file: string): Row[] {
 
 const text = (value: LiteralJson | undefined) => (typeof value === "string" ? value : "");
 const literal = (value: LiteralJson | undefined) => {
-  if (!(value instanceof NumberLiteral)) throw new Error("se esperaba un número");
+  if (!(value instanceof JsonNumber)) throw new Error("se esperaba un número");
   return value.source;
 };
 

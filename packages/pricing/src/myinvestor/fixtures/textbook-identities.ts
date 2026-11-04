@@ -2,7 +2,7 @@
  * Valid identifiers for the tests of the fixture tooling (#1887): the ECBS documentation
  * IBAN and the DNI/NIE examples every Spanish validator uses. They are BUILT here, never
  * written whole, so no file of the work holds a literal valid IBAN or DNI/NIE and the
- * careo's identity check can run over every file without exceptions.
+ * leak check's identity check can run over every file without exceptions.
  */
 import { ibanCheckDigits, spanishIdControlLetter } from "./identity-checks";
 

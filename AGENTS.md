@@ -22,7 +22,8 @@ The repo uses the default Matt Pocock skill label vocabulary as GitHub labels. S
 Which subagents apply here, which are vetoed and why, what briefing they get
 (`claim` + `evidence`, never the implementer's reasoning), and which gate they
 close with. See `docs/agents/subagents.md`. Repo-specific agents live in
-`.claude/agents/`, the one part of `.claude/` that git tracks.
+`.claude/agents/`. Git tracks that folder and `.claude/skills/myinvestor-fixtures/`,
+the procedure that regenerates the MyInvestor fixtures; the rest of `.claude/` is local.
 
 ### Domain docs
 

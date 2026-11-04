@@ -3,7 +3,7 @@
  *
  * The table is closed on purpose: a key that is not here makes the anonymizer throw, so a
  * field the API adds later cannot reach a fixture without someone deciding what it is.
- * The careo (`leak-check.ts`) reads the same table, and treats anything that is not
+ * The leak check (`leak-check.ts`) reads the same table, and treats anything that is not
  * `public` as sensitive.
  *
  * - `amount`: money. Each distinct real amount becomes its own invented fake

@@ -90,7 +90,7 @@ const DOCUMENT_SHAPES: readonly { shape: RegExp; prefix: (real: string) => strin
   { shape: /^\d{8}[A-Z]$/, prefix: () => "" },
   { shape: /^[XYZKLM]\d{7}[A-Z]$/, prefix: (real) => real.charAt(0) },
 ];
-const NIE_NUMERIC_PREFIX: Record<string, string> = { X: "0", Y: "1", Z: "2" };
+const NIE_PREFIX: Record<string, string> = { X: "0", Y: "1", Z: "2" };
 
 function digitsFrom(bytes: Buffer, length: number): string {
   let out = "";
@@ -177,7 +177,7 @@ export function createPseudonymizer(secret: string): Pseudonymizer {
       return unique("document", real, (bytes) => {
         const prefix = kind.prefix(real);
         const body = digitsFrom(bytes, real.length - prefix.length - 1);
-        const numberText = `${NIE_NUMERIC_PREFIX[prefix] ?? ""}${body}`;
+        const numberText = `${NIE_PREFIX[prefix] ?? ""}${body}`;
         const valid = spanishIdControlLetter(Number(numberText));
         const offset = ((bytes[31] ?? 0) % 22) + 1;
         const letters = "TRWAGMYFPDXBNJZSQVHLCKE";

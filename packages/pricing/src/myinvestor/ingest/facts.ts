@@ -139,7 +139,10 @@ export type MyInvestorFact = NormalizedFact<MyInvestorFactPayload>;
 export type MyInvestorSkipReason =
   | "unrecognized_type"
   | "missing_instrument"
-  | "no_units";
+  | "missing_date"
+  | "no_units"
+  /** A broker execution in another currency or at a rate that is not one. */
+  | "unsupported_currency";
 
 export interface MyInvestorSkippedOrder {
   readonly reference: string;

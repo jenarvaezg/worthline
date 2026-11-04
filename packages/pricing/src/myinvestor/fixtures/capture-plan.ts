@@ -10,6 +10,8 @@
  * inside its body. The manifest says which request each body answers, so the client of
  * S2 (#1877) can mock `fetch` with the right path, query and status.
  */
+
+import { MYINVESTOR_PATHS as PATHS } from "@pricing/myinvestor/protocol";
 import { type AnonymizeOptions, anonymizeTree } from "./anonymize";
 import { parseWithLiterals, stringifyWithLiterals } from "./json-literals";
 import type { Pseudonymizer } from "./pseudonymizer";
@@ -45,8 +47,6 @@ export interface CapturePlan {
   readonly skipped: readonly string[];
 }
 
-const CPERF = "/cperf-server/api";
-
 interface Request {
   readonly path: string;
   readonly query?: Readonly<Record<string, string>>;
@@ -54,11 +54,11 @@ interface Request {
 
 /** The calls `capture.sh` makes once. */
 const SINGLE: Readonly<Record<string, Request>> = {
-  "automatic-contributions": { path: `${CPERF}/v2/automatic-contributions/self` },
-  "cash-accounts": { path: `${CPERF}/v2/cash-accounts/self` },
-  "pension-accounts": { path: `${CPERF}/v2/pension-accounts/self` },
-  portfolios: { path: `${CPERF}/v2/portfolios` },
-  "securities-accounts": { path: `${CPERF}/v2/securities-accounts/self-basic` },
+  "automatic-contributions": { path: PATHS.automaticContributions },
+  "cash-accounts": { path: PATHS.cashAccounts },
+  "pension-accounts": { path: PATHS.pensionAccounts },
+  portfolios: { path: PATHS.portfolios },
+  "securities-accounts": { path: PATHS.securitiesAccounts },
 };
 
 interface PerId {
@@ -72,61 +72,61 @@ interface PerId {
 const PER_ID: Readonly<Record<string, PerId>> = {
   "broker-order-detail": {
     id: "reference",
-    request: (id) => ({ path: `/broker/v2/stock-orders/${id}` }),
+    request: (id) => ({ path: PATHS.brokerOrderDetail(id) }),
   },
   "broker-orders": {
     id: "digits",
     request: (id, day) => ({
-      path: "/broker/v2/stock-orders",
+      path: PATHS.brokerOrders,
       query: { stockAccountId: id, type: "ALL", dateFrom: "2000-01-01", dateTo: day },
     }),
   },
   "pension-account": {
     id: "digits",
-    request: (id) => ({ path: `${CPERF}/v2/pension-accounts/${id}` }),
+    request: (id) => ({ path: PATHS.pensionAccount(id) }),
   },
   "pension-orders": {
     id: "digits",
     request: (id, day) => ({
-      path: `${CPERF}/v2/pension-accounts/${id}/orders`,
+      path: PATHS.pensionOrders(id),
       query: { dateFrom: "20000101", dateTo: day.replaceAll("-", "") },
     }),
   },
   "pension-positions": {
     id: "digits",
     request: (id) => ({
-      path: `${CPERF}/v2/pension-accounts/${id}/positions`,
+      path: PATHS.pensionPositions(id),
       query: { groupType: "SINCE_BEGINNING" },
     }),
   },
   "securities-account": {
     id: "digits",
-    request: (id) => ({ path: `${CPERF}/v2/securities-accounts/${id}` }),
+    request: (id) => ({ path: PATHS.securitiesAccount(id) }),
   },
   "securities-orders": {
     id: "digits",
     request: (id, day) => ({
-      path: `${CPERF}/v3/securities-accounts/${id}/orders`,
+      path: PATHS.securitiesOrders(id),
       query: { dateFrom: "2000-01-01", dateTo: day },
     }),
   },
   "securities-positions": {
     id: "digits",
     request: (id) => ({
-      path: `${CPERF}/v2/securities-accounts/${id}/positions`,
+      path: PATHS.securitiesPositions(id),
       query: { groupType: "SINCE_BEGINNING" },
     }),
   },
   "securities-transfers-pending": {
     id: "digits",
     request: (id) => ({
-      path: `${CPERF}/v2/securities-accounts/${id}/transfers/pending`,
+      path: PATHS.pendingTransfers(id),
     }),
   },
 };
 
 /**
- * Captured for the careo (their values count as secrets) but never committed, because
+ * Captured for the leak check (their values count as secrets) but never committed, because
  * the connector does not read them:
  * - the customer profile and the day-by-day cash balance, the most personal of the set
  *   (cash enters as today's balance, P6 of #1869);

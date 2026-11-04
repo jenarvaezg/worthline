@@ -11,20 +11,27 @@
  * - it has no state. Credentials travel sealed in worthline and only cross here per
  *   request; every decision (errors, retries, limits) is worthline's.
  *
+ * - a POST goes through only to the sign-in routes (login, refresh, the SMS
+ *   signature); everything else the connector does is a GET (PRD #1876, invariant 1).
+ *
  * Its own refusals carry `x-relay-error`, so the client tells them apart from
- * MyInvestor's answers. The header names are the same literals as
- * `packages/pricing/src/myinvestor/transport.ts`.
+ * MyInvestor's answers. The header names and the routes are the client's own
+ * (`@worthline/pricing/myinvestor/protocol`, a file with no imports).
  */
+import {
+  DEVICE_ID_HEADER,
+  isSignInPost,
+  MYINVESTOR_API_HOST,
+  RELAY_ERROR_HEADER,
+  RELAY_SECRET_HEADER,
+  RELAY_TARGET_HEADER,
+  SIGNATURE_ID_HEADER,
+} from "@worthline/pricing/myinvestor/protocol";
 
 export interface RelayEnv {
   /** `wrangler secret put RELAY_SECRET`; the same value as worthline's MYINVESTOR_RELAY_SECRET. */
   readonly RELAY_SECRET?: string;
 }
-
-const SECRET_HEADER = "x-relay-secret";
-const TARGET_HEADER = "x-relay-target";
-const ERROR_HEADER = "x-relay-error";
-const ALLOWED_HOST = "api.myinvestor.es";
 
 /** The headers MyInvestor needs; anything else (Cloudflare's, the relay's own) stays here. */
 const FORWARDED_HEADERS = [
@@ -35,15 +42,15 @@ const FORWARDED_HEADERS = [
   "origin",
   "referer",
   "user-agent",
-  "x-device-id",
+  DEVICE_ID_HEADER,
   "x-myinvestor-app",
-  "x-signature-id",
+  SIGNATURE_ID_HEADER,
 ] as const;
 
 type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 function refuse(status: number, error: string): Response {
-  return new Response(null, { status, headers: { [ERROR_HEADER]: error } });
+  return new Response(null, { status, headers: { [RELAY_ERROR_HEADER]: error } });
 }
 
 async function digest(value: string): Promise<Uint8Array> {
@@ -63,7 +70,7 @@ async function sameSecret(given: string, expected: string): Promise<boolean> {
 }
 
 /** The target, only when it is exactly `https://api.myinvestor.es/…`. */
-function allowedTarget(raw: string): string | null {
+function allowedTarget(raw: string): URL | null {
   let url: URL;
   try {
     url = new URL(raw);
@@ -72,11 +79,11 @@ function allowedTarget(raw: string): string | null {
   }
   const exact =
     url.protocol === "https:" &&
-    url.hostname === ALLOWED_HOST &&
+    url.hostname === MYINVESTOR_API_HOST &&
     url.port === "" &&
     url.username === "" &&
     url.password === "";
-  return exact ? url.toString() : null;
+  return exact ? url : null;
 }
 
 export async function handleRelay(
@@ -87,17 +94,20 @@ export async function handleRelay(
   const expected = env.RELAY_SECRET ?? "";
   if (!expected) return refuse(500, "misconfigured");
 
-  const given = request.headers.get(SECRET_HEADER) ?? "";
+  const given = request.headers.get(RELAY_SECRET_HEADER) ?? "";
   if (!(await sameSecret(given, expected))) return refuse(401, "unauthorized");
 
   if (request.method !== "GET" && request.method !== "POST") {
     return refuse(405, "method_not_allowed");
   }
 
-  const rawTarget = request.headers.get(TARGET_HEADER);
+  const rawTarget = request.headers.get(RELAY_TARGET_HEADER);
   if (!rawTarget) return refuse(400, "missing_target");
   const target = allowedTarget(rawTarget);
   if (!target) return refuse(403, "forbidden_target");
+  if (request.method === "POST" && !isSignInPost(target.pathname)) {
+    return refuse(403, "forbidden_route");
+  }
 
   const headers = new Headers();
   for (const name of FORWARDED_HEADERS) {
@@ -107,7 +117,7 @@ export async function handleRelay(
 
   let upstream: Response;
   try {
-    upstream = await fetchImpl(target, {
+    upstream = await fetchImpl(target.toString(), {
       method: request.method,
       headers,
       ...(request.method === "POST" ? { body: await request.arrayBuffer() } : {}),

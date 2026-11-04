@@ -6,7 +6,10 @@
  */
 
 import { createMyInvestorClient } from "@pricing/myinvestor/client";
-import type { MyInvestorOrder } from "@pricing/myinvestor/models";
+import type {
+  MyInvestorBrokerOrderDetail,
+  MyInvestorOrder,
+} from "@pricing/myinvestor/models";
 import type { DateRange, MyInvestorReader } from "@pricing/myinvestor/reader";
 import { fixtureTransport } from "@pricing/myinvestor/testing/fake-transport";
 import { compareUnits } from "@worthline/domain";
@@ -20,6 +23,7 @@ import type {
 import {
   holdingKey,
   type MyInvestorAccountOrders,
+  type MyInvestorBrokerExecution,
   normalizeMyInvestorOrders,
   unitsByHolding,
 } from "./normalize";
@@ -615,5 +619,90 @@ describe("dedup keys and transfer ids are stable across overlapping reads", () =
     for (const fact of recent) {
       expect(fullByKey.get(fact.key)).toEqual(fact);
     }
+  });
+});
+
+describe("normalizeMyInvestorOrders — broker executions", () => {
+  /** An invented broker execution, in euros at a rate of one. */
+  function execution(
+    overrides: Partial<MyInvestorBrokerOrderDetail> = {},
+  ): MyInvestorBrokerExecution {
+    return {
+      accountId: "securities:valores-inventada",
+      detail: {
+        orderReference: "orden-inventada",
+        orderStatus: "COMPLETE",
+        side: "BUY",
+        orderDate: "2026-02-03",
+        executionDate: "2026-02-03",
+        instrumentIsin: "IE0000000001",
+        instrumentName: "ETF inventado",
+        instrumentCurrency: "EUR",
+        currency: "EUR",
+        shares: "4",
+        executedShares: "4",
+        priceCurrency: "25.5",
+        grossAmountOperationCurrency: "102",
+        netAmountCurrency: "103",
+        netAmountAccountCurrency: "103",
+        netAmountEur: "103",
+        tradeCommissions: "1",
+        otherCommissions: "0",
+        exchangeRate: "1",
+        ...overrides,
+      },
+    };
+  }
+
+  function normalizeBroker(executions: readonly MyInvestorBrokerExecution[]) {
+    const skipped: MyInvestorSkippedOrder[] = [];
+    const facts = normalizeMyInvestorOrders(
+      { accounts: [], broker: executions },
+      (entry) => skipped.push(entry),
+    ).map((fact) => fact.payload);
+    return { facts, skipped };
+  }
+
+  it("turns a finished euro execution into a fact with its fees", () => {
+    const { facts, skipped } = normalizeBroker([execution()]);
+
+    expect(skipped).toEqual([]);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      product: "broker",
+      operation: "buy",
+      units: "4",
+      amount: "102",
+      fees: "1",
+      currency: "EUR",
+    });
+  });
+
+  it.each([
+    ["an instrument quoted in another currency", { instrumentCurrency: "USD" }],
+    ["a cash account in another currency", { currency: "USD" }],
+    ["a rate that is not one", { exchangeRate: "1.0842" }],
+    ["no rate at all", { exchangeRate: null }],
+  ] as const)("skips %s as unsupported_currency instead of mixing currencies", (_label, overrides) => {
+    const { facts, skipped } = normalizeBroker([execution(overrides)]);
+
+    expect(facts).toEqual([]);
+    expect(skipped).toEqual([
+      {
+        reference: "orden-inventada",
+        product: "broker",
+        sourceType: "BUY",
+        reason: "unsupported_currency",
+      },
+    ]);
+  });
+
+  it("skips an execution with no day as missing_date", () => {
+    const { facts, skipped } = normalizeBroker([
+      execution({ orderDate: null, executionDate: null }),
+    ]);
+
+    expect(facts).toEqual([]);
+    expect(skipped.map((entry) => entry.reason)).toEqual(["missing_date"]);
   });
 });

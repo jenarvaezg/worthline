@@ -1,5 +1,5 @@
 /**
- * The careo between the raw captures and the fixtures (#1887, P9 of #1869): the
+ * The leak check between the raw captures and the fixtures (#1887, P9 of #1869): the
  * automatic guarantee that replaces a human review. It runs locally, where the raw
  * captures are, before every commit of the fixtures.
  *
@@ -26,8 +26,8 @@ import type { FigurePair } from "./figure-map";
 import { foldText } from "./fold";
 import {
   isPlainObject,
+  JsonNumber,
   type LiteralJson,
-  NumberLiteral,
   parseWithLiterals,
 } from "./json-literals";
 
@@ -56,7 +56,7 @@ const IDENTIFIER_SHAPES = [
   /^\+?\d[\d ]{7,}$/,
 ];
 
-type Visit = (rule: FieldRule | undefined, value: string | NumberLiteral) => void;
+type Visit = (rule: FieldRule | undefined, value: string | JsonNumber) => void;
 
 /** Calls `visit` for every leaf, with the rule of the key that holds it. */
 function visitLeaves(json: LiteralJson, visit: Visit) {
@@ -100,7 +100,7 @@ export function collectSecrets(
   for (const capture of raw) {
     for (const id of capture.name.match(/\d{5,}/g) ?? []) identifiers.add(id);
     visitLeaves(parseWithLiterals(capture.text), (rule, value) => {
-      if (value instanceof NumberLiteral) {
+      if (value instanceof JsonNumber) {
         if (rule === "public") return;
         const canonical = canonicalDecimal(value.source);
         if (rule === "id") identifiers.add(value.source);
@@ -158,8 +158,8 @@ export function pairedAmounts(rawText: string, fixtureText: string): FigurePair[
       );
       return;
     }
-    if (raw instanceof NumberLiteral) {
-      if (rule !== "amount" || !(fake instanceof NumberLiteral)) return;
+    if (raw instanceof JsonNumber) {
+      if (rule !== "amount" || !(fake instanceof JsonNumber)) return;
       const real = canonicalDecimal(raw.source);
       if (real !== "0") pairs.push({ real, fake: canonicalDecimal(fake.source) });
       return;
@@ -196,7 +196,7 @@ export function findLeaks(
         add({ file, kind: "personal-text", value: personal });
     }
     visitLeaves(parseWithLiterals(text), (rule, value) => {
-      if (!(value instanceof NumberLiteral) || rule === "public") return;
+      if (!(value instanceof JsonNumber) || rule === "public") return;
       const canonical = canonicalDecimal(value.source);
       if (rule !== "quantity" && secrets.amounts.has(canonical)) {
         add({ file, kind: "amount", value: canonical });
@@ -221,7 +221,7 @@ const NUMBER_TOKEN = /(?<![\w./])-?\d+(?:\.\d+)?(?![\w]|\.\d)/g;
 const STRUCTURAL = new Set(["100"]);
 
 /**
- * The careo over every other file the work adds or changes (code, tests, comments, docs,
+ * The leak check over every other file the work adds or changes (code, tests, comments, docs,
  * the skill, commit messages): no real identifier, name, personal text or figure. A
  * figure counts when it is written with decimals, or whole with three digits or more
  * (a number of one or two digits matches too much to mean anything).

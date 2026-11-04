@@ -38,10 +38,8 @@ import {
   securitiesAccountsSchema,
   shareSeriesSchema,
 } from "./models";
+import { DEVICE_ID_HEADER, MYINVESTOR_PATHS as PATHS } from "./protocol";
 import { type MyInvestorTokens, refresh } from "./session";
-
-const CPERF = "/cperf-server/api";
-const BROKER = "/broker/v2";
 
 /** Both days included, `AAAA-MM-DD`. */
 export interface DateRange {
@@ -71,7 +69,7 @@ export interface MyInvestorReader {
   brokerOrderDetail(
     orderId: string,
   ): Promise<MyInvestorResult<MyInvestorBrokerOrderDetail>>;
-  /** How many fund transfers of a securities account are still in progress. */
+  /** How many traspasos between funds of a securities account are still in progress. */
   pendingFundTransfers(accountId: string): Promise<MyInvestorResult<number>>;
   pensionAccounts(): Promise<MyInvestorResult<MyInvestorPensionAccount[]>>;
   /** Today's plans of a pension account. */
@@ -101,11 +99,6 @@ function compact(day: IsoDate): string {
   return day.replaceAll("-", "");
 }
 
-/** An id as one path segment, so it cannot change the route. */
-function segment(id: string): string {
-  return encodeURIComponent(id);
-}
-
 interface Read<T> {
   readonly step: MyInvestorStep;
   readonly path: string;
@@ -131,7 +124,7 @@ export function createMyInvestorReader(
           ...(read.query ? { query: read.query } : {}),
           headers: {
             authorization: `Bearer ${tokens.accessToken}`,
-            "x-device-id": deviceId,
+            [DEVICE_ID_HEADER]: deviceId,
           },
         },
         read.step,
@@ -167,26 +160,26 @@ export function createMyInvestorReader(
     cashAccounts: () =>
       get({
         step: "cash",
-        path: `${CPERF}/v2/cash-accounts/self`,
+        path: PATHS.cashAccounts,
         schema: cashAccountsSchema,
       }),
     securitiesAccounts: () =>
       get({
         step: "positions",
-        path: `${CPERF}/v2/securities-accounts/self-basic`,
+        path: PATHS.securitiesAccounts,
         schema: securitiesAccountsSchema,
       }),
     securitiesAccount: (accountId) =>
       get({
         step: "positions",
-        path: `${CPERF}/v2/securities-accounts/${segment(accountId)}`,
+        path: PATHS.securitiesAccount(accountId),
         schema: securitiesAccountSchema,
       }),
     securitiesOrders: async (accountId, range) => {
       const { from, to } = checkedRange(range);
       return get({
         step: "orders",
-        path: `${CPERF}/v3/securities-accounts/${segment(accountId)}/orders`,
+        path: PATHS.securitiesOrders(accountId),
         query: { dateFrom: from, dateTo: to },
         schema: ordersSchema,
       });
@@ -195,7 +188,7 @@ export function createMyInvestorReader(
       const { from, to } = checkedRange(range);
       return get({
         step: "orders",
-        path: `${BROKER}/stock-orders`,
+        path: PATHS.brokerOrders,
         query: {
           stockAccountId: securitiesAccountId,
           type: "ALL",
@@ -208,32 +201,32 @@ export function createMyInvestorReader(
     brokerOrderDetail: (orderId) =>
       get({
         step: "orders",
-        path: `${BROKER}/stock-orders/${segment(orderId)}`,
+        path: PATHS.brokerOrderDetail(orderId),
         schema: brokerOrderDetailSchema,
       }),
     pendingFundTransfers: (accountId) =>
       get({
         step: "orders",
-        path: `${CPERF}/v2/securities-accounts/${segment(accountId)}/transfers/pending`,
+        path: PATHS.pendingTransfers(accountId),
         schema: pendingTransfersSchema,
       }),
     pensionAccounts: () =>
       get({
         step: "plans",
-        path: `${CPERF}/v2/pension-accounts/self`,
+        path: PATHS.pensionAccounts,
         schema: pensionAccountsSchema,
       }),
     pensionPlans: (accountId) =>
       get({
         step: "plans",
-        path: `${CPERF}/v2/pension-accounts/${segment(accountId)}`,
+        path: PATHS.pensionAccount(accountId),
         schema: pensionPlansSchema,
       }),
     pensionOrders: async (accountId, range) => {
       const { from, to } = checkedRange(range);
       return get({
         step: "plans",
-        path: `${CPERF}/v2/pension-accounts/${segment(accountId)}/orders`,
+        path: PATHS.pensionOrders(accountId),
         query: { dateFrom: compact(from), dateTo: compact(to) },
         schema: ordersSchema,
       });
@@ -241,20 +234,20 @@ export function createMyInvestorReader(
     pensionShareSeries: (accountId) =>
       get({
         step: "plans",
-        path: `${CPERF}/v2/pension-accounts/${segment(accountId)}/positions`,
+        path: PATHS.pensionPositions(accountId),
         query: { groupType: "SINCE_BEGINNING" },
         schema: shareSeriesSchema,
       }),
     automaticContributions: () =>
       get({
         step: "contributions",
-        path: `${CPERF}/v2/automatic-contributions/self`,
+        path: PATHS.automaticContributions,
         schema: contributionsSchema,
       }),
     portfolios: () =>
       get({
         step: "positions",
-        path: `${CPERF}/v2/portfolios`,
+        path: PATHS.portfolios,
         schema: portfoliosSchema,
       }),
   };

@@ -112,6 +112,56 @@ describe("the MyInvestor relay", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("relays a POST only to the sign-in routes the client uses", async () => {
+    const allowed = [
+      TARGET,
+      "https://api.myinvestor.es/login/api/v1/auth/token/refresh",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/sig-req-sintetico-0001?method=OTP_SMS",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/sig-req-sintetico-0001/validate/sig-sintetico-0002",
+    ];
+
+    for (const target of allowed) {
+      const fetchImpl = upstream();
+      const response = await handleRelay(relayRequest({ target }), ENV, fetchImpl);
+      expect(response.status, target).toBe(200);
+      expect(fetchImpl, target).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("refuses a POST to any other route, and never calls MyInvestor", async () => {
+    const fetchImpl = upstream();
+    const targets = [
+      "https://api.myinvestor.es/cperf-server/api/v2/cash-accounts/self",
+      "https://api.myinvestor.es/broker/v2/stock-orders",
+      "https://api.myinvestor.es/login/api/v2/auth/token/extra",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/a/validate",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/a/cancel/b",
+      "https://api.myinvestor.es/signature/api/v3/public/signature/a/validate/b/c",
+    ];
+
+    for (const target of targets) {
+      const response = await handleRelay(relayRequest({ target }), ENV, fetchImpl);
+      expect(response.status, target).toBe(403);
+      expect(response.headers.get("x-relay-error"), target).toBe("forbidden_route");
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("still relays a GET to any route of api.myinvestor.es", async () => {
+    const fetchImpl = upstream();
+    const target = "https://api.myinvestor.es/cperf-server/api/v2/cash-accounts/self";
+
+    const response = await handleRelay(
+      relayRequest({ method: "GET", target }),
+      ENV,
+      fetchImpl,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it("passes the body intact both ways, with MyInvestor's status", async () => {
     const sent = '{"customerId":"00000000A","password":"contraseña ñ €"}';
     const answer =

@@ -9,14 +9,13 @@
  * and the retries are the client's (`exchange.ts`).
  */
 import { PRICING_FETCH_TIMEOUT_MS } from "@pricing/fetch-with-retry";
+import {
+  MYINVESTOR_API_ORIGIN,
+  RELAY_ERROR_HEADER,
+  RELAY_SECRET_HEADER,
+  RELAY_TARGET_HEADER,
+} from "./protocol";
 import type { MyInvestorRelayConfig } from "./relay-config";
-
-export const MYINVESTOR_API_ORIGIN = "https://api.myinvestor.es";
-
-/** Headers of the relay protocol, the same literals `apps/myinvestor-relay` reads. */
-export const RELAY_SECRET_HEADER = "x-relay-secret";
-export const RELAY_TARGET_HEADER = "x-relay-target";
-export const RELAY_ERROR_HEADER = "x-relay-error";
 
 /** What the web app sends with every call (from `myinvestor-cli` and the prototype of #1866). */
 const BROWSER_HEADERS: Readonly<Record<string, string>> = {

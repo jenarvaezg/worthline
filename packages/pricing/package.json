@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./myinvestor/protocol": {
+      "types": "./src/myinvestor/protocol.ts",
+      "default": "./src/myinvestor/protocol.ts"
     }
   },
   "dependencies": {

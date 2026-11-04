@@ -24,6 +24,8 @@
  * must exist before a shared boundary earns its keep.
  */
 
+import { isRealCalendarDay, MS_PER_DAY } from "./dates";
+
 /**
  * A stable, content-derived identity for one normalized fact — the **dedup key**.
  * Two fetches that re-observe the same underlying event (an overlapping window, a
@@ -146,13 +148,8 @@ export interface DateWindow {
   next: ConnectorCursor;
 }
 
-const MS_PER_DAY = 86_400_000;
-
 function asCalendarDay(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10) === value ? parsed : null;
+  return isRealCalendarDay(value) ? new Date(`${value}T00:00:00.000Z`) : null;
 }
 
 /**

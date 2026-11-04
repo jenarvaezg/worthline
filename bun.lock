@@ -22,6 +22,9 @@
     "apps/myinvestor-relay": {
       "name": "@worthline/myinvestor-relay",
       "version": "0.1.0",
+      "dependencies": {
+        "@worthline/pricing": "workspace:*",
+      },
     },
     "apps/web": {
       "name": "@worthline/web",

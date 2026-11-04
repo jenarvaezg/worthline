@@ -28,11 +28,8 @@ import {
   errorCode,
   exchange,
 } from "./exchange";
+import { DEVICE_ID_HEADER, MYINVESTOR_PATHS, SIGNATURE_ID_HEADER } from "./protocol";
 
-export const LOGIN_PATH = "/login/api/v2/auth/token";
-export const REFRESH_PATH = "/login/api/v1/auth/token/refresh";
-export const SIGNATURE_PATH = "/signature/api/v3/public/signature";
-const SIGNATURE_HEADER = "x-signature-id";
 /** The second factors that are a code the user types, in the order they are tried. */
 const CODE_METHODS = ["OTP_SMS", "OTP_EMAIL", "OTP_PUSH"] as const;
 
@@ -98,6 +95,14 @@ function isSuccess(status: number): boolean {
   return Math.floor(status / 100) === 2;
 }
 
+/**
+ * The statuses with which MyInvestor turns down a login or a refresh (400, 401, 403),
+ * as opposed to an answer nobody expected.
+ */
+function isRejection(status: number): boolean {
+  return status === 400 || status === 401 || status === 403;
+}
+
 /** What a login answer means, by the error map of ADR 0114 (decision 7). */
 function loginOutcome(answer: Answer): MyInvestorResult<LoginOutcome> {
   if (isSuccess(answer.status)) {
@@ -120,7 +125,7 @@ function loginOutcome(answer: Answer): MyInvestorResult<LoginOutcome> {
       },
     });
   }
-  if (answer.status === 400 || answer.status === 401 || answer.status === 403) {
+  if (isRejection(answer.status)) {
     const code = errorCode(answer.body);
     // A missing errCode is no proof of a wrong password: only the explicit ones delete it.
     return fail(
@@ -139,8 +144,8 @@ function loginOutcome(answer: Answer): MyInvestorResult<LoginOutcome> {
 
 function signedHeaders(deviceId: string, requestId?: string): Record<string, string> {
   return requestId === undefined
-    ? { "x-device-id": deviceId }
-    : { "x-device-id": deviceId, [SIGNATURE_HEADER]: requestId };
+    ? { [DEVICE_ID_HEADER]: deviceId }
+    : { [DEVICE_ID_HEADER]: deviceId, [SIGNATURE_ID_HEADER]: requestId };
 }
 
 async function loginExchange(
@@ -153,7 +158,7 @@ async function loginExchange(
     context,
     {
       method: "POST",
-      path: LOGIN_PATH,
+      path: MYINVESTOR_PATHS.login,
       headers: signedHeaders(deviceId, signatureRequestId),
       body: { customerId: credentials.customerId, password: credentials.password },
     },
@@ -203,8 +208,8 @@ export async function refresh(
     context,
     {
       method: "POST",
-      path: REFRESH_PATH,
-      headers: { "x-device-id": deviceId },
+      path: MYINVESTOR_PATHS.refresh,
+      headers: { [DEVICE_ID_HEADER]: deviceId },
       body: { refreshToken },
     },
     "refresh",
@@ -212,10 +217,12 @@ export async function refresh(
   if (!result.ok) return result;
   const answer = result.value;
   if (!isSuccess(answer.status)) {
-    const expired =
-      answer.status === 400 || answer.status === 401 || answer.status === 403;
     return fail(
-      answerError(expired ? "session_expired" : "unexpected_response", "refresh", answer),
+      answerError(
+        isRejection(answer.status) ? "session_expired" : "unexpected_response",
+        "refresh",
+        answer,
+      ),
     );
   }
   const tokens = tokensSchema.safeParse(envelopeData(answer.body));
@@ -255,9 +262,9 @@ export async function startCode(
     context,
     {
       method: "POST",
-      path: `${SIGNATURE_PATH}/${encodeURIComponent(challenge.requestId)}`,
+      path: MYINVESTOR_PATHS.signatureCode(challenge.requestId),
       query: { method },
-      headers: { "x-device-id": deviceId },
+      headers: { [DEVICE_ID_HEADER]: deviceId },
     },
     "sms",
     { retry: false },
@@ -291,8 +298,11 @@ export async function submitCode(
     context,
     {
       method: "POST",
-      path: `${SIGNATURE_PATH}/${encodeURIComponent(submission.requestId)}/validate/${encodeURIComponent(submission.signatureId)}`,
-      headers: { "x-device-id": deviceId },
+      path: MYINVESTOR_PATHS.signatureValidation(
+        submission.requestId,
+        submission.signatureId,
+      ),
+      headers: { [DEVICE_ID_HEADER]: deviceId },
       body: { code: submission.code.trim() },
     },
     "sms",

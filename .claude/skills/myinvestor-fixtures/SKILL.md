@@ -2,7 +2,7 @@
 name: myinvestor-fixtures
 description: >-
   Regenerates the anonymized MyInvestor API fixtures of the connector (#1876) from
-  real captures: download with myinvestor-cli, anonymize, run the careo, commit.
+  real captures: download with myinvestor-cli, anonymize, run the leak check, commit.
   Use when the MyInvestor API changes, when a connector slice needs a response that
   has no fixture yet, or when asked to refresh or extend the MyInvestor fixtures.
 user-invocable: true
@@ -35,7 +35,7 @@ The repo is public. The rules below are not negotiable:
   not a leak, just a noisy diff. Never print it.
 - **Nothing from a raw capture goes anywhere tracked**: not in fixtures, tests, commit
   messages, PR bodies, issues or this skill. Talk about counts and shapes, never values.
-- **No human reviews the fixtures. The careo does**, and it must say `Careo limpio`
+- **No human reviews the fixtures. The leak check does**, and it must say `Comprobación de fugas limpia`
   before any commit that touches them.
 - **Read-only against MyInvestor.** `myinvestor raw` only does GET. If the CLI session
   asks for an SMS, stop and ask the owner of the account; never retry a rejected password.
@@ -51,13 +51,13 @@ The repo is public. The rules below are not negotiable:
    ```
 
    It rewrites `capture/` and its manifest, refuses to write if the invented amounts
-   keep a common factor with the real ones, formats with Biome, and runs the careo.
+   keep a common factor with the real ones, formats with Biome, and runs the leak check.
    The secret is read from `myinvestor-fixtures.secret` next to the raw folder
    (`MYINVESTOR_FIXTURE_SECRET_FILE` or `MYINVESTOR_FIXTURE_SECRET` to override).
-3. **Careo.** Already run by step 2; on its own: `bun run fixtures:myinvestor check`
-   (needs the raw captures, not the secret). It must end in `✓ Careo limpio`. It checks
+3. **Leak check.** Already run by step 2; on its own: `bun run fixtures:myinvestor check`
+   (needs the raw captures, not the secret). It must end in `✓ Comprobación de fugas limpia`. It checks
    the fixture bodies field by field, and every line the work adds against `origin/main`
-   (`MYINVESTOR_CAREO_BASE` to change it) — code, tests, comments, docs, this skill —
+   (`MYINVESTOR_LEAK_BASE` to change it) — code, tests, comments, docs, this skill —
    plus the branch's commit messages: no real identifier, name or figure, and no valid
    IBAN or DNI/NIE written whole. Test values are invented, never copied from a capture.
 4. **Tests.** `bunx vitest run --config packages/pricing/vitest.config.ts
@@ -80,7 +80,7 @@ The repo is public. The rules below are not negotiable:
 - **`Captura desconocida: <name>`**: a new endpoint. Add it to `capture-plan.ts`
   (`SINGLE`, `PER_ID` or `SKIPPED`) with its path and query. A new kind of order also
   needs its sign in `rebuild.ts` and in `committed-fixtures.test.ts`.
-- **`Careo SUCIO`**: it lists file, kind and a masked hint. Fix the field policy, the
+- **`Comprobación de fugas SUCIA`**: it lists file, kind and a masked hint. Fix the field policy, the
   rebuild or the synthetic file; never edit a capture fixture by hand. An `amount` hit in
   a synthetic file means a hand-made figure equals a real one: change the figure. A hit on
   a recalculated total that no single order controls: add the check to `Ledger.settle`.
@@ -94,7 +94,7 @@ The repo is public. The rules below are not negotiable:
 
 | Piece | Path |
 | --- | --- |
-| Anonymizer, careo, guards | `packages/pricing/src/myinvestor/fixtures/` |
+| Anonymizer, leak check, guards | `packages/pricing/src/myinvestor/fixtures/` |
 | Command | `scripts/myinvestor-fixtures.ts` (`bun run fixtures:myinvestor`) |
 | Fixtures and manifests | `packages/pricing/src/__fixtures__/myinvestor/` |
 | Raw captures, secret | `.local/` of the main checkout, never in git |
@@ -104,7 +104,7 @@ The repo is public. The rules below are not negotiable:
 - The customer profile and the day-by-day cash balance: the most personal, and the
   connector does not read them.
 - The `SINCE_BEGINNING` series of the securities accounts: the connector rebuilds funds
-  and stocks from their orders. They are still captured: the careo checks against them.
+  and stocks from their orders. They are still captured: the leak check scans for their values.
 
 ## Known limits
 

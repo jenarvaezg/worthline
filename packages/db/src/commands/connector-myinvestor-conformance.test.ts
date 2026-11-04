@@ -5,12 +5,19 @@
  * up an order which settled after the last sync, and the two legs of a traspaso
  * landing together.
  *
- * The reader here is a fake over invented orders: the fixtures of the real API are
- * exercised by the adapter's own tests in `@worthline/pricing`.
+ * The conformance suite runs on a fake reader that serves the anonymized fixtures of
+ * #1887 through their own loader (`@pricing/__fixtures__/myinvestor`, by the
+ * manifest): the accounts are the captured ones and every order of the suite's ledger
+ * is a captured fund order re-keyed and re-dated. The captured history also goes
+ * through the in-memory host whole. The live-source scenarios below use invented
+ * orders, since the capture has no order in progress to settle.
  */
+
+import { fixtureTransport } from "@pricing/myinvestor/testing/fake-transport";
 import type { ReferenceEvent } from "@worthline/domain";
 import {
   createMyInvestorAdapter,
+  createMyInvestorClient,
   type MyInvestorError,
   type MyInvestorOperationFact,
   type MyInvestorOrder,
@@ -27,6 +34,9 @@ import {
 const ACCOUNT = "valores-inventada";
 /** The suite's host commits as of this day; the fake syncs on it too. */
 const TODAY = "2026-07-19";
+/** The day the fixtures were captured: the `dateTo` their manifest records. */
+const CAPTURE_DAY = "2026-11-04";
+const CAPTURE_RANGE = { from: "2000-01-01", to: CAPTURE_DAY } as const;
 
 const NETWORK_DOWN: MyInvestorError = {
   kind: "network_or_waf",
@@ -117,12 +127,80 @@ function fakeReader(initial: readonly MyInvestorOrder[]) {
   };
 }
 
-function eventOrder(event: ReferenceEvent): MyInvestorOrder {
-  return fundOrder({ reference: event.key, orderDate: event.dateKey });
+/** The real client and reader over the fixtures, answered by their manifest. */
+function capturedReader(): MyInvestorReader {
+  return createMyInvestorClient({
+    transport: fixtureTransport(),
+    deviceId: "device-sintetico",
+    sleep: async () => {},
+  }).reader({ accessToken: "access-sintetico", refreshToken: null });
+}
+
+function unwrap<T>(result: MyInvestorResult<T>): T {
+  if (!result.ok) throw new Error(`Lectura de fixture fallida: ${result.error.kind}`);
+  return result.value;
+}
+
+/** The first finished fund subscription of the capture: the shape of every ledger order. */
+async function capturedSubscription(): Promise<MyInvestorOrder> {
+  const reader = capturedReader();
+  for (const account of unwrap(await reader.securitiesAccounts())) {
+    if (account.hasFundsOperations === false) continue;
+    const orders = unwrap(
+      await reader.securitiesOrders(account.accountId, CAPTURE_RANGE),
+    );
+    const found = orders.find(
+      (order) =>
+        order.status === "COMPLETE" &&
+        order.operationType === "INVESTMENT_FUNDS_SUBSCRIPTION",
+    );
+    if (found) return found;
+  }
+  throw new Error("Los fixtures no traen ninguna suscripción de fondos terminada");
+}
+
+const SUBSCRIPTION = await capturedSubscription();
+
+/**
+ * The captured accounts, with the suite's ledger as the only orders: each event is the
+ * captured subscription re-keyed and re-dated, in the account it was captured in.
+ */
+function capturedLedgerReader(events: readonly ReferenceEvent[]) {
+  const captured = capturedReader();
+  const orders = events.map((event) => ({
+    ...SUBSCRIPTION,
+    reference: event.key,
+    orderDate: event.dateKey,
+  }));
+  let failNext = false;
+  const reader: MyInvestorReader = {
+    ...captured,
+    securitiesAccounts: async () => {
+      if (failNext) {
+        failNext = false;
+        return { ok: false, error: NETWORK_DOWN };
+      }
+      return captured.securitiesAccounts();
+    },
+    securitiesOrders: async (accountId, range) =>
+      ok(
+        accountId === SUBSCRIPTION.accountId
+          ? orders.filter((o) => o.orderDate >= range.from && o.orderDate <= range.to)
+          : [],
+      ),
+    brokerOrders: async () => ok([]),
+    pensionOrders: async () => ok([]),
+  };
+  return {
+    reader,
+    failNextRead: () => {
+      failNext = true;
+    },
+  };
 }
 
 describeConnectorConformance("myinvestor", (events) => {
-  const fake = fakeReader(events.map(eventOrder));
+  const fake = capturedLedgerReader(events);
   const adapter = createMyInvestorAdapter({ reader: fake.reader, today: TODAY });
   let disconnected = false;
   let fetches = 0;
@@ -142,6 +220,34 @@ describeConnectorConformance("myinvestor", (events) => {
     fetchCount: () => fetches,
     failNextFetch: () => fake.failNextRead(),
   };
+});
+
+describe("myinvestor — the captured history through the in-memory host", () => {
+  test("lands once, in one batch and one ripple, and a replay applies nothing", async () => {
+    const host = createInMemoryConnectorHost();
+    const adapter = createMyInvestorAdapter({
+      reader: capturedReader(),
+      today: CAPTURE_DAY,
+    });
+    const expected = await adapter.fetch({
+      capability: "fetch_transactions",
+      cursor: null,
+    });
+    const keys = expected.facts.map((fact) => fact.key);
+    expect(keys.length).toBeGreaterThan(0);
+    expect(new Set(keys).size).toBe(keys.length);
+
+    const first = await host.runSync(adapter, "fetch_transactions");
+    expect(first.ok && first.value.applied).toBe(keys.length);
+    expect(host.appliedKeys()).toEqual(keys);
+    expect(host.batchCount()).toBe(1);
+    expect(host.rippleFloors()).toEqual([expected.facts[0]?.dateKey]);
+    expect(host.cursor()).toBe(CAPTURE_DAY);
+
+    const replay = await host.runSync(adapter, "fetch_transactions", { cursor: null });
+    expect(replay.ok && replay.value.applied).toBe(0);
+    expect(host.appliedKeys()).toEqual(keys);
+  });
 });
 
 describe("myinvestor — a live source with a dated cursor", () => {

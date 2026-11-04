@@ -17,8 +17,8 @@ import { type FieldRule, MAP_CONTAINERS, ruleFor } from "./field-policy";
 import type { FigureMap } from "./figure-map";
 import {
   isPlainObject,
+  JsonNumber,
   type LiteralJson,
-  NumberLiteral,
   parseWithLiterals,
   stringifyWithLiterals,
 } from "./json-literals";
@@ -65,15 +65,14 @@ function leaf(
   // The positions of a securities account carry `"accountId": "null"`, as text.
   if (value === null || value === "null" || rule === "public") return value;
   if (rule === "amount" || rule === "quantity") {
-    if (!(value instanceof NumberLiteral))
-      throw new Error(`${path}: se esperaba una cifra`);
-    if (rule === "amount") return new NumberLiteral(figures.amount(value.source));
+    if (!(value instanceof JsonNumber)) throw new Error(`${path}: se esperaba una cifra`);
+    if (rule === "amount") return new JsonNumber(figures.amount(value.source));
     const decimals = canonicalDecimal(value.source).split(".")[1]?.length ?? 0;
-    return new NumberLiteral(figures.quantity(value.source, decimals));
+    return new JsonNumber(figures.quantity(value.source, decimals));
   }
   if (rule === "id") {
-    if (value instanceof NumberLiteral && /^\d+$/.test(value.source)) {
-      return new NumberLiteral(pseudonyms.digits(value.source));
+    if (value instanceof JsonNumber && /^\d+$/.test(value.source)) {
+      return new JsonNumber(pseudonyms.digits(value.source));
     }
     if (typeof value === "string" && /^\d+$/.test(value)) return pseudonyms.digits(value);
     throw new Error(`${path}: se esperaba un id numérico`);

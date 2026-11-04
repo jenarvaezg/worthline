@@ -1,34 +1,26 @@
 /**
- * JSON with its number literals kept as text. `JSON.parse` would turn `318.4270` into a
- * double and lose digits that the fixtures must keep exact, so numbers come out of the
- * parse as `NumberLiteral` (through the reviver's source-text access) and go back into
- * the text verbatim (through `JSON.rawJSON`).
+ * JSON with its number literals kept as text, for the fixture tooling. `JSON.parse` would
+ * turn `318.4270` into a double and lose digits that the fixtures must keep exact, so the
+ * parse keeps every number as the client's own {@link JsonNumber} (one reviver for both,
+ * `myinvestor/json.ts`), and the numbers go back into the text verbatim (through
+ * `JSON.rawJSON`).
  */
+import { JsonNumber, keepJsonNumbers } from "@pricing/myinvestor/json";
 
-export class NumberLiteral {
-  constructor(readonly source: string) {}
-}
+export { JsonNumber };
 
 export type LiteralJson =
   | null
   | boolean
   | string
-  | NumberLiteral
+  | JsonNumber
   | LiteralJson[]
   | { [key: string]: LiteralJson };
 
-type Reviver = (key: string, value: unknown, context?: { source?: string }) => unknown;
 type RawJsonApi = { rawJSON(text: string): unknown };
 
 export function parseWithLiterals(text: string): LiteralJson {
-  const reviver: Reviver = (_key, value, context) => {
-    if (typeof value !== "number") return value;
-    if (context?.source === undefined) {
-      throw new Error("Este runtime no da el texto de los números de JSON.parse");
-    }
-    return new NumberLiteral(context.source);
-  };
-  return JSON.parse(text, reviver as Parameters<typeof JSON.parse>[1]) as LiteralJson;
+  return JSON.parse(text, keepJsonNumbers) as LiteralJson;
 }
 
 /** Pretty-printed with two spaces, the same layout Biome keeps for these files. */
@@ -37,7 +29,7 @@ export function stringifyWithLiterals(value: LiteralJson): string {
   return `${JSON.stringify(
     value,
     (_key, inner: unknown) =>
-      inner instanceof NumberLiteral ? rawJSON(inner.source) : inner,
+      inner instanceof JsonNumber ? rawJSON(inner.source) : inner,
     2,
   )}\n`;
 }
@@ -49,6 +41,6 @@ export function isPlainObject(
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    !(value instanceof NumberLiteral)
+    !(value instanceof JsonNumber)
   );
 }

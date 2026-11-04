@@ -15,6 +15,9 @@
  * - **The day is `orderDate`**. `effectiveDate` and `expirationDate` are not a
  *   settlement date; the broker's own execution day wins when it has one.
  * - **A plan is its DGS code**, never an ISIN (#1454).
+ * - **The broker is read in euros only.** An execution in another currency, or at a
+ *   rate that is not one, is skipped as `unsupported_currency`: its amount and its
+ *   fees would be added in two currencies.
  *
  * Traspasos (ADR 0115, decision 4) — see {@link pairTransfers}.
  */
@@ -27,6 +30,7 @@ import {
   addUnits,
   compareUnits,
   type DecimalString,
+  isPositiveDecimal,
   type NormalizedFact,
   normalizeDecimal,
   type OperationKind,
@@ -69,51 +73,97 @@ const IN_PROGRESS: ReadonlySet<string> = new Set(["IN_PROGRESS"]);
 
 /**
  * How each traspaso type pairs.
- * - `switch`: a fund switch (`IIC_SWITCH_*`) — same day and amount, no common id.
- * - `plan_internal`: an internal plan mobilization — same shape (#1872).
+ * - `switch`: a traspaso between two funds (`IIC_SWITCH_*`) — same day and amount, no
+ *   common id.
+ * - `plan_internal`: a traspaso between two plans inside MyInvestor — same shape (#1872).
  * - `internal_transfer`: `INTERNAL_TRANSFER_*` — the captured pair shares neither the
  *   day nor the amount nor any id, so nothing ties it safely: never paired.
  * - `external_in`: the capital came from another institution.
  */
-type TransferGroup = "switch" | "plan_internal" | "internal_transfer" | "external_in";
+export type MyInvestorTransferGroup =
+  | "switch"
+  | "plan_internal"
+  | "internal_transfer"
+  | "external_in";
 
-interface TypeRule {
+/** What an order type means: the operation, its account kind and how it pairs. */
+export interface MyInvestorTypeRule {
   readonly operation: OperationKind;
-  readonly transfer: TransferGroup | null;
+  /** The kind of account whose orders carry this type. */
+  readonly product: Extract<MyInvestorProduct, "fund" | "pension_plan">;
+  readonly transfer: MyInvestorTransferGroup | null;
 }
 
-const TYPE_RULES: Readonly<Record<string, TypeRule>> = {
-  INVESTMENT_FUNDS_SUBSCRIPTION: { operation: "buy", transfer: null },
-  INVESTMENT_FUNDS_REIMBURSEMENT: { operation: "sell", transfer: null },
-  PLAN_CONTRIBUTION: { operation: "buy", transfer: null },
-  IIC_SWITCH_DEREGISTRATION: { operation: "transfer_out", transfer: "switch" },
-  IIC_SWITCH_REGISTRATION: { operation: "transfer_in", transfer: "switch" },
+/**
+ * The sign table of MyInvestor's order types: the one source for the adapter and for
+ * the fixtures' anonymizer (`fixtures/rebuild.ts`), so both fold the same units. A type
+ * that is not here has no known sign.
+ */
+export const MYINVESTOR_TYPE_RULES: Readonly<Record<string, MyInvestorTypeRule>> = {
+  INVESTMENT_FUNDS_SUBSCRIPTION: { operation: "buy", product: "fund", transfer: null },
+  INVESTMENT_FUNDS_REIMBURSEMENT: { operation: "sell", product: "fund", transfer: null },
+  PLAN_CONTRIBUTION: { operation: "buy", product: "pension_plan", transfer: null },
+  IIC_SWITCH_DEREGISTRATION: {
+    operation: "transfer_out",
+    product: "fund",
+    transfer: "switch",
+  },
+  IIC_SWITCH_REGISTRATION: {
+    operation: "transfer_in",
+    product: "fund",
+    transfer: "switch",
+  },
   DEREGISTRATION_BY_INTERNAL_PLAN_TRANSFER: {
     operation: "transfer_out",
+    product: "pension_plan",
     transfer: "plan_internal",
   },
   REGISTRATION_BY_INTERNAL_PLAN_TRANSFER: {
     operation: "transfer_in",
+    product: "pension_plan",
     transfer: "plan_internal",
   },
   INTERNAL_TRANSFER_REIMBURSEMENT: {
     operation: "transfer_out",
+    product: "fund",
     transfer: "internal_transfer",
   },
   INTERNAL_TRANSFER_SUBSCRIPTION: {
     operation: "transfer_in",
+    product: "fund",
     transfer: "internal_transfer",
   },
   REGISTRATION_BY_EXTERNAL_PLAN_TRANSFER: {
     operation: "transfer_in",
+    product: "pension_plan",
     transfer: "external_in",
   },
 };
 
-const BROKER_SIDES: Readonly<Record<string, OperationKind>> = {
+/** The broker's sides, by `orderOperationTypeEnum`. */
+export const MYINVESTOR_BROKER_SIDES: Readonly<Record<string, OperationKind>> = {
   BUY: "buy",
   SELL: "sell",
 };
+
+const OUTGOING: ReadonlySet<OperationKind> = new Set(["sell", "transfer_out"]);
+
+/** Whether an operation takes units out of its holding (MyInvestor writes them positive). */
+export function takesUnitsOut(operation: OperationKind): boolean {
+  return OUTGOING.has(operation);
+}
+
+/**
+ * Whether the two halves of this traspaso group are tied by day and amount
+ * ({@link pairTransfers}): the halves of any other group are never paired.
+ */
+export function isPairedTransferGroup(
+  group: MyInvestorTransferGroup | null,
+): group is "switch" | "plan_internal" {
+  return group === "switch" || group === "plan_internal";
+}
+
+const EURO = "EUR";
 
 type Report = (skipped: MyInvestorSkippedOrder) => void;
 
@@ -121,8 +171,19 @@ function absolute(value: DecimalString): DecimalString {
   return value.startsWith("-") ? normalizeDecimal(value.slice(1)) : value;
 }
 
-function isPositive(value: DecimalString | null): value is DecimalString {
-  return value !== null && compareUnits(value, "0") > 0;
+/** The figure when it is above zero; `null` for zero, a negative or no figure. */
+function positiveOrNull(value: DecimalString | null): DecimalString | null {
+  return value !== null && isPositiveDecimal(value) ? value : null;
+}
+
+/** Euros on both sides at a rate of exactly one: the only executions folded as they are. */
+function isEuroAtParity(detail: MyInvestorBrokerOrderDetail): boolean {
+  return (
+    (detail.instrumentCurrency ?? detail.currency) === EURO &&
+    detail.currency === EURO &&
+    detail.exchangeRate !== null &&
+    compareUnits(detail.exchangeRate, "1") === 0
+  );
 }
 
 function instrumentOf(
@@ -138,14 +199,14 @@ function instrumentOf(
 /** A traspaso leg waiting for {@link pairTransfers}. */
 interface Leg {
   readonly fact: MyInvestorOperationFact;
-  readonly group: Exclude<TransferGroup, "external_in" | "internal_transfer">;
+  readonly group: "switch" | "plan_internal";
 }
 
 /** An order that could still become the other half of a finished leg. */
 interface Candidate {
   readonly key: string;
   readonly accountId: string;
-  readonly group: TransferGroup;
+  readonly group: MyInvestorTransferGroup;
   readonly operation: OperationKind;
   readonly day: string;
   readonly amount: DecimalString | null;
@@ -176,7 +237,7 @@ type Pairing =
   | { readonly kind: "wait" };
 
 /**
- * Ties the two halves of a fund switch or an internal plan mobilization (ADR 0115,
+ * Ties the two halves of a traspaso between funds or between plans (ADR 0115,
  * decision 4). MyInvestor gives them no common id (#1872), so the key is synthetic:
  * same account, same day, same amount, opposite directions and a different
  * instrument (ISIN for funds, DGS code for plans).
@@ -259,7 +320,9 @@ function classifyAccount(
 ): void {
   for (const order of account.orders) {
     const status = order.status ?? "";
-    const rule = order.operationType ? TYPE_RULES[order.operationType] : undefined;
+    const rule = order.operationType
+      ? MYINVESTOR_TYPE_RULES[order.operationType]
+      : undefined;
     const instrument = instrumentOf(account.product, order);
     const finished = status === FINISHED;
 
@@ -300,8 +363,8 @@ function classifyAccount(
       skip("missing_instrument");
       continue;
     }
-    const units = order.shares === null ? null : absolute(order.shares);
-    if (!isPositive(units)) {
+    const units = positiveOrNull(order.shares === null ? null : absolute(order.shares));
+    if (units === null) {
       skip("no_units");
       continue;
     }
@@ -318,8 +381,8 @@ function classifyAccount(
       executedAt: order.orderDate,
       units,
       // An external entry states `cash: 0` and `amountBuyVL: 0`: no figure, not a free one.
-      pricePerUnit: isPositive(order.executionNav) ? order.executionNav : null,
-      amount: isPositive(order.cash) ? order.cash : null,
+      pricePerUnit: positiveOrNull(order.executionNav),
+      amount: positiveOrNull(order.cash),
       fees: "0",
       currency: order.currency,
       sourceType: order.operationType,
@@ -336,7 +399,7 @@ function classifyAccount(
             )
           : null,
     };
-    if (rule.transfer === "switch" || rule.transfer === "plan_internal") {
+    if (isPairedTransferGroup(rule.transfer)) {
       into.legs.push({ fact, group: rule.transfer });
       const joined = candidate(true);
       if (joined) into.candidates.push(joined);
@@ -361,14 +424,15 @@ function brokerFact(
     return null;
   };
 
-  const operation = detail.side ? BROKER_SIDES[detail.side] : undefined;
+  const operation = detail.side ? MYINVESTOR_BROKER_SIDES[detail.side] : undefined;
   if (!operation) return skip("unrecognized_type");
   if (!detail.instrumentIsin) return skip("missing_instrument");
   const executed = detail.executedShares ?? detail.shares;
-  const units = executed === null ? null : absolute(executed);
-  if (!isPositive(units)) return skip("no_units");
+  const units = positiveOrNull(executed === null ? null : absolute(executed));
+  if (units === null) return skip("no_units");
   const day = detail.executionDate ?? detail.orderDate;
-  if (!day) return skip("missing_instrument");
+  if (!day) return skip("missing_date");
+  if (!isEuroAtParity(detail)) return skip("unsupported_currency");
 
   return {
     kind: "operation",
@@ -380,12 +444,10 @@ function brokerFact(
     operation,
     executedAt: day,
     units,
-    pricePerUnit: isPositive(detail.priceCurrency) ? detail.priceCurrency : null,
-    amount: isPositive(detail.grossAmountOperationCurrency)
-      ? detail.grossAmountOperationCurrency
-      : null,
+    pricePerUnit: positiveOrNull(detail.priceCurrency),
+    amount: positiveOrNull(detail.grossAmountOperationCurrency),
     fees: addUnits(detail.tradeCommissions ?? "0", detail.otherCommissions ?? "0"),
-    currency: detail.instrumentCurrency ?? detail.currency,
+    currency: EURO,
     sourceType: detail.side ?? "",
     transfer: null,
   };
@@ -436,8 +498,6 @@ export function holdingKey(accountId: string, instrument: MyInvestorInstrument):
   return `${accountId}|${instrument.scheme}:${instrument.code}`;
 }
 
-const OUTGOING: ReadonlySet<OperationKind> = new Set(["sell", "transfer_out"]);
-
 /**
  * The units each holding ends with after folding these operations, by
  * {@link holdingKey}, in exact decimals; a holding folded to zero is kept, at `"0"`.
@@ -456,7 +516,7 @@ export function unitsByHolding(
     const held = units.get(key) ?? "0";
     units.set(
       key,
-      OUTGOING.has(fact.operation)
+      takesUnitsOut(fact.operation)
         ? subtractUnits(held, fact.units)
         : addUnits(held, fact.units),
     );

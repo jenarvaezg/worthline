@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { anonymizeTree } from "./anonymize";
 import { addDecimals, canonicalDecimal, multiplyDecimal, roundDecimal } from "./decimal";
 import { createFigureMap } from "./figure-map";
-import { type LiteralJson, NumberLiteral, parseWithLiterals } from "./json-literals";
+import { JsonNumber, type LiteralJson, parseWithLiterals } from "./json-literals";
 import { createPseudonymizer } from "./pseudonymizer";
 import { rebuildCaptures } from "./rebuild";
 
@@ -209,13 +209,13 @@ const RAW: Record<string, string> = {
 
 type Obj = { [key: string]: LiteralJson };
 const num = (value: LiteralJson | undefined) =>
-  value instanceof NumberLiteral ? canonicalDecimal(value.source) : String(value);
+  value instanceof JsonNumber ? canonicalDecimal(value.source) : String(value);
 const data = (tree: LiteralJson | undefined) => (tree as Obj).payload as Obj;
 
-function rebuilt() {
+function rebuilt(raw: Record<string, string> = RAW) {
   const pseudonyms = createPseudonymizer(SECRET);
   const figures = createFigureMap(SECRET);
-  const captures = Object.entries(RAW).map(([name, text]) => {
+  const captures = Object.entries(raw).map(([name, text]) => {
     const raw = parseWithLiterals(text);
     return { name, raw, fake: anonymizeTree(raw, { pseudonyms, figures }) };
   });
@@ -302,10 +302,53 @@ describe("rebuildCaptures", () => {
     expect(num(last.currencyMarketValue)).toBe(num(last.marketValue));
   });
 
+  describe("refuses a capture whose real position does not add up with its real orders (P8)", () => {
+    /** RAW with one literal of one capture replaced: the rest stays consistent. */
+    const tampered = (name: string, from: string, to: string) => {
+      const text = RAW[name] ?? "";
+      expect(text).toContain(from);
+      return { ...RAW, [name]: text.replace(from, to) };
+    };
+
+    it("a plan held today with other units than its orders", () => {
+      expect(() =>
+        rebuilt(tampered("pension-account-100003", '"shares":23.153', '"shares":23.154')),
+      ).toThrow(/N0002.*no cuadra/);
+    });
+
+    it("a stock held today with other units than its executions", () => {
+      expect(() =>
+        rebuilt(tampered("securities-account-100002", '"shares":3', '"shares":4')),
+      ).toThrow(/DE0000000001.*no cuadra/);
+    });
+
+    it("a holding its orders leave open that is not among today's positions", () => {
+      expect(() =>
+        rebuilt(tampered("pension-orders-100003", '"shares":37.6', '"shares":37.7')),
+      ).toThrow(/N0001.*no cuadra/);
+    });
+
+    it("never prints a figure nor an account id of the capture in the error", () => {
+      const raw = tampered(
+        "pension-account-100003",
+        '"shares":23.153',
+        '"shares":23.154',
+      );
+      let message = "";
+      try {
+        rebuilt(raw);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain("N0002");
+      expect(message).not.toMatch(/23\.15|100003/);
+    });
+  });
+
   it("leaves no real amount behind", () => {
     const { byName } = rebuilt();
     const text = JSON.stringify(byName, (_key, value) =>
-      value instanceof NumberLiteral ? canonicalDecimal(value.source) : value,
+      value instanceof JsonNumber ? canonicalDecimal(value.source) : value,
     );
     for (const real of ['"494.77"', '"68.3"', '"232.73"', '"523.49"'])
       expect(text).not.toContain(real);

@@ -5,9 +5,9 @@ Desde la salida de Vercel, MyInvestor rechaza el login con `403 SECURITY_001 «C
 ## Qué hace
 
 - **Exige el secreto compartido** en la cabecera `x-relay-secret`. Sin él, o con uno distinto, responde `401`. Si el Worker no tiene secreto configurado, responde `500` y no reenvía nada.
-- **Solo reenvía a `https://api.myinvestor.es`.** El destino llega en `x-relay-target`. Cualquier otro host, esquema, puerto o URL con credenciales recibe `403`, y solo se aceptan `GET` y `POST`. Las redirecciones no se siguen.
+- **Solo reenvía a `https://api.myinvestor.es`.** El destino llega en `x-relay-target`. Cualquier otro host, esquema, puerto o URL con credenciales recibe `403`, y solo se aceptan `GET` y `POST`. Un `POST` solo pasa hacia las rutas de inicio de sesión que usa el cliente (login, refresco y los dos pasos de la firma por SMS); a cualquier otra ruta recibe `403` con `forbidden_route`. Las redirecciones no se siguen.
 - **No guarda ni registra nada.** Pasan los bytes del cuerpo, el estado HTTP y el `content-type`. Las cabeceras de Cloudflare y del relé se quedan en el Worker, y las cookies de MyInvestor no vuelven. No tiene estado ni bindings, y `observability` está apagado.
-- **Sus propios rechazos llevan `x-relay-error`** (`unauthorized`, `forbidden_target`, `missing_target`, `method_not_allowed`, `misconfigured`, `upstream_unreachable`). Así el cliente los distingue de las respuestas de MyInvestor.
+- **Sus propios rechazos llevan `x-relay-error`** (`unauthorized`, `forbidden_target`, `forbidden_route`, `missing_target`, `method_not_allowed`, `misconfigured`, `upstream_unreachable`). Así el cliente los distingue de las respuestas de MyInvestor.
 
 Toda la lógica vive en worthline: el mapa de errores, los reintentos, los límites y las credenciales selladas. El cliente está en `packages/pricing/src/myinvestor/`. Quitar el relé solo cambia el transporte.
 

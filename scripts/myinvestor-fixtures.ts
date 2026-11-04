@@ -1,14 +1,14 @@
 /**
  * Regenerates the MyInvestor fixtures from the raw captures, checks that no common factor
- * links the invented amounts to the real ones, and runs the careo (#1887).
+ * links the invented amounts to the real ones, and runs the leak check (#1887).
  * The whole procedure, with its rules, is the skill `.claude/skills/myinvestor-fixtures/`.
  *
- *   bun run fixtures:myinvestor            # anonymize → rebuild → factor check → biome → careo
- *   bun run fixtures:myinvestor check      # careo only (needs the raw captures, not the secret)
+ *   bun run fixtures:myinvestor            # anonymize → rebuild → factor check → biome → leak check
+ *   bun run fixtures:myinvestor check      # leak check only (needs the raw captures, not the secret)
  *
  * Environment (both default to the `.local/` of the checkout, which git ignores):
  *   MYINVESTOR_RAW_DIR              the raw captures, one `.json` per call of `myinvestor raw`
- *   MYINVESTOR_CAREO_BASE           the base the careo diffs against (default origin/main)
+ *   MYINVESTOR_LEAK_BASE            the base the leak check diffs against (default origin/main)
  *   MYINVESTOR_FIXTURE_SECRET_FILE  the secret behind the fakes; it never
  *                                   enters git (default: `myinvestor-fixtures.secret` next to
  *                                   the raw folder). `MYINVESTOR_FIXTURE_SECRET` wins if set.
@@ -50,7 +50,7 @@ const FIXTURES_DIR = join(ROOT, "packages/pricing/src/__fixtures__/myinvestor");
 const CAPTURE_DIR = join(FIXTURES_DIR, "capture");
 const RAW_DIR = process.env.MYINVESTOR_RAW_DIR ?? join(ROOT, ".local/myinvestor-raw");
 /** What the work is compared against: every file changed since it is scanned. */
-const CAREO_BASE = process.env.MYINVESTOR_CAREO_BASE ?? "origin/main";
+const LEAK_BASE = process.env.MYINVESTOR_LEAK_BASE ?? "origin/main";
 
 function fail(message: string): never {
   console.error(`✗ ${message}`);
@@ -105,14 +105,14 @@ const vcs = (...args: string[]) =>
   execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
 /**
- * Every line the work adds against `CAREO_BASE` (committed, staged, unstaged or in a new
+ * Every line the work adds against `LEAK_BASE` (committed, staged, unstaged or in a new
  * file), by file, plus the branch's commit messages: code, tests, comments, docs and the
  * skill are leak paths too. The fixture bodies are checked field by field instead.
  */
 function changedTexts(): { file: string; text: string }[] {
   const added = new Map<string, string[]>();
   let current = "";
-  const diff = vcs("diff", "--unified=0", "--no-color", "--no-ext-diff", CAREO_BASE);
+  const diff = vcs("diff", "--unified=0", "--no-color", "--no-ext-diff", LEAK_BASE);
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++ ")) {
       current = line.startsWith("+++ b/") ? line.slice("+++ b/".length) : "";
@@ -128,11 +128,11 @@ function changedTexts(): { file: string; text: string }[] {
     .filter(([name]) => !(name.startsWith(fixtureBodies) && name.endsWith(".json")))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([file, lines]) => ({ file, text: lines.join("\n") }));
-  const messages = vcs("log", "--format=%B", `${CAREO_BASE}..HEAD`);
-  return [...files, { file: `(mensajes de commit desde ${CAREO_BASE})`, text: messages }];
+  const messages = vcs("log", "--format=%B", `${LEAK_BASE}..HEAD`);
+  return [...files, { file: `(mensajes de commit desde ${LEAK_BASE})`, text: messages }];
 }
 
-function careo(raw: readonly RawCapture[]): void {
+function leakCheck(raw: readonly RawCapture[]): void {
   const secrets = collectSecrets(raw);
   const fixtures = listFixtures(FIXTURES_DIR);
   const texts = changedTexts();
@@ -145,11 +145,11 @@ function careo(raw: readonly RawCapture[]): void {
   }
   if (leaks.length + identities.length > 0) {
     fail(
-      `Careo SUCIO: ${leaks.length} datos de la captura y ${identities.length} IBAN/DNI válidos.`,
+      `Comprobación de fugas SUCIA: ${leaks.length} datos de la captura y ${identities.length} IBAN/DNI válidos.`,
     );
   }
   console.log(
-    `✓ Careo limpio: ${fixtures.length} fixtures y ${texts.length - 1} ficheros más del cambio, con los mensajes de commit desde ${CAREO_BASE}, contra ${raw.length} capturas en crudo: sin datos de la captura ni IBAN/DNI válidos.`,
+    `✓ Comprobación de fugas limpia: ${fixtures.length} fixtures y ${texts.length - 1} ficheros más del cambio, con los mensajes de commit desde ${LEAK_BASE}, contra ${raw.length} capturas en crudo: sin datos de la captura ni IBAN/DNI válidos.`,
   );
 }
 
@@ -157,12 +157,21 @@ function generate(raw: readonly RawCapture[]): void {
   const secret = readSecret();
   const secrets = collectSecrets(raw);
   const forbidden = { amounts: secrets.amounts, quantities: secrets.quantities };
-  const plan = planCaptureFixtures(raw, {
-    pseudonyms: createPseudonymizer(secret),
-    // An invented figure never takes a value the real capture has.
-    figures: createFigureMap(secret, forbidden),
-    forbidden,
-  });
+  let plan: ReturnType<typeof planCaptureFixtures>;
+  try {
+    plan = planCaptureFixtures(raw, {
+      pseudonyms: createPseudonymizer(secret),
+      // An invented figure never takes a value the real capture has.
+      figures: createFigureMap(secret, forbidden),
+      forbidden,
+    });
+  } catch (error) {
+    // A capture that does not add up (P8) or that the policy does not know: the old
+    // fixtures stay as they are. The message goes to this terminal only.
+    fail(
+      `${error instanceof Error ? error.message : String(error)}: no se escribe nada.`,
+    );
+  }
   const rawBySource = new Map(raw.map((capture) => [capture.name, capture.text]));
   const pairs = plan.fixtures.flatMap((fixture) =>
     pairedAmounts(rawBySource.get(fixture.source) ?? "{}", fixture.text),
@@ -202,4 +211,4 @@ if (mode !== "generate" && mode !== "check")
   fail(`Modo desconocido: ${mode} (generate | check)`);
 const raw = readRaw();
 if (mode === "generate") generate(raw);
-careo(raw);
+leakCheck(raw);
