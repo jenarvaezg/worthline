@@ -14,6 +14,7 @@ export const S5_VARIANTS = [
   { key: "A", name: "Por cuenta de MyInvestor" },
   { key: "B", name: "Por peldaño de worthline" },
   { key: "C", name: "Página con la consecuencia al lado" },
+  { key: "D", name: "A + C: pliegue por cuenta con la consecuencia al lado" },
 ] as const;
 
 export type S5VariantKey = (typeof S5_VARIANTS)[number]["key"];

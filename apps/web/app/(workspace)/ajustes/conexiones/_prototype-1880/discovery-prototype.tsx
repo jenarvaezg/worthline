@@ -254,62 +254,83 @@ function VariantB(props: VariantProps) {
 
 // ── C · Página propia con la consecuencia al lado ──────────────────────────
 
-function VariantC(props: VariantProps) {
+/** La lista por cuenta con «Así queda tu patrimonio» al lado: el cuerpo de C y de D. */
+function IncludeGrid(props: VariantProps) {
   const s = summarize(props.products, props.selected);
   const own = ACCOUNTS.filter((a) => !a.otherHolder);
   const others = ACCOUNTS.filter((a) => a.otherHolder);
   return (
+    <div className={styles.pageGrid}>
+      <div>
+        {own.map((account) => (
+          <AccountGroup account={account} key={account.id} {...props} />
+        ))}
+        <h4 className={styles.othersHead}>De otro titular · llega sin marcar</h4>
+        {others.map((account) => (
+          <AccountGroup account={account} key={account.id} {...props} />
+        ))}
+      </div>
+      <aside className={styles.basket}>
+        <h3 className={styles.basketHead}>Así queda tu patrimonio</h3>
+        <dl className={styles.ledger}>
+          {RUNG_ORDER.map((rung) => (
+            <div key={rung}>
+              <dt>{RUNG_LABEL[rung]}</dt>
+              <dd className={s.byRung[rung] > 0 ? "pos" : undefined}>
+                {s.byRung[rung] > 0 ? `+${eur(s.byRung[rung])}` : eur(0)}
+              </dd>
+            </div>
+          ))}
+          <div className={styles.ledgerTotal}>
+            <dt>Al patrimonio</dt>
+            <dd>+{eur(s.valueMinor)}</dd>
+          </div>
+        </dl>
+        <p className="muted">
+          {s.count} holdings y {s.operations} operaciones, en un solo lote. De solo
+          lectura: los pone al día MyInvestor.
+        </p>
+        {s.pendingCost > 0 ? (
+          <p className={styles.basketNote}>
+            {s.pendingCost} {s.pendingCost === 1 ? "entrada" : "entradas"} por traspaso
+            sin coste: te lo preguntaremos después.
+          </p>
+        ) : null}
+        {s.twins > 0 ? (
+          <p className={styles.basketNote}>
+            {s.twins} ya {s.twins === 1 ? "lo tienes" : "los tienes"} a mano: antes de
+            enlazar verás qué cambia.
+          </p>
+        ) : null}
+        <button disabled={s.count === 0} onClick={props.onSubmit} type="button">
+          Incluir {s.count} y traer su histórico
+        </button>
+      </aside>
+    </div>
+  );
+}
+
+function VariantC(props: VariantProps) {
+  return (
     <section aria-label="Elegir qué incluir" className={styles.page}>
       <p className={styles.fakeUrl}>/ajustes/conexiones/myinvestor/incluir</p>
       <h2 className={styles.pageTitle}>Qué traer de MyInvestor</h2>
-      <div className={styles.pageGrid}>
-        <div>
-          {own.map((account) => (
-            <AccountGroup account={account} key={account.id} {...props} />
-          ))}
-          <h4 className={styles.othersHead}>De otro titular · llega sin marcar</h4>
-          {others.map((account) => (
-            <AccountGroup account={account} key={account.id} {...props} />
-          ))}
-        </div>
-        <aside className={styles.basket}>
-          <h3 className={styles.basketHead}>Así queda tu patrimonio</h3>
-          <dl className={styles.ledger}>
-            {RUNG_ORDER.map((rung) => (
-              <div key={rung}>
-                <dt>{RUNG_LABEL[rung]}</dt>
-                <dd className={s.byRung[rung] > 0 ? "pos" : undefined}>
-                  {s.byRung[rung] > 0 ? `+${eur(s.byRung[rung])}` : eur(0)}
-                </dd>
-              </div>
-            ))}
-            <div className={styles.ledgerTotal}>
-              <dt>Al patrimonio</dt>
-              <dd>+{eur(s.valueMinor)}</dd>
-            </div>
-          </dl>
-          <p className="muted">
-            {s.count} holdings y {s.operations} operaciones, en un solo lote. De solo
-            lectura: los pone al día MyInvestor.
-          </p>
-          {s.pendingCost > 0 ? (
-            <p className={styles.basketNote}>
-              {s.pendingCost} {s.pendingCost === 1 ? "entrada" : "entradas"} por traspaso
-              sin coste: te lo preguntaremos después.
-            </p>
-          ) : null}
-          {s.twins > 0 ? (
-            <p className={styles.basketNote}>
-              {s.twins} ya {s.twins === 1 ? "lo tienes" : "los tienes"} a mano: antes de
-              enlazar verás qué cambia.
-            </p>
-          ) : null}
-          <button disabled={s.count === 0} onClick={props.onSubmit} type="button">
-            Incluir {s.count} y traer su histórico
-          </button>
-        </aside>
-      </div>
+      <IncludeGrid {...props} />
     </section>
+  );
+}
+
+// ── D · A + C: el pliegue de A con la consecuencia de C al lado ───────────
+
+function VariantD(props: VariantProps) {
+  return (
+    <div className={styles.foldWide}>
+      <p className="muted">
+        Esto es lo que hay en tu MyInvestor. Lo marcado se crea en worthline con todo su
+        histórico y de solo lectura: lo pone al día MyInvestor.
+      </p>
+      <IncludeGrid {...props} />
+    </div>
   );
 }
 
@@ -516,6 +537,11 @@ export default function DiscoveryPrototype({
                     <details className="conexCredentials" open>
                       <summary>Elegir qué incluir</summary>
                       <VariantB {...props} />
+                    </details>
+                  ) : variant === "D" ? (
+                    <details className="conexCredentials" open>
+                      <summary>Elegir qué incluir</summary>
+                      <VariantD {...props} />
                     </details>
                   ) : null}
                 </td>

@@ -12,6 +12,12 @@
   max-width: 48rem;
 }
 
+.foldWide {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+}
+
 .group {
   border-top: 1px solid var(--line-soft);
   padding: 0.4rem 0 0.6rem;
