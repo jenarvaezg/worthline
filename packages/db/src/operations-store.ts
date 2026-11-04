@@ -344,8 +344,8 @@ async function deleteOperation(
   ctx: StoreContext,
   operationId: string,
 ): Promise<{ assetId: string; executedAt: string } | null> {
-  const kind = await ctx.db
-    .select({ kind: assetOperations.kind })
+  const row = await ctx.db
+    .select({ assetId: assetOperations.assetId, kind: assetOperations.kind })
     .from(assetOperations)
     .where(eq(assetOperations.id, operationId))
     .get();
@@ -353,11 +353,14 @@ async function deleteOperation(
   // Half a traspaso is not a deletable unit (#1393). Same hazard as the statement
   // merge overwriting one row: the pair's atomic gate owns both, and a caller holding
   // one id calls `deleteTransferPair` with the `transferId` instead.
-  if (kind && isTransferKind(kind.kind)) {
+  if (row && isTransferKind(row.kind)) {
     throw new Error(
       "Half a traspaso cannot be deleted on its own; delete the pair (#1393).",
     );
   }
+  // A holding a source owns loses no row by hand (PRD #1876, invariant 5). Here and
+  // not in the web action: the assistant writes below the Server Actions.
+  if (row) await assertAssetAllowsOperationWrite(ctx, row.assetId);
 
   return removeOperationRow(ctx, operationId);
 }
@@ -436,10 +439,17 @@ async function deleteTransferPair(
   transferId: string,
 ): Promise<Array<{ assetId: string; executedAt: string }>> {
   const rows = await ctx.db
-    .select({ id: assetOperations.id })
+    .select({ assetId: assetOperations.assetId, id: assetOperations.id })
     .from(assetOperations)
     .where(eq(assetOperations.transferId, transferId))
     .all();
+
+  // Both legs are checked before either goes: deleting the manual half of a
+  // traspaso into a holding a source owns would take the source's leg with it
+  // (PRD #1876, invariant 5).
+  for (const assetId of new Set(rows.map((row) => row.assetId))) {
+    await assertAssetAllowsOperationWrite(ctx, assetId);
+  }
 
   const deleted: Array<{ assetId: string; executedAt: string }> = [];
   for (const { id } of rows) {

@@ -54,8 +54,9 @@ export function OperationsLedger({
   readOnly?: boolean;
   /**
    * The ledger belongs to a connected source (ADR 0115, #1884): its rows are the
-   * source's to write and to remove, so no row offers «Eliminar» — the store would
-   * refuse it anyway.
+   * source's to write and to remove, so no row offers «Eliminar». Hiding the button
+   * is not the guard: `deleteOperation` and `deleteTransferPair` refuse the row in the
+   * store, which is what stops a hand-made POST or the assistant (PRD #1876, inv. 5).
    */
   sourceOwned?: boolean;
   /**
