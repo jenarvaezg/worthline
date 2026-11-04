@@ -27,6 +27,7 @@ import {
   MYINVESTOR_LOGIN_ERRORS,
   MYINVESTOR_MAX_CODE_ATTEMPTS,
   MYINVESTOR_PENDING_EXPIRED,
+  MYINVESTOR_REENTER_BUSY,
   MYINVESTOR_REENTER_PAUSED,
   MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
@@ -482,6 +483,22 @@ describe("«Volver a entrar» on the connection that already exists (#1876)", ()
     const step = await startMyInvestorReenter(deps(client), { ...LOGIN, sourceId });
 
     expect(step).toEqual({ error: MYINVESTOR_REENTER_PAUSED, step: "credentials" });
+    expect(client.login).not.toHaveBeenCalled();
+  });
+
+  test("while a pass holds the connection, MyInvestor is not asked either", async () => {
+    const sourceId = await stopped("sms_required");
+    await store.connectedSources.claimSyncLease({
+      now: NOW,
+      sourceId,
+      trigger: "cron",
+      until: "2026-11-04T12:10:00.000Z",
+    });
+    const client = smsClient();
+
+    const step = await startMyInvestorReenter(deps(client), { ...LOGIN, sourceId });
+
+    expect(step).toEqual({ error: MYINVESTOR_REENTER_BUSY, step: "credentials" });
     expect(client.login).not.toHaveBeenCalled();
   });
 });

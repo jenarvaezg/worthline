@@ -47,8 +47,10 @@ import {
   claimSyncLease,
   type PasswordRejectionInput,
   purgeSyncAttempts,
+  type ReentryInput,
   readSyncState,
   recordPasswordRejection,
+  recordReentry,
   recordSyncAttempt,
   releaseSyncLease,
   reserveSyncLogin,
@@ -261,6 +263,11 @@ export interface ConnectedSourceStore {
   recordPasswordRejection(
     input: PasswordRejectionInput,
   ): Promise<{ rejections: number; locked: boolean }>;
+  /**
+   * «Volver a entrar» (#1876), all of it or none: the new credentials and the stop
+   * lifted. Throws for a connection that is not there.
+   */
+  recordReentry(input: ReentryInput): Promise<void>;
   /**
    * Patch the sync state; with `attempt`, the pass's row of the attempt log goes in
    * the same transaction (#1885).
@@ -1063,6 +1070,7 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
     releaseSyncLease: (sourceId) => releaseSyncLease(ctx, sourceId),
     reserveSyncLogin: (input) => reserveSyncLogin(ctx, input),
     recordPasswordRejection: (input) => recordPasswordRejection(ctx, input),
+    recordReentry: (input) => recordReentry(ctx, input),
     updateSyncState: (sourceId, patch, attempt) =>
       updateSyncState(ctx, sourceId, patch, attempt),
     readSyncState: (sourceId) => readSyncState(ctx, sourceId),

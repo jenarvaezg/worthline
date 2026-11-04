@@ -60,6 +60,10 @@ export const MYINVESTOR_PENDING_EXPIRED =
 export const MYINVESTOR_DEVICE_LAPSED =
   "MyInvestor pide verificar el móvil otra vez, así que no se ha guardado nada. Usa «Volver a entrar» para recibir el SMS: no se desconecta nada.";
 
+/** «Volver a entrar» while a pass (the cron's, or another tab's) holds the connection. */
+export const MYINVESTOR_REENTER_BUSY =
+  "Ahora mismo se está poniendo al día MyInvestor, así que no se ha preguntado nada. Vuelve a entrar en unos minutos.";
+
 /** «Volver a entrar» while the connection waits out a pause or the day's lock. */
 export const MYINVESTOR_REENTER_PAUSED =
   "La conexión está en pausa para no bloquearte la cuenta, así que no se ha preguntado a MyInvestor. Vuelve a entrar cuando acabe la pausa.";

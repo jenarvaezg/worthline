@@ -37,6 +37,7 @@ import {
   MYINVESTOR_NOT_FOUND,
   MYINVESTOR_PENDING_EXPIRED,
   MYINVESTOR_PENDING_TTL_MINUTES,
+  MYINVESTOR_REENTER_BUSY,
   MYINVESTOR_REENTER_PAUSED,
   MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
@@ -74,7 +75,7 @@ export type MyInvestorFlowStore = Pick<
   | "reservePendingCodeAttempt"
   | "updateCredentials"
   | "readSyncState"
-  | "updateSyncState"
+  | "recordReentry"
 >;
 
 export interface MyInvestorFlowDeps {
@@ -266,7 +267,8 @@ export async function startMyInvestorConnect(
  *   sent unless MyInvestor asks.
  * - The box saves the password, as on connecting. Without it, what was kept stays.
  * - While the connection waits out a pause or the day's lock (ADR 0114 decision 7),
- *   MyInvestor is not asked: that is what the pause is for.
+ *   MyInvestor is not asked: that is what the pause is for. Nor while a pass holds
+ *   the connection.
  */
 export async function startMyInvestorReenter(
   deps: MyInvestorFlowDeps,
@@ -277,6 +279,11 @@ export async function startMyInvestorReenter(
   const state = await deps.store.readSyncState(input.sourceId);
   if (state?.pausedUntil && state.pausedUntil > deps.now) {
     return credentialsStep(MYINVESTOR_REENTER_PAUSED);
+  }
+  // A pass in progress logs in with the old device: ending after this, it would
+  // write its stop over the device just verified.
+  if (state?.lease && state.lease.until > deps.now) {
+    return credentialsStep(MYINVESTOR_REENTER_BUSY);
   }
   const deviceId =
     state?.stoppedReason === MYINVESTOR_STOPPED_SMS
@@ -306,16 +313,15 @@ async function reenter(
   const credentials: MyInvestorStoredCredentials = save
     ? credentialsToKeep(deviceId, save, deps.now)
     : { ...kept, deviceId };
-  await deps.store.updateCredentials(
-    sourceId,
-    serializeMyInvestorCredentials(credentials),
-  );
   const state = await deps.store.readSyncState(sourceId);
   const outcome = parseMyInvestorSyncOutcome(state?.lastOutcomeJson ?? null);
-  await deps.store.updateSyncState(sourceId, {
-    stoppedReason: null,
+  // One transaction: a device verified but still marked as asking for the SMS would
+  // keep the cron off and make the next «Volver a entrar» send another SMS.
+  await deps.store.recordReentry({
     // A failed pass no longer says how the connection stands: it entered just now.
-    ...(outcome !== null && outcome.kind !== "ok" ? { lastOutcomeJson: null } : {}),
+    clearLastOutcome: outcome !== null && outcome.kind !== "ok",
+    credentialsJson: serializeMyInvestorCredentials(credentials),
+    sourceId,
   });
   return {
     reentered: true,

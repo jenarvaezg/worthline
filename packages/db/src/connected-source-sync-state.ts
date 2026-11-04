@@ -211,6 +211,50 @@ export interface PasswordRejectionInput {
   attempt?: SyncAttemptRow;
 }
 
+export interface ReentryInput {
+  sourceId: string;
+  /** The credentials with the device MyInvestor trusts now (and the password, opted in). */
+  credentialsJson: string;
+  /** The last pass failed: it no longer says how the connection stands. */
+  clearLastOutcome: boolean;
+}
+
+/**
+ * «Volver a entrar» (#1876), all of it or none: the credentials with the device
+ * MyInvestor trusts now, and the stop lifted. Apart, a device verified but still
+ * marked as asking for the SMS would keep the cron off and make the next «Volver a
+ * entrar» send another SMS for nothing.
+ */
+export async function recordReentry(
+  ctx: StoreContext,
+  input: ReentryInput,
+): Promise<void> {
+  await ctx.transaction(async () => {
+    const updated = await ctx.db
+      .update(connectedSources)
+      .set({
+        credentialsJson: sealSecret(input.credentialsJson),
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(connectedSources.id, input.sourceId))
+      .returning({ id: connectedSources.id })
+      .all();
+    if (updated.length === 0) {
+      throw new Error(`Connected source "${input.sourceId}" not found.`);
+    }
+    await ensureRow(ctx, input.sourceId);
+    await ctx.db
+      .update(connectedSourceSyncState)
+      .set({
+        stoppedReason: null,
+        ...(input.clearLastOutcome ? { lastOutcomeJson: null } : {}),
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(connectedSourceSyncState.sourceId, input.sourceId))
+      .run();
+  });
+}
+
 /**
  * A rejected password (ADR 0114 decision 7), all of it or none: the saved password
  * goes, the rejection is counted, and the third of the day pauses the connection
