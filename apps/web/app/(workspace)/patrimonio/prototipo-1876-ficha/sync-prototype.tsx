@@ -302,9 +302,11 @@ export default function SyncPrototype() {
   const busy = run.phase === "running" || run.phase === "waiting";
   const result = run.phase === "done" ? run.result : null;
   const lasting = result && result.tone !== "ok" ? result : null;
-  const dailyLine = saved
-    ? "Se pone al día sola cada día"
-    : "Se pone al día cuando pulsas";
+  const dailyLine = result?.stopsDaily
+    ? "La puesta al día diaria está parada"
+    : saved
+      ? "Se pone al día sola cada día"
+      : "Se pone al día cuando pulsas";
   const blocked = Boolean(result?.blockedUntil);
 
   // ── Lo que pinta cada variante ───────────────────────────────────────────
