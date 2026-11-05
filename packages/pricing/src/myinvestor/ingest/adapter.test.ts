@@ -17,6 +17,7 @@ import type {
 import { addUnits, compareUnits, supportsCapability } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 import {
+  calendarYearWindows,
   createMyInvestorAdapter,
   MYINVESTOR_ADAPTER_ID,
   MyInvestorSyncError,
@@ -43,6 +44,7 @@ function adapterOn(transport: MyInvestorTransport, today = CAPTURE_DAY) {
 
 const EMPTY_LIST = JSON.stringify({ payload: { data: [] } });
 const ORDER_LISTS = /\/orders$|\/stock-orders$/;
+const BROKER_LIST = /\/stock-orders$/;
 
 /** The fixtures for everything but the order lists, which come back empty. */
 function emptyOrdersTransport(): MyInvestorTransport & { requests: MyInvestorRequest[] } {
@@ -85,7 +87,9 @@ describe("the MyInvestor adapter", () => {
     expect(batch.cursor).toBe(CAPTURE_DAY);
     expect(batch.facts.length).toBeGreaterThan(0);
     const windows = transport.requests
-      .filter((request) => ORDER_LISTS.test(request.path))
+      .filter(
+        (request) => ORDER_LISTS.test(request.path) && !BROKER_LIST.test(request.path),
+      )
       .map((request) => [request.query?.dateFrom, request.query?.dateTo]);
     expect(windows.length).toBeGreaterThan(0);
     for (const window of windows) {
@@ -94,6 +98,40 @@ describe("the MyInvestor adapter", () => {
         ["20000101", "20261104"],
       ]).toContainEqual(window);
     }
+    const brokerWindows = transport.requests
+      .filter((request) => BROKER_LIST.test(request.path))
+      .map((request) => ({ from: request.query?.dateFrom, to: request.query?.dateTo }));
+    expect(brokerWindows.length).toBeGreaterThan(0);
+    expect(new Set(brokerWindows.map((window) => JSON.stringify(window)))).toEqual(
+      new Set(
+        calendarYearWindows({ from: "2000-01-01", to: CAPTURE_DAY }).map((window) =>
+          JSON.stringify(window),
+        ),
+      ),
+    );
+  });
+
+  it("a long broker history is read one year at a time: the whole range is a 500 at MyInvestor", async () => {
+    const fixtures = fixtureTransport();
+    const adapter = adapterOn({
+      async send(request) {
+        const { dateFrom, dateTo } = request.query ?? {};
+        const longerThanAYear =
+          dateFrom !== undefined &&
+          dateTo !== undefined &&
+          dateFrom.slice(0, 4) !== dateTo.slice(0, 4);
+        return BROKER_LIST.test(request.path) && longerThanAYear
+          ? reply(500, "{}")
+          : fixtures.send(request);
+      },
+    });
+
+    const batch = await adapter.fetch({ capability: "fetch_transactions", cursor: null });
+
+    const broker = batch.facts.filter(
+      (fact) => (fact.payload as MyInvestorOperationFact).product === "broker",
+    );
+    expect(broker.length).toBeGreaterThan(0);
   });
 
   it("never asks for cash movements, nor anything but reads", async () => {
@@ -287,6 +325,21 @@ describe("the MyInvestor adapter", () => {
       kind: "network_or_waf",
       step: "orders",
     });
+  });
+
+  it("cuts a range into calendar years, and leaves one inside a year as it is", () => {
+    expect(calendarYearWindows({ from: "2024-03-10", to: "2026-02-01" })).toEqual([
+      { from: "2024-03-10", to: "2024-12-31" },
+      { from: "2025-01-01", to: "2025-12-31" },
+      { from: "2026-01-01", to: "2026-02-01" },
+    ]);
+    expect(calendarYearWindows({ from: "2026-10-05", to: "2026-11-10" })).toEqual([
+      { from: "2026-10-05", to: "2026-11-10" },
+    ]);
+    expect(calendarYearWindows({ from: "2025-12-31", to: "2026-01-01" })).toEqual([
+      { from: "2025-12-31", to: "2025-12-31" },
+      { from: "2026-01-01", to: "2026-01-01" },
+    ]);
   });
 
   it("disconnecting has nothing to undo at MyInvestor: no request is sent", async () => {

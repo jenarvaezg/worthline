@@ -7,6 +7,9 @@
  *   account, as operation facts ({@link normalizeMyInvestorOrders}). The cursor is
  *   the day of the last good sync; each sync re-reads the 30 days before it (ADR
  *   0114, decision 5), the first one the whole history from 2000-01-01 (#1872).
+ *   The broker's list is asked one calendar year at a time
+ *   ({@link calendarYearWindows}): with a long history MyInvestor answers the whole
+ *   range with a 500, every time, while each year on its own reads fine.
  * - `fetch_positions`: the units of every holding today, the witness of P8.
  * - `fetch_balances`: every cash account's balance today, holds included.
  * - `discover_accounts`: the cash, securities and pension accounts, with what
@@ -27,6 +30,7 @@ import {
   safeCode,
 } from "@pricing/myinvestor/errors";
 import type {
+  MyInvestorBrokerOrder,
   MyInvestorCashAccount,
   MyInvestorOwnership,
   MyInvestorSecuritiesAccountSummary,
@@ -126,6 +130,39 @@ function securitiesLabel(account: MyInvestorSecuritiesAccountSummary): string {
     : "Cuenta de valores";
 }
 
+/** Broker order details asked at once (see `transactions`). */
+const DETAIL_CONCURRENCY = 4;
+
+/** `run` over `items`, `size` at a time, the results in the items' order. */
+async function inBatches<T, R>(
+  items: readonly T[],
+  size: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let start = 0; start < items.length; start += size) {
+    results.push(...(await Promise.all(items.slice(start, start + size).map(run))));
+  }
+  return results;
+}
+
+/**
+ * `range` cut into calendar years, in order: the first from `range.from`, the last
+ * up to `range.to`, each one inside a single year. A range inside one year is
+ * itself.
+ */
+export function calendarYearWindows(range: DateRange): DateRange[] {
+  const windows: DateRange[] = [];
+  let from = range.from;
+  while (from <= range.to) {
+    const yearEnd = `${from.slice(0, 4)}-12-31`;
+    const to = yearEnd < range.to ? yearEnd : range.to;
+    windows.push({ from, to });
+    from = `${Number(from.slice(0, 4)) + 1}-01-01`;
+  }
+  return windows;
+}
+
 export function createMyInvestorAdapter(
   options: MyInvestorAdapterOptions,
 ): ConnectorAdapter<MyInvestorFactPayload> {
@@ -152,16 +189,27 @@ export function createMyInvestorAdapter(
         accounts.push({ accountId, product: "fund", orders });
       }
       if (summary.hasBrokerOperations !== false) {
-        const listed = unwrap(
-          ofAccount(await reader.brokerOrders(summary.accountId, range), summary),
-        );
-        for (const order of listed) {
-          // The list has neither ISIN nor execution; only a finished order is worth its detail.
-          if (order.status !== "COMPLETE") continue;
-          const detail = unwrap(
-            ofAccount(await reader.brokerOrderDetail(order.id), summary),
+        const listed: MyInvestorBrokerOrder[] = [];
+        const seen = new Set<string>();
+        for (const year of calendarYearWindows(range)) {
+          const orders = unwrap(
+            ofAccount(await reader.brokerOrders(summary.accountId, year), summary),
           );
-          broker.push({ accountId, detail });
+          for (const order of orders) {
+            if (seen.has(order.id)) continue;
+            seen.add(order.id);
+            listed.push(order);
+          }
+        }
+        // The list has neither ISIN nor execution; only a finished order is worth its
+        // detail. A long history has a hundred of them: asked four at a time, as a
+        // browser would, or the first sync outlasts the cron's 60 s.
+        const finished = listed.filter((order) => order.status === "COMPLETE");
+        const details = await inBatches(finished, DETAIL_CONCURRENCY, (order) =>
+          reader.brokerOrderDetail(order.id),
+        );
+        for (const detail of details) {
+          broker.push({ accountId, detail: unwrap(ofAccount(detail, summary)) });
         }
       }
     }

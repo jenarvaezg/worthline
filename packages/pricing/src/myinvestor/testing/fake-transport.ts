@@ -8,11 +8,15 @@ import {
   readMyInvestorFixtureText,
 } from "@pricing/__fixtures__/myinvestor";
 
+import type { FixtureManifestEntry } from "@pricing/myinvestor/fixtures/capture-plan";
+import { MYINVESTOR_PATHS } from "@pricing/myinvestor/protocol";
 import type {
   MyInvestorRequest,
   MyInvestorTransport,
   TransportOutcome,
 } from "@pricing/myinvestor/transport";
+
+const BROKER_ORDERS_PATH = MYINVESTOR_PATHS.brokerOrders;
 
 export interface RecordingTransport extends MyInvestorTransport {
   readonly requests: MyInvestorRequest[];
@@ -94,12 +98,46 @@ export function fixtureTransport(
           candidate.path === request.path &&
           sameQuery(candidate.query, request.query ?? {}),
       );
-      if (!entry?.file) {
-        throw new Error(`Sin fixture para ${request.method} ${request.path}`);
-      }
-      return fixtureReply(entry.file, entry.status);
+      if (entry?.file) return fixtureReply(entry.file, entry.status);
+      const window = brokerWindowReply(fixtures, request);
+      if (window) return window;
+      throw new Error(`Sin fixture para ${request.method} ${request.path}`);
     },
   };
+}
+
+/**
+ * The broker's list for a window of days, as MyInvestor answers it: the captured
+ * full-history list of that account, keeping the orders whose day falls inside the
+ * window. The adapter asks it one calendar year at a time.
+ */
+function brokerWindowReply(
+  fixtures: readonly FixtureManifestEntry[],
+  request: MyInvestorRequest,
+): TransportOutcome | null {
+  const query = request.query ?? {};
+  if (request.path !== BROKER_ORDERS_PATH || !query.dateFrom || !query.dateTo) {
+    return null;
+  }
+  const full = fixtures.find(
+    (candidate) =>
+      candidate.file !== null &&
+      candidate.path === BROKER_ORDERS_PATH &&
+      candidate.query.stockAccountId === query.stockAccountId &&
+      candidate.query.type === query.type,
+  );
+  if (!full?.file) return null;
+  const body = JSON.parse(readMyInvestorFixtureText(full.file)) as {
+    payload: { data: { orderDate?: string | null }[] };
+  };
+  const inside = body.payload.data.filter((order) => {
+    const day = order.orderDate?.slice(0, 10);
+    return day !== undefined && day >= query.dateFrom! && day <= query.dateTo!;
+  });
+  return reply(
+    full.status,
+    JSON.stringify({ ...body, payload: { ...body.payload, data: inside } }),
+  );
 }
 
 /** A `sleep` that records the waits instead of waiting. */
