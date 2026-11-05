@@ -100,6 +100,8 @@ function compact(day: IsoDate): string {
 }
 
 interface Read<T> {
+  /** The reader method, named in the error so the server log can tell the calls apart. */
+  readonly call: keyof Omit<MyInvestorReader, "tokens">;
   readonly step: MyInvestorStep;
   readonly path: string;
   readonly query?: Readonly<Record<string, string>>;
@@ -114,6 +116,11 @@ export function createMyInvestorReader(
   let tokens = initial;
 
   async function get<T>(read: Read<T>): Promise<MyInvestorResult<T>> {
+    const result = await attempt(read);
+    return result.ok ? result : fail({ ...result.error, call: read.call });
+  }
+
+  async function attempt<T>(read: Read<T>): Promise<MyInvestorResult<T>> {
     let renewed = false;
     for (;;) {
       const result = await exchange(
@@ -159,18 +166,21 @@ export function createMyInvestorReader(
     tokens: () => tokens,
     cashAccounts: () =>
       get({
+        call: "cashAccounts",
         step: "cash",
         path: PATHS.cashAccounts,
         schema: cashAccountsSchema,
       }),
     securitiesAccounts: () =>
       get({
+        call: "securitiesAccounts",
         step: "positions",
         path: PATHS.securitiesAccounts,
         schema: securitiesAccountsSchema,
       }),
     securitiesAccount: (accountId) =>
       get({
+        call: "securitiesAccount",
         step: "positions",
         path: PATHS.securitiesAccount(accountId),
         schema: securitiesAccountSchema,
@@ -178,6 +188,7 @@ export function createMyInvestorReader(
     securitiesOrders: async (accountId, range) => {
       const { from, to } = checkedRange(range);
       return get({
+        call: "securitiesOrders",
         step: "orders",
         path: PATHS.securitiesOrders(accountId),
         query: { dateFrom: from, dateTo: to },
@@ -187,6 +198,7 @@ export function createMyInvestorReader(
     brokerOrders: async (securitiesAccountId, range) => {
       const { from, to } = checkedRange(range);
       return get({
+        call: "brokerOrders",
         step: "orders",
         path: PATHS.brokerOrders,
         query: {
@@ -200,24 +212,28 @@ export function createMyInvestorReader(
     },
     brokerOrderDetail: (orderId) =>
       get({
+        call: "brokerOrderDetail",
         step: "orders",
         path: PATHS.brokerOrderDetail(orderId),
         schema: brokerOrderDetailSchema,
       }),
     pendingFundTransfers: (accountId) =>
       get({
+        call: "pendingFundTransfers",
         step: "orders",
         path: PATHS.pendingTransfers(accountId),
         schema: pendingTransfersSchema,
       }),
     pensionAccounts: () =>
       get({
+        call: "pensionAccounts",
         step: "plans",
         path: PATHS.pensionAccounts,
         schema: pensionAccountsSchema,
       }),
     pensionPlans: (accountId) =>
       get({
+        call: "pensionPlans",
         step: "plans",
         path: PATHS.pensionAccount(accountId),
         schema: pensionPlansSchema,
@@ -225,6 +241,7 @@ export function createMyInvestorReader(
     pensionOrders: async (accountId, range) => {
       const { from, to } = checkedRange(range);
       return get({
+        call: "pensionOrders",
         step: "plans",
         path: PATHS.pensionOrders(accountId),
         query: { dateFrom: compact(from), dateTo: compact(to) },
@@ -233,6 +250,7 @@ export function createMyInvestorReader(
     },
     pensionShareSeries: (accountId) =>
       get({
+        call: "pensionShareSeries",
         step: "plans",
         path: PATHS.pensionPositions(accountId),
         query: { groupType: "SINCE_BEGINNING" },
@@ -240,12 +258,14 @@ export function createMyInvestorReader(
       }),
     automaticContributions: () =>
       get({
+        call: "automaticContributions",
         step: "contributions",
         path: PATHS.automaticContributions,
         schema: contributionsSchema,
       }),
     portfolios: () =>
       get({
+        call: "portfolios",
         step: "positions",
         path: PATHS.portfolios,
         schema: portfoliosSchema,

@@ -21,7 +21,11 @@
  * Cash movements are never asked for (PRD #1876, invariant 1).
  */
 
-import type { MyInvestorError, MyInvestorResult } from "@pricing/myinvestor/errors";
+import {
+  type MyInvestorError,
+  type MyInvestorResult,
+  safeCode,
+} from "@pricing/myinvestor/errors";
 import type {
   MyInvestorCashAccount,
   MyInvestorOwnership,
@@ -97,6 +101,19 @@ function unwrap<T>(result: MyInvestorResult<T>): T {
   return result.value;
 }
 
+/** A failed call about one securities account names that account's type, never its id. */
+function ofAccount<T>(
+  result: MyInvestorResult<T>,
+  summary: MyInvestorSecuritiesAccountSummary,
+): MyInvestorResult<T> {
+  return result.ok
+    ? result
+    : {
+        error: { ...result.error, accountType: safeCode(summary.accountType) },
+        ok: false,
+      };
+}
+
 function includedByDefault(
   ownership: MyInvestorOwnership | undefined,
 ): boolean | undefined {
@@ -129,15 +146,21 @@ export function createMyInvestorAdapter(
     for (const summary of unwrap(await reader.securitiesAccounts())) {
       const accountId = myInvestorAccountId("securities", summary.accountId);
       if (summary.hasFundsOperations !== false) {
-        const orders = unwrap(await reader.securitiesOrders(summary.accountId, range));
+        const orders = unwrap(
+          ofAccount(await reader.securitiesOrders(summary.accountId, range), summary),
+        );
         accounts.push({ accountId, product: "fund", orders });
       }
       if (summary.hasBrokerOperations !== false) {
-        const listed = unwrap(await reader.brokerOrders(summary.accountId, range));
+        const listed = unwrap(
+          ofAccount(await reader.brokerOrders(summary.accountId, range), summary),
+        );
         for (const order of listed) {
           // The list has neither ISIN nor execution; only a finished order is worth its detail.
           if (order.status !== "COMPLETE") continue;
-          const detail = unwrap(await reader.brokerOrderDetail(order.id));
+          const detail = unwrap(
+            ofAccount(await reader.brokerOrderDetail(order.id), summary),
+          );
           broker.push({ accountId, detail });
         }
       }

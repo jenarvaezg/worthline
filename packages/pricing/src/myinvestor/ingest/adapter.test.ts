@@ -265,6 +265,30 @@ describe("the MyInvestor adapter", () => {
     expect((failure as MyInvestorSyncError).error.kind).toBe("session_expired");
   });
 
+  it("a failed order list names its call and its account's type, never the account", async () => {
+    const fixtures = fixtureTransport();
+    const adapter = adapterOn({
+      async send(request) {
+        return /\/securities-accounts\/[^/]+\/orders$/.test(request.path)
+          ? reply(500, "{}")
+          : fixtures.send(request);
+      },
+    });
+
+    const failure = await adapter
+      .fetch({ capability: "fetch_transactions", cursor: null })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(MyInvestorSyncError);
+    const { error } = failure as MyInvestorSyncError;
+    expect(error).toMatchObject({
+      accountType: expect.stringMatching(/^[A-Z][A-Z0-9_]*$/),
+      call: "securitiesOrders",
+      httpStatus: 500,
+      kind: "network_or_waf",
+      step: "orders",
+    });
+  });
+
   it("disconnecting has nothing to undo at MyInvestor: no request is sent", async () => {
     const transport = fixtureTransport();
     await adapterOn(transport).disconnect?.();

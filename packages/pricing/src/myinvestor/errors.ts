@@ -45,6 +45,10 @@ export interface MyInvestorError {
   readonly code: string | null;
   /** Requests sent for this call, retries included. */
   readonly attempts: number;
+  /** The reader's call that failed, by its method name; never a path, which carries ids. */
+  readonly call?: string;
+  /** MyInvestor's type of the account the call was about, when it was about one. */
+  readonly accountType?: string | null;
 }
 
 export type MyInvestorResult<T> =

@@ -7,7 +7,9 @@ import {
 } from "./myinvestor-first-start-flow";
 
 const SERVER_ERROR: MyInvestorError = {
+  accountType: "SECURITIES_PORTFOLIO",
   attempts: 4,
+  call: "securitiesOrders",
   code: "server_error",
   httpStatus: 502,
   kind: "network_or_waf",
@@ -19,7 +21,9 @@ describe("a failed MyInvestor call reaches the server log (#1876)", () => {
     const log = vi.fn();
     logMyInvestorFailure("reading the products", SERVER_ERROR, log);
     expect(log).toHaveBeenCalledWith("[myinvestor] reading the products failed", {
+      accountType: "SECURITIES_PORTFOLIO",
       attempts: 4,
+      call: "securitiesOrders",
       code: "server_error",
       httpStatus: 502,
       kind: "network_or_waf",
