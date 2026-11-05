@@ -338,7 +338,7 @@ export function MyInvestorSavePasswordForm({
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="sourceId" type="hidden" value={sourceId} />
       <p aria-live="polite" className="srOnly">
-        {pending ? "Comprobando la contraseña con MyInvestor…" : ""}
+        {pending ? "Guardando la contraseña…" : ""}
       </p>
       <label>
         Usuario (DNI o NIE)
@@ -350,8 +350,8 @@ export function MyInvestorSavePasswordForm({
       </label>
       <MyInvestorRiskCheckbox name="acceptRisk" required />
       <p className="muted">
-        Se comprueba con MyInvestor antes de guardarse. Este dispositivo ya está
-        verificado: no llega ningún SMS.
+        Se guarda sin preguntar a MyInvestor. La primera puesta al día la prueba: si
+        MyInvestor no la acepta, se borra y te lo decimos.
       </p>
       {error ? (
         <p className="errorBand" role="alert">
@@ -359,7 +359,7 @@ export function MyInvestorSavePasswordForm({
         </p>
       ) : null}
       <button aria-busy={pending || undefined} disabled={pending} type="submit">
-        {pending ? "Comprobando…" : "Guardar la contraseña"}
+        {pending ? "Guardando…" : "Guardar la contraseña"}
       </button>
     </form>
   );

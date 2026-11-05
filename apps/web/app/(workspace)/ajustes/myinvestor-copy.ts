@@ -56,10 +56,6 @@ export const MYINVESTOR_TOO_MANY_CODES =
 export const MYINVESTOR_PENDING_EXPIRED =
   "El código ha caducado: pasaron más de 5 minutos. Vuelve a escribir la contraseña y MyInvestor te mandará otro.";
 
-/** Re-saving the password on a connected row needs no SMS; if MyInvestor asks, the device lapsed. */
-export const MYINVESTOR_DEVICE_LAPSED =
-  "MyInvestor pide verificar el móvil otra vez, así que no se ha guardado nada. Usa «Volver a entrar» para recibir el SMS: no se desconecta nada.";
-
 /** «Volver a entrar» while a pass (the cron's, or another tab's) holds the connection. */
 export const MYINVESTOR_REENTER_BUSY =
   "Ahora mismo se está poniendo al día MyInvestor, así que no se ha preguntado nada. Vuelve a entrar en unos minutos.";
@@ -67,6 +63,3 @@ export const MYINVESTOR_REENTER_BUSY =
 /** «Volver a entrar» while the connection waits out a pause or the day's lock. */
 export const MYINVESTOR_REENTER_PAUSED =
   "La conexión está en pausa para no bloquearte la cuenta, así que no se ha preguntado a MyInvestor. Vuelve a entrar cuando acabe la pausa.";
-
-export const MYINVESTOR_SAVE_REJECTED =
-  "MyInvestor no acepta ese usuario o esa contraseña. No se ha guardado.";

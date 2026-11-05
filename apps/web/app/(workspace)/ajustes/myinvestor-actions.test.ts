@@ -46,7 +46,6 @@ import {
 import type { MyInvestorConnectClient } from "./myinvestor-connect";
 import {
   MYINVESTOR_ACCEPTANCE_TEXT,
-  MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_UNAVAILABLE_LINE,
 } from "./myinvestor-copy";
 import { MYINVESTOR_IDLE } from "./myinvestor-form-state";
@@ -336,32 +335,24 @@ describe("the connected row", () => {
     expect(JSON.parse(source!.credentialsJson)).not.toHaveProperty("password");
   });
 
-  test("with JS, a rejected password comes back as state inside the fold", async () => {
+  test("saving the password asks MyInvestor nothing", async () => {
     const sourceId = await connectedSourceId(false);
-    const rejecting: MyInvestorConnectClient = {
-      ...fakeClient("known"),
-      loginWithKnownDevice: vi.fn(async () => ({
-        error: {
-          attempts: 1,
-          code: "UNAUTHORIZED",
-          httpStatus: 401,
-          kind: "password_rejected" as const,
-          step: "login" as const,
-        },
-        ok: false as const,
-      })),
-    };
+    const client = fakeClient("known");
+    const clientFor = vi.fn(() => client);
 
-    const state = await saveMyInvestorPasswordAction(
-      form({ ...LOGIN, acceptRisk: "on", inlineError: "1", sourceId }),
-      store,
-      clock,
-      { myInvestorClientFor: () => rejecting },
+    const target = await redirected(
+      saveMyInvestorPasswordAction(
+        form({ ...LOGIN, acceptRisk: "on", inlineError: "1", sourceId }),
+        store,
+        clock,
+        { myInvestorClientFor: clientFor },
+      ),
     );
 
-    expect(state).toEqual({ error: MYINVESTOR_SAVE_REJECTED, ok: false });
+    expect(target).toContain("ok=myinvestor_password_saved");
+    expect(clientFor).not.toHaveBeenCalled();
     const [source] = await store.connectedSources.listSources();
-    expect(JSON.parse(source!.credentialsJson)).not.toHaveProperty("password");
+    expect(JSON.parse(source!.credentialsJson)).toMatchObject({ password: "secret" });
   });
 
   test("with the box, an accepted password is saved", async () => {

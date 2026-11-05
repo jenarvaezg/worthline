@@ -276,8 +276,8 @@ function passwordErrorUrl(formData: FormData, message: string): string {
 
 /**
  * Remember the password on a connected row (ADR 0114 decision 1). The box must be
- * ticked — that is the acceptance — and MyInvestor must accept the password on the
- * device it already trusts. Nothing is written otherwise.
+ * ticked — that is the acceptance. MyInvestor is not asked: the first pass that
+ * signs in checks the password, and deletes it if MyInvestor rejects it.
  */
 export async function saveMyInvestorPasswordAction(
   formData: FormData,
@@ -311,16 +311,11 @@ export async function saveMyInvestorPasswordAction(
     },
     requireId: false,
     run: async (store, { extra, now, parsed }) => {
-      const client = await myInvestorClientOrRefusal(
-        PAYWALL_SOURCES_PAUSED_MESSAGE,
-        _testArgs,
-      );
-      if (!client.ok) return client;
+      const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
+      if (paywall) return { error: paywall, ok: false };
       return saveMyInvestorPassword(
         {
           acceptedBy: await readSessionEmail(),
-          clientFor: client.clientFor,
-          newDeviceId: randomUUID,
           now,
           store: store.connectedSources,
         },
