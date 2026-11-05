@@ -9904,18 +9904,31 @@ td.rowActions > * {
     width: auto;
   }
 
+  /* Flex y no rejilla: las pistas «auto» de una rejilla se encogían hasta su
+     mínimo con la letra grande del teléfono y partían «Nunca» en «Nun ca». Aquí
+     cada dato es un trozo entero que salta de línea completo. Dos saltos
+     invisibles cierran la línea del nombre y abren la de las acciones. */
   .conexTable .conexRow {
-    display: grid;
-    /* El nombre ocupa la pista flexible, así que su texto no ensancha las tres
-       pistas de la línea de cifras: estas se miden solo por su contenido. */
-    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "name name name name state"
-      "sync count value . ."
-      "actions actions actions actions actions";
+    display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     column-gap: 0.5rem;
     padding-top: 14px;
+  }
+
+  .conexTable .conexRow::before,
+  .conexTable .conexRow::after {
+    content: "";
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .conexTable .conexRow::before {
+    order: 2;
+  }
+
+  .conexTable .conexRow::after {
+    order: 4;
   }
 
   .conexTable .conexRow > td {
@@ -9924,13 +9937,19 @@ td.rowActions > * {
     text-align: left;
   }
 
+  /* Nombre y estado comparten la línea sin pasar del 100 % (base + tope + hueco),
+     o el estado saltaría solo a otra línea. En porcentaje, porque un tope en rem
+     crece con la letra del teléfono y se come el nombre. */
   .conexRow > td:nth-child(1) {
-    grid-area: name;
+    order: 1;
+    flex: 1 1 45%;
+    min-width: 0;
   }
 
   .conexRow > td:nth-child(2) {
-    grid-area: state;
-    max-width: 11rem;
+    order: 1;
+    flex: 0 1 auto;
+    max-width: calc(55% - 0.5rem);
     text-align: right;
   }
 
@@ -9938,17 +9957,12 @@ td.rowActions > * {
     white-space: nowrap;
   }
 
-  .conexRow > td:nth-child(3) {
-    grid-area: sync;
-    margin-top: 6px;
-  }
-
-  .conexRow > td:nth-child(4) {
-    grid-area: count;
-  }
-
+  .conexRow > td:nth-child(3),
+  .conexRow > td:nth-child(4),
   .conexRow > td:nth-child(5) {
-    grid-area: value;
+    order: 3;
+    margin-top: 6px;
+    white-space: nowrap;
   }
 
   .conexRow > td:nth-child(4)::before,
@@ -9963,7 +9977,8 @@ td.rowActions > * {
   }
 
   .conexRow > td:nth-child(6) {
-    grid-area: actions;
+    order: 5;
+    flex-basis: 100%;
     margin-top: 10px;
   }
 
