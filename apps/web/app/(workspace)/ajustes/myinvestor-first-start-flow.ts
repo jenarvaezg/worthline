@@ -40,6 +40,7 @@ import {
   readMyInvestorDiscovery,
   serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
+import { logMyInvestorFailure, type MyInvestorServerLog } from "./myinvestor-failure-log";
 import { myInvestorFirstStartView } from "./myinvestor-first-start";
 import {
   type MyInvestorLinkChoice,
@@ -141,6 +142,7 @@ export async function storeMyInvestorDiscovery(
     store: Pick<MyInvestorFirstStartStore, "connectedSources">;
     now: string;
     today: string;
+    log?: MyInvestorServerLog;
   },
   input: { sourceId: string; reader: MyInvestorReader },
 ): Promise<MyInvestorFlowResult> {
@@ -149,6 +151,7 @@ export async function storeMyInvestorDiscovery(
     discovery = await readMyInvestorDiscovery(input.reader, deps.today);
   } catch (error) {
     if (error instanceof MyInvestorSyncError) {
+      logMyInvestorFailure("reading the products", error.error, deps.log);
       return { error: readErrorMessage(error.error.kind), ok: false };
     }
     throw error;
@@ -172,6 +175,7 @@ export async function readMyInvestorProducts(
     clientFor: (deviceId: string) => MyInvestorReadClient;
     now: string;
     today: string;
+    log?: MyInvestorServerLog;
   },
   input: { sourceId: string; typed: MyInvestorCredentials | null },
 ): Promise<MyInvestorFlowResult> {
@@ -185,7 +189,10 @@ export async function readMyInvestorProducts(
 
   const client = deps.clientFor(credentials.deviceId);
   const tokens = await client.loginWithKnownDevice(login);
-  if (!tokens.ok) return { error: readErrorMessage(tokens.error.kind), ok: false };
+  if (!tokens.ok) {
+    logMyInvestorFailure("signing in to read the products", tokens.error, deps.log);
+    return { error: readErrorMessage(tokens.error.kind), ok: false };
+  }
   return storeMyInvestorDiscovery(deps, {
     reader: client.reader(tokens.value),
     sourceId: input.sourceId,

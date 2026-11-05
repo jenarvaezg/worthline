@@ -9882,6 +9882,106 @@ td.rowActions > * {
   text-align: left;
 }
 
+/* En un teléfono la fila se lee como ficha (#1876): seis columnas en 390 px
+   partían las cabeceras letra a letra, porque las acciones no se parten y se
+   comían el ancho. Nombre y estado arriba, «última · elementos · valor» en una
+   línea, las acciones debajo; el pliegue sigue a todo el ancho. Solo cambia la
+   maqueta: el escritorio conserva la tabla. */
+@media (max-width: 640px) {
+  .tableScroll .conexTable {
+    min-width: 0;
+  }
+
+  .conexTable thead {
+    display: none;
+  }
+
+  .conexTable,
+  .conexTable tbody,
+  .conexTable .conexDetailRow,
+  .conexTable .conexDetailRow td {
+    display: block;
+    width: auto;
+  }
+
+  .conexTable .conexRow {
+    display: grid;
+    /* El nombre ocupa la pista flexible, así que su texto no ensancha las tres
+       pistas de la línea de cifras: estas se miden solo por su contenido. */
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name name name name state"
+      "sync count value . ."
+      "actions actions actions actions actions";
+    align-items: baseline;
+    column-gap: 0.5rem;
+    padding-top: 14px;
+  }
+
+  .conexTable .conexRow > td {
+    border-bottom: 0;
+    padding: 0;
+    text-align: left;
+  }
+
+  .conexRow > td:nth-child(1) {
+    grid-area: name;
+  }
+
+  .conexRow > td:nth-child(2) {
+    grid-area: state;
+    max-width: 11rem;
+    text-align: right;
+  }
+
+  .conexRow > td:nth-child(2) .coinStatusPill {
+    white-space: nowrap;
+  }
+
+  .conexRow > td:nth-child(3) {
+    grid-area: sync;
+    margin-top: 6px;
+  }
+
+  .conexRow > td:nth-child(4) {
+    grid-area: count;
+  }
+
+  .conexRow > td:nth-child(5) {
+    grid-area: value;
+  }
+
+  .conexRow > td:nth-child(4)::before,
+  .conexRow > td:nth-child(5)::before {
+    content: "· ";
+    color: var(--muted);
+  }
+
+  .conexRow > td:nth-child(4) .conexSub {
+    display: inline;
+    margin-left: 0.25em;
+  }
+
+  .conexRow > td:nth-child(6) {
+    grid-area: actions;
+    margin-top: 10px;
+  }
+
+  .conexRow > td:nth-child(6):empty {
+    display: none;
+  }
+
+  .conexRow .conexActions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .conexTable .conexDetailRow td {
+    padding-top: 8px;
+    padding-bottom: 14px;
+  }
+}
+
 /* El motivo de una corrida fallida (#1224): un aviso ABIERTO con regla roja a la
    izquierda —misma gramática que .premiumNotice y la Línea del debe—, nunca una
    tarjeta. El cuerpo se queda en tinta y solo la entradilla toma el rojo: --red
