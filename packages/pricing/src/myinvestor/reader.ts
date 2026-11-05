@@ -120,9 +120,29 @@ export function createMyInvestorReader(
     return result.ok ? result : fail({ ...result.error, call: read.call });
   }
 
+  /**
+   * The renewal in flight, shared: reads running at once that all find the access
+   * expired renew it ONCE. MyInvestor rotates the refresh token, so a second
+   * renewal with the same one would be turned down.
+   */
+  let renewing: Promise<MyInvestorResult<MyInvestorTokens>> | null = null;
+
+  async function renew(
+    expired: MyInvestorTokens,
+  ): Promise<MyInvestorResult<MyInvestorTokens>> {
+    if (tokens !== expired) return succeed(tokens);
+    renewing ??= refresh(context, deviceId, expired.refreshToken!).finally(() => {
+      renewing = null;
+    });
+    const fresh = await renewing;
+    if (fresh.ok && tokens === expired) tokens = fresh.value;
+    return fresh.ok ? succeed(tokens) : fresh;
+  }
+
   async function attempt<T>(read: Read<T>): Promise<MyInvestorResult<T>> {
     let renewed = false;
     for (;;) {
+      const sent = tokens;
       const result = await exchange(
         context,
         {
@@ -130,7 +150,7 @@ export function createMyInvestorReader(
           path: read.path,
           ...(read.query ? { query: read.query } : {}),
           headers: {
-            authorization: `Bearer ${tokens.accessToken}`,
+            authorization: `Bearer ${sent.accessToken}`,
             [DEVICE_ID_HEADER]: deviceId,
           },
         },
@@ -140,12 +160,11 @@ export function createMyInvestorReader(
       const answer = result.value;
 
       if (answer.status === 401) {
-        if (renewed || tokens.refreshToken === null) {
+        if (renewed || sent.refreshToken === null) {
           return fail(answerError("session_expired", read.step, answer));
         }
-        const fresh = await refresh(context, deviceId, tokens.refreshToken);
+        const fresh = await renew(sent);
         if (!fresh.ok) return fail(fresh.error);
-        tokens = fresh.value;
         renewed = true;
         continue;
       }

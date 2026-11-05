@@ -331,6 +331,32 @@ describe("refresh", () => {
     expect(reader.tokens().accessToken).not.toBe(TOKENS.accessToken);
   });
 
+  it("reads at once that find the access expired renew it once, and all repeat", async () => {
+    const requests: string[] = [];
+    const transport = {
+      async send(request: { path: string; headers?: Record<string, string> }) {
+        requests.push(request.path);
+        if (request.path === "/login/api/v1/auth/token/refresh") {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return fixtureReply("synthetic/refresh-tokens.json", 201);
+        }
+        return request.headers?.authorization === `Bearer ${TOKENS.accessToken}`
+          ? reply(401, "")
+          : fixtureReply("synthetic/cash-accounts-representative.json");
+      },
+    };
+    const reader = createMyInvestorClient({
+      deviceId: "device-sintetico",
+      sleep: async () => {},
+      transport,
+    }).reader(TOKENS);
+
+    const results = await Promise.all([1, 2, 3, 4].map(() => reader.cashAccounts()));
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(requests.filter((path) => path.endsWith("/token/refresh"))).toHaveLength(1);
+  });
+
   it("a second 401 after renewing is session_expired, not a loop", async () => {
     const { client, transport } = setup([
       reply(401, ""),
