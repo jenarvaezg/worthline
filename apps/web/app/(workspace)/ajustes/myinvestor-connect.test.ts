@@ -23,13 +23,11 @@ import {
 import {
   MYINVESTOR_ALREADY_CONNECTED,
   MYINVESTOR_CODE_REJECTED,
-  MYINVESTOR_DEVICE_LAPSED,
   MYINVESTOR_LOGIN_ERRORS,
   MYINVESTOR_MAX_CODE_ATTEMPTS,
   MYINVESTOR_PENDING_EXPIRED,
   MYINVESTOR_REENTER_BUSY,
   MYINVESTOR_REENTER_PAUSED,
-  MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
 } from "./myinvestor-copy";
 import { readMyInvestorPending } from "./myinvestor-credentials";
@@ -314,7 +312,7 @@ describe("the password of a connected row", () => {
     return (await store.connectedSources.listSources())[0]!.id;
   }
 
-  test("saving it checks it with MyInvestor on the known device, with no SMS", async () => {
+  test("saving it asks MyInvestor nothing: no login, no SMS", async () => {
     const sourceId = await connected();
     const client = knownDeviceClient();
 
@@ -325,10 +323,8 @@ describe("the password of a connected row", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(client.loginWithKnownDevice).toHaveBeenCalledWith({
-      customerId: "12345678A",
-      password: "secret",
-    });
+    expect(client.login).not.toHaveBeenCalled();
+    expect(client.loginWithKnownDevice).not.toHaveBeenCalled();
     expect(client.startCode).not.toHaveBeenCalled();
     expect(await storedCredentials()).toEqual({
       acceptance: { acceptedAt: NOW, acceptedBy: "titular@example.com" },
@@ -336,40 +332,6 @@ describe("the password of a connected row", () => {
       deviceId: "device-1",
       password: "secret",
     });
-  });
-
-  test("a rejected password is not saved", async () => {
-    const sourceId = await connected();
-    const client = {
-      ...knownDeviceClient(),
-      loginWithKnownDevice: vi.fn(async () => failure<never>("password_rejected")),
-    };
-
-    const result = await saveMyInvestorPassword(deps(client), {
-      customerId: "12345678A",
-      password: "wrong",
-      sourceId,
-    });
-
-    expect(result).toEqual({ error: MYINVESTOR_SAVE_REJECTED, ok: false });
-    expect(await storedCredentials()).toEqual({ deviceId: "device-1" });
-  });
-
-  test("a device MyInvestor no longer trusts asks to reconnect instead of sending an SMS", async () => {
-    const sourceId = await connected();
-    const client = {
-      ...knownDeviceClient(),
-      loginWithKnownDevice: vi.fn(async () => failure<never>("sms_required")),
-    };
-
-    const result = await saveMyInvestorPassword(deps(client), {
-      customerId: "12345678A",
-      password: "secret",
-      sourceId,
-    });
-
-    expect(result).toEqual({ error: MYINVESTOR_DEVICE_LAPSED, ok: false });
-    expect(client.startCode).not.toHaveBeenCalled();
   });
 
   test("forgetting it leaves only the device, at once", async () => {

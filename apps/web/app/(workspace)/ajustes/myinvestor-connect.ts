@@ -31,7 +31,6 @@ import type {
 import {
   MYINVESTOR_ALREADY_CONNECTED,
   MYINVESTOR_CODE_REJECTED,
-  MYINVESTOR_DEVICE_LAPSED,
   MYINVESTOR_LOGIN_ERRORS,
   MYINVESTOR_MAX_CODE_ATTEMPTS,
   MYINVESTOR_NOT_FOUND,
@@ -39,7 +38,6 @@ import {
   MYINVESTOR_PENDING_TTL_MINUTES,
   MYINVESTOR_REENTER_BUSY,
   MYINVESTOR_REENTER_PAUSED,
-  MYINVESTOR_SAVE_REJECTED,
   MYINVESTOR_TOO_MANY_CODES,
 } from "./myinvestor-copy";
 import {
@@ -441,33 +439,21 @@ async function readConnection(store: MyInvestorFlowStore, sourceId: string) {
 }
 
 /**
- * Remember the password on a connected row (decision 1). It is checked with
- * MyInvestor on the device it already trusts, so no SMS is sent; only an accepted
- * password is written, with who accepted the risk and when.
+ * Remember the password on a connected row (decision 1), with who accepted the
+ * risk and when. MyInvestor is not asked: nothing is sent, not even a login.
  */
 export async function saveMyInvestorPassword(
-  deps: MyInvestorFlowDeps,
+  deps: Pick<MyInvestorFlowDeps, "acceptedBy" | "now" | "store">,
   input: MyInvestorCredentials & { sourceId: string },
 ): Promise<MyInvestorResultMessage> {
   const connection = await readConnection(deps.store, input.sourceId);
   if (!connection) return { error: MYINVESTOR_NOT_FOUND, ok: false };
 
+  // Saved WITHOUT a login: checking it was one more login against MyInvestor's
+  // rate limit, and after a few in a row it answers SECURITY_001 and the password
+  // never got saved. The first pass that signs in checks it, and a rejected
+  // password is deleted there (myinvestor-sync.ts).
   const { deviceId } = connection.credentials;
-  const login = await deps.clientFor(deviceId).loginWithKnownDevice({
-    customerId: input.customerId,
-    password: input.password,
-  });
-  if (!login.ok) {
-    switch (login.error.kind) {
-      case "password_rejected":
-        return { error: MYINVESTOR_SAVE_REJECTED, ok: false };
-      case "sms_required":
-        return { error: MYINVESTOR_DEVICE_LAPSED, ok: false };
-      default:
-        return { error: loginErrorMessage(login.error.kind), ok: false };
-    }
-  }
-
   await deps.store.updateCredentials(
     input.sourceId,
     serializeMyInvestorCredentials({
