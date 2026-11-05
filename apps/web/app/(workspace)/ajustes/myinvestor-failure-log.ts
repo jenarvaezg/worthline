@@ -4,8 +4,9 @@
  * how — a 5xx retried four times and a schema MyInvestor changed both end in «No
  * hemos podido leer tus productos».
  *
- * Only the typed error goes out: its kind, the step, the HTTP status, MyInvestor's
- * code (already reduced to a safe token by the client) and the attempts. Never the
+ * Only the typed error goes out: its kind, the step, the reader's call, the account
+ * type, the HTTP status, MyInvestor's code (already reduced to a safe token by the
+ * client) and the attempts. Never the
  * customer, the device, a path with an account id, nor a body.
  */
 import type { MyInvestorError } from "@worthline/pricing";
@@ -21,7 +22,9 @@ export function logMyInvestorFailure(
   log: MyInvestorServerLog = console.error,
 ): void {
   log(`[myinvestor] ${where} failed`, {
+    accountType: error.accountType ?? null,
     attempts: error.attempts,
+    call: error.call ?? null,
     code: error.code,
     httpStatus: error.httpStatus,
     kind: error.kind,
