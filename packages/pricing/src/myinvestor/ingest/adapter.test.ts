@@ -327,6 +327,26 @@ describe("the MyInvestor adapter", () => {
     });
   });
 
+  it("the broker's years and details go four at a time, never more", async () => {
+    const fixtures = fixtureTransport();
+    let inFlight = 0;
+    let most = 0;
+    const adapter = adapterOn({
+      async send(request) {
+        if (!/\/stock-orders/.test(request.path)) return fixtures.send(request);
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return fixtures.send(request);
+      },
+    });
+
+    await adapter.fetch({ capability: "fetch_transactions", cursor: null });
+
+    expect(most).toBe(4);
+  });
+
   it("cuts a range into calendar years, and leaves one inside a year as it is", () => {
     expect(calendarYearWindows({ from: "2024-03-10", to: "2026-02-01" })).toEqual([
       { from: "2024-03-10", to: "2024-12-31" },

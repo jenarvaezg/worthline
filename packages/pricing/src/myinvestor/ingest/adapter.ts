@@ -130,8 +130,8 @@ function securitiesLabel(account: MyInvestorSecuritiesAccountSummary): string {
     : "Cuenta de valores";
 }
 
-/** Broker order details asked at once (see `transactions`). */
-const DETAIL_CONCURRENCY = 4;
+/** Broker reads asked at once, as a browser would (see `transactions`). */
+const CONCURRENT_READS = 4;
 
 /** `run` over `items`, `size` at a time, the results in the items' order. */
 async function inBatches<T, R>(
@@ -189,13 +189,17 @@ export function createMyInvestorAdapter(
         accounts.push({ accountId, product: "fund", orders });
       }
       if (summary.hasBrokerOperations !== false) {
+        // Each year takes MyInvestor a second or more, even an empty one, and the
+        // first sync asks 27 of them: four at a time, like the details.
         const listed: MyInvestorBrokerOrder[] = [];
         const seen = new Set<string>();
-        for (const year of calendarYearWindows(range)) {
-          const orders = unwrap(
-            ofAccount(await reader.brokerOrders(summary.accountId, year), summary),
-          );
-          for (const order of orders) {
+        const years = await inBatches(
+          calendarYearWindows(range),
+          CONCURRENT_READS,
+          (year) => reader.brokerOrders(summary.accountId, year),
+        );
+        for (const year of years) {
+          for (const order of unwrap(ofAccount(year, summary))) {
             if (seen.has(order.id)) continue;
             seen.add(order.id);
             listed.push(order);
@@ -205,7 +209,7 @@ export function createMyInvestorAdapter(
         // detail. A long history has a hundred of them: asked four at a time, as a
         // browser would, or the first sync outlasts the cron's 60 s.
         const finished = listed.filter((order) => order.status === "COMPLETE");
-        const details = await inBatches(finished, DETAIL_CONCURRENCY, (order) =>
+        const details = await inBatches(finished, CONCURRENT_READS, (order) =>
           reader.brokerOrderDetail(order.id),
         );
         for (const detail of details) {
