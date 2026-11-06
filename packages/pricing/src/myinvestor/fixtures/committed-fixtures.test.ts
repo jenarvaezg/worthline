@@ -188,7 +188,7 @@ describe("committed MyInvestor fixtures", () => {
           "INTERNAL_TRANSFER_SUBSCRIPTION",
         ],
         [
-          "INVESTMENT_FUNDS_REIMBURSEMENT",
+          "INVESTMENT_FUND_REIMBURSEMENT",
           "IIC_SWITCH_DEREGISTRATION",
           "INTERNAL_TRANSFER_REIMBURSEMENT",
         ],
