@@ -133,6 +133,44 @@ describe("refreshing the stored read with the window just read", () => {
     expect(refreshed.contributions).toEqual([]);
   });
 
+  test("a product sold before the window stays offered, at 0, with its history", () => {
+    const previous = discovery(
+      [
+        op("bought", B, { executedAt: "2025-03-03" }),
+        op("sold", B, { executedAt: "2025-06-18", operation: "sell" }),
+      ],
+      [fund(A, "1"), fund(B, "0")],
+    );
+    const reads = {
+      cashAccounts: [],
+      operations: [op("recent", A, { executedAt: "2026-10-20" })],
+      pensions: [],
+      readOn: "2026-11-04",
+      securities: [
+        {
+          account: { positions: [] },
+          summary: {
+            accountId: "1",
+            accountType: "SECURITIES_ACCOUNT",
+            cashAccountId: null,
+          },
+        },
+      ],
+    } as unknown as MyInvestorDiscoveryReads;
+
+    const refreshed = refreshMyInvestorDiscovery(previous, reads);
+
+    expect(refreshed.products.map((product) => [product.key, product.units])).toEqual([
+      [keyOf(B), "0"],
+      [keyOf(A), "0"],
+    ]);
+    expect(refreshed.operations.map((fact) => fact.key)).toEqual([
+      "bought",
+      "sold",
+      "recent",
+    ]);
+  });
+
   test("with no stored read, the window is the history", () => {
     const reads: MyInvestorDiscoveryReads = {
       cashAccounts: [],
