@@ -105,7 +105,9 @@ export interface MyInvestorTypeRule {
  */
 export const MYINVESTOR_TYPE_RULES: Readonly<Record<string, MyInvestorTypeRule>> = {
   INVESTMENT_FUNDS_SUBSCRIPTION: { operation: "buy", product: "fund", transfer: null },
-  INVESTMENT_FUNDS_REIMBURSEMENT: { operation: "sell", product: "fund", transfer: null },
+  // FUND, singular: the sale is the one type MyInvestor does not spell like its
+  // subscription (`INVESTMENT_FUNDS_…`). Read off a real account (#1876).
+  INVESTMENT_FUND_REIMBURSEMENT: { operation: "sell", product: "fund", transfer: null },
   PLAN_CONTRIBUTION: { operation: "buy", product: "pension_plan", transfer: null },
   IIC_SWITCH_DEREGISTRATION: {
     operation: "transfer_out",

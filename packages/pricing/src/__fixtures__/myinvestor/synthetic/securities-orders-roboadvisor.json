@@ -34,7 +34,7 @@
         "isin": "LU00SINTET32",
         "ticker": "LU00SINTET32",
         "fundName": "FONDO SINTETICO MATERIAS PRIMAS",
-        "operationType": "INVESTMENT_FUNDS_REIMBURSEMENT",
+        "operationType": "INVESTMENT_FUND_REIMBURSEMENT",
         "cash": 52.07,
         "status": "COMPLETE",
         "orderType": "ORDINARY",

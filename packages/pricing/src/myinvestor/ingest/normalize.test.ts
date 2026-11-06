@@ -254,17 +254,20 @@ describe("the vocabulary of the investment commands", () => {
     expect(fact?.instrument).toEqual({ scheme: "dgs", code: "N0001" });
   });
 
-  it("a fund reimbursement is a sell", () => {
-    const [fact] = operations([
-      fundAccount([order({ operationType: "INVESTMENT_FUNDS_REIMBURSEMENT" })]),
-    ]);
+  it("a fund reimbursement is a sell, as MyInvestor spells it: FUND, singular", () => {
+    const skipped: MyInvestorSkippedOrder[] = [];
+    const [fact] = operations(
+      [fundAccount([order({ operationType: "INVESTMENT_FUND_REIMBURSEMENT" })])],
+      (entry) => skipped.push(entry),
+    );
     expect(fact?.operation).toBe("sell");
+    expect(skipped).toEqual([]);
   });
 
   it("units are always positive; the operation says which way they move", () => {
     const [fact] = operations([
       fundAccount([
-        order({ operationType: "INVESTMENT_FUNDS_REIMBURSEMENT", shares: "-3.5" }),
+        order({ operationType: "INVESTMENT_FUND_REIMBURSEMENT", shares: "-3.5" }),
       ]),
     ]);
     expect(fact?.units).toBe("3.5");
