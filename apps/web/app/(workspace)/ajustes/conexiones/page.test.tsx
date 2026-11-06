@@ -22,6 +22,7 @@ const calls = vi.hoisted(() => ({
       lease: null;
       pausedUntil: string | null;
       stoppedReason: string | null;
+      unitsCheckJson?: string | null;
     } | null> => null,
   ),
   // MyInvestor's attempt log as data health reads it (#1885); empty by default.
@@ -832,5 +833,45 @@ describe("MyInvestor en Conexiones (#1879, variante A)", () => {
     // «Poner al día» where the other sources say «Sincronizar» (#1884).
     expect(html).toContain("myinvestorSyncRow");
     expect(html).toContain("Poner al día");
+    // Nothing fails to square: no full resync on offer.
+    expect(html).not.toContain("Resincronizar todo");
+  });
+
+  test("con las participaciones descuadradas, «Resincronizar todo» está en la fila", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      {
+        ...myInvestorSource(JSON.stringify({ deviceId: "device-1" })),
+        lastSyncAt: new Date().toISOString(),
+      },
+    ]);
+    calls.listSourceAssetIds.mockResolvedValueOnce(["asset_cash"]);
+    calls.readDiscovery.mockResolvedValueOnce({
+      payloadJson: DISCOVERY,
+      readOn: "2026-11-04",
+    });
+    calls.readLinks.mockResolvedValueOnce([
+      { assetId: "asset_cash", productKey: "cash:1" },
+    ]);
+    calls.readSyncState.mockResolvedValueOnce({
+      lastOutcomeJson: null,
+      lease: null,
+      pausedUntil: null,
+      stoppedReason: null,
+      unitsCheckJson: JSON.stringify([
+        {
+          assetId: "asset_fondo",
+          bookUnits: "62",
+          difference: "-62",
+          productKey: "securities:1|isin:ES0000000001",
+          sourceUnits: "0",
+        },
+      ]),
+    });
+
+    const html = await render();
+
+    expect(html).toMatch(
+      /<button(?=[^>]*name="fullHistory")(?=[^>]*value="1")[^>]*>Resincronizar todo<\/button>/,
+    );
   });
 });

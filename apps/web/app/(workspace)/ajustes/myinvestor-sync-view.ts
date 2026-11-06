@@ -367,7 +367,7 @@ function outcomeView(outcome: MyInvestorSyncOutcome, now: string): MyInvestorRes
       return outcome.mismatches > 0
         ? {
             blockedLine: null,
-            text: `${head} Las participaciones no cuadran: lo tienes en los avisos, con «${MYINVESTOR_RESYNC_LABEL}».`,
+            text: `${head} Las participaciones no cuadran: pulsa «${MYINVESTOR_RESYNC_LABEL}».`,
             tone: "warn",
           }
         : { blockedLine: null, text: head, tone: "ok" };

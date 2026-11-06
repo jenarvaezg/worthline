@@ -188,7 +188,7 @@ export default function MyInvestorSyncPanel(props: MyInvestorSyncPanelProps) {
               ? "Poner al día ahora"
               : "Poner al día"}
         </button>
-        {props.resync && !compact ? (
+        {props.resync ? (
           <button
             className="btnSecondary"
             disabled={pending || props.readOnly}
