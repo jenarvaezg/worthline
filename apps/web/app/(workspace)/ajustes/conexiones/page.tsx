@@ -4,6 +4,7 @@ import {
 } from "@web/ajustes/myinvestor-credentials";
 import { loadMyInvestorFirstStart } from "@web/ajustes/myinvestor-first-start-flow";
 import { isMyInvestorRelayConfigured } from "@web/ajustes/myinvestor-relay";
+import { parseMyInvestorUnitsCheck } from "@web/ajustes/myinvestor-sync-outcome";
 import {
   myInvestorConnectionNotices,
   myInvestorHealthEntries,
@@ -171,6 +172,10 @@ export async function ConexionesContent({
       ),
       stopped: myInvestorStandingNow.stop !== null,
       readOnly: writeBlocked || sourcesGated,
+      // Some linked holding's units do not square (P8): «Resincronizar todo» right
+      // here, where the notice is read, not only in each holding's ficha.
+      resync:
+        parseMyInvestorUnitsCheck(myInvestorSyncState?.unitsCheckJson ?? null).length > 0,
       standing: myInvestorStandingNow,
     },
     savedPassword:

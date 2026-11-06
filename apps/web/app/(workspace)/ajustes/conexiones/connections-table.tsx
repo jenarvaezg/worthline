@@ -85,6 +85,8 @@ export interface MyInvestorTableContext {
     notices: readonly MyInvestorBandEntry[];
     /** The daily sync is stopped (the SMS, the rejected saved password): enter again. */
     stopped: boolean;
+    /** Some linked holding's units do not square: offer «Resincronizar todo». */
+    resync: boolean;
   };
 }
 
@@ -268,7 +270,7 @@ export default function ConnectionsTable({
                               lastLine={null}
                               layout="row"
                               readOnly={myInvestor.sync.readOnly}
-                              resync={false}
+                              resync={myInvestor.sync.resync}
                               runningSince={
                                 myInvestor.sync.standing.running?.since ?? null
                               }
