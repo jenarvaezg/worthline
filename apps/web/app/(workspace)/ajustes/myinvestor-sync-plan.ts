@@ -61,18 +61,33 @@ function byDayThenKey(left: OperationFact, right: OperationFact): number {
  * Today's read over the stored one. The window replaces what it covers by key; what
  * lies before the window stays as it was read. With no stored read, the window is
  * the history — the caller then reads the whole of it (cursor null).
+ *
+ * The products are built over the WHOLE merged history, not the window: a product
+ * sold before the window has no position and no order in it, and built from the
+ * window alone it would drop off the fold — and with it the other half of an old
+ * traspaso, which «Incluir» needs to link with its pair (#1393).
  */
 export function refreshMyInvestorDiscovery(
   previous: MyInvestorDiscovery | null,
   reads: MyInvestorDiscoveryReads,
 ): MyInvestorDiscovery {
-  const today = buildMyInvestorDiscovery(reads);
-  const windowKeys = new Set(today.operations.map((fact) => fact.key));
+  const windowKeys = new Set(reads.operations.map((fact) => fact.key));
   const kept = (previous?.operations ?? []).filter((fact) => !windowKeys.has(fact.key));
-  return {
-    ...today,
-    operations: [...kept, ...today.operations].sort(byDayThenKey),
-  };
+  return buildMyInvestorDiscovery({
+    ...reads,
+    operations: [...kept, ...operationFactsOf(reads.operations)].sort(byDayThenKey),
+  });
+}
+
+/** The operation facts of a read: positions and balances ride other paths. */
+function operationFactsOf(
+  facts: MyInvestorDiscoveryReads["operations"],
+): OperationFact[] {
+  return facts.flatMap((fact) =>
+    fact.payload.kind === "operation"
+      ? [{ dateKey: fact.dateKey, key: fact.key, payload: fact.payload }]
+      : [],
+  );
 }
 
 /** One linked holding of the source: which product it is (#1880). */
