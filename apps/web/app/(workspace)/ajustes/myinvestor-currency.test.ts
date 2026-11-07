@@ -3,18 +3,25 @@
  * its orders in the fund's class currency, and worthline writes them as it writes any
  * apunte captured outside the euro — in EUR at the ECB rate of their own day, with the
  * original apunte kept as the operation's `capture`. The holding is EUR, like every
- * holding. The conversion happens in the ONE fold the first start shows, the inclusion
- * writes and the sync applies (#1438); a missing rate never becomes a figure.
+ * holding.
+ *
+ * The rates are asked when MyInvestor is read and kept WITH the read (`fxRates`), so
+ * the first start's fold, the inclusion and the sync convert with exactly the same
+ * ones (#1438) and the Conexiones page reads only the store. A missing rate never
+ * becomes a figure, and a traspaso waits whole.
  * Hand-built facts, so each case states the figures it proves.
  */
-import { createFxRateSnapshot, derivePosition } from "@worthline/domain";
+import type { FxRatePoint } from "@worthline/domain";
+import { derivePosition } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { describe, expect, test } from "vitest";
 
 import { myInvestorRowNotes } from "./conexiones/myinvestor-first-start-view";
-import type {
-  MyInvestorDiscoveredProduct,
-  MyInvestorDiscovery,
+import {
+  type MyInvestorDiscoveredProduct,
+  type MyInvestorDiscovery,
+  parseMyInvestorDiscovery,
+  serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
 import { myInvestorFirstStartView } from "./myinvestor-first-start";
 import { planMyInvestorInclusion } from "./myinvestor-inclusion-plan";
@@ -22,6 +29,7 @@ import {
   foldMyInvestorOperations,
   myInvestorOperationId,
 } from "./myinvestor-operations-fold";
+import { withMyInvestorRates } from "./myinvestor-rates";
 import { isIncludable } from "./myinvestor-selection";
 import { planMyInvestorSync } from "./myinvestor-sync-plan";
 import { findMyInvestorTwins } from "./myinvestor-twins";
@@ -33,16 +41,16 @@ const EURO_FUND = "IE0000000058";
 const DOLLAR_FUND = "IE0000000047";
 
 const keyOf = (isin: string) => `${ROBO}|isin:${isin}`;
+const idOf = (factKey: string) => myInvestorOperationId(SOURCE, factKey);
 
-/** One dollar is worth 0,90 € every day of these cases. */
-const RATES = createFxRateSnapshot({
+/** What the ECB said when MyInvestor was read: 0,90 € or 0,80 € the dollar. */
+const USD_RATES: Record<string, FxRatePoint[]> = {
   USD: [
     { dateKey: "2025-03-10", eurPerUnit: 0.9 },
     { dateKey: "2025-07-15", eurPerUnit: 0.8 },
     { dateKey: "2026-10-20", eurPerUnit: 0.9 },
   ],
-});
-const NO_RATES = createFxRateSnapshot({});
+};
 
 function op(
   reference: string,
@@ -87,7 +95,10 @@ function member(isin: string, name: string, units: string): MyInvestorDiscovered
   };
 }
 
-function robo(operations: ReturnType<typeof op>[]): MyInvestorDiscovery {
+function robo(
+  operations: ReturnType<typeof op>[],
+  fxRates: Record<string, FxRatePoint[]> | null = USD_RATES,
+): MyInvestorDiscovery {
   return {
     accounts: [
       {
@@ -98,6 +109,7 @@ function robo(operations: ReturnType<typeof op>[]): MyInvestorDiscovery {
         sub: "Roboadvisor · cuenta de valores ···0009",
       },
     ],
+    ...(fxRates ? { fxRates } : {}),
     operations,
     products: [
       {
@@ -145,12 +157,35 @@ const DOLLAR_BUY = op("d1", DOLLAR_FUND, {
   units: "10",
 });
 
-function view(d: MyInvestorDiscovery, rates = RATES) {
+/** A traspaso from the euro fund into the dollar class, on a day of the read. */
+function switchIntoDollars(day: string) {
+  const transferId = "myinvestor-transfer:s-out:s-in";
+  return [
+    op("s-out", EURO_FUND, {
+      amount: "40.00",
+      executedAt: day,
+      operation: "transfer_out",
+      sourceType: "IIC_SWITCH_DEREGISTRATION",
+      transfer: { counterpartKey: "s-in", pairing: "paired", transferId },
+      units: "2",
+    }),
+    op("s-in", DOLLAR_FUND, {
+      amount: "44.00",
+      currency: "USD",
+      executedAt: day,
+      operation: "transfer_in",
+      sourceType: "IIC_SWITCH_REGISTRATION",
+      transfer: { counterpartKey: "s-out", pairing: "paired", transferId },
+      units: "4",
+    }),
+  ];
+}
+
+function view(d: MyInvestorDiscovery) {
   const linkedKeys = new Set<string>();
   return myInvestorFirstStartView(d, {
     ledgers: new Map(),
     linkedKeys,
-    rates,
     sourceId: SOURCE,
     today: "2026-11-04",
     twins: findMyInvestorTwins(d, { linkedKeys, manual: [] }),
@@ -159,7 +194,7 @@ function view(d: MyInvestorDiscovery, rates = RATES) {
 
 describe("the fold writes a dollar order in euros, keeping the dollars", () => {
   test("its price is the dollar price at the ECB rate of its day; the capture keeps the order", () => {
-    const fold = foldMyInvestorOperations(robo([EURO_BUY, DOLLAR_BUY]), SOURCE, RATES);
+    const fold = foldMyInvestorOperations(robo([EURO_BUY, DOLLAR_BUY]), SOURCE);
 
     const [dollar] = fold.rows.get(keyOf(DOLLAR_FUND))!;
     expect(dollar).toMatchObject({
@@ -174,7 +209,7 @@ describe("the fold writes a dollar order in euros, keeping the dollars", () => {
   });
 
   test("a euro order goes through untouched, with no capture", () => {
-    const fold = foldMyInvestorOperations(robo([EURO_BUY]), SOURCE, NO_RATES);
+    const fold = foldMyInvestorOperations(robo([EURO_BUY], null), SOURCE);
     const [euro] = fold.rows.get(keyOf(EURO_FUND))!;
     expect(euro).toMatchObject({ currency: "EUR", pricePerUnit: "20" });
     expect(euro!.capture).toBeUndefined();
@@ -194,7 +229,7 @@ describe("the fold writes a dollar order in euros, keeping the dollars", () => {
       },
       units: "5",
     });
-    const fold = foldMyInvestorOperations(robo([entry]), SOURCE, RATES);
+    const fold = foldMyInvestorOperations(robo([entry]), SOURCE);
     const [row] = fold.rows.get(keyOf(DOLLAR_FUND))!;
     // 50 US$ a 0,80 €: 40 €, never 50 «€».
     expect(row).toMatchObject({
@@ -204,35 +239,53 @@ describe("the fold writes a dollar order in euros, keeping the dollars", () => {
     });
   });
 
-  test("with no ECB rate for its day, the order is left out and its day named", () => {
+  test("with no ECB rate for its day, the order is left out and its product named", () => {
     const later = op("d2", DOLLAR_FUND, {
       amount: "30.00",
       currency: "USD",
       executedAt: "2025-09-01",
       units: "3",
     });
-    const fold = foldMyInvestorOperations(
-      robo([EURO_BUY, DOLLAR_BUY, later]),
-      SOURCE,
-      RATES,
-    );
-    expect(fold.rows.get(keyOf(DOLLAR_FUND))!.map((row) => row.id)).toEqual([
-      myInvestorOperationId(SOURCE, "d1"),
-    ]);
-    expect(fold.missingRates).toEqual(new Map([[keyOf(DOLLAR_FUND), "2025-09-01"]]));
+    const fold = foldMyInvestorOperations(robo([EURO_BUY, DOLLAR_BUY, later]), SOURCE);
+    expect(fold.rows.get(keyOf(DOLLAR_FUND))!.map((row) => row.id)).toEqual([idOf("d1")]);
+    expect(fold.missingRates).toEqual(new Set([keyOf(DOLLAR_FUND)]));
   });
 
   test("a currency worthline cannot capture is never written", () => {
     const yen = op("y1", DOLLAR_FUND, { amount: "1000", currency: "JPY", units: "1" });
-    const fold = foldMyInvestorOperations(robo([yen]), SOURCE, RATES);
+    const fold = foldMyInvestorOperations(robo([yen]), SOURCE);
     expect(fold.rows.get(keyOf(DOLLAR_FUND)) ?? []).toEqual([]);
+  });
+
+  test("a traspaso waits whole: with no rate for its dollar leg, its euro leg waits too", () => {
+    const fold = foldMyInvestorOperations(
+      robo([EURO_BUY, DOLLAR_BUY, ...switchIntoDollars("2025-09-01")]),
+      SOURCE,
+    );
+    expect(fold.rows.get(keyOf(EURO_FUND))!.map((row) => row.id)).toEqual([idOf("e1")]);
+    expect(fold.rows.get(keyOf(DOLLAR_FUND))!.map((row) => row.id)).toEqual([idOf("d1")]);
+    expect(fold.missingRates).toEqual(new Set([keyOf(EURO_FUND), keyOf(DOLLAR_FUND)]));
+  });
+
+  test("after a leg that waits, the rest of its holding waits behind it", () => {
+    // A later buy of the euro fund would otherwise be folded on a ledger missing the
+    // way out, and the cost a later traspaso carries would move when it lands.
+    const laterEuro = op("e2", EURO_FUND, {
+      amount: "21.00",
+      executedAt: "2025-10-01",
+      units: "1",
+    });
+    const fold = foldMyInvestorOperations(
+      robo([EURO_BUY, ...switchIntoDollars("2025-09-01"), laterEuro]),
+      SOURCE,
+    );
+    expect(fold.rows.get(keyOf(EURO_FUND))!.map((row) => row.id)).toEqual([idOf("e1")]);
   });
 });
 
 describe("the robo-advisor's block with a dollar fund", () => {
   test("it can be included: no currency block, and its value is in euros", () => {
-    const v = view(robo([EURO_BUY, DOLLAR_BUY]));
-    const [row] = v.rows;
+    const [row] = view(robo([EURO_BUY, DOLLAR_BUY])).rows;
     expect(row).toMatchObject({ block: null, key: BLOCK, selectedByDefault: true });
     expect(isIncludable(row!)).toBe(true);
     // 80 € + 90 € (100 US$) + 3,21 € of cash.
@@ -240,14 +293,13 @@ describe("the robo-advisor's block with a dollar fund", () => {
     expect(myInvestorRowNotes(row!, String)).toEqual([]);
   });
 
-  test("with no ECB rate, the block waits and says which day, never a figure", () => {
-    const v = view(robo([EURO_BUY, DOLLAR_BUY]), NO_RATES);
-    const [row] = v.rows;
-    expect(row!.block).toEqual({ date: "2025-03-10", reason: "rate_missing" });
+  test("with no ECB rate in the read, the block waits for the next read, never a figure", () => {
+    const [row] = view(robo([EURO_BUY, DOLLAR_BUY], null)).rows;
+    expect(row!.block).toEqual({ reason: "rate_missing" });
     expect(isIncludable(row!)).toBe(false);
     expect(row!.selectedByDefault).toBe(false);
     expect(myInvestorRowNotes(row!, String)).toEqual([
-      "Falta el tipo de cambio del BCE del 10/03: vuelve a probar mañana",
+      "No pudimos traer el tipo de cambio del BCE al leer MyInvestor: se completará en la próxima puesta al día",
     ]);
   });
 
@@ -262,16 +314,14 @@ describe("the robo-advisor's block with a dollar fund", () => {
 
   test("including it writes the dollar fund's operations in euros, with their capture", () => {
     const d = robo([EURO_BUY, DOLLAR_BUY]);
-    const v = view(d);
     const plan = planMyInvestorInclusion(d, {
       assetIdFor: (key) => `new:${key}`,
       ownership: [{ memberId: "m", shareBps: 10_000 }],
       productKeys: [BLOCK],
-      rates: RATES,
       sourceId: SOURCE,
       symbols: new Map(),
       today: "2026-11-04",
-      view: v,
+      view: view(d),
     });
     expect(plan.ok).toBe(true);
     if (!plan.ok) return;
@@ -306,12 +356,13 @@ describe("the daily sync of a dollar fund", () => {
     executedAt: "2026-10-20",
     units: "2",
   });
+  const inBook = (...keys: string[]) => new Set(keys.map(idOf));
 
   test("a new dollar order is applied in euros with its capture", () => {
     const plan = planMyInvestorSync(robo([EURO_BUY, DOLLAR_BUY, NEW_DOLLAR]), {
+      bookIds: inBook("e1", "d1"),
       cursor: "2026-11-04",
       links,
-      rates: RATES,
       sourceId: SOURCE,
       windowKeys: new Set(["d9"]),
     });
@@ -324,26 +375,138 @@ describe("the daily sync of a dollar fund", () => {
   });
 
   test("with no rate it waits; the rest of the pass is applied", () => {
-    const plan = planMyInvestorSync(robo([EURO_BUY, DOLLAR_BUY, NEW_DOLLAR, NEW_EURO]), {
-      cursor: "2026-11-04",
-      links,
-      rates: NO_RATES,
-      sourceId: SOURCE,
-      windowKeys: new Set(["d9", "e9"]),
-    });
+    const plan = planMyInvestorSync(
+      robo([EURO_BUY, DOLLAR_BUY, NEW_DOLLAR, NEW_EURO], { USD: [] }),
+      {
+        bookIds: inBook("e1", "d1"),
+        cursor: "2026-11-04",
+        links,
+        sourceId: SOURCE,
+        windowKeys: new Set(["d9", "e9"]),
+      },
+    );
     expect(plan.facts.facts.map((fact) => fact.key)).toEqual(["e9"]);
   });
 
-  test("an order that waited is planned again once its day falls out of the window", () => {
-    // The ledger drops whatever was already applied: a dollar order is asked about
-    // until it lands, so a long ECB gap cannot lose it behind the cursor.
+  test("an order that waited is planned once its rate is in, out of the window too", () => {
+    // Only what the book lacks: what already landed is not asked about again.
     const plan = planMyInvestorSync(robo([EURO_BUY, DOLLAR_BUY, NEW_DOLLAR, NEW_EURO]), {
+      bookIds: inBook("e1", "d1", "e9"),
       cursor: "2026-12-20",
       links,
-      rates: RATES,
       sourceId: SOURCE,
       windowKeys: new Set(),
     });
-    expect(plan.facts.facts.map((fact) => fact.key).sort()).toEqual(["d1", "d9"]);
+    expect(plan.facts.facts.map((fact) => fact.key)).toEqual(["d9"]);
+  });
+
+  test("a traspaso into dollars with the ECB down: no leg reaches the book alone", () => {
+    const plan = planMyInvestorSync(
+      robo([EURO_BUY, DOLLAR_BUY, ...switchIntoDollars("2026-10-21")], { USD: [] }),
+      {
+        bookIds: inBook("e1", "d1"),
+        cursor: "2026-11-04",
+        links,
+        sourceId: SOURCE,
+        windowKeys: new Set(["s-out", "s-in"]),
+      },
+    );
+    expect(plan.facts.facts).toEqual([]);
+  });
+
+  test("a traspaso that waited lands whole once its rate is in, out of the window too", () => {
+    const rates = {
+      USD: [...USD_RATES.USD!, { dateKey: "2026-10-21", eurPerUnit: 0.9 }],
+    };
+    const plan = planMyInvestorSync(
+      robo([EURO_BUY, DOLLAR_BUY, ...switchIntoDollars("2026-10-21")], rates),
+      {
+        bookIds: inBook("e1", "d1"),
+        cursor: "2026-12-20",
+        links,
+        sourceId: SOURCE,
+        windowKeys: new Set(),
+      },
+    );
+    expect(plan.facts.facts.map((fact) => fact.key).sort()).toEqual(["s-in", "s-out"]);
+  });
+
+  test("an account in euros only plans its window, as before", () => {
+    const plan = planMyInvestorSync(robo([EURO_BUY, NEW_EURO], null), {
+      bookIds: inBook(),
+      cursor: "2026-11-04",
+      links,
+      sourceId: SOURCE,
+      windowKeys: new Set(["e9"]),
+    });
+    expect(plan.facts.facts.map((fact) => fact.key)).toEqual(["e9"]);
+  });
+});
+
+describe("the rates travel with the read", () => {
+  test("a read stored before the rates existed still parses", () => {
+    const old = robo([EURO_BUY], null);
+    const parsed = parseMyInvestorDiscovery(serializeMyInvestorDiscovery(old));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.fxRates).toBeUndefined();
+  });
+
+  test("a read keeps its rates through the store", () => {
+    const parsed = parseMyInvestorDiscovery(
+      serializeMyInvestorDiscovery(robo([EURO_BUY, DOLLAR_BUY])),
+    );
+    expect(parsed!.fxRates).toEqual(USD_RATES);
+  });
+
+  test("the ECB is asked only for the days of orders in another currency it lacks", async () => {
+    const asked: string[] = [];
+    const later = op("d2", DOLLAR_FUND, {
+      amount: "30.00",
+      currency: "USD",
+      executedAt: "2025-09-01",
+      units: "3",
+    });
+    const read = await withMyInvestorRates(robo([EURO_BUY, DOLLAR_BUY, later], null), {
+      fetchDailyRates: async (currency, fromMs, toMs) => {
+        asked.push(currency);
+        const rates = new Map<string, number>();
+        for (let at = fromMs; at <= toMs; at += 86_400_000) {
+          rates.set(new Date(at).toISOString().slice(0, 10), 0.9);
+        }
+        return rates;
+      },
+      known: { USD: [{ dateKey: "2025-03-10", eurPerUnit: 0.91 }] },
+    });
+    expect(asked).toEqual(["USD"]);
+    // One rate per day of an order: the known one kept, the missing one fetched.
+    expect(read.fxRates).toEqual({
+      USD: [
+        { dateKey: "2025-03-10", eurPerUnit: 0.91 },
+        { dateKey: "2025-09-01", eurPerUnit: 0.9 },
+      ],
+    });
+  });
+
+  test("a read in euros only asks the ECB nothing", async () => {
+    const read = await withMyInvestorRates(robo([EURO_BUY], null), {
+      fetchDailyRates: async () => {
+        throw new Error("the ECB must not be asked");
+      },
+    });
+    expect(read.fxRates).toBeUndefined();
+  });
+
+  test("with the ECB down, the rates already known are kept and the rest stay missing", async () => {
+    const later = op("d2", DOLLAR_FUND, {
+      amount: "30.00",
+      currency: "USD",
+      executedAt: "2025-09-01",
+      units: "3",
+    });
+    const read = await withMyInvestorRates(robo([EURO_BUY, DOLLAR_BUY, later], null), {
+      fetchDailyRates: async () => new Map(),
+      known: { USD: [{ dateKey: "2025-03-10", eurPerUnit: 0.91 }] },
+    });
+    expect(read.fxRates).toEqual({ USD: [{ dateKey: "2025-03-10", eurPerUnit: 0.91 }] });
   });
 });

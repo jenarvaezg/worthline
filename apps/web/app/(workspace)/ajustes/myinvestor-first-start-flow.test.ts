@@ -20,7 +20,7 @@ import {
   type ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { startMyInvestorConnect } from "./myinvestor-connect";
 import {
   includeMyInvestorProducts,
@@ -81,12 +81,18 @@ const ECB_DOWN: ResolveFxRateSnapshotOptions = {
   fetchDailyRates: async () => new Map(),
 };
 
-async function connectAndRead(clientFor = fixtureClient): Promise<string> {
+async function connectAndRead(
+  clientFor = fixtureClient,
+  fx?: ResolveFxRateSnapshotOptions,
+): Promise<string> {
   const step = await startMyInvestorConnect(
     {
       acceptedBy: null,
       afterConnect: ({ reader, sourceId }) =>
-        storeMyInvestorDiscovery({ now: NOW, store, today: TODAY }, { reader, sourceId }),
+        storeMyInvestorDiscovery(
+          { now: NOW, store, today: TODAY, ...(fx ? { fx } : {}) },
+          { reader, sourceId },
+        ),
       clientFor,
       newDeviceId: () => "device-sintetico",
       now: NOW,
@@ -578,16 +584,13 @@ describe("a robo-advisor with a fund in its USD class (#1899), over the fixtures
   const DOLLAR_ISIN = "IE00SINTET45";
 
   test("it is included whole: the dollar orders land in euros with their capture", async () => {
-    const sourceId = await connectAndRead(roboUsdClient);
-    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY, {
-      fx: ECB_AT_090,
-    }))!;
+    const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
+    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const managed = view.rows.find((row) => row.kind === "managed")!;
     expect(managed).toMatchObject({ block: null, selectedByDefault: true });
 
     const result = await includeMyInvestorProducts(
       {
-        fx: ECB_AT_090,
         newAssetId: () => `asset_${++ids}`,
         resolveSymbol: async () => null,
         store,
@@ -622,18 +625,28 @@ describe("a robo-advisor with a fund in its USD class (#1899), over the fixtures
     expect(cost.amountMinor).toBeLessThan(15_599);
   });
 
-  test("with the ECB down, the block waits and names the day: nothing is invented", async () => {
-    const sourceId = await connectAndRead(roboUsdClient);
-    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY, {
-      fx: ECB_DOWN,
-    }))!;
+  test("the Conexiones page asks nothing of the network: the stored read brings the rates", async () => {
+    const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
+    const network = vi.spyOn(globalThis, "fetch");
+    try {
+      const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+      const managed = view.rows.find((row) => row.kind === "managed")!;
+      expect(managed.block).toBeNull();
+      expect(network).not.toHaveBeenCalled();
+    } finally {
+      network.mockRestore();
+    }
+  });
+
+  test("with the ECB down at the read, the block waits: nothing is invented", async () => {
+    const sourceId = await connectAndRead(roboUsdClient, ECB_DOWN);
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
     const managed = view.rows.find((row) => row.kind === "managed")!;
-    expect(managed.block).toEqual({ date: "2025-03-10", reason: "rate_missing" });
+    expect(managed.block).toEqual({ reason: "rate_missing" });
     expect(isIncludable(managed)).toBe(false);
 
     const refused = await includeMyInvestorProducts(
       {
-        fx: ECB_DOWN,
         newAssetId: () => `asset_${++ids}`,
         resolveSymbol: async () => null,
         store,

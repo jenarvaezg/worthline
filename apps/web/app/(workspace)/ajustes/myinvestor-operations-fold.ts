@@ -26,9 +26,13 @@
  * fund's USD class) is written as every apunte captured outside the euro, through the
  * same door (`convertOperationToBaseCurrency`): in EUR at the ECB rate of its own
  * day, with the original price, fees and rate kept as its `capture`. The holding is
- * EUR. With no rate for its day — or a currency worthline cannot capture — the order
- * is left out and named in `missingRates`, never written at an invented rate; so is
- * an entry whose inherited cost would be folded from such an order.
+ * EUR. The rates are the ones kept WITH the read (`discovery.fxRates`), so whoever
+ * folds the same read converts the same. With no rate for its day — or a currency
+ * worthline cannot capture — the order WAITS, never written at an invented rate, and
+ * with it whatever its figures would move:
+ * - the other half of its traspaso: the book never holds half a pair (#1393);
+ * - everything after it in its holding's ledger, so the cost a later traspaso
+ *   carries out of that holding is folded on the ledger it will really have.
  */
 import type {
   CreateInvestmentOperationInput,
@@ -42,7 +46,6 @@ import {
   compareInvestmentOperations,
   convertOperationToBaseCurrency,
   costLeavingOrigin,
-  createFxRateSnapshot,
   createInvestmentOperation,
   createMoneyConverter,
   divideUnits,
@@ -59,18 +62,40 @@ import type { MyInvestorDiscovery } from "./myinvestor-discovery";
 /** A product's operations as worthline rows, with every inherited cost resolved. */
 export type FoldedRows = ReadonlyMap<string, readonly InvestmentOperation[]>;
 
-/** The fold of a discovery: its rows, and what it could not write in euros yet. */
+/** The fold of a discovery: its rows, and what waits for an ECB rate. */
 export interface MyInvestorFold {
   readonly rows: FoldedRows;
   /**
-   * By product key, the earliest day of an operation left out of `rows` because no
-   * ECB rate covers it (#1899): the first start blocks the product, the sync waits.
+   * The products with an operation left out of `rows` because it waits for an ECB
+   * rate (#1899): the first start blocks them, the sync applies them on a later pass.
    */
-  readonly missingRates: ReadonlyMap<string, string>;
+  readonly missingRates: ReadonlySet<string>;
 }
 
-/** No rate at all: what a discovery with only euro operations needs. */
-export const NO_MYINVESTOR_RATES: FxRateSnapshot = createFxRateSnapshot({});
+/**
+ * The ECB rates kept with a read (#1899), looked up by the EXACT day: each point is
+ * already the rate in force on the day of an order (the ECB's carry-forward was
+ * applied when it was asked), so a day the read lacks has no rate — never the one of
+ * a neighbouring order. EUR is always 1.
+ */
+export function myInvestorRatesOf(
+  discovery: Pick<MyInvestorDiscovery, "fxRates">,
+): FxRateSnapshot {
+  const byDay = new Map<string, number>();
+  for (const [currency, points] of Object.entries(discovery.fxRates ?? {})) {
+    for (const point of points) {
+      if (Number.isFinite(point.eurPerUnit) && point.eurPerUnit > 0) {
+        byDay.set(`${currency}|${point.dateKey}`, point.eurPerUnit);
+      }
+    }
+  }
+  return {
+    eurPerUnit: (currency, asOf) =>
+      currency === BASE_CURRENCY
+        ? 1
+        : (byDay.get(`${currency}|${asOf.slice(0, 10)}`) ?? null),
+  };
+}
 
 /** The id an operation of this source gets in the book: stable per fact and per connection. */
 export function myInvestorOperationId(sourceId: string, factKey: string): string {
@@ -150,13 +175,11 @@ function compareLedgerOrder(
 export function foldMyInvestorOperations(
   discovery: MyInvestorDiscovery,
   sourceId: string,
-  rates: FxRateSnapshot = NO_MYINVESTOR_RATES,
 ): MyInvestorFold {
+  const rates = myInvestorRatesOf(discovery);
   const facts = discovery.operations;
   const byKey = new Map(facts.map((fact) => [fact.key, fact]));
   const resolved = new Map<string, InvestmentOperation | null>();
-  /** The day whose rate is missing, by the key of each fact left out (#1899). */
-  const missingOn = new Map<string, string>();
   const resolving = new Set<string>();
   const rowsByProduct = new Map<string, NormalizedFact<MyInvestorOperationFact>[]>();
   for (const fact of facts) {
@@ -212,23 +235,12 @@ export function foldMyInvestorOperations(
     };
   };
 
-  /** The cost of a fold step, or the day whose missing rate stands in its way. */
-  type Cost = { readonly minor: number } | { readonly missingOn: string };
-
-  /** The earliest day among the facts left out, or null when none is. */
-  const gapOf = (
-    pairs: readonly (readonly [NormalizedFact<MyInvestorOperationFact>, unknown])[],
-  ): string | null =>
-    pairs
-      .flatMap(([fact, row]) => (row === null ? [missingOn.get(fact.key)!] : []))
-      .sort()
-      .at(0) ?? null;
-
   /**
    * The cost a `transfer_out` takes out of its origin: `costLeavingOrigin`, the one
    * fold the sync, the inherited-cost answer and the traspaso audit use (ADR 0115).
+   * Null when the way out, or a row before it, waits for its rate.
    */
-  const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): Cost => {
+  const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): number | null => {
     const outRow = resolve(out);
     const origin = rowsByProduct.get(productKeyOf(out.payload)) ?? [];
     // Only the rows BEFORE the leg that leaves are resolved: a later entry into the
@@ -236,21 +248,19 @@ export function foldMyInvestorOperations(
     // one, and resolving it here would chase its tail. The ledger order needs no cost.
     const before = origin
       .filter((fact) => compareLedgerOrder(fact, out) < 0)
-      .map((fact) => [fact, resolve(fact)] as const);
-    const gap = gapOf([[out, outRow], ...before]);
-    if (gap !== null || outRow === null) return { missingOn: gap! };
-    return {
-      minor: costLeavingOrigin(
-        outRow,
-        new Map([[outRow.assetId, before.map(([, row]) => row!)]]),
-      ),
-    };
+      .map(resolve);
+    if (outRow === null || before.some((row) => row === null)) return null;
+    return costLeavingOrigin(
+      outRow,
+      new Map([[outRow.assetId, before as InvestmentOperation[]]]),
+    );
   };
 
+  /** The cost an entry inherits; null when what it depends on waits for a rate. */
   const inheritedCost = (
     fact: NormalizedFact<MyInvestorOperationFact>,
     input: CreateInvestmentOperationInput,
-  ): Cost => {
+  ): number | null => {
     const transfer = fact.payload.transfer;
     if (transfer?.pairing === "paired") {
       const out = byKey.get(transfer.counterpartKey);
@@ -265,11 +275,9 @@ export function foldMyInvestorOperations(
         BASE_CURRENCY,
         executedAt,
       );
-      return converted.ok
-        ? { minor: converted.value.amountMinor }
-        : { missingOn: executedAt.slice(0, 10) };
+      return converted.ok ? converted.value.amountMinor : null;
     }
-    return { minor: multiplyToMinor(fact.payload.units, input.pricePerUnit) };
+    return multiplyToMinor(fact.payload.units, input.pricePerUnit);
   };
 
   function resolve(
@@ -290,36 +298,74 @@ export function foldMyInvestorOperations(
   function resolveRow(
     fact: NormalizedFact<MyInvestorOperationFact>,
   ): InvestmentOperation | null {
-    const leftOut = (day: string) => {
-      missingOn.set(fact.key, day);
-      return null;
-    };
     const input = baseInput(fact);
-    if (input === null) return leftOut(fact.payload.executedAt.slice(0, 10));
+    if (input === null) return null;
     if (fact.payload.operation !== "transfer_in") return createInvestmentOperation(input);
     const cost = inheritedCost(fact, input);
-    if ("missingOn" in cost) return leftOut(cost.missingOn);
-    return createInvestmentOperation({ ...input, transferCostMinor: cost.minor });
+    return cost === null
+      ? null
+      : createInvestmentOperation({ ...input, transferCostMinor: cost });
   }
 
+  const waiting = waitingForRates(
+    facts.filter((fact) => resolve(fact) === null),
+    byKey,
+    rowsByProduct,
+  );
   const folded = new Map<string, InvestmentOperation[]>();
-  const missingRates = new Map<string, string>();
   for (const [key, list] of rowsByProduct) {
-    const rows: InvestmentOperation[] = [];
-    for (const fact of list) {
-      const row = resolve(fact);
-      if (row !== null) {
-        rows.push(row);
-        continue;
-      }
-      const day = missingOn.get(fact.key)!;
-      const earliest = missingRates.get(key);
-      if (earliest === undefined || day < earliest) missingRates.set(key, day);
-    }
-    folded.set(key, rows.sort(compareInvestmentOperations));
+    folded.set(
+      key,
+      list
+        .filter((fact) => !waiting.has(fact.key))
+        .map((fact) => resolve(fact)!)
+        .sort(compareInvestmentOperations),
+    );
   }
+  const missingRates = new Set(
+    facts
+      .filter((fact) => waiting.has(fact.key))
+      .map((fact) => productKeyOf(fact.payload)),
+  );
   return { missingRates, rows: folded };
 }
+
+/**
+ * The keys of every fact that waits (#1899): those with no rate, the other half of
+ * each traspaso one of them is part of (by its `counterpartKey` and by its
+ * `transferId`), and everything after one of them in its holding's ledger. Repeated
+ * until nothing more joins, since a half that waits can hold back its own holding.
+ */
+function waitingForRates(
+  unconverted: readonly NormalizedFact<MyInvestorOperationFact>[],
+  byKey: ReadonlyMap<string, NormalizedFact<MyInvestorOperationFact>>,
+  rowsByProduct: ReadonlyMap<string, readonly NormalizedFact<MyInvestorOperationFact>[]>,
+): Set<string> {
+  const byTransferId = new Map<string, string[]>();
+  for (const fact of byKey.values()) {
+    const transferId = fact.payload.transfer?.transferId;
+    if (transferId === undefined) continue;
+    byTransferId.set(transferId, [...(byTransferId.get(transferId) ?? []), fact.key]);
+  }
+  const waiting = new Set<string>();
+  const queue = unconverted.map((fact) => fact.key);
+  for (let key = queue.pop(); key !== undefined; key = queue.pop()) {
+    if (waiting.has(key)) continue;
+    waiting.add(key);
+    const fact = byKey.get(key);
+    if (!fact) continue;
+    const transfer = fact.payload.transfer;
+    if (transfer) {
+      queue.push(...(byTransferId.get(transfer.transferId) ?? []));
+      if (transfer.pairing === "paired") queue.push(transfer.counterpartKey);
+    }
+    for (const later of rowsByProduct.get(productKeyOf(fact.payload)) ?? []) {
+      if (compareLedgerOrder(later, fact) > 0) queue.push(later.key);
+    }
+  }
+  return waiting;
+}
+
 /**
  * A folded row back as the input that writes it, into the holding it belongs to.
  * The periodic sync (#1884) writes through the same mapping.

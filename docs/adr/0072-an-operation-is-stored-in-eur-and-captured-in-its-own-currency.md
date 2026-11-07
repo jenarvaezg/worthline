@@ -174,15 +174,22 @@ ADR's grammar, unchanged:
 - **The holding is EUR** (decision 5), valued at the cached price, which the
   provider already converts (#1357).
 - **The door is the same pure conversion**, `convertOperationToBaseCurrency`, called
-  inside `foldMyInvestorOperations` with a snapshot of the ECB rates of the days of
-  those orders. The first start's preview, the inclusion and the daily sync fold
-  with it, so all three show and write the same euros (#1438). The provisional cost
-  of an entry whose cost is pending is converted at the rate of its day too.
-  Nothing converts at normalization: the stored read keeps MyInvestor's dollars.
+  inside `foldMyInvestorOperations`. The provisional cost of an entry whose cost is
+  pending is converted at the rate of its day too. Nothing converts at
+  normalization: the stored read keeps MyInvestor's dollars.
+- **The rates travel with the read.** They are asked when MyInvestor is read
+  («Leer mis productos», the sync, «Resincronizar todo»), only for the days of
+  orders in another currency the read does not already hold, with a short deadline
+  and no retries. They are kept in the stored read (`fxRates`). The first start's
+  preview, the inclusion and the sync all fold that read, so they convert with the
+  same rates (#1438), and the Conexiones page never waits on the ECB.
 - **A missing rate refuses, as in decision 4.** The first start blocks the product
-  and names the day. The sync leaves that order out and applies the rest of the
-  pass. An order in another currency is planned on every pass until it lands,
-  whatever the window, so a long gap cannot leave it behind the cursor. The dedup
-  ledger keeps it from landing twice.
+  until a later read brings the rate. In the sync, the order waits, and so does
+  whatever its figures would move: the other half of its traspaso (the book never
+  holds half a pair) and everything after it in its holding's ledger. The rest of
+  the pass is applied. Until it lands, a row of a holding touched by another
+  currency is planned whatever the window, as long as the book lacks it, so a long
+  gap cannot leave it behind the cursor. The dedup ledger keeps it from landing
+  twice. An account in euros only plans its window, as before.
 - A currency outside `CAPTURE_CURRENCIES`, and a cash balance in another currency,
   still block the product.

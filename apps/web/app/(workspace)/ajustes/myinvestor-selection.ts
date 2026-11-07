@@ -38,10 +38,10 @@ export type MyInvestorInclusionBlock =
    */
   | { readonly reason: "currency" }
   /**
-   * An operation in another currency whose day has no ECB rate yet (#1899): it would
-   * be written at an invented one. `date` is the earliest such day, `YYYY-MM-DD`.
+   * An operation in another currency whose ECB rate the read could not bring (#1899):
+   * it would be written at an invented one. The next read brings it.
    */
-  | { readonly reason: "rate_missing"; readonly date: string };
+  | { readonly reason: "rate_missing" };
 
 /** A fund of a robo-advisor's managed portfolio, under its row (#1883). */
 export interface MyInvestorPortfolioMember {

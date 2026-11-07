@@ -15,7 +15,6 @@ import type {
 } from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
-  FxRateSnapshot,
   InvestmentPriceProvider,
   NormalizedFact,
   OwnershipShare,
@@ -29,7 +28,6 @@ import {
   entryOfSoldOrigin,
   foldMyInvestorOperations,
   myInvestorOperationId,
-  NO_MYINVESTOR_RATES,
   operationInput,
   pendingEntryOfSoldOrigin,
   toMinor,
@@ -94,11 +92,6 @@ export function planMyInvestorInclusion(
     ownership: OwnershipShare[];
     assetIdFor: (productKey: string) => string;
     symbols: ReadonlyMap<string, MyInvestorPriceSymbol | null>;
-    /**
-     * The ECB rates the view folded with (#1899): an order in another currency is
-     * written in euros at the rate of its day. None when absent.
-     */
-    rates?: FxRateSnapshot;
     /**
      * The ids of the sales `unpaired_out` the linked holdings' books already hold
      * (#1882): an entry whose way out is one of them goes in with its cost pending,
@@ -200,11 +193,7 @@ export function planMyInvestorInclusion(
     }
   }
 
-  const folded = foldMyInvestorOperations(
-    discovery,
-    input.sourceId,
-    input.rates ?? NO_MYINVESTOR_RATES,
-  ).rows;
+  const folded = foldMyInvestorOperations(discovery, input.sourceId).rows;
   const holdings: ConnectedHoldingCreation[] = [];
   const facts: NormalizedFact<CreateInvestmentOperationInput>[] = [];
   const factKeyById = new Map(

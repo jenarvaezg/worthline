@@ -58,7 +58,7 @@ import {
   readMyInvestorAccount,
   serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
-import { resolveMyInvestorRates } from "./myinvestor-rates";
+import { withMyInvestorRates } from "./myinvestor-rates";
 import {
   type MyInvestorSyncOutcome,
   type MyInvestorSyncStep,
@@ -480,7 +480,13 @@ async function readAndApply(
   });
 
   await step("check");
-  const discovery = refreshMyInvestorDiscovery(fullHistory ? null : previous, reads);
+  // The ECB rates of its orders in another currency ride with the read (#1899): the
+  // ones kept stay, the missing ones are asked now, briefly. An ECB down never stops
+  // the pass: those orders wait for a later one.
+  const discovery = await withMyInvestorRates(
+    refreshMyInvestorDiscovery(fullHistory ? null : previous, reads),
+    { ...deps.fx, known: previous?.fxRates },
+  );
   const windowKeys = fullHistory
     ? null
     : new Set(
@@ -489,23 +495,27 @@ async function readAndApply(
           .map((fact) => fact.key),
       );
   const links = await store.connectedSources.readLinks(sourceId);
-  // An order in another currency is written in euros at the ECB rate of its day
-  // (#1899); with no rate it waits for a later pass, and the rest goes on.
-  const rates = await resolveMyInvestorRates(discovery, deps.fx);
+  // The linked books before the pass: what waited for an ECB rate is planned until
+  // they hold it (#1899), and a new traspaso's inherited cost travels from its
+  // origin's BOOK, answers to #1882 included, never only from what the read folds.
+  const investmentLinks = links.filter((link) => link.productKey.includes("|"));
+  const before = await store.operations.readHoldingLedgers(
+    investmentLinks.map((link) => link.assetId),
+  );
   const plan = planMyInvestorSync(discovery, {
+    bookIds: new Set(
+      [...before.values()].flatMap((ledger) => ledger.operations.map((row) => row.id)),
+    ),
     cursor,
     links,
-    rates,
     sourceId,
     windowKeys,
   });
-
-  // A new traspaso's inherited cost travels from its origin's BOOK, answers to
-  // #1882 included, never only from what the stored read can fold.
-  const linkedAssets = plan.witnesses.map((witness) => witness.assetId);
-  const before = await store.operations.readHoldingLedgers(linkedAssets);
+  const linkedAssets = new Set(plan.witnesses.map((witness) => witness.assetId));
   const books = new Map(
-    [...before].map(([assetId, ledger]) => [assetId, ledger.operations]),
+    [...before]
+      .filter(([assetId]) => linkedAssets.has(assetId))
+      .map(([assetId, ledger]) => [assetId, ledger.operations]),
   );
   const facts = carryTransferCostsFromBook(plan.facts.facts, books);
 

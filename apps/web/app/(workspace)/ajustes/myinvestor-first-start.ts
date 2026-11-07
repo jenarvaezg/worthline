@@ -10,7 +10,7 @@
  * manual operations. Its careo comes from those rows too.
  */
 
-import type { FxRateSnapshot, InvestmentOperation } from "@worthline/domain";
+import type { InvestmentOperation } from "@worthline/domain";
 import { derivePosition, isCaptureCurrency, isPositiveDecimal } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { myInvestorCareo } from "./myinvestor-careo";
@@ -22,7 +22,6 @@ import {
 } from "./myinvestor-discovery";
 import {
   foldMyInvestorOperations,
-  NO_MYINVESTOR_RATES,
   pendingInheritedCost,
   productKeyOf,
   toMinor,
@@ -64,9 +63,9 @@ function rungOf(kind: MyInvestorProductKind): MyInvestorRung {
  * A robo-advisor's account is ONE row (#1883): its funds and cash ride under it,
  * never as rows of their own.
  *
- * `rates` are the ECB rates of the days its orders in another currency were placed
- * (#1899): they are written in euros at those rates (ADR 0072), and a product whose
- * rate is missing is blocked naming the day. The include plan folds with the same.
+ * An order in another currency is written in euros at the ECB rate the read kept for
+ * its day (#1899, ADR 0072); a product whose rate the read lacks is blocked until a
+ * later read brings it. The include plan folds the same read, with the same rates.
  */
 export function myInvestorFirstStartView(
   discovery: MyInvestorDiscovery,
@@ -76,8 +75,6 @@ export function myInvestorFirstStartView(
     twins: ReadonlyMap<string, MyInvestorTwinMatch>;
     ledgers: ReadonlyMap<string, MyInvestorTwinLedger>;
     today: string;
-    /** The ECB rates the fold converts with; none when absent (#1899). */
-    rates?: FxRateSnapshot;
     portfolioTwins?: ReadonlyMap<string, readonly MyInvestorManualPortfolio[]>;
     /**
      * The portfolio each robo-advisor block already linked lives in, by the block's
@@ -89,11 +86,7 @@ export function myInvestorFirstStartView(
     >;
   },
 ): MyInvestorFirstStartView {
-  const fold = foldMyInvestorOperations(
-    discovery,
-    input.sourceId,
-    input.rates ?? NO_MYINVESTOR_RATES,
-  );
+  const fold = foldMyInvestorOperations(discovery, input.sourceId);
   const folded = fold.rows;
   const factsByProduct = new Map<string, MyInvestorOperationFact[]>();
   for (const { payload } of discovery.operations) {
@@ -165,8 +158,8 @@ export function myInvestorFirstStartView(
         }).costBasis.amountMinor;
   /**
    * Why a product cannot be included yet, or null (#1401, #1899): a currency worthline
-   * cannot capture — or a cash balance in another — and, before that, an order whose
-   * day has no ECB rate to write it in euros.
+   * cannot capture — or a cash balance in another — and, before that, an order that
+   * waits for the ECB rate of its day.
    */
   const blockOf = (
     product: MyInvestorDiscoveredProduct,
@@ -179,8 +172,7 @@ export function myInvestorFirstStartView(
     ) {
       return { reason: "currency" };
     }
-    const date = fold.missingRates.get(product.key);
-    return date === undefined ? null : { date, reason: "rate_missing" };
+    return fold.missingRates.has(product.key) ? { reason: "rate_missing" } : null;
   };
 
   /** A robo-advisor's block (#1883): its funds, its cash, its witness and its twin. */
@@ -355,23 +347,16 @@ export function myInvestorFirstStartView(
 
 /**
  * The block of a robo-advisor's account from its parts' (#1899): a currency it cannot
- * capture wins, then the earliest day with no ECB rate; null when nothing blocks.
+ * capture wins over a rate that is missing; null when nothing blocks.
  */
 function blockOfParts(
   blocks: readonly (MyInvestorInclusionBlock | null)[],
 ): MyInvestorInclusionBlock | null {
-  let missing: MyInvestorInclusionBlock | null = null;
-  for (const block of blocks) {
-    if (block === null) continue;
-    if (block.reason === "currency") return block;
-    if (
-      missing === null ||
-      (missing.reason === "rate_missing" && block.date < missing.date)
-    ) {
-      missing = block;
-    }
-  }
-  return missing;
+  return (
+    blocks.find((block) => block?.reason === "currency") ??
+    blocks.find((block) => block !== null) ??
+    null
+  );
 }
 
 /**

@@ -626,6 +626,7 @@ describe("a robo-advisor with a fund in its USD class (#1899)", () => {
     currency: string,
     cash: string,
     shares: string,
+    operationType = "INVESTMENT_FUNDS_SUBSCRIPTION",
   ): MyInvestorOrder {
     return {
       accountId: ACCOUNT,
@@ -639,7 +640,7 @@ describe("a robo-advisor with a fund in its USD class (#1899)", () => {
       fundName: null,
       isin,
       market: null,
-      operationType: "INVESTMENT_FUNDS_SUBSCRIPTION",
+      operationType,
       orderDate: "2026-11-02",
       orderType: null,
       productType: null,
@@ -670,13 +671,10 @@ describe("a robo-advisor with a fund in its USD class (#1899)", () => {
     const source = (await store.connectedSources.listSources()).find(
       (row) => row.adapter === "myinvestor",
     )!;
-    const { view } = (await loadMyInvestorFirstStart(store, source.id, TODAY, {
-      fx: ecbAt090,
-    }))!;
+    const { view } = (await loadMyInvestorFirstStart(store, source.id, TODAY))!;
     const managed = view.rows.find((row) => row.kind === "managed")!;
     const included = await includeMyInvestorProducts(
       {
-        fx: ecbAt090,
         newAssetId: () => `asset_${++ids}`,
         resolveSymbol: async () => null,
         store,
@@ -741,6 +739,75 @@ describe("a robo-advisor with a fund in its USD class (#1899)", () => {
       capture_eur_per_unit: "0.9",
       currency: "EUR",
     });
+    const again = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake, clock), fx: ecbAt090 },
+        { sourceId, trigger: "manual", typed: null },
+      ),
+    );
+    expect(again).toMatchObject({ applied: 0, kind: "ok" });
+    expect(await operationCount()).toBe(before + 2);
+  });
+
+  test("a traspaso from the euro fund into the dollar class with the ECB down: no leg lands alone", async () => {
+    const sourceId = await connectIncludeUsd();
+    const before = await operationCount();
+    const fake = fakeClient(preferUsd);
+    // Both halves state the same cash, as the adapter pairs them (ADR 0115).
+    const legs = [
+      order(
+        "sintetica-sw-out",
+        "IE00SINTET52",
+        "EUR",
+        "20.80",
+        "2",
+        "IIC_SWITCH_DEREGISTRATION",
+      ),
+      order(
+        "sintetica-sw-in",
+        "IE00SINTET45",
+        "USD",
+        "20.80",
+        "2",
+        "IIC_SWITCH_REGISTRATION",
+      ),
+    ];
+    fake.bend = (reader) => ({
+      ...reader,
+      securitiesOrders: async (id, range) => {
+        const read = await reader.securitiesOrders(id, range);
+        return read.ok && id === ACCOUNT
+          ? { ok: true, value: [...read.value, ...legs] }
+          : read;
+      },
+    });
+
+    const down = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake), fx: ecbDown },
+        { sourceId, trigger: "cron", typed: null },
+      ),
+    );
+    expect(down).toMatchObject({ applied: 0, kind: "ok" });
+    expect(await operationById(`mi_${sourceId}_sintetica-sw-out`)).toBeNull();
+    expect(await operationById(`mi_${sourceId}_sintetica-sw-in`)).toBeNull();
+
+    // The ECB answers on a later pass, when the window no longer holds the pair.
+    const clock = movableClock(NOW);
+    clock.advanceHours(24);
+    fake.bend = (reader) => reader;
+    const back = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake, clock), fx: ecbAt090 },
+        { sourceId, trigger: "cron", typed: null },
+      ),
+    );
+    expect(back).toMatchObject({ applied: 2, kind: "ok" });
+    expect(await operationById(`mi_${sourceId}_sintetica-sw-in`)).toMatchObject({
+      capture_currency: "USD",
+      currency: "EUR",
+    });
+    expect(await operationById(`mi_${sourceId}_sintetica-sw-out`)).not.toBeNull();
     const again = outcomeOf(
       await runMyInvestorSync(
         { ...deps(fake, clock), fx: ecbAt090 },
