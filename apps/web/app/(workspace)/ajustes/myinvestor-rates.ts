@@ -29,11 +29,11 @@ import { myInvestorRatesOf } from "./myinvestor-operations-fold";
 /** Per request: a slow ECB loses fast, and is not asked twice. */
 export const MYINVESTOR_ECB_TIMEOUT_MS = 4_000;
 
-const quickEcb: EcbDailyRatesFetcher = (currency, fromMs, toMs) =>
-  fetchEcbDailyRatesEur(currency, fromMs, toMs, {
-    maxAttempts: 1,
-    timeoutMs: MYINVESTOR_ECB_TIMEOUT_MS,
-  });
+/** The ECB with a deadline of `timeoutMs` per request and a single attempt. */
+function quickEcb(timeoutMs: number): EcbDailyRatesFetcher {
+  return (currency, fromMs, toMs) =>
+    fetchEcbDailyRatesEur(currency, fromMs, toMs, { maxAttempts: 1, timeoutMs });
+}
 
 type Rates = Readonly<Record<string, readonly FxRatePoint[]>>;
 
@@ -44,7 +44,11 @@ type Rates = Readonly<Record<string, readonly FxRatePoint[]>>;
  */
 export async function withMyInvestorRates(
   discovery: MyInvestorDiscovery,
-  options: ResolveFxRateSnapshotOptions & { known?: Rates | undefined } = {},
+  options: ResolveFxRateSnapshotOptions & {
+    known?: Rates | undefined;
+    /** The ECB's deadline, {@link MYINVESTOR_ECB_TIMEOUT_MS} by default (tests). */
+    ecbTimeoutMs?: number;
+  } = {},
 ): Promise<MyInvestorDiscovery> {
   const days = new Map<string, Set<string>>();
   for (const { payload } of discovery.operations) {
@@ -73,7 +77,11 @@ export async function withMyInvestorRates(
       : await resolveFxRateSnapshotForDates(
           lacking.map((entry) => entry.currency),
           lacking.map((entry) => entry.day),
-          { fetchDailyRates: options.fetchDailyRates ?? quickEcb },
+          {
+            fetchDailyRates:
+              options.fetchDailyRates ??
+              quickEcb(options.ecbTimeoutMs ?? MYINVESTOR_ECB_TIMEOUT_MS),
+          },
         );
 
   const fxRates: Record<string, FxRatePoint[]> = {};

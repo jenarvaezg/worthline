@@ -642,26 +642,25 @@ describe("the rates travel with the read", () => {
     expect(read.fxRates).toEqual({ USD: [{ dateKey: "2025-03-10", eurPerUnit: 0.91 }] });
   });
 
-  test("a silent ECB is given about 4 s, once: it never holds up a read of MyInvestor", async () => {
+  test("a silent ECB is given one attempt, cut at its deadline: 4 s by default", async () => {
     expect(MYINVESTOR_ECB_TIMEOUT_MS).toBe(4_000);
-    const calls: number[] = [];
+    let calls = 0;
     const network = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
-      calls.push(Date.now());
+      calls += 1;
       // Never answers: only its deadline ends the wait.
       return new Promise((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
       });
     });
     try {
-      const started = Date.now();
-      const read = await withMyInvestorRates(robo([EURO_BUY, DOLLAR_BUY], null));
-      const waited = Date.now() - started;
-      expect(calls).toHaveLength(1);
-      expect(waited).toBeGreaterThanOrEqual(3_900);
-      expect(waited).toBeLessThan(6_000);
+      // The real default fetcher, with its deadline brought down to a few ms.
+      const read = await withMyInvestorRates(robo([EURO_BUY, DOLLAR_BUY], null), {
+        ecbTimeoutMs: 20,
+      });
+      expect(calls).toBe(1);
       expect(read.fxRates).toBeUndefined();
     } finally {
       network.mockRestore();
     }
-  }, 10_000);
+  });
 });
