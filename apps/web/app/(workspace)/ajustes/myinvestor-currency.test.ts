@@ -14,7 +14,7 @@
 import type { FxRatePoint } from "@worthline/domain";
 import { derivePosition } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { myInvestorRowNotes } from "./conexiones/myinvestor-first-start-view";
 import {
@@ -29,7 +29,7 @@ import {
   foldMyInvestorOperations,
   myInvestorOperationId,
 } from "./myinvestor-operations-fold";
-import { withMyInvestorRates } from "./myinvestor-rates";
+import { MYINVESTOR_ECB_TIMEOUT_MS, withMyInvestorRates } from "./myinvestor-rates";
 import { isIncludable } from "./myinvestor-selection";
 import { planMyInvestorSync } from "./myinvestor-sync-plan";
 import { findMyInvestorTwins } from "./myinvestor-twins";
@@ -39,6 +39,7 @@ const ROBO = "securities:9";
 const BLOCK = "portfolio:9";
 const EURO_FUND = "IE0000000058";
 const DOLLAR_FUND = "IE0000000047";
+const MONEY_FUND = "IE0000000069";
 
 const keyOf = (isin: string) => `${ROBO}|isin:${isin}`;
 const idOf = (factKey: string) => myInvestorOperationId(SOURCE, factKey);
@@ -128,6 +129,7 @@ function robo(
       },
       member(EURO_FUND, "Euro", "4"),
       member(DOLLAR_FUND, "Dólar", "10"),
+      member(MONEY_FUND, "Monetario", "0"),
       {
         accountKey: BLOCK,
         cash: { balance: "3.21", currency: "EUR", withheld: "0" },
@@ -177,6 +179,36 @@ function switchIntoDollars(day: string) {
       sourceType: "IIC_SWITCH_REGISTRATION",
       transfer: { counterpartKey: "s-out", pairing: "paired", transferId },
       units: "4",
+    }),
+  ];
+}
+
+/** A traspaso between two funds of the robo-advisor, paired as the adapter pairs it. */
+function switchBetween(
+  ref: string,
+  from: { isin: string; currency?: string },
+  to: { isin: string; currency?: string },
+  day: string,
+) {
+  const transferId = `myinvestor-transfer:${ref}-out:${ref}-in`;
+  return [
+    op(`${ref}-out`, from.isin, {
+      amount: "10.00",
+      currency: from.currency ?? "EUR",
+      executedAt: day,
+      operation: "transfer_out",
+      sourceType: "IIC_SWITCH_DEREGISTRATION",
+      transfer: { counterpartKey: `${ref}-in`, pairing: "paired", transferId },
+      units: "1",
+    }),
+    op(`${ref}-in`, to.isin, {
+      amount: "10.00",
+      currency: to.currency ?? "EUR",
+      executedAt: day,
+      operation: "transfer_in",
+      sourceType: "IIC_SWITCH_REGISTRATION",
+      transfer: { counterpartKey: `${ref}-out`, pairing: "paired", transferId },
+      units: "1",
     }),
   ];
 }
@@ -441,6 +473,106 @@ describe("the daily sync of a dollar fund", () => {
     });
     expect(plan.facts.facts.map((fact) => fact.key)).toEqual(["e9"]);
   });
+
+  describe("a chain of traspasos from one wait (A→D in dollars, then A→C, then a buy in C)", () => {
+    const chain = [
+      ...switchBetween(
+        "s",
+        { isin: EURO_FUND },
+        { currency: "USD", isin: DOLLAR_FUND },
+        "2026-10-21",
+      ),
+      ...switchBetween("t", { isin: EURO_FUND }, { isin: MONEY_FUND }, "2026-10-22"),
+      op("c2", MONEY_FUND, { amount: "10.00", executedAt: "2026-10-25", units: "1" }),
+    ];
+    const chainLinks = [...links, { assetId: "a-money", productKey: keyOf(MONEY_FUND) }];
+
+    test("with the ECB down, the whole chain waits: nothing of it is planned", () => {
+      const plan = planMyInvestorSync(
+        robo([EURO_BUY, DOLLAR_BUY, ...chain], { USD: [] }),
+        {
+          bookIds: inBook("e1", "d1"),
+          cursor: "2026-11-04",
+          links: chainLinks,
+          sourceId: SOURCE,
+          windowKeys: new Set(chain.map((fact) => fact.key)),
+        },
+      );
+      expect(plan.facts.facts).toEqual([]);
+    });
+
+    test("back out of the window, the whole chain is planned — never half a traspaso", () => {
+      const rates = {
+        USD: [...USD_RATES.USD!, { dateKey: "2026-10-21", eurPerUnit: 0.9 }],
+      };
+      const plan = planMyInvestorSync(robo([EURO_BUY, DOLLAR_BUY, ...chain], rates), {
+        bookIds: inBook("e1", "d1"),
+        cursor: "2026-12-20",
+        links: chainLinks,
+        sourceId: SOURCE,
+        windowKeys: new Set(),
+      });
+      expect(plan.facts.facts.map((fact) => fact.key).sort()).toEqual([
+        "c2",
+        "s-in",
+        "s-out",
+        "t-in",
+        "t-out",
+      ]);
+    });
+  });
+});
+
+describe("a currency worthline cannot capture, across a traspaso", () => {
+  // A fund in yen has no ECB rate worthline captures in (ADR 0072, decision 6): it is
+  // not waiting for anything, so nothing promises it will come.
+  const fromYen = switchBetween(
+    "j",
+    { currency: "JPY", isin: MONEY_FUND },
+    { isin: EURO_FUND },
+    "2025-09-01",
+  );
+
+  test("the holding at the other end says «otra divisa», not that a rate will come", () => {
+    const d: MyInvestorDiscovery = {
+      ...robo([EURO_BUY, ...fromYen]),
+      accounts: [
+        {
+          key: "securities:9",
+          kind: "securities",
+          label: "Cuenta",
+          otherHolder: false,
+          sub: "Fondos",
+        },
+      ],
+      products: robo([])
+        .products.filter((product) => product.kind === "fund")
+        .map((product) => ({ ...product, accountKey: ROBO, portfolioKey: null })),
+    };
+    const rows = view(d).rows;
+    expect(rows.find((row) => row.key === keyOf(EURO_FUND))!.block).toEqual({
+      reason: "currency",
+    });
+    expect(rows.find((row) => row.key === keyOf(MONEY_FUND))!.block).toEqual({
+      reason: "currency",
+    });
+  });
+
+  test("the sync never writes half of it", () => {
+    const later = op("e3", EURO_FUND, {
+      amount: "20.00",
+      executedAt: "2025-10-01",
+      units: "1",
+    });
+    const plan = planMyInvestorSync(robo([EURO_BUY, ...fromYen, later]), {
+      bookIds: new Set([idOf("e1")]),
+      cursor: "2026-11-04",
+      links: [{ assetId: "a-euro", productKey: keyOf(EURO_FUND) }],
+      sourceId: SOURCE,
+      windowKeys: new Set(["j-in", "e3"]),
+    });
+    expect(plan.facts.facts.map((fact) => fact.key)).not.toContain("j-in");
+  });
 });
 
 describe("the rates travel with the read", () => {
@@ -509,4 +641,27 @@ describe("the rates travel with the read", () => {
     });
     expect(read.fxRates).toEqual({ USD: [{ dateKey: "2025-03-10", eurPerUnit: 0.91 }] });
   });
+
+  test("a silent ECB is given about 4 s, once: it never holds up a read of MyInvestor", async () => {
+    expect(MYINVESTOR_ECB_TIMEOUT_MS).toBe(4_000);
+    const calls: number[] = [];
+    const network = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      calls.push(Date.now());
+      // Never answers: only its deadline ends the wait.
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    });
+    try {
+      const started = Date.now();
+      const read = await withMyInvestorRates(robo([EURO_BUY, DOLLAR_BUY], null));
+      const waited = Date.now() - started;
+      expect(calls).toHaveLength(1);
+      expect(waited).toBeGreaterThanOrEqual(3_900);
+      expect(waited).toBeLessThan(6_000);
+      expect(read.fxRates).toBeUndefined();
+    } finally {
+      network.mockRestore();
+    }
+  }, 10_000);
 });

@@ -195,7 +195,7 @@
     "query": { "dateFrom": "2000-01-01", "dateTo": "2026-11-04" },
     "status": 200,
     "origin": "synthetic",
-    "note": "Las órdenes del gestor: un fondo en EUR y otro en su clase USD, cuyas órdenes vienen en dólares (currency USD, cash en USD), con un reembolso parcial."
+    "note": "Las órdenes del gestor: dos fondos en EUR y otro en su clase USD, cuyas órdenes vienen en dólares (currency USD, cash en USD), con un reembolso parcial."
   },
   {
     "file": "synthetic/securities-account-roboadvisor-usd.json",

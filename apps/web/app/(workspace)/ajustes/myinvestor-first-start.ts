@@ -11,7 +11,7 @@
  */
 
 import type { InvestmentOperation } from "@worthline/domain";
-import { derivePosition, isCaptureCurrency, isPositiveDecimal } from "@worthline/domain";
+import { derivePosition, isPositiveDecimal } from "@worthline/domain";
 import type { MyInvestorOperationFact } from "@worthline/pricing";
 import { myInvestorCareo } from "./myinvestor-careo";
 import {
@@ -157,17 +157,16 @@ export function myInvestorFirstStartView(
           currency: EUR,
         }).costBasis.amountMinor;
   /**
-   * Why a product cannot be included yet, or null (#1401, #1899): a currency worthline
-   * cannot capture — or a cash balance in another — and, before that, an order that
-   * waits for the ECB rate of its day.
+   * Why a product cannot be included yet, or null (#1401, #1899): an order in a
+   * currency worthline cannot capture — its own, or one its traspasos depend on — or
+   * a cash balance in another currency; before that, an order that waits for the ECB
+   * rate of its day.
    */
   const blockOf = (
     product: MyInvestorDiscoveredProduct,
   ): MyInvestorInclusionBlock | null => {
     if (
-      (factsByProduct.get(product.key) ?? []).some(
-        (fact) => !isCaptureCurrency(fact.currency),
-      ) ||
+      fold.uncapturable.has(product.key) ||
       (product.cash !== null && product.cash.currency !== EUR)
     ) {
       return { reason: "currency" };

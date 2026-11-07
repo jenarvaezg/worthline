@@ -27,12 +27,12 @@ import type { MyInvestorDiscovery } from "./myinvestor-discovery";
 import { myInvestorRatesOf } from "./myinvestor-operations-fold";
 
 /** Per request: a slow ECB loses fast, and is not asked twice. */
-const ECB_TIMEOUT_MS = 4_000;
+export const MYINVESTOR_ECB_TIMEOUT_MS = 4_000;
 
 const quickEcb: EcbDailyRatesFetcher = (currency, fromMs, toMs) =>
   fetchEcbDailyRatesEur(currency, fromMs, toMs, {
     maxAttempts: 1,
-    timeoutMs: ECB_TIMEOUT_MS,
+    timeoutMs: MYINVESTOR_ECB_TIMEOUT_MS,
   });
 
 type Rates = Readonly<Record<string, readonly FxRatePoint[]>>;

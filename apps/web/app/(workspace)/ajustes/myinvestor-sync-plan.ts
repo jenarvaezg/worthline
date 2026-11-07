@@ -49,10 +49,10 @@ import {
 import {
   entryOfSoldOrigin,
   foldMyInvestorOperations,
+  myInvestorHeldBack,
   myInvestorOperationId,
   operationInput,
   pendingEntryOfSoldOrigin,
-  productKeyOf,
 } from "./myinvestor-operations-fold";
 
 type OperationFact = NormalizedFact<MyInvestorOperationFact>;
@@ -132,10 +132,11 @@ export interface MyInvestorSyncPlan {
  * planned, so the dedup ledger is asked about a window, never the whole account.
  * The ledger still decides what is new.
  *
- * The exception is what may have waited for an ECB rate (#1899): a row of a holding
- * with an order in another currency, or with half of a traspaso whose other half is
- * one, is planned whatever the window while `bookIds` — the ids the linked books
- * already hold — lack it. An account in euros only plans its window, as before.
+ * The exception is what may have waited for an ECB rate (#1899): a row in the fold's
+ * closure of the orders in another currency (`myInvestorHeldBack`: the traspasos
+ * they are part of, chained, and what follows in each holding) is planned whatever
+ * the window while `bookIds` — the ids the linked books already hold — lack it. An
+ * account in euros only plans its window, as before.
  */
 export function planMyInvestorSync(
   discovery: MyInvestorDiscovery,
@@ -158,12 +159,18 @@ export function planMyInvestorSync(
       fact.key,
     ]),
   );
-  const touched = productsTouchedByCurrency(discovery);
+  // What may have waited for an ECB rate on an earlier pass: the fold's own closure,
+  // seeded with every order in another currency, so a chain of traspasos is
+  // replanned as whole as it waited (#1899).
+  const mayHaveWaited = myInvestorHeldBack(
+    discovery,
+    (fact) => fact.payload.currency !== BASE_CURRENCY,
+  );
   const bookIds = input.bookIds ?? new Set<string>();
-  const planned = (productKey: string, factKey: string, rowId: string) =>
+  const planned = (factKey: string, rowId: string) =>
     input.windowKeys === null ||
     input.windowKeys.has(factKey) ||
-    (touched.has(productKey) && !bookIds.has(rowId));
+    (mayHaveWaited.has(factKey) && !bookIds.has(rowId));
 
   const facts: NormalizedFact<CreateInvestmentOperationInput>[] = [];
   const cashBalances: { assetId: string; valueMinor: number }[] = [];
@@ -191,7 +198,7 @@ export function planMyInvestorSync(
     for (const row of folded.get(link.productKey) ?? []) {
       const factKey = factKeyById.get(row.id);
       if (factKey === undefined) continue;
-      if (!planned(link.productKey, factKey, row.id)) continue;
+      if (!planned(factKey, row.id)) continue;
       facts.push({
         dateKey: row.executedAt.slice(0, 10),
         key: factKey,
@@ -227,32 +234,6 @@ export function planMyInvestorSync(
     portfolioWitnesses,
     witnesses,
   };
-}
-
-/**
- * The holdings whose rows may have waited for an ECB rate (#1899): those with an
- * order in another currency, and those holding half of a traspaso whose other half
- * is one — that half waits with it.
- */
-function productsTouchedByCurrency(discovery: MyInvestorDiscovery): Set<string> {
-  const byKey = new Map(discovery.operations.map((fact) => [fact.key, fact.payload]));
-  const touched = new Set<string>();
-  for (const { payload } of discovery.operations) {
-    if (payload.currency === BASE_CURRENCY) continue;
-    touched.add(productKeyOf(payload));
-    const transfer = payload.transfer;
-    if (!transfer) continue;
-    for (const other of discovery.operations) {
-      if (other.payload.transfer?.transferId === transfer.transferId) {
-        touched.add(productKeyOf(other.payload));
-      }
-    }
-    if (transfer.pairing === "paired") {
-      const counterpart = byKey.get(transfer.counterpartKey);
-      if (counterpart) touched.add(productKeyOf(counterpart));
-    }
-  }
-  return touched;
 }
 
 /**

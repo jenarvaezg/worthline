@@ -185,11 +185,18 @@ ADR's grammar, unchanged:
   same rates (#1438), and the Conexiones page never waits on the ECB.
 - **A missing rate refuses, as in decision 4.** The first start blocks the product
   until a later read brings the rate. In the sync, the order waits, and so does
-  whatever its figures would move: the other half of its traspaso (the book never
-  holds half a pair) and everything after it in its holding's ledger. The rest of
-  the pass is applied. Until it lands, a row of a holding touched by another
-  currency is planned whatever the window, as long as the book lacks it, so a long
-  gap cannot leave it behind the cursor. The dedup ledger keeps it from landing
+  whatever its figures would move, transitively: the other half of each traspaso
+  it is part of (the book never holds half a pair), everything after it in its
+  holding's ledger, and so on along a chain of traspasos (`myInvestorHeldBack`).
+  The rest of the pass is applied.
+- **One closure replans what waited.** The sync seeds that same closure with every
+  order in another currency, and plans each of its rows whatever the window, as
+  long as the book lacks it. So a chain waits whole and lands whole, even after a
+  gap longer than the window's overlap. The dedup ledger keeps a row from landing
   twice. An account in euros only plans its window, as before.
-- A currency outside `CAPTURE_CURRENCIES`, and a cash balance in another currency,
-  still block the product.
+- **A currency outside `CAPTURE_CURRENCIES` is not a wait.** No rate will come,
+  so the products in its closure, including the other end of a traspaso, are
+  blocked as «otra divisa» and never promised a later read. In the sync those rows
+  stay out for good rather than land as half a traspaso or on a ledger missing an
+  earlier row. The units check (P8) of the holding reports the gap. A cash balance
+  in another currency still blocks too.

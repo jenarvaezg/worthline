@@ -12,12 +12,12 @@
       "cashAccountId": "9100008",
       "portfolioName": "CARTERA SINTETICA GLOBAL",
       "portfolioProfileType": "DYNAMIC",
-      "marketValue": 283.28,
-      "fundsMarketValue": 283.28,
+      "marketValue": 313.61,
+      "fundsMarketValue": 313.61,
       "securitiesAccountInvestments": {
         "INDEXED_FUND": {
-          "productNum": 2,
-          "totalAmount": 283.28,
+          "productNum": 3,
+          "totalAmount": 313.61,
           "investmentList": [
             {
               "accountId": "null",
@@ -64,6 +64,30 @@
               "liquidationValue": 10.3926,
               "liquidationValueDate": "2026-11-03T00:00:00.000Z",
               "originCurrencyLiquidationValue": 10.3926,
+              "liquidationValueCurrency": "EUR",
+              "status": "OPEN"
+            },
+            {
+              "accountId": "null",
+              "investmentProductType": "INDEXED_FUND",
+              "productTypeCode": "IIC",
+              "marketCode": "FEX",
+              "isin": "IE00SINTET60",
+              "fundId": null,
+              "stockId": null,
+              "ticker": null,
+              "investmentName": "FONDO SINTETICO MONETARIO EURO",
+              "initialInvestment": 30.12,
+              "initialInvestmentCurrency": 30.12,
+              "marketValue": 30.33,
+              "profit": 0.21,
+              "totalReturn": 1.00697,
+              "shares": 2.9996,
+              "availableShares": 2.9996,
+              "averageCost": 10.041339,
+              "liquidationValue": 10.1114,
+              "liquidationValueDate": "2026-11-03T00:00:00.000Z",
+              "originCurrencyLiquidationValue": 10.1114,
               "liquidationValueCurrency": "EUR",
               "status": "OPEN"
             }

@@ -20,7 +20,7 @@ import {
   type ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { startMyInvestorConnect } from "./myinvestor-connect";
 import {
   includeMyInvestorProducts,
@@ -583,6 +583,16 @@ describe("the robo-advisor as a managed portfolio (#1883), over the fixtures", (
 describe("a robo-advisor with a fund in its USD class (#1899), over the fixtures", () => {
   const DOLLAR_ISIN = "IE00SINTET45";
 
+  // Nothing here may reach the ECB: every rate comes from the fakes above.
+  let network: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("sin red"));
+  });
+  afterEach(() => {
+    expect(network).not.toHaveBeenCalled();
+    network.mockRestore();
+  });
+
   test("it is included whole: the dollar orders land in euros with their capture", async () => {
     const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
     const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
@@ -627,15 +637,11 @@ describe("a robo-advisor with a fund in its USD class (#1899), over the fixtures
 
   test("the Conexiones page asks nothing of the network: the stored read brings the rates", async () => {
     const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
-    const network = vi.spyOn(globalThis, "fetch");
-    try {
-      const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
-      const managed = view.rows.find((row) => row.kind === "managed")!;
-      expect(managed.block).toBeNull();
-      expect(network).not.toHaveBeenCalled();
-    } finally {
-      network.mockRestore();
-    }
+    network.mockClear();
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    expect(managed.block).toBeNull();
+    expect(network).not.toHaveBeenCalled();
   });
 
   test("with the ECB down at the read, the block waits: nothing is invented", async () => {

@@ -62,7 +62,7 @@ import type { MyInvestorDiscovery } from "./myinvestor-discovery";
 /** A product's operations as worthline rows, with every inherited cost resolved. */
 export type FoldedRows = ReadonlyMap<string, readonly InvestmentOperation[]>;
 
-/** The fold of a discovery: its rows, and what waits for an ECB rate. */
+/** The fold of a discovery: its rows, and what it holds back. */
 export interface MyInvestorFold {
   readonly rows: FoldedRows;
   /**
@@ -70,6 +70,12 @@ export interface MyInvestorFold {
    * rate (#1899): the first start blocks them, the sync applies them on a later pass.
    */
   readonly missingRates: ReadonlySet<string>;
+  /**
+   * The products held back by an order in a currency worthline cannot capture
+   * (ADR 0072, decision 6): no rate will ever come, so they are blocked as «otra
+   * divisa», never as waiting. A subset of `missingRates`.
+   */
+  readonly uncapturable: ReadonlySet<string>;
 }
 
 /**
@@ -307,10 +313,10 @@ export function foldMyInvestorOperations(
       : createInvestmentOperation({ ...input, transferCostMinor: cost });
   }
 
-  const waiting = waitingForRates(
-    facts.filter((fact) => resolve(fact) === null),
-    byKey,
-    rowsByProduct,
+  const waiting = myInvestorHeldBack(discovery, (fact) => resolve(fact) === null);
+  const uncapturable = myInvestorHeldBack(
+    discovery,
+    (fact) => !isCaptureCurrency(fact.payload.currency),
   );
   const folded = new Map<string, InvestmentOperation[]>();
   for (const [key, list] of rowsByProduct) {
@@ -322,36 +328,50 @@ export function foldMyInvestorOperations(
         .sort(compareInvestmentOperations),
     );
   }
-  const missingRates = new Set(
-    facts
-      .filter((fact) => waiting.has(fact.key))
-      .map((fact) => productKeyOf(fact.payload)),
-  );
-  return { missingRates, rows: folded };
+  const productsOf = (keys: ReadonlySet<string>) =>
+    new Set(
+      facts
+        .filter((fact) => keys.has(fact.key))
+        .map((fact) => productKeyOf(fact.payload)),
+    );
+  return {
+    missingRates: productsOf(waiting),
+    rows: folded,
+    uncapturable: productsOf(uncapturable),
+  };
 }
 
 /**
- * The keys of every fact that waits (#1899): those with no rate, the other half of
- * each traspaso one of them is part of (by its `counterpartKey` and by its
- * `transferId`), and everything after one of them in its holding's ledger. Repeated
- * until nothing more joins, since a half that waits can hold back its own holding.
+ * The keys of the facts `holds` holds back, and of everything their figures would
+ * move (#1899): the other half of each traspaso one of them is part of (by its
+ * `counterpartKey` and by its `transferId`), and everything after one of them in its
+ * holding's ledger. Repeated until nothing more joins, since a half held back holds
+ * back its own holding, and so on along a chain of traspasos.
+ *
+ * The ONE closure: the fold holds back with it what has no rate yet, and the sync
+ * replans with it — seeded with every order in another currency — what may have
+ * waited on an earlier pass, so the two can never disagree about a chain.
  */
-function waitingForRates(
-  unconverted: readonly NormalizedFact<MyInvestorOperationFact>[],
-  byKey: ReadonlyMap<string, NormalizedFact<MyInvestorOperationFact>>,
-  rowsByProduct: ReadonlyMap<string, readonly NormalizedFact<MyInvestorOperationFact>[]>,
+export function myInvestorHeldBack(
+  discovery: Pick<MyInvestorDiscovery, "operations">,
+  holds: (fact: NormalizedFact<MyInvestorOperationFact>) => boolean,
 ): Set<string> {
+  const byKey = new Map(discovery.operations.map((fact) => [fact.key, fact]));
   const byTransferId = new Map<string, string[]>();
-  for (const fact of byKey.values()) {
+  const byProduct = new Map<string, NormalizedFact<MyInvestorOperationFact>[]>();
+  for (const fact of discovery.operations) {
     const transferId = fact.payload.transfer?.transferId;
-    if (transferId === undefined) continue;
-    byTransferId.set(transferId, [...(byTransferId.get(transferId) ?? []), fact.key]);
+    if (transferId !== undefined) {
+      byTransferId.set(transferId, [...(byTransferId.get(transferId) ?? []), fact.key]);
+    }
+    const product = productKeyOf(fact.payload);
+    byProduct.set(product, [...(byProduct.get(product) ?? []), fact]);
   }
-  const waiting = new Set<string>();
-  const queue = unconverted.map((fact) => fact.key);
+  const held = new Set<string>();
+  const queue = discovery.operations.filter(holds).map((fact) => fact.key);
   for (let key = queue.pop(); key !== undefined; key = queue.pop()) {
-    if (waiting.has(key)) continue;
-    waiting.add(key);
+    if (held.has(key)) continue;
+    held.add(key);
     const fact = byKey.get(key);
     if (!fact) continue;
     const transfer = fact.payload.transfer;
@@ -359,11 +379,11 @@ function waitingForRates(
       queue.push(...(byTransferId.get(transfer.transferId) ?? []));
       if (transfer.pairing === "paired") queue.push(transfer.counterpartKey);
     }
-    for (const later of rowsByProduct.get(productKeyOf(fact.payload)) ?? []) {
+    for (const later of byProduct.get(productKeyOf(fact.payload)) ?? []) {
       if (compareLedgerOrder(later, fact) > 0) queue.push(later.key);
     }
   }
-  return waiting;
+  return held;
 }
 
 /**
