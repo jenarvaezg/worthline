@@ -163,3 +163,40 @@ re-imported file can never convert differently than a hand-typed apunte.
   door and can now be revisited; and the alta paths (wizard and assistant) still
   capture euros only, which is what their «saldo de hoy» question asks for and what
   `liveUnitPrice` already enforces by rejecting a non-EUR quote.
+
+## Amendment (#1899, 2026-11-07) — the MyInvestor connector is a fifth path
+
+MyInvestor states the orders of a fund's USD class in dollars, and a robo-advisor's
+manager picks the class, not the user. Until #1899 the connector refused to include
+any product with an order in another currency. It now writes them through this
+ADR's grammar, unchanged:
+
+- **The holding is EUR** (decision 5), valued at the cached price, which the
+  provider already converts (#1357).
+- **The door is the same pure conversion**, `convertOperationToBaseCurrency`, called
+  inside `foldMyInvestorOperations`. The provisional cost of an entry whose cost is
+  pending is converted at the rate of its day too. Nothing converts at
+  normalization: the stored read keeps MyInvestor's dollars.
+- **The rates travel with the read.** They are asked when MyInvestor is read
+  («Leer mis productos», the sync, «Resincronizar todo»), only for the days of
+  orders in another currency the read does not already hold, with a short deadline
+  and no retries. They are kept in the stored read (`fxRates`). The first start's
+  preview, the inclusion and the sync all fold that read, so they convert with the
+  same rates (#1438), and the Conexiones page never waits on the ECB.
+- **A missing rate refuses, as in decision 4.** The first start blocks the product
+  until a later read brings the rate. In the sync, the order waits, and so does
+  whatever its figures would move, transitively: the other half of each traspaso
+  it is part of (the book never holds half a pair), everything after it in its
+  holding's ledger, and so on along a chain of traspasos (`myInvestorHeldBack`).
+  The rest of the pass is applied.
+- **One closure replans what waited.** The sync seeds that same closure with every
+  order in another currency, and plans each of its rows whatever the window, as
+  long as the book lacks it. So a chain waits whole and lands whole, even after a
+  gap longer than the window's overlap. The dedup ledger keeps a row from landing
+  twice. An account in euros only plans its window, as before.
+- **A currency outside `CAPTURE_CURRENCIES` is not a wait.** No rate will come,
+  so the products in its closure, including the other end of a traspaso, are
+  blocked as «otra divisa» and never promised a later read. In the sync those rows
+  stay out for good rather than land as half a traspaso or on a ledger missing an
+  earlier row. The units check (P8) of the holding reports the gap. A cash balance
+  in another currency still blocks too.

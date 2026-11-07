@@ -1,4 +1,4 @@
-import { fetchHttpWithRetry } from "./fetch-with-retry";
+import { type FetchRetryOptions, fetchHttpWithRetry } from "./fetch-with-retry";
 import type { PriceProvider } from "./index";
 
 const ECB_EXR_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.";
@@ -42,6 +42,8 @@ export async function fetchEcbDailyRatesEur(
   currency: string,
   fromMs: number,
   toMs: number,
+  /** The deadline and attempts of the request; the shared defaults when absent. */
+  retry?: FetchRetryOptions,
 ): Promise<ReadonlyMap<string, number>> {
   const rates = new Map<string, number>();
   const startPeriod = new Date(fromMs).toISOString().slice(0, 10);
@@ -52,7 +54,7 @@ export async function fetchEcbDailyRatesEur(
     `.EUR.SP00.A?format=jsondata&startPeriod=${startPeriod}&endPeriod=${endPeriod}`;
 
   try {
-    const res = await fetchHttpWithRetry(url);
+    const res = await fetchHttpWithRetry(url, undefined, retry);
     if (!res.ok) return rates;
 
     const data = (await res.json()) as EcbExrResponse;

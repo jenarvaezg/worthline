@@ -32,8 +32,16 @@ export const MYINVESTOR_KIND_LABEL: Record<MyInvestorProductKind, string> = {
 
 /** Why a product cannot be included in this slice; each one is another slice's. */
 export type MyInvestorInclusionBlock =
-  /** An operation in another currency: the holding would sum two currencies (#1401). */
-  { readonly reason: "currency" };
+  /**
+   * An operation in a currency worthline cannot capture, or a cash balance in another
+   * currency: the holding would sum two currencies (#1401).
+   */
+  | { readonly reason: "currency" }
+  /**
+   * An operation in another currency whose ECB rate the read could not bring (#1899):
+   * it would be written at an invented one. The next read brings it.
+   */
+  | { readonly reason: "rate_missing" };
 
 /** A fund of a robo-advisor's managed portfolio, under its row (#1883). */
 export interface MyInvestorPortfolioMember {

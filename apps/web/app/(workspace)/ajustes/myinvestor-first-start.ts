@@ -62,6 +62,10 @@ function rungOf(kind: MyInvestorProductKind): MyInvestorRung {
  *
  * A robo-advisor's account is ONE row (#1883): its funds and cash ride under it,
  * never as rows of their own.
+ *
+ * An order in another currency is written in euros at the ECB rate the read kept for
+ * its day (#1899, ADR 0072); a product whose rate the read lacks is blocked until a
+ * later read brings it. The include plan folds the same read, with the same rates.
  */
 export function myInvestorFirstStartView(
   discovery: MyInvestorDiscovery,
@@ -82,7 +86,8 @@ export function myInvestorFirstStartView(
     >;
   },
 ): MyInvestorFirstStartView {
-  const folded = foldMyInvestorOperations(discovery, input.sourceId);
+  const fold = foldMyInvestorOperations(discovery, input.sourceId);
+  const folded = fold.rows;
   const factsByProduct = new Map<string, MyInvestorOperationFact[]>();
   for (const { payload } of discovery.operations) {
     const key = productKeyOf(payload);
@@ -151,9 +156,23 @@ export function myInvestorFirstStartView(
           assetId: product.key,
           currency: EUR,
         }).costBasis.amountMinor;
-  const inOtherCurrency = (product: MyInvestorDiscoveredProduct): boolean =>
-    (factsByProduct.get(product.key) ?? []).some((fact) => fact.currency !== EUR) ||
-    (product.cash !== null && product.cash.currency !== EUR);
+  /**
+   * Why a product cannot be included yet, or null (#1401, #1899): an order in a
+   * currency worthline cannot capture — its own, or one its traspasos depend on — or
+   * a cash balance in another currency; before that, an order that waits for the ECB
+   * rate of its day.
+   */
+  const blockOf = (
+    product: MyInvestorDiscoveredProduct,
+  ): MyInvestorInclusionBlock | null => {
+    if (
+      fold.uncapturable.has(product.key) ||
+      (product.cash !== null && product.cash.currency !== EUR)
+    ) {
+      return { reason: "currency" };
+    }
+    return fold.missingRates.has(product.key) ? { reason: "rate_missing" } : null;
+  };
 
   /** A robo-advisor's block (#1883): its funds, its cash, its witness and its twin. */
   const portfolioOf = (product: MyInvestorDiscoveredProduct) => {
@@ -225,7 +244,7 @@ export function myInvestorFirstStartView(
     return {
       block,
       cashWithheld: cash?.cash?.withheld ?? null,
-      currency: parts.some(inOtherCurrency),
+      inclusionBlock: blockOfParts(parts.map(blockOf)),
       linked: joins === null && linkedParts.length > 0,
       operations: rows.length,
       pending: facts.some(pendingInheritedCost),
@@ -248,8 +267,7 @@ export function myInvestorFirstStartView(
     const managed = product.kind === "managed" ? portfolioOf(product) : null;
     const rows = folded.get(product.key) ?? [];
     const facts = factsByProduct.get(product.key) ?? [];
-    const block: MyInvestorInclusionBlock | null =
-      (managed?.currency ?? inOtherCurrency(product)) ? { reason: "currency" } : null;
+    const block = managed ? managed.inclusionBlock : blockOf(product);
     const linked = managed?.linked ?? input.linkedKeys.has(product.key);
     const twin =
       block === null && !linked && managed === null ? twinOf(product, rows) : null;
@@ -324,6 +342,20 @@ export function myInvestorFirstStartView(
     readOn: discovery.readOn,
     rows,
   };
+}
+
+/**
+ * The block of a robo-advisor's account from its parts' (#1899): a currency it cannot
+ * capture wins over a rate that is missing; null when nothing blocks.
+ */
+function blockOfParts(
+  blocks: readonly (MyInvestorInclusionBlock | null)[],
+): MyInvestorInclusionBlock | null {
+  return (
+    blocks.find((block) => block?.reason === "currency") ??
+    blocks.find((block) => block !== null) ??
+    null
+  );
 }
 
 /**

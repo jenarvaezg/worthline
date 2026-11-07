@@ -193,7 +193,7 @@ export function planMyInvestorInclusion(
     }
   }
 
-  const folded = foldMyInvestorOperations(discovery, input.sourceId);
+  const folded = foldMyInvestorOperations(discovery, input.sourceId).rows;
   const holdings: ConnectedHoldingCreation[] = [];
   const facts: NormalizedFact<CreateInvestmentOperationInput>[] = [];
   const factKeyById = new Map(

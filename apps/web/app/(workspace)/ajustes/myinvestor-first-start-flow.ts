@@ -30,6 +30,7 @@ import type {
   MyInvestorCredentials,
   MyInvestorErrorKind,
   MyInvestorReader,
+  ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { MyInvestorSyncError } from "@worthline/pricing";
 import { MYINVESTOR_LOGIN_ERRORS, MYINVESTOR_NOT_FOUND } from "./myinvestor-copy";
@@ -51,6 +52,7 @@ import {
   findMyInvestorPortfolioTwins,
   type MyInvestorManualPortfolio,
 } from "./myinvestor-portfolio";
+import { withMyInvestorRates } from "./myinvestor-rates";
 import type { MyInvestorFirstStartView } from "./myinvestor-selection";
 import { soldUnpairedOutIds } from "./myinvestor-sync-plan";
 import {
@@ -135,7 +137,9 @@ async function readConnection(
 
 /**
  * Read everything with a session already in hand and keep it. The read is not a
- * write to the book: a failure keeps nothing and says so.
+ * write to the book: a failure keeps nothing and says so. The ECB rates of its
+ * orders in another currency are asked now and kept with it (#1899); those the
+ * stored read already had stay, and an ECB down leaves the rest missing.
  */
 export async function storeMyInvestorDiscovery(
   deps: {
@@ -143,12 +147,14 @@ export async function storeMyInvestorDiscovery(
     now: string;
     today: string;
     log?: MyInvestorServerLog;
+    /** Swaps the ECB the rates are asked of (tests). */
+    fx?: ResolveFxRateSnapshotOptions;
   },
   input: { sourceId: string; reader: MyInvestorReader },
 ): Promise<MyInvestorFlowResult> {
-  let discovery: MyInvestorDiscovery;
+  let read: MyInvestorDiscovery;
   try {
-    discovery = await readMyInvestorDiscovery(input.reader, deps.today);
+    read = await readMyInvestorDiscovery(input.reader, deps.today);
   } catch (error) {
     if (error instanceof MyInvestorSyncError) {
       logMyInvestorFailure("reading the products", error.error, deps.log);
@@ -156,6 +162,11 @@ export async function storeMyInvestorDiscovery(
     }
     throw error;
   }
+  const stored = await deps.store.connectedSources.readDiscovery(input.sourceId);
+  const discovery = await withMyInvestorRates(read, {
+    ...deps.fx,
+    known: stored ? parseMyInvestorDiscovery(stored.payloadJson)?.fxRates : undefined,
+  });
   const saved = await deps.store.connectedSources.saveDiscovery({
     payloadJson: serializeMyInvestorDiscovery(discovery),
     readAt: deps.now,
@@ -176,6 +187,7 @@ export async function readMyInvestorProducts(
     now: string;
     today: string;
     log?: MyInvestorServerLog;
+    fx?: ResolveFxRateSnapshotOptions;
   },
   input: { sourceId: string; typed: MyInvestorCredentials | null },
 ): Promise<MyInvestorFlowResult> {
@@ -295,7 +307,11 @@ async function twinLedgers(
   );
 }
 
-/** The stored discovery and the fold built from it, or null when there is none to show. */
+/**
+ * The stored discovery and the fold built from it, or null when there is none to show.
+ * From the store only: the ECB rates of its orders in another currency came with the
+ * read (#1899), so the page never waits on the ECB.
+ */
 export async function loadMyInvestorFirstStart(
   store: MyInvestorFoldStore,
   sourceId: string,

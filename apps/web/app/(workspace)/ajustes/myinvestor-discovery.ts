@@ -16,7 +16,7 @@
  * movements, and no valuation of MyInvestor's — worthline prices everything itself.
  */
 
-import type { DecimalString, NormalizedFact } from "@worthline/domain";
+import type { DecimalString, FxRatePoint, NormalizedFact } from "@worthline/domain";
 import { addUnits, isPositiveDecimal } from "@worthline/domain";
 import type {
   MyInvestorCashAccount,
@@ -122,6 +122,13 @@ export interface MyInvestorDiscovery {
    * on a document a first start kept before the periodic sync existed.
    */
   readonly contributions?: readonly MyInvestorContribution[];
+  /**
+   * The ECB rates of the days of its orders in another currency, EUR per unit, by
+   * currency (#1899, ADR 0072): asked when MyInvestor is read and kept with the read,
+   * so the fold that previews and the one that writes convert the same and the page
+   * never waits on the ECB. Absent on a read in euros only, and on one kept before.
+   */
+  readonly fxRates?: Readonly<Record<string, readonly FxRatePoint[]>>;
 }
 
 /** The reads the discovery is made of. */
@@ -619,6 +626,10 @@ const discoverySchema: z.ZodType<MyInvestorDiscovery> = z.object({
   accounts: z.array(accountSchema),
   // Absent on a document kept before the periodic sync existed.
   contributions: z.array(contributionSchema).exactOptional(),
+  // Absent on a read in euros only, and on one kept before #1899.
+  fxRates: z
+    .record(text, z.array(z.object({ dateKey: text, eurPerUnit: z.number() })))
+    .exactOptional(),
   operations: z.array(operationSchema),
   products: z.array(productSchema),
   readOn: text,

@@ -15,9 +15,12 @@ import { portfolioWitnessView } from "@web/patrimonio/carteras/carteras-view";
 import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
 import { createStoreFromSqlite, openLibsqlClient } from "@worthline/db";
 import { derivePosition, fixedClock } from "@worthline/domain";
-import { createMyInvestorClient } from "@worthline/pricing";
+import {
+  createMyInvestorClient,
+  type ResolveFxRateSnapshotOptions,
+} from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { startMyInvestorConnect } from "./myinvestor-connect";
 import {
   includeMyInvestorProducts,
@@ -53,12 +56,43 @@ function roboClient(deviceId: string) {
   });
 }
 
-async function connectAndRead(clientFor = fixtureClient): Promise<string> {
+/** A robo-advisor whose manager holds a fund in its USD class (#1899): synthetic. */
+function roboUsdClient(deviceId: string) {
+  return createMyInvestorClient({
+    deviceId,
+    sleep: async () => {},
+    transport: fixtureTransport({ prefer: (file) => file.includes("roboadvisor-usd") }),
+  });
+}
+
+/** The ECB, offline: one dollar is worth 0,90 € every day it is asked about. */
+const ECB_AT_090: ResolveFxRateSnapshotOptions = {
+  fetchDailyRates: async (_currency, fromMs, toMs) => {
+    const rates = new Map<string, number>();
+    for (let at = fromMs; at <= toMs; at += 86_400_000) {
+      rates.set(new Date(at).toISOString().slice(0, 10), 0.9);
+    }
+    return rates;
+  },
+};
+
+/** The ECB down: it answers no rate at all. */
+const ECB_DOWN: ResolveFxRateSnapshotOptions = {
+  fetchDailyRates: async () => new Map(),
+};
+
+async function connectAndRead(
+  clientFor = fixtureClient,
+  fx?: ResolveFxRateSnapshotOptions,
+): Promise<string> {
   const step = await startMyInvestorConnect(
     {
       acceptedBy: null,
       afterConnect: ({ reader, sourceId }) =>
-        storeMyInvestorDiscovery({ now: NOW, store, today: TODAY }, { reader, sourceId }),
+        storeMyInvestorDiscovery(
+          { now: NOW, store, today: TODAY, ...(fx ? { fx } : {}) },
+          { reader, sourceId },
+        ),
       clientFor,
       newDeviceId: () => "device-sintetico",
       now: NOW,
@@ -543,5 +577,90 @@ describe("the robo-advisor as a managed portfolio (#1883), over the fixtures", (
       { links: [{ assetId: manual.id, productKey: BLOCK }], productKeys: [], sourceId },
     );
     expect(linked.ok).toBe(true);
+  });
+});
+
+describe("a robo-advisor with a fund in its USD class (#1899), over the fixtures", () => {
+  const DOLLAR_ISIN = "IE00SINTET45";
+
+  // Nothing here may reach the ECB: every rate comes from the fakes above.
+  let network: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("sin red"));
+  });
+  afterEach(() => {
+    expect(network).not.toHaveBeenCalled();
+    network.mockRestore();
+  });
+
+  test("it is included whole: the dollar orders land in euros with their capture", async () => {
+    const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
+    const { view, discovery } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    expect(managed).toMatchObject({ block: null, selectedByDefault: true });
+
+    const result = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { productKeys: [managed.key], sourceId },
+    );
+    expect(result.ok).toBe(true);
+
+    const dollar = discovery.products.find(
+      (product) => product.instrument?.code === DOLLAR_ISIN,
+    )!;
+    const assetId = (await linkedAssetFor(sourceId, dollar.key))!;
+    const asset = (await store.assets.readAssets()).find((row) => row.id === assetId)!;
+    expect(asset.currency).toBe("EUR");
+    // P8: the units are MyInvestor's, exactly.
+    expect(await unitsOf(assetId)).toBe(dollar.units);
+    const operations = await store.operations.readOperations(assetId);
+    expect(operations).toHaveLength(3);
+    for (const operation of operations) {
+      expect(operation.currency).toBe("EUR");
+      expect(operation.capture).toMatchObject({ currency: "USD", eurPerUnit: 0.9 });
+    }
+    // 120,55 US$ for 12,2099 participaciones: the euro price is the dollar one × 0,90.
+    const first = operations.find((row) => row.executedAt.startsWith("2025-03-10"))!;
+    expect(Number(first.pricePerUnit)).toBeCloseTo(
+      Number(first.capture!.pricePerUnit) * 0.9,
+      8,
+    );
+    // The cost is in euros: never the 155,99 «€» the dollars sum to.
+    const cost = derivePosition(operations, { assetId, currency: "EUR" }).costBasis;
+    expect(cost.amountMinor).toBeLessThan(15_599);
+  });
+
+  test("the Conexiones page asks nothing of the network: the stored read brings the rates", async () => {
+    const sourceId = await connectAndRead(roboUsdClient, ECB_AT_090);
+    network.mockClear();
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    expect(managed.block).toBeNull();
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  test("with the ECB down at the read, the block waits: nothing is invented", async () => {
+    const sourceId = await connectAndRead(roboUsdClient, ECB_DOWN);
+    const { view } = (await loadMyInvestorFirstStart(store, sourceId, TODAY))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    expect(managed.block).toEqual({ reason: "rate_missing" });
+    expect(isIncludable(managed)).toBe(false);
+
+    const refused = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { productKeys: [managed.key], sourceId },
+    );
+    expect(refused.ok).toBe(false);
+    expect(await store.assets.readAssets()).toHaveLength(0);
   });
 });

@@ -21,10 +21,11 @@ import type {
   MyInvestorOrder,
   MyInvestorReader,
   MyInvestorTransport,
+  ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { createMyInvestorClient } from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { startMyInvestorConnect } from "./myinvestor-connect";
 import { hasSavedPassword, readMyInvestorCredentials } from "./myinvestor-credentials";
@@ -67,8 +68,10 @@ function fixtureClient(deviceId: string) {
  * for a window; this answers it with the recorded read — a wider overlap than the
  * real one, which is exactly what must apply nothing twice.
  */
-function windowedFixtureTransport(): MyInvestorTransport {
-  const fixtures = fixtureTransport();
+function windowedFixtureTransport(
+  prefer?: (file: string) => boolean,
+): MyInvestorTransport {
+  const fixtures = fixtureTransport(prefer ? { prefer } : {});
   return {
     send: (request) => {
       const query = request.query;
@@ -86,11 +89,11 @@ function windowedFixtureTransport(): MyInvestorTransport {
   };
 }
 
-function windowedClient(deviceId: string) {
+function windowedClient(deviceId: string, prefer?: (file: string) => boolean) {
   return createMyInvestorClient({
     deviceId,
     sleep: async () => {},
-    transport: windowedFixtureTransport(),
+    transport: windowedFixtureTransport(prefer),
   });
 }
 
@@ -106,11 +109,11 @@ interface FakeClient {
   clientFor: (deviceId: string) => SyncClient;
 }
 
-function fakeClient(): FakeClient {
+function fakeClient(prefer?: (file: string) => boolean): FakeClient {
   const fake: FakeClient = {
     bend: (reader) => reader,
     clientFor: (deviceId) => {
-      const real = windowedClient(deviceId);
+      const real = windowedClient(deviceId, prefer);
       return {
         loginWithKnownDevice: async (credentials) => {
           fake.logins += 1;
@@ -596,6 +599,297 @@ describe("the attempt log (#1885)", () => {
     });
 
     expect(await store.syncRuns.readRuns(sourceId)).toEqual([]);
+  });
+});
+
+describe("a robo-advisor with a fund in its USD class (#1899)", () => {
+  const preferUsd = (file: string) => file.includes("roboadvisor-usd");
+  const ACCOUNT = "9100009";
+  const EURO = "IE00SINTET52";
+  const DOLLAR = "IE00SINTET45";
+  const MONEY = "IE00SINTET60";
+
+  // Nothing here may reach the ECB: every rate comes from the fakes below.
+  let network: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    network = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("sin red"));
+  });
+  afterEach(() => {
+    expect(network).not.toHaveBeenCalled();
+    network.mockRestore();
+  });
+
+  /** The ECB, offline: one dollar is worth 0,90 € every day it is asked about. */
+  const ecbAt090: ResolveFxRateSnapshotOptions = {
+    fetchDailyRates: async (_currency, fromMs, toMs) => {
+      const rates = new Map<string, number>();
+      for (let at = fromMs; at <= toMs; at += 86_400_000) {
+        rates.set(new Date(at).toISOString().slice(0, 10), 0.9);
+      }
+      return rates;
+    },
+  };
+  const ecbDown: ResolveFxRateSnapshotOptions = {
+    fetchDailyRates: async () => new Map(),
+  };
+
+  function order(
+    reference: string,
+    isin: string,
+    currency: string,
+    cash: string,
+    shares: string,
+    extra: { operationType?: string; orderDate?: string } = {},
+  ): MyInvestorOrder {
+    return {
+      accountId: ACCOUNT,
+      amountToBlock: null,
+      cash,
+      currency,
+      dgsCode: null,
+      effectiveDate: null,
+      executionNav: null,
+      expirationDate: null,
+      fundName: null,
+      isin,
+      market: null,
+      operationType: extra.operationType ?? "INVESTMENT_FUNDS_SUBSCRIPTION",
+      orderDate: extra.orderDate ?? "2026-11-02",
+      orderType: null,
+      productType: null,
+      reference,
+      shares,
+      status: "COMPLETE",
+      ticker: null,
+    };
+  }
+
+  /** A traspaso between two funds, paired as the adapter pairs it: same day and cash. */
+  function traspaso(
+    ref: string,
+    from: { isin: string; currency: string },
+    to: { isin: string; currency: string },
+    shares: string,
+    orderDate: string,
+  ): MyInvestorOrder[] {
+    return [
+      order(`${ref}-out`, from.isin, from.currency, "10.40", shares, {
+        operationType: "IIC_SWITCH_DEREGISTRATION",
+        orderDate,
+      }),
+      order(`${ref}-in`, to.isin, to.currency, "10.40", shares, {
+        operationType: "IIC_SWITCH_REGISTRATION",
+        orderDate,
+      }),
+    ];
+  }
+
+  /**
+   * The account as MyInvestor would read it: `orders` added to its orders, and its
+   * positions moved by `units` (ISIN → shares added), so the units check can cuadrar.
+   */
+  function bent(
+    orders: readonly MyInvestorOrder[],
+    units: Readonly<Record<string, string>> = {},
+  ): (reader: MyInvestorReader) => MyInvestorReader {
+    return (reader) => ({
+      ...reader,
+      securitiesAccount: async (id) => {
+        const read = await reader.securitiesAccount(id);
+        if (!read.ok || id !== ACCOUNT) return read;
+        return {
+          ok: true,
+          value: {
+            ...read.value,
+            positions: read.value.positions.map((position) => {
+              const delta = position.isin ? units[position.isin] : undefined;
+              return delta === undefined
+                ? position
+                : { ...position, shares: addUnits(position.shares, delta) };
+            }),
+          },
+        };
+      },
+      securitiesOrders: async (id, range) => {
+        const read = await reader.securitiesOrders(id, range);
+        return read.ok && id === ACCOUNT
+          ? { ok: true, value: [...read.value, ...orders] }
+          : read;
+      },
+    });
+  }
+
+  async function connectIncludeUsd(): Promise<string> {
+    const step = await startMyInvestorConnect(
+      {
+        acceptedBy: null,
+        afterConnect: ({ reader, sourceId }) =>
+          storeMyInvestorDiscovery(
+            { fx: ecbAt090, now: NOW, store, today: TODAY },
+            { reader, sourceId },
+          ),
+        clientFor: (deviceId) => windowedClient(deviceId, preferUsd),
+        newDeviceId: () => "device-sintetico",
+        now: NOW,
+        store: store.connectedSources,
+      },
+      { ...TYPED, save: true },
+    );
+    expect(step.step).toBe("connected");
+    const source = (await store.connectedSources.listSources()).find(
+      (row) => row.adapter === "myinvestor",
+    )!;
+    const { view } = (await loadMyInvestorFirstStart(store, source.id, TODAY))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    expect(managed.block).toBeNull();
+    const included = await includeMyInvestorProducts(
+      {
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { productKeys: [managed.key], sourceId: source.id },
+    );
+    expect(included.ok).toBe(true);
+    return source.id;
+  }
+
+  async function operationById(id: string) {
+    const rows = await client.execute({
+      args: [id],
+      sql: "SELECT currency, capture_currency, capture_eur_per_unit FROM asset_operations WHERE id = ?",
+    });
+    return rows.rows[0] ?? null;
+  }
+
+  /** A pass: the ECB down, or answering; a day later when `later`. */
+  async function pass(
+    fake: FakeClient,
+    fx: ResolveFxRateSnapshotOptions,
+    sourceId: string,
+    later = false,
+  ) {
+    const clock = movableClock(NOW);
+    if (later) clock.advanceHours(24);
+    return outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake, clock), fx },
+        { sourceId, trigger: "cron", typed: null },
+      ),
+    );
+  }
+
+  test("with the ECB down the dollar order waits, the rest lands; the next pass applies it in euros", async () => {
+    const sourceId = await connectIncludeUsd();
+    const before = await operationCount();
+    const fake = fakeClient(preferUsd);
+    const fresh = [
+      order("sintetica-usd-nueva", DOLLAR, "USD", "22.10", "2"),
+      order("sintetica-eur-nueva", EURO, "EUR", "20.80", "2"),
+    ];
+    fake.bend = bent(fresh);
+
+    expect(await pass(fake, ecbDown, sourceId)).toMatchObject({ applied: 1, kind: "ok" });
+    expect(await operationCount()).toBe(before + 1);
+    expect(await operationById(`mi_${sourceId}_sintetica-usd-nueva`)).toBeNull();
+
+    // A day later the ECB answers and the window no longer holds the order: it is
+    // planned anyway until it lands, lands once, and the units cuadran (P8).
+    fake.bend = bent([], { [DOLLAR]: "2", [EURO]: "2" });
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 1,
+      kind: "ok",
+      mismatches: 0,
+    });
+    expect(await operationById(`mi_${sourceId}_sintetica-usd-nueva`)).toMatchObject({
+      capture_currency: "USD",
+      capture_eur_per_unit: "0.9",
+      currency: "EUR",
+    });
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 0,
+      mismatches: 0,
+    });
+    expect(await operationCount()).toBe(before + 2);
+  });
+
+  test("a traspaso from the euro fund into the dollar class with the ECB down: no leg lands alone", async () => {
+    const sourceId = await connectIncludeUsd();
+    const before = await operationCount();
+    const fake = fakeClient(preferUsd);
+    fake.bend = bent(
+      traspaso(
+        "sw",
+        { currency: "EUR", isin: EURO },
+        { currency: "USD", isin: DOLLAR },
+        "2",
+        "2026-11-02",
+      ),
+    );
+
+    expect(await pass(fake, ecbDown, sourceId)).toMatchObject({ applied: 0, kind: "ok" });
+    expect(await operationById(`mi_${sourceId}_sw-out`)).toBeNull();
+    expect(await operationById(`mi_${sourceId}_sw-in`)).toBeNull();
+
+    // The ECB answers on a later pass, when the window no longer holds the pair.
+    fake.bend = bent([], { [DOLLAR]: "2", [EURO]: "-2" });
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 2,
+      kind: "ok",
+      mismatches: 0,
+    });
+    expect(await operationById(`mi_${sourceId}_sw-in`)).toMatchObject({
+      capture_currency: "USD",
+      currency: "EUR",
+    });
+    expect(await operationById(`mi_${sourceId}_sw-out`)).not.toBeNull();
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 0,
+      mismatches: 0,
+    });
+    expect(await operationCount()).toBe(before + 2);
+  });
+
+  test("a chain (A→D in dollars, then A→C, then a buy in C) waits whole and lands whole, out of the window", async () => {
+    const sourceId = await connectIncludeUsd();
+    const before = await operationCount();
+    const fake = fakeClient(preferUsd);
+    const chain = [
+      ...traspaso(
+        "s",
+        { currency: "EUR", isin: EURO },
+        { currency: "USD", isin: DOLLAR },
+        "2",
+        "2026-10-21",
+      ),
+      ...traspaso(
+        "t",
+        { currency: "EUR", isin: EURO },
+        { currency: "EUR", isin: MONEY },
+        "1",
+        "2026-10-22",
+      ),
+      order("c2", MONEY, "EUR", "10.12", "1", { orderDate: "2026-10-25" }),
+    ];
+    const keys = chain.map((row) => `mi_${sourceId}_${row.reference}`);
+    fake.bend = bent(chain);
+
+    expect(await pass(fake, ecbDown, sourceId)).toMatchObject({ applied: 0, kind: "ok" });
+    for (const id of keys) expect(await operationById(id), id).toBeNull();
+
+    fake.bend = bent([], { [DOLLAR]: "2", [EURO]: "-3", [MONEY]: "2" });
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 5,
+      kind: "ok",
+      mismatches: 0,
+    });
+    for (const id of keys) expect(await operationById(id), id).not.toBeNull();
+    expect(await pass(fake, ecbAt090, sourceId, true)).toMatchObject({
+      applied: 0,
+      mismatches: 0,
+    });
+    expect(await operationCount()).toBe(before + 5);
   });
 });
 

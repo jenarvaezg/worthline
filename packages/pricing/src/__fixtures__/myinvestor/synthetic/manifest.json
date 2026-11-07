@@ -169,5 +169,41 @@
     "status": 200,
     "origin": "synthetic",
     "note": "Las participaciones de hoy de la cartera (cuadran con sus órdenes COMPLETE, P8) y el valor de los fondos que declara el gestor (fundsMarketValue), sin la caja."
+  },
+  {
+    "file": "synthetic/cash-accounts-roboadvisor-usd.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/cash-accounts/self",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "La cuenta de efectivo de un roboadvisor cuya cartera lleva un fondo en su clase USD (#1899). El efectivo es en euros."
+  },
+  {
+    "file": "synthetic/securities-accounts-roboadvisor-usd.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/self-basic",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Su cuenta de valores SECURITIES_PORTFOLIO, enlazada con esa cuenta de efectivo por cashAccountId."
+  },
+  {
+    "file": "synthetic/securities-orders-roboadvisor-usd.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v3/securities-accounts/9100009/orders",
+    "query": { "dateFrom": "2000-01-01", "dateTo": "2026-11-04" },
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Las órdenes del gestor: dos fondos en EUR y otro en su clase USD, cuyas órdenes vienen en dólares (currency USD, cash en USD), con un reembolso parcial."
+  },
+  {
+    "file": "synthetic/securities-account-roboadvisor-usd.json",
+    "method": "GET",
+    "path": "/cperf-server/api/v2/securities-accounts/9100009",
+    "query": {},
+    "status": 200,
+    "origin": "synthetic",
+    "note": "Las participaciones de hoy de la cartera (cuadran con sus órdenes COMPLETE, P8) y el valor de los fondos que declara el gestor (fundsMarketValue), en euros."
   }
 ]

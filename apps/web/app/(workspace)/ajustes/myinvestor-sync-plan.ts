@@ -13,6 +13,12 @@
  *    {@link carryTransferCostsFromBook} then re-takes a new traspaso's inherited
  *    cost from its origin's BOOK: an answer the user gave there (#1882) is the cost
  *    the units carry, not the one the stored read can fold.
+ *    An order in another currency is written in euros at the ECB rate the read kept
+ *    for its day (#1899, ADR 0072). With no rate it waits — whole, with the other
+ *    half of its traspaso — and the rest of the pass goes on. Until it lands it is
+ *    planned on every pass, in the window or not, so a gap longer than the window's
+ *    overlap can never leave it behind the cursor; the dedup ledger keeps it from
+ *    landing twice.
  * 3. {@link checkMyInvestorUnits} — the units check: each linked holding's book
  *    against MyInvestor's units, exact. It reports; it never plans an adjustment
  *    (PRD #1876, invariant 6).
@@ -26,6 +32,7 @@ import type {
   NormalizedFact,
 } from "@worthline/domain";
 import {
+  BASE_CURRENCY,
   compareInvestmentOperations,
   compareUnits,
   costLeavingOrigin,
@@ -42,6 +49,7 @@ import {
 import {
   entryOfSoldOrigin,
   foldMyInvestorOperations,
+  myInvestorHeldBack,
   myInvestorOperationId,
   operationInput,
   pendingEntryOfSoldOrigin,
@@ -123,6 +131,12 @@ export interface MyInvestorSyncPlan {
  * (null for «Resincronizar todo», which read the whole history): only those are
  * planned, so the dedup ledger is asked about a window, never the whole account.
  * The ledger still decides what is new.
+ *
+ * The exception is what may have waited for an ECB rate (#1899): a row in the fold's
+ * closure of the orders in another currency (`myInvestorHeldBack`: the traspasos
+ * they are part of, chained, and what follows in each holding) is planned whatever
+ * the window while `bookIds` — the ids the linked books already hold — lack it. An
+ * account in euros only plans its window, as before.
  */
 export function planMyInvestorSync(
   discovery: MyInvestorDiscovery,
@@ -131,18 +145,32 @@ export function planMyInvestorSync(
     cursor: string;
     links: readonly MyInvestorLink[];
     windowKeys: ReadonlySet<string> | null;
+    /** The ids of the operations the linked books hold; none when absent. */
+    bookIds?: ReadonlySet<string>;
   },
 ): MyInvestorSyncPlan {
   const productByKey = new Map(
     discovery.products.map((product) => [product.key, product]),
   );
-  const folded = foldMyInvestorOperations(discovery, input.sourceId);
+  const folded = foldMyInvestorOperations(discovery, input.sourceId).rows;
   const factKeyById = new Map(
     discovery.operations.map((fact) => [
       myInvestorOperationId(input.sourceId, fact.key),
       fact.key,
     ]),
   );
+  // What may have waited for an ECB rate on an earlier pass: the fold's own closure,
+  // seeded with every order in another currency, so a chain of traspasos is
+  // replanned as whole as it waited (#1899).
+  const mayHaveWaited = myInvestorHeldBack(
+    discovery,
+    (fact) => fact.payload.currency !== BASE_CURRENCY,
+  );
+  const bookIds = input.bookIds ?? new Set<string>();
+  const planned = (factKey: string, rowId: string) =>
+    input.windowKeys === null ||
+    input.windowKeys.has(factKey) ||
+    (mayHaveWaited.has(factKey) && !bookIds.has(rowId));
 
   const facts: NormalizedFact<CreateInvestmentOperationInput>[] = [];
   const cashBalances: { assetId: string; valueMinor: number }[] = [];
@@ -170,7 +198,7 @@ export function planMyInvestorSync(
     for (const row of folded.get(link.productKey) ?? []) {
       const factKey = factKeyById.get(row.id);
       if (factKey === undefined) continue;
-      if (input.windowKeys !== null && !input.windowKeys.has(factKey)) continue;
+      if (!planned(factKey, row.id)) continue;
       facts.push({
         dateKey: row.executedAt.slice(0, 10),
         key: factKey,
