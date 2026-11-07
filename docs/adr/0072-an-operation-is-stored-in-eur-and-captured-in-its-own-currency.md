@@ -163,3 +163,26 @@ re-imported file can never convert differently than a hand-typed apunte.
   door and can now be revisited; and the alta paths (wizard and assistant) still
   capture euros only, which is what their «saldo de hoy» question asks for and what
   `liveUnitPrice` already enforces by rejecting a non-EUR quote.
+
+## Amendment (#1899, 2026-11-07) — the MyInvestor connector is a fifth path
+
+MyInvestor states the orders of a fund's USD class in dollars, and a robo-advisor's
+manager picks the class, not the user. Until #1899 the connector refused to include
+any product with an order in another currency. It now writes them through this
+ADR's grammar, unchanged:
+
+- **The holding is EUR** (decision 5), valued at the cached price, which the
+  provider already converts (#1357).
+- **The door is the same pure conversion**, `convertOperationToBaseCurrency`, called
+  inside `foldMyInvestorOperations` with a snapshot of the ECB rates of the days of
+  those orders. The first start's preview, the inclusion and the daily sync fold
+  with it, so all three show and write the same euros (#1438). The provisional cost
+  of an entry whose cost is pending is converted at the rate of its day too.
+  Nothing converts at normalization: the stored read keeps MyInvestor's dollars.
+- **A missing rate refuses, as in decision 4.** The first start blocks the product
+  and names the day. The sync leaves that order out and applies the rest of the
+  pass. An order in another currency is planned on every pass until it lands,
+  whatever the window, so a long gap cannot leave it behind the cursor. The dedup
+  ledger keeps it from landing twice.
+- A currency outside `CAPTURE_CURRENCIES`, and a cash balance in another currency,
+  still block the product.

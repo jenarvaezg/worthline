@@ -44,6 +44,7 @@ import type {
   MyInvestorError,
   MyInvestorErrorKind,
   MyInvestorReader,
+  ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { MyInvestorSyncError } from "@worthline/pricing";
 import {
@@ -57,6 +58,7 @@ import {
   readMyInvestorAccount,
   serializeMyInvestorDiscovery,
 } from "./myinvestor-discovery";
+import { resolveMyInvestorRates } from "./myinvestor-rates";
 import {
   type MyInvestorSyncOutcome,
   type MyInvestorSyncStep,
@@ -126,6 +128,8 @@ export interface MyInvestorSyncDeps {
   /** The app's calendar day (UTC), the day the logins are counted in. */
   today: () => string;
   sleep: (ms: number) => Promise<void>;
+  /** Swaps the ECB the orders in another currency are converted with (tests). */
+  fx?: ResolveFxRateSnapshotOptions;
 }
 
 export interface MyInvestorSyncInput {
@@ -485,7 +489,16 @@ async function readAndApply(
           .map((fact) => fact.key),
       );
   const links = await store.connectedSources.readLinks(sourceId);
-  const plan = planMyInvestorSync(discovery, { cursor, links, sourceId, windowKeys });
+  // An order in another currency is written in euros at the ECB rate of its day
+  // (#1899); with no rate it waits for a later pass, and the rest goes on.
+  const rates = await resolveMyInvestorRates(discovery, deps.fx);
+  const plan = planMyInvestorSync(discovery, {
+    cursor,
+    links,
+    rates,
+    sourceId,
+    windowKeys,
+  });
 
   // A new traspaso's inherited cost travels from its origin's BOOK, answers to
   // #1882 included, never only from what the stored read can fold.

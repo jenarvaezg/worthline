@@ -1,0 +1,76 @@
+{
+  "status": {
+    "timestamp": "2026-11-04T09:00:00.000000000Z",
+    "code": "OK"
+  },
+  "payload": {
+    "data": {
+      "externalCodAccount": "15449100000000000909",
+      "accountType": "SECURITIES_PORTFOLIO",
+      "accountId": "9100009",
+      "codAccount": "9100000909",
+      "cashAccountId": "9100008",
+      "portfolioName": "CARTERA SINTETICA GLOBAL",
+      "portfolioProfileType": "DYNAMIC",
+      "marketValue": 283.28,
+      "fundsMarketValue": 283.28,
+      "securitiesAccountInvestments": {
+        "INDEXED_FUND": {
+          "productNum": 2,
+          "totalAmount": 283.28,
+          "investmentList": [
+            {
+              "accountId": "null",
+              "investmentProductType": "INDEXED_FUND",
+              "productTypeCode": "IIC",
+              "marketCode": "FEX",
+              "isin": "IE00SINTET45",
+              "fundId": null,
+              "stockId": null,
+              "ticker": null,
+              "investmentName": "FONDO SINTETICO INDICE MUNDIAL USD",
+              "initialInvestment": 140.62,
+              "initialInvestmentCurrency": 155.99,
+              "marketValue": 150.21,
+              "profit": 9.59,
+              "totalReturn": 1.06819,
+              "shares": 15.3656,
+              "availableShares": 15.3656,
+              "averageCost": 9.151611,
+              "liquidationValue": 9.7757,
+              "liquidationValueDate": "2026-11-03T00:00:00.000Z",
+              "originCurrencyLiquidationValue": 11.2391,
+              "liquidationValueCurrency": "USD",
+              "status": "OPEN"
+            },
+            {
+              "accountId": "null",
+              "investmentProductType": "INDEXED_FUND",
+              "productTypeCode": "IIC",
+              "marketCode": "FEX",
+              "isin": "IE00SINTET52",
+              "fundId": null,
+              "stockId": null,
+              "ticker": null,
+              "investmentName": "FONDO SINTETICO RENTA FIJA EURO",
+              "initialInvestment": 129.94,
+              "initialInvestmentCurrency": 129.94,
+              "marketValue": 133.07,
+              "profit": 3.13,
+              "totalReturn": 1.02409,
+              "shares": 12.8043,
+              "availableShares": 12.8043,
+              "averageCost": 10.148153,
+              "liquidationValue": 10.3926,
+              "liquidationValueDate": "2026-11-03T00:00:00.000Z",
+              "originCurrencyLiquidationValue": 10.3926,
+              "liquidationValueCurrency": "EUR",
+              "status": "OPEN"
+            }
+          ]
+        }
+      },
+      "status": "ACTIVE"
+    }
+  }
+}

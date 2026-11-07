@@ -21,19 +21,34 @@
  * - an outgoing leg nobody could pair is written as the sale it reads as, marked
  *   `unpaired_out`, until the user confirms which entry it funded (#1882, ADR 0115
  *   as amended 2026-11-04): then the two become one traspaso and the cost travels.
+ *
+ * The currency (#1899, ADR 0072): an order MyInvestor states in another currency (a
+ * fund's USD class) is written as every apunte captured outside the euro, through the
+ * same door (`convertOperationToBaseCurrency`): in EUR at the ECB rate of its own
+ * day, with the original price, fees and rate kept as its `capture`. The holding is
+ * EUR. With no rate for its day — or a currency worthline cannot capture — the order
+ * is left out and named in `missingRates`, never written at an invented rate; so is
+ * an entry whose inherited cost would be folded from such an order.
  */
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
+  FxRateSnapshot,
   InvestmentOperation,
   NormalizedFact,
 } from "@worthline/domain";
 import {
+  BASE_CURRENCY,
   compareInvestmentOperations,
+  convertOperationToBaseCurrency,
   costLeavingOrigin,
+  createFxRateSnapshot,
   createInvestmentOperation,
+  createMoneyConverter,
   divideUnits,
+  isCaptureCurrency,
   isPositiveDecimal,
+  money,
   multiplyToMinor,
   PRICE_READBACK_DECIMALS,
 } from "@worthline/domain";
@@ -43,6 +58,19 @@ import type { MyInvestorDiscovery } from "./myinvestor-discovery";
 
 /** A product's operations as worthline rows, with every inherited cost resolved. */
 export type FoldedRows = ReadonlyMap<string, readonly InvestmentOperation[]>;
+
+/** The fold of a discovery: its rows, and what it could not write in euros yet. */
+export interface MyInvestorFold {
+  readonly rows: FoldedRows;
+  /**
+   * By product key, the earliest day of an operation left out of `rows` because no
+   * ECB rate covers it (#1899): the first start blocks the product, the sync waits.
+   */
+  readonly missingRates: ReadonlyMap<string, string>;
+}
+
+/** No rate at all: what a discovery with only euro operations needs. */
+export const NO_MYINVESTOR_RATES: FxRateSnapshot = createFxRateSnapshot({});
 
 /** The id an operation of this source gets in the book: stable per fact and per connection. */
 export function myInvestorOperationId(sourceId: string, factKey: string): string {
@@ -122,10 +150,13 @@ function compareLedgerOrder(
 export function foldMyInvestorOperations(
   discovery: MyInvestorDiscovery,
   sourceId: string,
-): FoldedRows {
+  rates: FxRateSnapshot = NO_MYINVESTOR_RATES,
+): MyInvestorFold {
   const facts = discovery.operations;
   const byKey = new Map(facts.map((fact) => [fact.key, fact]));
-  const resolved = new Map<string, InvestmentOperation>();
+  const resolved = new Map<string, InvestmentOperation | null>();
+  /** The day whose rate is missing, by the key of each fact left out (#1899). */
+  const missingOn = new Map<string, string>();
   const resolving = new Set<string>();
   const rowsByProduct = new Map<string, NormalizedFact<MyInvestorOperationFact>[]>();
   for (const fact of facts) {
@@ -135,7 +166,17 @@ export function foldMyInvestorOperations(
     rowsByProduct.set(key, list);
   }
 
+  /** The row's input in euros (ADR 0072), or null when no rate converts it. */
   const baseInput = (
+    fact: NormalizedFact<MyInvestorOperationFact>,
+  ): CreateInvestmentOperationInput | null => {
+    if (!isCaptureCurrency(fact.payload.currency)) return null;
+    const converted = convertOperationToBaseCurrency(nativeInput(fact), rates);
+    return converted.ok ? converted.value : null;
+  };
+
+  /** The row's input as MyInvestor states it, in the order's own currency. */
+  const nativeInput = (
     fact: NormalizedFact<MyInvestorOperationFact>,
   ): CreateInvestmentOperationInput => {
     const { payload } = fact;
@@ -171,11 +212,23 @@ export function foldMyInvestorOperations(
     };
   };
 
+  /** The cost of a fold step, or the day whose missing rate stands in its way. */
+  type Cost = { readonly minor: number } | { readonly missingOn: string };
+
+  /** The earliest day among the facts left out, or null when none is. */
+  const gapOf = (
+    pairs: readonly (readonly [NormalizedFact<MyInvestorOperationFact>, unknown])[],
+  ): string | null =>
+    pairs
+      .flatMap(([fact, row]) => (row === null ? [missingOn.get(fact.key)!] : []))
+      .sort()
+      .at(0) ?? null;
+
   /**
    * The cost a `transfer_out` takes out of its origin: `costLeavingOrigin`, the one
    * fold the sync, the inherited-cost answer and the traspaso audit use (ADR 0115).
    */
-  const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): number => {
+  const costLeaving = (out: NormalizedFact<MyInvestorOperationFact>): Cost => {
     const outRow = resolve(out);
     const origin = rowsByProduct.get(productKeyOf(out.payload)) ?? [];
     // Only the rows BEFORE the leg that leaves are resolved: a later entry into the
@@ -183,46 +236,89 @@ export function foldMyInvestorOperations(
     // one, and resolving it here would chase its tail. The ledger order needs no cost.
     const before = origin
       .filter((fact) => compareLedgerOrder(fact, out) < 0)
-      .map(resolve);
-    return costLeavingOrigin(outRow, new Map([[outRow.assetId, before]]));
+      .map((fact) => [fact, resolve(fact)] as const);
+    const gap = gapOf([[out, outRow], ...before]);
+    if (gap !== null || outRow === null) return { missingOn: gap! };
+    return {
+      minor: costLeavingOrigin(
+        outRow,
+        new Map([[outRow.assetId, before.map(([, row]) => row!)]]),
+      ),
+    };
   };
 
-  const inheritedCost = (fact: NormalizedFact<MyInvestorOperationFact>): number => {
+  const inheritedCost = (
+    fact: NormalizedFact<MyInvestorOperationFact>,
+    input: CreateInvestmentOperationInput,
+  ): Cost => {
     const transfer = fact.payload.transfer;
     if (transfer?.pairing === "paired") {
       const out = byKey.get(transfer.counterpartKey);
       if (out && out.payload.operation === "transfer_out") return costLeaving(out);
     }
-    // No origin in MyInvestor: the amount that arrived, pending until #1882 asks.
-    if (fact.payload.amount !== null && isPositiveDecimal(fact.payload.amount)) {
-      return toMinor(fact.payload.amount);
+    // No origin in MyInvestor: the amount that arrived, pending until #1882 asks —
+    // in euros at the rate of its day, as its price was (ADR 0072).
+    const { amount, currency, executedAt } = fact.payload;
+    if (amount !== null && isPositiveDecimal(amount)) {
+      const converted = createMoneyConverter(rates).convert(
+        money(toMinor(amount), currency),
+        BASE_CURRENCY,
+        executedAt,
+      );
+      return converted.ok
+        ? { minor: converted.value.amountMinor }
+        : { missingOn: executedAt.slice(0, 10) };
     }
-    return multiplyToMinor(fact.payload.units, rowPrice(fact.payload, facts));
+    return { minor: multiplyToMinor(fact.payload.units, input.pricePerUnit) };
   };
 
-  function resolve(fact: NormalizedFact<MyInvestorOperationFact>): InvestmentOperation {
+  function resolve(
+    fact: NormalizedFact<MyInvestorOperationFact>,
+  ): InvestmentOperation | null {
     const done = resolved.get(fact.key);
-    if (done) return done;
+    if (done !== undefined) return done;
     if (resolving.has(fact.key)) {
       throw new Error(`MyInvestor traspasos form a cycle at ${fact.key}.`);
     }
     resolving.add(fact.key);
-    const input = baseInput(fact);
-    const row = createInvestmentOperation(
-      fact.payload.operation === "transfer_in"
-        ? { ...input, transferCostMinor: inheritedCost(fact) }
-        : input,
-    );
+    const row = resolveRow(fact);
     resolving.delete(fact.key);
     resolved.set(fact.key, row);
     return row;
   }
 
-  const folded = new Map<string, InvestmentOperation[]>();
-  for (const [key, list] of rowsByProduct) {
-    folded.set(key, list.map(resolve).sort(compareInvestmentOperations));
+  function resolveRow(
+    fact: NormalizedFact<MyInvestorOperationFact>,
+  ): InvestmentOperation | null {
+    const leftOut = (day: string) => {
+      missingOn.set(fact.key, day);
+      return null;
+    };
+    const input = baseInput(fact);
+    if (input === null) return leftOut(fact.payload.executedAt.slice(0, 10));
+    if (fact.payload.operation !== "transfer_in") return createInvestmentOperation(input);
+    const cost = inheritedCost(fact, input);
+    if ("missingOn" in cost) return leftOut(cost.missingOn);
+    return createInvestmentOperation({ ...input, transferCostMinor: cost.minor });
   }
-  return folded;
+
+  const folded = new Map<string, InvestmentOperation[]>();
+  const missingRates = new Map<string, string>();
+  for (const [key, list] of rowsByProduct) {
+    const rows: InvestmentOperation[] = [];
+    for (const fact of list) {
+      const row = resolve(fact);
+      if (row !== null) {
+        rows.push(row);
+        continue;
+      }
+      const day = missingOn.get(fact.key)!;
+      const earliest = missingRates.get(key);
+      if (earliest === undefined || day < earliest) missingRates.set(key, day);
+    }
+    folded.set(key, rows.sort(compareInvestmentOperations));
+  }
+  return { missingRates, rows: folded };
 }
 /**
  * A folded row back as the input that writes it, into the holding it belongs to.
@@ -234,6 +330,7 @@ export function operationInput(
 ): CreateInvestmentOperationInput {
   return {
     assetId,
+    ...(row.capture === undefined ? {} : { capture: row.capture }),
     currency: row.currency,
     executedAt: row.executedAt,
     feesMinor: row.feesMinor,

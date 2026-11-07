@@ -78,6 +78,12 @@ export function myInvestorRowNotes(
   if (row.block?.reason === "currency") {
     notes.push("Opera en otra divisa: aún no se puede incluir");
   }
+  if (row.block?.reason === "rate_missing") {
+    const [, month, day] = row.block.date.split("-");
+    notes.push(
+      `Falta el tipo de cambio del BCE del ${day}/${month}: vuelve a probar mañana`,
+    );
+  }
   return notes;
 }
 

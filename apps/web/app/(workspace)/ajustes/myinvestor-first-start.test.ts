@@ -159,7 +159,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(A, "6"), fund(B, "2")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
     const incoming = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
 
     // 4 units × 10 € average = 40 €; FIFO would say 4 × 8 € = 32 €.
@@ -245,7 +245,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(A, "0"), fund(B, "2.0713")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
     const out = rows.get(keyOf(A))!.find((row) => row.kind === "transfer_out")!;
     const incoming = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
 
@@ -291,7 +291,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(A, "0"), fund(B, "0"), fund(C, "13")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
     expect(rows.get(keyOf(C))![0]!.transferCostMinor).toBe(10000);
   });
 
@@ -333,7 +333,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(A, "5"), fund(B, "10")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
 
     expect(
       rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!.transferCostMinor,
@@ -366,7 +366,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(B, "11")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
     const entry = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
 
     // No figure of its own: valued at the nearest execution NAV of the same product.
@@ -459,7 +459,7 @@ describe("the cost a traspaso carries", () => {
       ],
       [fund(A, "0"), fund(B, "4.1")],
     );
-    const rows = foldMyInvestorOperations(d, SOURCE);
+    const rows = foldMyInvestorOperations(d, SOURCE).rows;
     const out = rows.get(keyOf(A))!.find((row) => row.executedAt === "2026-06-11")!;
     const entry = rows.get(keyOf(B))!.find((row) => row.kind === "transfer_in")!;
 

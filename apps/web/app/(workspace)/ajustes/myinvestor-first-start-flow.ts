@@ -20,6 +20,7 @@ import {
 } from "@web/holding-route";
 import type { WorthlineStore } from "@web/store";
 import type {
+  FxRateSnapshot,
   InvestmentPriceProvider,
   ManagedPortfolio,
   ManualAsset,
@@ -30,6 +31,7 @@ import type {
   MyInvestorCredentials,
   MyInvestorErrorKind,
   MyInvestorReader,
+  ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { MyInvestorSyncError } from "@worthline/pricing";
 import { MYINVESTOR_LOGIN_ERRORS, MYINVESTOR_NOT_FOUND } from "./myinvestor-copy";
@@ -51,6 +53,7 @@ import {
   findMyInvestorPortfolioTwins,
   type MyInvestorManualPortfolio,
 } from "./myinvestor-portfolio";
+import { resolveMyInvestorRates } from "./myinvestor-rates";
 import type { MyInvestorFirstStartView } from "./myinvestor-selection";
 import { soldUnpairedOutIds } from "./myinvestor-sync-plan";
 import {
@@ -295,15 +298,25 @@ async function twinLedgers(
   );
 }
 
-/** The stored discovery and the fold built from it, or null when there is none to show. */
+/**
+ * The stored discovery and the fold built from it, or null when there is none to show.
+ * `rates` are the ECB rates the fold converted its orders in another currency with
+ * (#1899): the include plans with the very same. `fx` swaps the ECB (tests).
+ */
 export async function loadMyInvestorFirstStart(
   store: MyInvestorFoldStore,
   sourceId: string,
   today: string,
-): Promise<{ discovery: MyInvestorDiscovery; view: MyInvestorFirstStartView } | null> {
+  options: { fx?: ResolveFxRateSnapshotOptions } = {},
+): Promise<{
+  discovery: MyInvestorDiscovery;
+  view: MyInvestorFirstStartView;
+  rates: FxRateSnapshot;
+} | null> {
   const row = await store.connectedSources.readDiscovery(sourceId);
   const discovery = row ? parseMyInvestorDiscovery(row.payloadJson) : null;
   if (!discovery) return null;
+  const rates = await resolveMyInvestorRates(discovery, options.fx);
   const links = await store.connectedSources.readLinks(sourceId);
   const linkedKeys = new Set(links.map((link) => link.productKey));
   const assets = await store.assets.readAssets();
@@ -363,11 +376,12 @@ export async function loadMyInvestorFirstStart(
     linkedKeys,
     connectedPortfolios,
     portfolioTwins,
+    rates,
     sourceId,
     today,
     twins,
   });
-  return { discovery, view };
+  return { discovery, rates, view };
 }
 
 /**
@@ -381,6 +395,8 @@ export async function includeMyInvestorProducts(
     resolveSymbol: MyInvestorSymbolResolver;
     newAssetId: () => string;
     today: string;
+    /** Swaps the ECB the orders in another currency are converted with (tests). */
+    fx?: ResolveFxRateSnapshotOptions;
   },
   input: {
     sourceId: string;
@@ -393,7 +409,9 @@ export async function includeMyInvestorProducts(
   if (!(await readConnection(deps.store, input.sourceId))) {
     return { error: MYINVESTOR_NOT_FOUND, ok: false };
   }
-  const loaded = await loadMyInvestorFirstStart(deps.store, input.sourceId, deps.today);
+  const loaded = await loadMyInvestorFirstStart(deps.store, input.sourceId, deps.today, {
+    ...(deps.fx ? { fx: deps.fx } : {}),
+  });
   if (!loaded) return { error: MYINVESTOR_NOTHING_READ, ok: false };
 
   const workspace = await deps.store.workspace.readWorkspace();
@@ -449,6 +467,7 @@ export async function includeMyInvestorProducts(
     links: input.links ?? [],
     ownership,
     productKeys: keys,
+    rates: loaded.rates,
     soldUnpairedOutIds: soldUnpairedOutIds(
       new Map([...linkedBooks].map(([assetId, ledger]) => [assetId, ledger.operations])),
     ),

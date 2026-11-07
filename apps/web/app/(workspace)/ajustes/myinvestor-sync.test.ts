@@ -21,6 +21,7 @@ import type {
   MyInvestorOrder,
   MyInvestorReader,
   MyInvestorTransport,
+  ResolveFxRateSnapshotOptions,
 } from "@worthline/pricing";
 import { createMyInvestorClient } from "@worthline/pricing";
 import { fixtureTransport } from "@worthline/pricing/testing";
@@ -67,8 +68,10 @@ function fixtureClient(deviceId: string) {
  * for a window; this answers it with the recorded read — a wider overlap than the
  * real one, which is exactly what must apply nothing twice.
  */
-function windowedFixtureTransport(): MyInvestorTransport {
-  const fixtures = fixtureTransport();
+function windowedFixtureTransport(
+  prefer?: (file: string) => boolean,
+): MyInvestorTransport {
+  const fixtures = fixtureTransport(prefer ? { prefer } : {});
   return {
     send: (request) => {
       const query = request.query;
@@ -86,11 +89,11 @@ function windowedFixtureTransport(): MyInvestorTransport {
   };
 }
 
-function windowedClient(deviceId: string) {
+function windowedClient(deviceId: string, prefer?: (file: string) => boolean) {
   return createMyInvestorClient({
     deviceId,
     sleep: async () => {},
-    transport: windowedFixtureTransport(),
+    transport: windowedFixtureTransport(prefer),
   });
 }
 
@@ -106,11 +109,11 @@ interface FakeClient {
   clientFor: (deviceId: string) => SyncClient;
 }
 
-function fakeClient(): FakeClient {
+function fakeClient(prefer?: (file: string) => boolean): FakeClient {
   const fake: FakeClient = {
     bend: (reader) => reader,
     clientFor: (deviceId) => {
-      const real = windowedClient(deviceId);
+      const real = windowedClient(deviceId, prefer);
       return {
         loginWithKnownDevice: async (credentials) => {
           fake.logins += 1;
@@ -596,6 +599,156 @@ describe("the attempt log (#1885)", () => {
     });
 
     expect(await store.syncRuns.readRuns(sourceId)).toEqual([]);
+  });
+});
+
+describe("a robo-advisor with a fund in its USD class (#1899)", () => {
+  const preferUsd = (file: string) => file.includes("roboadvisor-usd");
+  const ACCOUNT = "9100009";
+
+  /** The ECB, offline: one dollar is worth 0,90 € every day it is asked about. */
+  const ecbAt090: ResolveFxRateSnapshotOptions = {
+    fetchDailyRates: async (_currency, fromMs, toMs) => {
+      const rates = new Map<string, number>();
+      for (let at = fromMs; at <= toMs; at += 86_400_000) {
+        rates.set(new Date(at).toISOString().slice(0, 10), 0.9);
+      }
+      return rates;
+    },
+  };
+  const ecbDown: ResolveFxRateSnapshotOptions = {
+    fetchDailyRates: async () => new Map(),
+  };
+
+  function order(
+    reference: string,
+    isin: string,
+    currency: string,
+    cash: string,
+    shares: string,
+  ): MyInvestorOrder {
+    return {
+      accountId: ACCOUNT,
+      amountToBlock: null,
+      cash,
+      currency,
+      dgsCode: null,
+      effectiveDate: null,
+      executionNav: null,
+      expirationDate: null,
+      fundName: null,
+      isin,
+      market: null,
+      operationType: "INVESTMENT_FUNDS_SUBSCRIPTION",
+      orderDate: "2026-11-02",
+      orderType: null,
+      productType: null,
+      reference,
+      shares,
+      status: "COMPLETE",
+      ticker: null,
+    };
+  }
+
+  async function connectIncludeUsd(): Promise<string> {
+    const step = await startMyInvestorConnect(
+      {
+        acceptedBy: null,
+        afterConnect: ({ reader, sourceId }) =>
+          storeMyInvestorDiscovery(
+            { now: NOW, store, today: TODAY },
+            { reader, sourceId },
+          ),
+        clientFor: (deviceId) => windowedClient(deviceId, preferUsd),
+        newDeviceId: () => "device-sintetico",
+        now: NOW,
+        store: store.connectedSources,
+      },
+      { ...TYPED, save: true },
+    );
+    expect(step.step).toBe("connected");
+    const source = (await store.connectedSources.listSources()).find(
+      (row) => row.adapter === "myinvestor",
+    )!;
+    const { view } = (await loadMyInvestorFirstStart(store, source.id, TODAY, {
+      fx: ecbAt090,
+    }))!;
+    const managed = view.rows.find((row) => row.kind === "managed")!;
+    const included = await includeMyInvestorProducts(
+      {
+        fx: ecbAt090,
+        newAssetId: () => `asset_${++ids}`,
+        resolveSymbol: async () => null,
+        store,
+        today: TODAY,
+      },
+      { productKeys: [managed.key], sourceId: source.id },
+    );
+    expect(included.ok).toBe(true);
+    return source.id;
+  }
+
+  async function operationById(id: string) {
+    const rows = await client.execute({
+      args: [id],
+      sql: "SELECT currency, capture_currency, capture_eur_per_unit FROM asset_operations WHERE id = ?",
+    });
+    return rows.rows[0] ?? null;
+  }
+
+  test("with the ECB down the dollar order waits, the rest lands; the next pass applies it in euros", async () => {
+    const sourceId = await connectIncludeUsd();
+    const before = await operationCount();
+    const fake = fakeClient(preferUsd);
+    const fresh = [
+      order("sintetica-usd-nueva", "IE00SINTET45", "USD", "22.10", "2"),
+      order("sintetica-eur-nueva", "IE00SINTET52", "EUR", "20.80", "2"),
+    ];
+    fake.bend = (reader) => ({
+      ...reader,
+      securitiesOrders: async (id, range) => {
+        const read = await reader.securitiesOrders(id, range);
+        return read.ok && id === ACCOUNT
+          ? { ok: true, value: [...read.value, ...fresh] }
+          : read;
+      },
+    });
+
+    const down = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake), fx: ecbDown },
+        { sourceId, trigger: "cron", typed: null },
+      ),
+    );
+    expect(down).toMatchObject({ applied: 1, kind: "ok" });
+    expect(await operationCount()).toBe(before + 1);
+    expect(await operationById(`mi_${sourceId}_sintetica-usd-nueva`)).toBeNull();
+
+    // A day later the ECB answers, and the window may no longer hold the order: it
+    // is planned anyway until it lands, and lands once.
+    const clock = movableClock(NOW);
+    clock.advanceHours(24);
+    fake.bend = (reader) => reader;
+    const back = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake, clock), fx: ecbAt090 },
+        { sourceId, trigger: "cron", typed: null },
+      ),
+    );
+    expect(back).toMatchObject({ applied: 1, kind: "ok" });
+    expect(await operationById(`mi_${sourceId}_sintetica-usd-nueva`)).toMatchObject({
+      capture_currency: "USD",
+      capture_eur_per_unit: "0.9",
+      currency: "EUR",
+    });
+    const again = outcomeOf(
+      await runMyInvestorSync(
+        { ...deps(fake, clock), fx: ecbAt090 },
+        { sourceId, trigger: "manual", typed: null },
+      ),
+    );
+    expect(again).toMatchObject({ applied: 0, kind: "ok" });
+    expect(await operationCount()).toBe(before + 2);
   });
 });
 

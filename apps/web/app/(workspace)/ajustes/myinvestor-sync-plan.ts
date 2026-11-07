@@ -13,6 +13,11 @@
  *    {@link carryTransferCostsFromBook} then re-takes a new traspaso's inherited
  *    cost from its origin's BOOK: an answer the user gave there (#1882) is the cost
  *    the units carry, not the one the stored read can fold.
+ *    An order in another currency is written in euros at the ECB rate of its day
+ *    (#1899, ADR 0072). With no rate yet it waits — the rest of the pass goes on —
+ *    and it is planned on every pass until it lands, in the window or not: the
+ *    dedup ledger drops it once applied, so a gap longer than the window's overlap
+ *    can never leave it behind the cursor.
  * 3. {@link checkMyInvestorUnits} — the units check: each linked holding's book
  *    against MyInvestor's units, exact. It reports; it never plans an adjustment
  *    (PRD #1876, invariant 6).
@@ -20,12 +25,14 @@
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
+  FxRateSnapshot,
   InvestmentOperation,
   ManagedPortfolioWitness,
   NormalizedBatch,
   NormalizedFact,
 } from "@worthline/domain";
 import {
+  BASE_CURRENCY,
   compareInvestmentOperations,
   compareUnits,
   costLeavingOrigin,
@@ -43,6 +50,7 @@ import {
   entryOfSoldOrigin,
   foldMyInvestorOperations,
   myInvestorOperationId,
+  NO_MYINVESTOR_RATES,
   operationInput,
   pendingEntryOfSoldOrigin,
 } from "./myinvestor-operations-fold";
@@ -122,7 +130,9 @@ export interface MyInvestorSyncPlan {
  * The batch of a pass. `windowKeys` are the keys of the orders this pass read
  * (null for «Resincronizar todo», which read the whole history): only those are
  * planned, so the dedup ledger is asked about a window, never the whole account.
- * The ledger still decides what is new.
+ * The ledger still decides what is new. The orders in another currency are the
+ * exception (#1899): they are planned whatever the window, so one that waited for
+ * its ECB rate lands on the first pass that has it. `rates` are those ECB rates.
  */
 export function planMyInvestorSync(
   discovery: MyInvestorDiscovery,
@@ -131,18 +141,30 @@ export function planMyInvestorSync(
     cursor: string;
     links: readonly MyInvestorLink[];
     windowKeys: ReadonlySet<string> | null;
+    rates?: FxRateSnapshot;
   },
 ): MyInvestorSyncPlan {
   const productByKey = new Map(
     discovery.products.map((product) => [product.key, product]),
   );
-  const folded = foldMyInvestorOperations(discovery, input.sourceId);
+  const folded = foldMyInvestorOperations(
+    discovery,
+    input.sourceId,
+    input.rates ?? NO_MYINVESTOR_RATES,
+  ).rows;
   const factKeyById = new Map(
     discovery.operations.map((fact) => [
       myInvestorOperationId(input.sourceId, fact.key),
       fact.key,
     ]),
   );
+  const foreign = new Set(
+    discovery.operations
+      .filter((fact) => fact.payload.currency !== BASE_CURRENCY)
+      .map((fact) => fact.key),
+  );
+  const planned = (factKey: string) =>
+    input.windowKeys === null || input.windowKeys.has(factKey) || foreign.has(factKey);
 
   const facts: NormalizedFact<CreateInvestmentOperationInput>[] = [];
   const cashBalances: { assetId: string; valueMinor: number }[] = [];
@@ -170,7 +192,7 @@ export function planMyInvestorSync(
     for (const row of folded.get(link.productKey) ?? []) {
       const factKey = factKeyById.get(row.id);
       if (factKey === undefined) continue;
-      if (input.windowKeys !== null && !input.windowKeys.has(factKey)) continue;
+      if (!planned(factKey)) continue;
       facts.push({
         dateKey: row.executedAt.slice(0, 10),
         key: factKey,
